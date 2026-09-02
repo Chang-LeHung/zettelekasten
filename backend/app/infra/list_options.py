@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True, slots=True)
 class CardListOptions:
-    """Query options for card listings."""
+    """Persistence query options for card listings."""
 
     query: str | None = None
     card_type: str | None = None
@@ -14,7 +14,7 @@ class CardListOptions:
 
 @dataclass(frozen=True, slots=True)
 class TagListOptions:
-    """Query options for tag listings."""
+    """Persistence query options for tag listings."""
 
     parent_id: int | None = None
     tree: bool = True

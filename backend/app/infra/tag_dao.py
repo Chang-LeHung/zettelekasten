@@ -2,9 +2,9 @@ from datetime import UTC, datetime
 
 from fastapi import HTTPException
 
-from ..application.list_options import TagListOptions
 from ..schemas import TagCreate
 from .database import transaction
+from .list_options import TagListOptions
 from .storage import Storage
 
 
