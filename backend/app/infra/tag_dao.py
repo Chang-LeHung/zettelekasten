@@ -5,6 +5,7 @@ from fastapi import HTTPException
 from ..application.list_options import TagListOptions
 from ..schemas import TagCreate
 from .database import transaction
+from .storage import Storage
 
 
 def _path(connection, tag_id: int) -> str:
@@ -30,7 +31,7 @@ def to_dict(connection, row) -> dict:
     return result
 
 
-def list_tags(options: TagListOptions | None = None) -> list[dict]:
+def _list_tags(options: TagListOptions | None = None) -> list[dict]:
     options = options or TagListOptions()
     with transaction() as connection:
         rows = [to_dict(connection, row) for row in connection.execute("SELECT * FROM tags ORDER BY name")]
@@ -43,7 +44,7 @@ def list_tags(options: TagListOptions | None = None) -> list[dict]:
         return roots
 
 
-def create_tag(payload: TagCreate) -> dict:
+def _create_tag(payload: TagCreate) -> dict:
     with transaction() as connection:
         if (
             payload.parent_id
@@ -58,3 +59,35 @@ def create_tag(payload: TagCreate) -> dict:
         except Exception as exc:
             raise HTTPException(409, "A tag with this name already exists under the parent") from exc
         return to_dict(connection, connection.execute("SELECT * FROM tags WHERE id=?", (cursor.lastrowid,)).fetchone())
+
+
+class TagStorage(Storage[TagCreate, int, TagListOptions]):
+    """SQLite implementation of the generic tag storage contract."""
+
+    def create(self, entity: TagCreate) -> dict:
+        return _create_tag(entity)
+
+    def get(self, entity_id: int) -> dict | None:
+        with transaction() as connection:
+            row = connection.execute("SELECT * FROM tags WHERE id=?", (entity_id,)).fetchone()
+            return to_dict(connection, row) if row else None
+
+    def update(self, entity_id: int, entity: TagCreate) -> dict:
+        with transaction() as connection:
+            if not connection.execute("SELECT 1 FROM tags WHERE id=?", (entity_id,)).fetchone():
+                raise HTTPException(404, "Tag not found")
+            connection.execute(
+                "UPDATE tags SET name=?, parent_id=?, description=?, color=? WHERE id=?",
+                (entity.name, entity.parent_id, entity.description, entity.color, entity_id),
+            )
+            return to_dict(connection, connection.execute("SELECT * FROM tags WHERE id=?", (entity_id,)).fetchone())
+
+    def delete(self, entity_id: int) -> bool:
+        with transaction() as connection:
+            return bool(connection.execute("DELETE FROM tags WHERE id=?", (entity_id,)).rowcount)
+
+    def list(self, options: TagListOptions | None = None) -> list[dict]:
+        return _list_tags(options)
+
+
+tag_storage = TagStorage()

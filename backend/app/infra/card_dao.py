@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from ..application.list_options import CardListOptions
 from ..schemas import CardCreate
 from .database import transaction
+from .storage import Storage
 from .tag_dao import to_dict as tag_to_dict
 
 
@@ -24,7 +25,7 @@ def _hydrate(connection, row) -> dict:
     return result
 
 
-def save(payload: CardCreate, card_id: str | None = None) -> dict:
+def _save(payload: CardCreate, card_id: str | None = None) -> dict:
     with transaction() as connection:
         timestamp = datetime.now(UTC).isoformat()
         card_id = card_id or str(uuid.uuid4())
@@ -71,7 +72,7 @@ def save(payload: CardCreate, card_id: str | None = None) -> dict:
         return _hydrate(connection, row)
 
 
-def get(card_id: str) -> dict:
+def _get(card_id: str) -> dict:
     with transaction() as connection:
         row = connection.execute("SELECT * FROM cards WHERE id=?", (card_id,)).fetchone()
         if not row:
@@ -79,7 +80,7 @@ def get(card_id: str) -> dict:
         return _hydrate(connection, row)
 
 
-def search(options: CardListOptions | None = None) -> list[dict]:
+def _search(options: CardListOptions | None = None) -> list[dict]:
     options = options or CardListOptions()
     query = options.query
     card_type = options.card_type
@@ -110,8 +111,30 @@ def search(options: CardListOptions | None = None) -> list[dict]:
         return [_hydrate(connection, row) for row in connection.execute(sql, params)]
 
 
-def delete(card_id: str) -> dict:
+def _delete(card_id: str) -> dict:
     with transaction() as connection:
         deleted = connection.execute("DELETE FROM cards WHERE id=?", (card_id,)).rowcount
         connection.execute("DELETE FROM cards_fts WHERE card_id=?", (card_id,))
         return {"ok": bool(deleted)}
+
+
+class CardStorage(Storage[CardCreate, str, CardListOptions]):
+    """SQLite implementation of the generic card storage contract."""
+
+    def create(self, entity: CardCreate) -> dict:
+        return _save(entity)
+
+    def get(self, entity_id: str) -> dict | None:
+        return _get(entity_id)
+
+    def update(self, entity_id: str, entity: CardCreate) -> dict:
+        return _save(entity, entity_id)
+
+    def delete(self, entity_id: str) -> bool:
+        return bool(_delete(entity_id)["ok"])
+
+    def list(self, options: CardListOptions | None = None) -> list[dict]:
+        return _search(options)
+
+
+card_storage = CardStorage()
