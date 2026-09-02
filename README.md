@@ -17,6 +17,8 @@ uv sync
 uv run uvicorn app.main:app --reload
 ```
 
+For VS Code, open the repository root and select `backend/.venv/bin/python` if the Python extension does not pick it automatically. The repository includes `.vscode/settings.json` with this interpreter path so Pylance can resolve FastAPI and the other `uv` dependencies.
+
 The backend follows a domain-driven structure. Domain rules live under `app/domain`, application process services live under `app/application`, SQLite/DAO adapters live under `app/infra`, and HTTP/CLI adapters call application services. Card persistence is accessed through the application card service boundary rather than from the HTTP or CLI layer.
 
 ## 启动前端
