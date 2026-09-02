@@ -5,7 +5,7 @@ from cryptography.fernet import Fernet
 from fastapi import HTTPException
 from langchain_core.prompts import ChatPromptTemplate
 
-from .database import db
+from .infra.database import transaction
 from .schemas import AISettingsIn, AnalyzeRequest, CardAnalysis
 
 
@@ -20,7 +20,7 @@ def _fernet():
 
 
 def get_settings():
-    with db() as conn:
+    with transaction() as conn:
         row = conn.execute("SELECT * FROM ai_settings WHERE id=1").fetchone()
         if not row:
             return None
@@ -32,7 +32,7 @@ def get_settings():
 
 
 def save_settings(payload: AISettingsIn):
-    with db() as conn:
+    with transaction() as conn:
         old = conn.execute("SELECT encrypted_api_key FROM ai_settings WHERE id=1").fetchone()
         encrypted = old[0] if old else None
         if payload.api_key is not None and payload.api_key.strip():
@@ -54,7 +54,7 @@ def save_settings(payload: AISettingsIn):
 
 
 def _model():
-    with db() as conn:
+    with transaction() as conn:
         row = conn.execute("SELECT * FROM ai_settings WHERE id=1").fetchone()
     if not row or not row["enabled"]:
         raise HTTPException(400, "Enable and configure an AI provider first")
@@ -84,7 +84,7 @@ def _model():
 
 
 async def analyze(request: AnalyzeRequest):
-    with db() as conn:
+    with transaction() as conn:
         tag_paths = []
         for r in conn.execute("SELECT id,name,parent_id FROM tags ORDER BY name"):
             names = [r[1]]
@@ -111,7 +111,7 @@ async def analyze(request: AnalyzeRequest):
         parsed = CardAnalysis.model_validate(
             json.loads(result.content if isinstance(result.content, str) else str(result.content))
         )
-        with db() as conn:
+        with transaction() as conn:
             conn.execute(
                 "INSERT INTO ai_analysis_runs(provider,model,input_text,output_json,status,created_at) VALUES(?,?,?,?,?,?)",
                 (

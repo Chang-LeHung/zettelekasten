@@ -17,7 +17,7 @@ uv sync
 uv run uvicorn app.main:app --reload
 ```
 
-The backend follows a domain-driven structure. Domain rules live under `app/domain`, application process services live under `app/application`, and HTTP/CLI adapters call application services.
+The backend follows a domain-driven structure. Domain rules live under `app/domain`, application process services live under `app/application`, SQLite/DAO adapters live under `app/infra`, and HTTP/CLI adapters call application services. Card persistence is accessed through the application card service boundary rather than from the HTTP or CLI layer.
 
 ## 启动前端
 

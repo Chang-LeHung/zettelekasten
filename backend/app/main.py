@@ -8,7 +8,7 @@ from .application.services import (
     TagApplicationService,
 )
 from .config import settings
-from .database import init_db
+from .infra.database import init_db
 from .schemas import AISettingsIn, AnalyzeRequest, CardCreate, TagCreate
 
 app = FastAPI(title="Knowledge Cards API", version="0.1.0")
