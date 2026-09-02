@@ -8,19 +8,19 @@ class EmptyListOptions:
     """Default options for storage types without list filters."""
 
 
-class Storage[T, ID, ListOptionsT](ABC):
+class Storage[WriteModelT, ReadModelT, ID, ListOptionsT](ABC):
     """Generic storage boundary used by application services."""
 
     @abstractmethod
-    def create(self, entity: T) -> T:
+    def create(self, entity: WriteModelT) -> ReadModelT:
         raise NotImplementedError
 
     @abstractmethod
-    def get(self, entity_id: ID) -> T | None:
+    def get(self, entity_id: ID) -> ReadModelT | None:
         raise NotImplementedError
 
     @abstractmethod
-    def update(self, entity_id: ID, entity: T) -> T:
+    def update(self, entity_id: ID, entity: WriteModelT) -> ReadModelT:
         raise NotImplementedError
 
     @abstractmethod
@@ -28,5 +28,5 @@ class Storage[T, ID, ListOptionsT](ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def list(self, options: ListOptionsT | None = None) -> Sequence[T]:
+    def list(self, options: ListOptionsT | None = None) -> Sequence[ReadModelT]:
         raise NotImplementedError

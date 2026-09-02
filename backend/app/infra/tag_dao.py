@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 from fastapi import HTTPException
 
-from ..schemas import TagCreate
+from ..schemas import TagCreate, TagOut
 from .database import transaction
 from .list_options import TagListOptions
 from .storage import Storage
@@ -61,18 +61,18 @@ def _create_tag(payload: TagCreate) -> dict:
         return to_dict(connection, connection.execute("SELECT * FROM tags WHERE id=?", (cursor.lastrowid,)).fetchone())
 
 
-class TagStorage(Storage[TagCreate, int, TagListOptions]):
+class TagStorage(Storage[TagCreate, TagOut, int, TagListOptions]):
     """SQLite implementation of the generic tag storage contract."""
 
-    def create(self, entity: TagCreate) -> dict:
-        return _create_tag(entity)
+    def create(self, entity: TagCreate) -> TagOut:
+        return TagOut.model_validate(_create_tag(entity))
 
-    def get(self, entity_id: int) -> dict | None:
+    def get(self, entity_id: int) -> TagOut | None:
         with transaction() as connection:
             row = connection.execute("SELECT * FROM tags WHERE id=?", (entity_id,)).fetchone()
-            return to_dict(connection, row) if row else None
+            return TagOut.model_validate(to_dict(connection, row)) if row else None
 
-    def update(self, entity_id: int, entity: TagCreate) -> dict:
+    def update(self, entity_id: int, entity: TagCreate) -> TagOut:
         with transaction() as connection:
             if not connection.execute("SELECT 1 FROM tags WHERE id=?", (entity_id,)).fetchone():
                 raise HTTPException(404, "Tag not found")
@@ -80,14 +80,15 @@ class TagStorage(Storage[TagCreate, int, TagListOptions]):
                 "UPDATE tags SET name=?, parent_id=?, description=?, color=? WHERE id=?",
                 (entity.name, entity.parent_id, entity.description, entity.color, entity_id),
             )
-            return to_dict(connection, connection.execute("SELECT * FROM tags WHERE id=?", (entity_id,)).fetchone())
+            result = to_dict(connection, connection.execute("SELECT * FROM tags WHERE id=?", (entity_id,)).fetchone())
+            return TagOut.model_validate(result)
 
     def delete(self, entity_id: int) -> bool:
         with transaction() as connection:
             return bool(connection.execute("DELETE FROM tags WHERE id=?", (entity_id,)).rowcount)
 
-    def list(self, options: TagListOptions | None = None) -> list[dict]:
-        return _list_tags(options)
+    def list(self, options: TagListOptions | None = None) -> list[TagOut]:
+        return [TagOut.model_validate(tag) for tag in _list_tags(options)]
 
 
 tag_storage = TagStorage()

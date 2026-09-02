@@ -1,7 +1,7 @@
 import typer
 
 from .application.services import CardApplicationService, TagApplicationService
-from .database import init_db
+from .infra.database import init_db
 from .schemas import CardCreate, TagCreate
 
 app = typer.Typer(help="Personal knowledge card system")
@@ -28,7 +28,7 @@ def add(
         raw_content=text,
         tag_ids=tag_ids,
     )
-    print(CardApplicationService.create(payload)["id"])
+    print(CardApplicationService.create(payload).id)
 
 
 @app.command()
@@ -38,18 +38,18 @@ def search(
     tag_id: int = typer.Option(None, "--tag-id"),
 ) -> None:
     for card in CardApplicationService.search(query, card_type, tag_id):
-        print(f"{card['id']} [{card['type']}] {card['title']}")
+        print(f"{card.id} [{card.type}] {card.title}")
 
 
 @app.command()
 def show(card_id: str) -> None:
     card = CardApplicationService.get(card_id)
-    print(f"# {card['title']}\n\n{card['content']}\n\nTags: {', '.join(tag['path'] for tag in card['tags'])}")
+    print(f"# {card.title}\n\n{card.content}\n\nTags: {', '.join(tag.path for tag in card.tags)}")
 
 
 @tag_app.command("add")
 def add_tag(name: str, parent_id: int = typer.Option(None, "--parent-id")) -> None:
-    print(TagApplicationService.create(TagCreate(name=name, parent_id=parent_id))["path"])
+    print(TagApplicationService.create(TagCreate(name=name, parent_id=parent_id)).path)
 
 
 @tag_app.command("tree")

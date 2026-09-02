@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 
 from fastapi import HTTPException
 
-from ..schemas import CardCreate
+from ..schemas import CardCreate, CardOut
 from .database import transaction
 from .list_options import CardListOptions
 from .storage import Storage
@@ -118,23 +118,23 @@ def _delete(card_id: str) -> dict:
         return {"ok": bool(deleted)}
 
 
-class CardStorage(Storage[CardCreate, str, CardListOptions]):
+class CardStorage(Storage[CardCreate, CardOut, str, CardListOptions]):
     """SQLite implementation of the generic card storage contract."""
 
-    def create(self, entity: CardCreate) -> dict:
-        return _save(entity)
+    def create(self, entity: CardCreate) -> CardOut:
+        return CardOut.model_validate(_save(entity))
 
-    def get(self, entity_id: str) -> dict | None:
-        return _get(entity_id)
+    def get(self, entity_id: str) -> CardOut | None:
+        return CardOut.model_validate(_get(entity_id))
 
-    def update(self, entity_id: str, entity: CardCreate) -> dict:
-        return _save(entity, entity_id)
+    def update(self, entity_id: str, entity: CardCreate) -> CardOut:
+        return CardOut.model_validate(_save(entity, entity_id))
 
     def delete(self, entity_id: str) -> bool:
         return bool(_delete(entity_id)["ok"])
 
-    def list(self, options: CardListOptions | None = None) -> list[dict]:
-        return _search(options)
+    def list(self, options: CardListOptions | None = None) -> list[CardOut]:
+        return [CardOut.model_validate(card) for card in _search(options)]
 
 
 card_storage = CardStorage()
