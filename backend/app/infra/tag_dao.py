@@ -4,7 +4,7 @@ from fastapi import HTTPException
 
 from ..schemas import TagCreate, TagOut
 from .database import transaction
-from .list_options import TagListOptions
+from .list_options import SortDirection, TagListOptions, TagSortField
 from .storage import Storage
 
 
@@ -35,8 +35,24 @@ def _list_tags(options: TagListOptions | None = None) -> list[dict]:
     options = options or TagListOptions()
     with transaction() as connection:
         rows = [to_dict(connection, row) for row in connection.execute("SELECT * FROM tags ORDER BY name")]
+        if options.query:
+            needle = options.query.casefold()
+            rows = [row for row in rows if needle in row["name"].casefold() or needle in row["path"].casefold()]
         if not options.tree:
-            return [row for row in rows if row["parent_id"] == options.parent_id]
+            if options.ancestor_id and options.include_descendants:
+                ancestor_path = next((row["path"] for row in rows if row["id"] == options.ancestor_id), "")
+                rows = [row for row in rows if row["path"].startswith(ancestor_path + "/")]
+            elif options.parent_id is not None:
+                rows = [row for row in rows if row["parent_id"] == options.parent_id]
+            rows.sort(key=lambda row: row["name"].casefold(), reverse=options.sort_direction == SortDirection.DESC)
+            return rows[options.offset : options.offset + options.limit]
+        if options.ancestor_id and options.include_descendants:
+            ancestor_path = next((row["path"] for row in rows if row["id"] == options.ancestor_id), "")
+            rows = [row for row in rows if row["path"] == ancestor_path or row["path"].startswith(ancestor_path + "/")]
+        if options.sort_by == TagSortField.CARD_COUNT:
+            rows.sort(key=lambda row: row["card_count"], reverse=options.sort_direction == SortDirection.DESC)
+        elif options.sort_by == TagSortField.CREATED_AT:
+            rows.sort(key=lambda row: row["created_at"], reverse=options.sort_direction == SortDirection.DESC)
         by_id = {row["id"]: row for row in rows}
         roots = []
         for row in rows:

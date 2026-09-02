@@ -5,7 +5,7 @@ from fastapi import HTTPException
 
 from ..schemas import CardCreate, CardOut
 from .database import transaction
-from .list_options import CardListOptions
+from .list_options import CardListOptions, SortDirection
 from .storage import Storage
 from .tag_dao import to_dict as tag_to_dict
 
@@ -82,29 +82,66 @@ def _get(card_id: str) -> dict:
 
 def _search(options: CardListOptions | None = None) -> list[dict]:
     options = options or CardListOptions()
-    query = options.query
-    card_type = options.card_type
-    tag_id = options.tag_id
     with transaction() as connection:
         params = []
         where = []
         source = "cards c"
-        if query:
+        if options.query:
             source = "cards_fts JOIN cards c ON c.id=cards_fts.card_id"
             where.append("cards_fts MATCH ?")
-            params.append(query.replace('"', " "))
-        if card_type:
-            where.append("c.type=?")
-            params.append(card_type)
-        if tag_id:
-            where.append(
-                "EXISTS (WITH RECURSIVE d(id) AS (SELECT ? UNION ALL SELECT t.id FROM tags t JOIN d ON t.parent_id=d.id) SELECT 1 FROM card_tags ct WHERE ct.card_id=c.id AND ct.tag_id IN d)"
+            params.append(options.query.replace('"', " "))
+        if options.card_types:
+            placeholders = ",".join("?" for _ in options.card_types)
+            where.append(f"c.type IN ({placeholders})")
+            params.extend(options.card_types)
+        if options.statuses:
+            placeholders = ",".join("?" for _ in options.statuses)
+            where.append(f"c.status IN ({placeholders})")
+            params.extend(options.statuses)
+        if options.source:
+            where.append("c.source LIKE ?")
+            params.append(f"%{options.source}%")
+        for field, operator, value in (
+            ("created_at", ">=", options.created_from),
+            ("created_at", "<=", options.created_to),
+            ("updated_at", ">=", options.updated_from),
+            ("updated_at", "<=", options.updated_to),
+        ):
+            if value:
+                where.append(f"c.{field} {operator} ?")
+                params.append(value)
+        if options.has_summary is True:
+            where.append("c.summary IS NOT NULL AND TRIM(c.summary) <> ''")
+        elif options.has_summary is False:
+            where.append("(c.summary IS NULL OR TRIM(c.summary) = '')")
+        include_conditions = []
+        for tag_id in options.include_tag_ids:
+            tag_filter = "SELECT ?"
+            if options.include_descendants:
+                tag_filter = "WITH RECURSIVE d(id) AS (SELECT ? UNION ALL SELECT t.id FROM tags t JOIN d ON t.parent_id=d.id) SELECT id FROM d"
+            include_conditions.append(
+                f"EXISTS (SELECT 1 FROM card_tags ct WHERE ct.card_id=c.id AND ct.tag_id IN ({tag_filter}))"
             )
             params.append(tag_id)
+        if include_conditions:
+            joiner = " AND " if options.match_all_tags else " OR "
+            where.append("(" + joiner.join(include_conditions) + ")")
+        for tag_id in options.exclude_tag_ids:
+            tag_filter = "SELECT ?"
+            if options.include_descendants:
+                tag_filter = "WITH RECURSIVE d(id) AS (SELECT ? UNION ALL SELECT t.id FROM tags t JOIN d ON t.parent_id=d.id) SELECT id FROM d"
+            where.append(
+                f"NOT EXISTS (SELECT 1 FROM card_tags ct WHERE ct.card_id=c.id AND ct.tag_id IN ({tag_filter}))"
+            )
+            params.append(tag_id)
+        order_column = {"created_at": "c.created_at", "updated_at": "c.updated_at", "title": "c.title"}[
+            options.sort_by.value
+        ]
+        direction = "ASC" if options.sort_direction == SortDirection.ASC else "DESC"
         sql = (
             f"SELECT DISTINCT c.* FROM {source}"
             + (" WHERE " + " AND ".join(where) if where else "")
-            + " ORDER BY c.updated_at DESC"
+            + f" ORDER BY {order_column} {direction}"
         )
         params.extend([options.limit, options.offset])
         sql += " LIMIT ? OFFSET ?"
