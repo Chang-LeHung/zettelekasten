@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 
 from fastapi import HTTPException
 
+from ..application.list_options import TagListOptions
 from ..schemas import TagCreate
 from .database import transaction
 
@@ -29,9 +30,12 @@ def to_dict(connection, row) -> dict:
     return result
 
 
-def list_tags() -> list[dict]:
+def list_tags(options: TagListOptions | None = None) -> list[dict]:
+    options = options or TagListOptions()
     with transaction() as connection:
         rows = [to_dict(connection, row) for row in connection.execute("SELECT * FROM tags ORDER BY name")]
+        if not options.tree:
+            return [row for row in rows if row["parent_id"] == options.parent_id]
         by_id = {row["id"]: row for row in rows}
         roots = []
         for row in rows:

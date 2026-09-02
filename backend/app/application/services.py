@@ -2,6 +2,7 @@ from ..domain.services import CardDomainService, CardDraft, TagDomainService
 from ..infra.card_dao import delete, get, save, search
 from ..infra.tag_dao import create_tag, list_tags
 from ..schemas import AnalyzeRequest, CardCreate, TagCreate
+from .list_options import CardListOptions, TagListOptions
 
 
 class CardApplicationService:
@@ -23,7 +24,7 @@ class CardApplicationService:
 
     @staticmethod
     def search(query: str | None, card_type: str | None, tag_id: int | None):
-        return search(query, card_type, tag_id)
+        return search(CardListOptions(query=query, card_type=card_type, tag_id=tag_id))
 
     @staticmethod
     def delete(card_id: str):
@@ -40,7 +41,7 @@ class TagApplicationService:
 
     @staticmethod
     def tree():
-        return list_tags()
+        return list_tags(TagListOptions())
 
 
 class CardOrganizationApplicationService:

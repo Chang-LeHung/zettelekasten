@@ -1,8 +1,14 @@
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 
-class Storage[T, ID](ABC):
+@dataclass(frozen=True, slots=True)
+class EmptyListOptions:
+    """Default options for storage types without list filters."""
+
+
+class Storage[T, ID, ListOptionsT](ABC):
     """Generic storage boundary used by application services."""
 
     @abstractmethod
@@ -22,5 +28,5 @@ class Storage[T, ID](ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def list(self) -> Sequence[T]:
+    def list(self, options: ListOptionsT | None = None) -> Sequence[T]:
         raise NotImplementedError

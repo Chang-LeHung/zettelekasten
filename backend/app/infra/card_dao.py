@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 
 from fastapi import HTTPException
 
+from ..application.list_options import CardListOptions
 from ..schemas import CardCreate
 from .database import transaction
 from .tag_dao import to_dict as tag_to_dict
@@ -78,7 +79,11 @@ def get(card_id: str) -> dict:
         return _hydrate(connection, row)
 
 
-def search(query: str | None = None, card_type: str | None = None, tag_id: int | None = None) -> list[dict]:
+def search(options: CardListOptions | None = None) -> list[dict]:
+    options = options or CardListOptions()
+    query = options.query
+    card_type = options.card_type
+    tag_id = options.tag_id
     with transaction() as connection:
         params = []
         where = []
@@ -100,6 +105,8 @@ def search(query: str | None = None, card_type: str | None = None, tag_id: int |
             + (" WHERE " + " AND ".join(where) if where else "")
             + " ORDER BY c.updated_at DESC"
         )
+        params.extend([options.limit, options.offset])
+        sql += " LIMIT ? OFFSET ?"
         return [_hydrate(connection, row) for row in connection.execute(sql, params)]
 
 
