@@ -1,8 +1,8 @@
 from ..cards import get_card, save_card, search_cards
+from ..database import db
+from ..domain.services import CardDomainService, CardDraft, TagDomainService
 from ..schemas import AnalyzeRequest, CardCreate, TagCreate
 from ..tags import create_tag, list_tags
-from ..domain.services import CardDomainService, CardDraft, TagDomainService
-from ..database import db
 
 
 class CardApplicationService:
@@ -53,6 +53,7 @@ class CardOrganizationApplicationService:
     @staticmethod
     async def preview(request: AnalyzeRequest):
         from ..ai import analyze
+
         return await analyze(request)
 
 
@@ -62,9 +63,11 @@ class AISettingsApplicationService:
     @staticmethod
     def get():
         from ..ai import get_settings
+
         return get_settings()
 
     @staticmethod
     def update(payload):
         from ..ai import save_settings
+
         return save_settings(payload)

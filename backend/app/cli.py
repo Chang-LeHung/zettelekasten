@@ -21,12 +21,22 @@ def add(
     title: str = typer.Option("", "--title"),
     tag_ids: list[int] = typer.Option([], "--tag-id"),
 ) -> None:
-    payload = CardCreate(type=card_type, title=title or text[:60], content=text, raw_content=text, tag_ids=tag_ids)
+    payload = CardCreate(
+        type=card_type,
+        title=title or text[:60],
+        content=text,
+        raw_content=text,
+        tag_ids=tag_ids,
+    )
     print(CardApplicationService.create(payload)["id"])
 
 
 @app.command()
-def search(query: str, card_type: str = typer.Option(None, "--type"), tag_id: int = typer.Option(None, "--tag-id")) -> None:
+def search(
+    query: str,
+    card_type: str = typer.Option(None, "--type"),
+    tag_id: int = typer.Option(None, "--tag-id"),
+) -> None:
     for card in CardApplicationService.search(query, card_type, tag_id):
         print(f"{card['id']} [{card['type']}] {card['title']}")
 

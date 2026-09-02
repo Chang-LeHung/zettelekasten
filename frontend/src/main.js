@@ -1,28 +1,5 @@
-import { createApp, ref, onMounted } from 'vue'
+import { createApp } from 'vue'
+import App from './App.vue'
 import './style.css'
-
-const API = 'http://127.0.0.1:8000/api'
-const call = (path, options = {}) => fetch(API + path, { headers: { 'Content-Type': 'application/json' }, ...options }).then(r => r.json())
-
-const App = { setup() {
-  const cards = ref([]), tags = ref([]), q = ref(''), selectedTag = ref(null), mode = ref('list')
-  const raw = ref(''), analysis = ref(null), loading = ref(false), notice = ref('')
-  const ai = ref({ provider: 'openai-compatible', model: '', base_url: '', api_key: '', temperature: .2, enabled: true })
-  const tagName = ref(''), tagParent = ref(null), selectedSuggestions = ref([])
-  const flatten = (nodes, depth = 0) => nodes.flatMap(t => [{ ...t, depth }, ...flatten(t.children || [], depth + 1)])
-  const load = async () => { tags.value = await call('/tags'); const p = new URLSearchParams(); if (q.value) p.set('q', q.value); if (selectedTag.value) p.set('tag_id', selectedTag.value); cards.value = await call('/cards?' + p) }
-  const loadAI = async () => { const data = await call('/settings/ai'); if (data) ai.value = { ...ai.value, ...data, api_key: '' } }
-  const analyze = async () => { loading.value = true; analysis.value = await call('/cards/analyze', { method: 'POST', body: JSON.stringify({ raw_content: raw.value }) }); selectedSuggestions.value = analysis.value.suggested_tags.map(x => x.path); loading.value = false }
-  const save = async () => { const a = analysis.value; const ids = flatten(tags.value).filter(t => selectedSuggestions.value.includes(t.path)).map(t => t.id); await call('/cards', { method: 'POST', body: JSON.stringify({ type: a.type, title: a.title, content: a.content, summary: a.summary, raw_content: raw.value, tag_ids: ids }) }); raw.value = ''; analysis.value = null; selectedSuggestions.value = []; mode.value = 'list'; await load() }
-  const saveAI = async () => { await call('/settings/ai', { method: 'PUT', body: JSON.stringify(ai.value) }); notice.value = 'AI settings saved' }
-  const addTag = async () => { if (!tagName.value) return; await call('/tags', { method: 'POST', body: JSON.stringify({ name: tagName.value, parent_id: tagParent.value || null }) }); tagName.value = ''; await load(); notice.value = 'Tag created' }
-  onMounted(() => { load(); loadAI() })
-  return { cards, tags, q, selectedTag, mode, raw, analysis, loading, notice, ai, tagName, tagParent, selectedSuggestions, load, analyze, save, saveAI, addTag, flatten }
-}, template: `
-<div class="app"><header><h1>Knowledge Cards</h1><button @click="mode='new'">+ New Card</button><button class="ghost" @click="mode='settings'">Settings</button></header>
-<main><aside><input v-model="q" @keyup.enter="load" placeholder="Search cards..."/><button class="all" @click="selectedTag=null;load()">All Cards</button><h3>Domains and Tags</h3><div v-for="t in flatten(tags)" :key="t.id" class="tag" :style="{paddingLeft:(12+t.depth*18)+'px'}" @click="selectedTag=t.id;load()">{{t.depth?'↳ ':''}}{{t.name}} <small>{{t.card_count}}</small></div></aside>
-<section v-if="mode==='list'"><div class="section-title"><h2>{{selectedTag?'Filtered Cards':'Recent Cards'}}</h2><span>{{cards.length}} cards</span></div><article v-for="c in cards" :key="c.id" class="card"><div><span class="pill">{{c.type}}</span><h3>{{c.title}}</h3><p>{{c.summary||c.content}}</p><div><span v-for="t in c.tags" class="chip">{{t.path}}</span></div></div><time>{{new Date(c.updated_at).toLocaleString()}}</time></article><div v-if="!cards.length" class="empty">No cards yet. Capture an idea.</div></section>
-<section v-else-if="mode==='new'" class="editor"><h2>Organize a New Card</h2><textarea v-model="raw" placeholder="Paste a rough idea, note, or knowledge snippet..."></textarea><button @click="analyze" :disabled="loading||!raw">{{loading?'Analyzing...':'Organize with AI'}}</button><div v-if="analysis" class="preview"><label>Type <input v-model="analysis.type"/></label><label>Title <input v-model="analysis.title"/></label><label>Summary <input v-model="analysis.summary"/></label><label>Content <textarea v-model="analysis.content"></textarea></label><h3>Suggested Tags</h3><div v-for="t in analysis.suggested_tags" class="suggestion"><input type="checkbox" v-model="selectedSuggestions" :value="t.path"/> {{t.path}} <small>{{Math.round(t.confidence*100)}}%</small></div><button @click="save">Save Card</button></div></section>
-<section v-else class="editor"><h2>AI Settings</h2><p>API keys are never returned in full by the backend.</p><label>Provider<select v-model="ai.provider"><option>openai-compatible</option><option>openai</option><option>anthropic</option><option>gemini</option><option>ollama</option></select></label><label>Model<input v-model="ai.model" placeholder="deepseek-chat or llama3.2"/></label><label>Base URL<input v-model="ai.base_url" placeholder="Optional compatible API or Ollama URL"/></label><label>API Key<input v-model="ai.api_key" type="password" placeholder="Leave empty to keep the current key"/></label><label>Temperature<input v-model.number="ai.temperature" type="number" min="0" max="2" step=".1"/></label><label><input v-model="ai.enabled" type="checkbox"/> Enable AI</label><br/><button @click="saveAI">Save AI Settings</button><p>{{notice}}</p><h2>Add Tag</h2><label>Name<input v-model="tagName" placeholder="e.g. Decorators"/></label><label>Parent<select v-model="tagParent"><option :value="null">Root tag</option><option v-for="t in flatten(tags)" :value="t.id">{{'  '.repeat(t.depth)}}{{t.path}}</option></select></label><button @click="addTag">Create Tag</button></section></main></div>`}
 
 createApp(App).mount('#app')

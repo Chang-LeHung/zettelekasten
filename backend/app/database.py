@@ -1,9 +1,7 @@
 import sqlite3
 from contextlib import contextmanager
-from pathlib import Path
 
 from .config import settings
-
 
 SCHEMA = """
 PRAGMA foreign_keys = ON;

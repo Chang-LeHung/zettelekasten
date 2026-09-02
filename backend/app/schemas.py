@@ -1,4 +1,5 @@
 from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 
@@ -17,7 +18,7 @@ class TagOut(TagCreate):
     id: int = Field(description="Database ID of the tag")
     path: str = Field(description="Full hierarchical path, such as Technology/Python")
     card_count: int = Field(default=0, description="Number of directly linked cards")
-    children: list["TagOut"] = Field(default_factory=list, description="Direct child tags")
+    children: list[TagOut] = Field(default_factory=list, description="Direct child tags")
 
 
 class CardCreate(BaseModel):
