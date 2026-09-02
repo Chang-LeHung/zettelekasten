@@ -10,7 +10,20 @@ from .storage import Storage
 from .tag_dao import to_dict as tag_to_dict
 
 
-def _hydrate(connection, row) -> dict:
+def _load_card_with_tags(connection, row) -> dict:
+    """Build a complete card record from one card row and its tag relations.
+
+    The ``cards`` table stores only scalar card fields. Tag relations live in
+    ``card_tags`` and tag metadata lives in ``tags``. This method loads those
+    related records and returns one nested mapping for Pydantic conversion.
+
+    Args:
+        connection: Open SQLite connection used for related queries.
+        row: SQLite row returned from the ``cards`` table.
+
+    Returns:
+        A mapping containing the card fields, ``tag_ids``, and resolved ``tags``.
+    """
     result = dict(row)
     result["tag_ids"] = [
         r[0] for r in connection.execute("SELECT tag_id FROM card_tags WHERE card_id=?", (result["id"],))
@@ -69,7 +82,7 @@ def _save(payload: CardCreate, card_id: str | None = None) -> dict:
             "INSERT INTO cards_fts(card_id,title,content,summary,source) VALUES(?,?,?,?,?)",
             (card_id, row["title"], row["content"], row["summary"] or "", row["source"] or ""),
         )
-        return _hydrate(connection, row)
+        return _load_card_with_tags(connection, row)
 
 
 def _get(card_id: str) -> dict:
@@ -77,7 +90,7 @@ def _get(card_id: str) -> dict:
         row = connection.execute("SELECT * FROM cards WHERE id=?", (card_id,)).fetchone()
         if not row:
             raise HTTPException(404, "Card not found")
-        return _hydrate(connection, row)
+        return _load_card_with_tags(connection, row)
 
 
 def _search(options: CardListOptions | None = None) -> list[dict]:
@@ -145,7 +158,7 @@ def _search(options: CardListOptions | None = None) -> list[dict]:
         )
         params.extend([options.limit, options.offset])
         sql += " LIMIT ? OFFSET ?"
-        return [_hydrate(connection, row) for row in connection.execute(sql, params)]
+        return [_load_card_with_tags(connection, row) for row in connection.execute(sql, params)]
 
 
 def _delete(card_id: str) -> dict:
