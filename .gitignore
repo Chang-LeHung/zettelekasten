@@ -4,5 +4,6 @@ backend/__pycache__/
 *.py[cod]
 frontend/node_modules/
 frontend/dist/
+backend/kcs/static/
 data/*.db
 .env
