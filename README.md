@@ -1,6 +1,23 @@
-# Knowledge Cards System
+<p align="center">
+  <img src="frontend/public/logo.png" width="144" height="144" alt="Knowledge Cards System logo">
+</p>
 
-Knowledge Cards System (KCS) is a local-first, AI-assisted personal knowledge workspace. It turns conversations, rough notes, links, and uploaded assets into reusable cards and long-form Markdown articles.
+<h1 align="center">Knowledge Cards System</h1>
+
+<p align="center">
+  A local-first, AI-assisted workspace for turning conversations, rough notes, links, and assets into reusable knowledge.
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-476957.svg"></a>
+  <img alt="Python 3.14" src="https://img.shields.io/badge/Python-3.14-3776AB.svg?logo=python&logoColor=white">
+  <img alt="Vue 3" src="https://img.shields.io/badge/Vue-3-42B883.svg?logo=vuedotjs&logoColor=white">
+  <img alt="Local-first" src="https://img.shields.io/badge/storage-local--first-6B7F72.svg">
+</p>
+
+---
+
+Knowledge Cards System (KCS) combines a streamed AI conversation, durable session context, flexible artifacts, and a unified card-and-article library in one private local application.
 
 ## Highlights
 
@@ -161,4 +178,4 @@ Pydantic request and response models in `backend/kcs/schemas.py` contain typed c
 
 ## License
 
-No license has been selected yet. All rights are reserved by the repository owner.
+This project is available under the [MIT License](LICENSE).
