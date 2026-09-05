@@ -7,3 +7,4 @@ frontend/dist/
 backend/kcs/static/
 data/*.db
 .env
+.vscode/settings.json
