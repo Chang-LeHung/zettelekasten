@@ -151,6 +151,7 @@ export const aiClient = {
         if (event === 'reasoning') callbacks.onReasoning?.(String(payload.content || ''))
         if (event === 'message') callbacks.onMessage?.(String(payload.content || ''))
         if (event === 'tool') callbacks.onTool?.(payload as unknown as Parameters<NonNullable<typeof callbacks.onTool>>[0])
+        if (event === 'compaction') callbacks.onCompaction?.(payload as unknown as Parameters<NonNullable<typeof callbacks.onCompaction>>[0])
         if (event === 'usage') callbacks.onUsage?.(payload as unknown as Parameters<NonNullable<typeof callbacks.onUsage>>[0])
         if (event === 'metrics') callbacks.onMetrics?.(payload)
         if (event === 'artifacts') callbacks.onArtifacts?.(payload as unknown as AgentArtifact[])

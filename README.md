@@ -78,6 +78,7 @@ KCS keeps personal data under the current user's home directory by default:
 ```text
 ~/.knowledge_cards/
 ├── cards.db
+├── agent.db
 ├── assets/
 │   └── <session-id>/
 └── logs/
@@ -95,14 +96,16 @@ Runtime configuration uses the `KCS_` environment variable prefix:
 | --- | --- |
 | `KCS_HOST` | HTTP bind address |
 | `KCS_PORT` | HTTP port |
-| `KCS_DATABASE_PATH` | SQLite database path |
+| `KCS_DATABASE_PATH` | KCS domain and observability SQLite database path |
+| `KCS_AGENT_DATABASE_PATH` | KCS Agent raw-message and snapshot SQLite database path |
 | `KCS_ASSET_DIR` | Session asset directory |
 | `KCS_MAX_ASSET_SIZE_BYTES` | Maximum binary asset size |
 | `KCS_LOG_DIR` | Rotating log directory |
 | `KCS_LOG_LEVEL` | Application log level |
 | `KCS_CORS_ORIGINS` | Allowed CORS origins |
 | `KCS_SECRET_KEY` | Local provider-secret encryption key |
-| `KCS_COMPACTION_TRIGGER_TOKENS` | Context compaction threshold |
+| `KCS_AGENT_CONTEXT_MAX_TOKENS` | Token threshold that triggers agent context compaction |
+| `KCS_AGENT_KEEP_RECENT_TOKENS` | Minimum recent token budget retained after compaction |
 
 The frontend calls the same-origin `/api` path. During separate frontend development, point Vite at another backend without changing source code:
 

@@ -112,10 +112,22 @@ export interface AgentToolActivity {
   duration_ms?: number
 }
 
+export interface AgentCompactionActivity {
+  state: 'started' | 'streaming' | 'completed'
+  applied?: boolean | null
+  content: string
+  reasoning: string
+  compressed_from?: number | null
+  compressed_to?: number | null
+  kept_from?: number | null
+  kept_to?: number | null
+}
+
 export type AgentTimelineEntry =
   | { id: string; type: 'reasoning'; content: string }
   | { id: string; type: 'message'; content: string }
   | { id: string; type: 'tool'; activity: AgentToolActivity }
+  | { id: string; type: 'compaction'; activity: AgentCompactionActivity }
 
 export interface AgentPersistedToolCall {
   id: string
@@ -157,6 +169,7 @@ export interface AgentStreamCallbacks {
   onReasoning?: (content: string) => void
   onMessage?: (content: string) => void
   onTool?: (activity: AgentToolActivity) => void
+  onCompaction?: (activity: AgentCompactionActivity) => void
   onUsage?: (usage: AgentUsage) => void
   onMetrics?: (metrics: Record<string, unknown>) => void
   onArtifacts?: (artifacts: AgentArtifact[]) => void

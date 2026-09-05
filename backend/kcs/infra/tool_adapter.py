@@ -33,5 +33,5 @@ def typed_tool(
         description=description,
         parameters=input_schema.model_json_schema(),
         handler=invoke,
-        guidelines=guideline,
+        guidelines=(guideline,),
     )

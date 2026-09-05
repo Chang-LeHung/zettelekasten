@@ -108,26 +108,6 @@ class AgentSessionListOptions(BaseModel):
     offset: int = Field(default=0, ge=0, description="Number of sessions skipped")
 
 
-class RawLogMessageListOptions(BaseModel):
-    """Query options for the immutable message log."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    session_id: str = Field(description="Owning session UUID")
-    after_sequence: int = Field(default=0, ge=0, description="Exclusive lower sequence boundary")
-    through_sequence: int | None = Field(default=None, ge=1, description="Inclusive upper sequence boundary")
-    limit: int = Field(default=10000, ge=1, le=10000, description="Maximum log entries returned")
-
-
-class ContextSnapshotListOptions(BaseModel):
-    """Query options for versioned context snapshots."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    session_id: str = Field(description="Owning session UUID")
-    limit: int = Field(default=100, ge=1, le=1000, description="Maximum snapshots returned")
-
-
 class ArtifactListOptions(BaseModel):
     """Query options for typed artifacts produced by agent sessions."""
 

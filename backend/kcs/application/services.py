@@ -280,12 +280,14 @@ class KnowledgeWorkspaceApplicationService:
     @staticmethod
     def delete_session(conversation_id: str):
         """Explicitly delete a session and all records owned by its aggregate."""
+        from ..infra.agent_runtime import get_agent_runtime_storage
         from ..infra.agent_session_dao import agent_session_storage
         from ..infra.artifact_dao import artifact_storage
         from ..infra.session_asset_dao import session_asset_storage
 
         session_asset_storage.delete_session(conversation_id)
         artifact_storage.delete_session(conversation_id)
+        get_agent_runtime_storage().delete_session(conversation_id)
         return {"ok": agent_session_storage.delete(conversation_id)}
 
     @staticmethod

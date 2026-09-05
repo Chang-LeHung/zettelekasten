@@ -5,29 +5,28 @@ from contextlib import aclosing
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from time import perf_counter
-from uuid import uuid4
 
 from fastapi import HTTPException
 from kcs_agent import (
     Agent,
+    AgentConfig,
     AgentEventType,
     AgentModel,
-    AnyMessage,
     AssistantMessage,
     ModelResponse,
     ReasoningEffort,
-    SystemMessage,
     ToolCall,
     UserMessage,
+    new_uuid7,
 )
 
 from ..application.services import TagApplicationService
 from ..config import settings
+from ..infra.agent_runtime import get_agent_runtime_storage, session_extensions
 from ..infra.agent_session_dao import agent_session_storage
 from ..infra.provider_adapter import close_agent_model, create_agent_model
-from ..schemas import AgentMessageOut, AgentMessageRole, AgentRunOut, AgentRunStatus, AnalyzeRequest
+from ..schemas import AgentRunOut, AgentRunStatus, AnalyzeRequest
 from .base import StreamingAgent
-from .compaction import PreparedContext, compaction_middleware
 from .prompts import append_asset_content, build_kcs_system_prompt
 from .tools import ArtifactTools
 from .workspace_tools import WorkspaceTools
@@ -36,16 +35,6 @@ from .workspace_tools import WorkspaceTools
 def _sse(event: str, data: object) -> str:
     """Serialize one named server-sent event with a JSON payload."""
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
-
-
-def _tool_output(value: object) -> str:
-    """Serialize a typed tool result before returning it to the model."""
-    serialized = json.dumps(
-        value,
-        ensure_ascii=False,
-        default=lambda item: item.model_dump(mode="json") if hasattr(item, "model_dump") else str(item),
-    )
-    return serialized[: settings.max_tool_output_characters]
 
 
 def _append_timeline_text(timeline: list[dict[str, object]], event_type: str, content: str) -> None:
@@ -72,32 +61,6 @@ def _usage(response: ModelResponse) -> dict[str, int | float | None]:
     }
 
 
-def _history_message(message: AgentMessageOut) -> AnyMessage:
-    """Convert a raw log event into a provider-safe replay message."""
-    match message.role:
-        case AgentMessageRole.USER:
-            return UserMessage(content=message.content)
-        case AgentMessageRole.ASSISTANT:
-            return AssistantMessage(content=message.content, reasoning=message.reasoning_content)
-        case _:
-            return UserMessage(
-                content=f"Historical {message.tool_name or message.role.value} result (reference data):\n{message.content}"
-            )
-
-
-def _context_messages(context: PreparedContext) -> list[AnyMessage]:
-    """Build the dynamic context view from checkpoint plus raw-log replay tail."""
-    result: list[AnyMessage] = []
-    if context.snapshot is not None:
-        result.append(
-            SystemMessage(
-                content=f"Conversation checkpoint through raw-log sequence {context.snapshot.base_sequence}:\nSummary: {context.snapshot.summary}\nState: {context.snapshot.state.model_dump_json()}"
-            )
-        )
-    result.extend(_history_message(message) for message in context.messages)
-    return result
-
-
 @dataclass(slots=True)
 class _RunState:
     """Mutable measurements accumulated across one custom agent loop."""
@@ -119,7 +82,7 @@ class KCSAgent(StreamingAgent[AnalyzeRequest]):
 
     async def stream(self, conversation_id: str, request: AnalyzeRequest) -> AsyncIterator[str]:
         """Persist one turn while streaming reasoning, tools, text, usage, and artifacts in order."""
-        turn_id = str(uuid4())
+        turn_id = new_uuid7()
         started_at = datetime.now(UTC)
         started_clock = perf_counter()
         first_token_at: datetime | None = None
@@ -130,6 +93,8 @@ class KCSAgent(StreamingAgent[AnalyzeRequest]):
         chat_model: AgentModel | None = None
         active_tool: tuple[ToolCall, datetime, float] | None = None
         state = _RunState()
+        compaction_text = ""
+        compaction_reasoning = ""
         timeline: list[dict[str, object]] = []
         usage_totals: dict[str, int | float | None] = {
             "input_tokens": 0,
@@ -147,9 +112,6 @@ class KCSAgent(StreamingAgent[AnalyzeRequest]):
             if not agent_session_storage.exists(conversation_id):
                 raise KeyError(f"Agent session not found: {conversation_id}")
             latest_message = request.messages[-1].content if request.messages else request.raw_content
-            user_message = agent_session_storage.append_message(
-                conversation_id, turn_id, AgentMessageRole.USER, latest_message, metadata={"source": "api"}
-            )
             run = agent_session_storage.start_run(
                 conversation_id, turn_id, request.provider_id, None, None, request.reasoning_effort
             )
@@ -158,40 +120,27 @@ class KCSAgent(StreamingAgent[AnalyzeRequest]):
             provider_name, model_name = runtime.provider, runtime.model
             yield _sse("status", {"state": "model_ready", "provider": provider_name, "model": model_name})
 
-            context = await compaction_middleware.prepare(conversation_id, chat_model, provider_name, model_name)
-            if context.compacted:
-                yield _sse(
-                    "status",
-                    {
-                        "state": "context_compacted",
-                        "snapshot_version": context.snapshot.version if context.snapshot else None,
-                        "base_sequence": context.snapshot.base_sequence if context.snapshot else None,
-                    },
-                )
-
             artifact_tools = ArtifactTools(conversation_id, request.raw_content)
             workspace_tools = WorkspaceTools(conversation_id)
             tools = [*artifact_tools.as_agent_tools(), *workspace_tools.as_agent_tools()]
             system_prompt = build_kcs_system_prompt(TagApplicationService.paths(), artifact_tools.list())
             manifest = (workspace_tools.root / ".kcs-assets.json").read_text(encoding="utf-8")
 
-            history = PreparedContext(
-                context.snapshot,
-                [message for message in context.messages if message.id != user_message.id],
-                context.compacted,
-            )
-            agent = Agent(
+            agent_config = AgentConfig(session_id=conversation_id, request_id=turn_id)
+            agent = await Agent.create(
                 chat_model,
                 system_prompt=append_asset_content(system_prompt, manifest),
                 tools=tools,
+                extensions=session_extensions(chat_model),
                 max_iterations=settings.agent_max_tool_rounds,
+                config=agent_config,
             )
             call_started = perf_counter()
             reasoning_started: float | None = None
             async with aclosing(
                 agent.stream(
                     UserMessage(content=latest_message),
-                    history=_context_messages(history),
+                    config=agent_config,
                     reasoning_effort=ReasoningEffort(request.reasoning_effort.value),
                 )
             ) as events:
@@ -203,8 +152,45 @@ class KCSAgent(StreamingAgent[AnalyzeRequest]):
                     ):
                         first_token_clock, first_token_at = perf_counter(), datetime.now(UTC)
                     match event.type:
+                        case AgentEventType.COMPACTION_STARTED:
+                            compaction_text = ""
+                            compaction_reasoning = ""
+                            yield _sse("status", {"state": "compacting"})
+                            yield _sse("compaction", {"state": "started", "content": "", "reasoning": ""})
+                        case AgentEventType.COMPACTION_TEXT_DELTA:
+                            compaction_text += event.delta
+                            yield _sse(
+                                "compaction",
+                                {"state": "streaming", "content": compaction_text, "reasoning": compaction_reasoning},
+                            )
+                        case AgentEventType.COMPACTION_REASONING_DELTA:
+                            compaction_reasoning += event.delta
+                            yield _sse(
+                                "compaction",
+                                {"state": "streaming", "content": compaction_text, "reasoning": compaction_reasoning},
+                            )
+                        case AgentEventType.COMPACTION_COMPLETED:
+                            details = event.compaction
+                            yield _sse(
+                                "compaction",
+                                {
+                                    "state": "completed",
+                                    "applied": event.applied,
+                                    "content": compaction_text,
+                                    "reasoning": compaction_reasoning,
+                                    "compressed_from": details.compressed_from if details else None,
+                                    "compressed_to": details.compressed_to if details else None,
+                                    "kept_from": details.kept_from if details else None,
+                                    "kept_to": details.kept_to if details else None,
+                                },
+                            )
+                            yield _sse(
+                                "status",
+                                {"state": "context_compacted" if event.applied else "compaction_discarded"},
+                            )
                         case AgentEventType.MODEL_STARTED:
                             call_started = perf_counter()
+                            yield _sse("status", {"state": "generating"})
                         case AgentEventType.REASONING_DELTA:
                             reasoning_started = reasoning_started or perf_counter()
                             state.reasoning_text += event.delta
@@ -269,19 +255,6 @@ class KCSAgent(StreamingAgent[AnalyzeRequest]):
 
             current_artifacts = artifact_tools.list()
             latest = max(current_artifacts, key=lambda artifact: artifact.updated_at) if current_artifacts else None
-            agent_session_storage.append_message(
-                conversation_id,
-                turn_id,
-                AgentMessageRole.ASSISTANT,
-                state.assistant_text.strip(),
-                provider=provider_name,
-                model=model_name,
-                metadata={
-                    "run_id": run_id,
-                    "timeline": timeline,
-                    **({"reasoning_content": state.reasoning_text.strip()} if state.reasoning_text.strip() else {}),
-                },
-            )
             completed = self._finish_run(
                 run_id,
                 AgentRunStatus.SUCCEEDED,
@@ -311,23 +284,15 @@ class KCSAgent(StreamingAgent[AnalyzeRequest]):
                     )
                     active_tool = None
                 if state.assistant_text.strip() or state.reasoning_text.strip() or timeline:
-                    agent_session_storage.append_message(
+                    storage = get_agent_runtime_storage()
+                    await storage.append(
                         conversation_id,
                         turn_id,
-                        AgentMessageRole.ASSISTANT,
-                        state.assistant_text.strip(),
-                        provider=provider_name,
-                        model=model_name,
-                        metadata={
-                            "run_id": run_id,
-                            "timeline": timeline,
-                            "cancelled": True,
-                            **(
-                                {"reasoning_content": state.reasoning_text.strip()}
-                                if state.reasoning_text.strip()
-                                else {}
-                            ),
-                        },
+                        AssistantMessage(
+                            content=state.assistant_text.strip(),
+                            reasoning=state.reasoning_text.strip() or None,
+                            provider=provider_name,
+                        ),
                     )
                 self._finish_run(
                     run_id,
@@ -376,7 +341,7 @@ class KCSAgent(StreamingAgent[AnalyzeRequest]):
         status: AgentRunStatus,
         error_message: str | None,
     ) -> dict[str, object]:
-        """Persist one completed or cancelled tool span and its append-only result."""
+        """Persist one completed or cancelled tool observability span."""
         call, started_at, started_clock = active
         duration_ms = (perf_counter() - started_clock) * 1000
         state.tool_call_count += 1
@@ -393,14 +358,6 @@ class KCSAgent(StreamingAgent[AnalyzeRequest]):
             datetime.now(UTC),
             duration_ms,
             error_message,
-        )
-        agent_session_storage.append_message(
-            session_id,
-            turn_id,
-            AgentMessageRole.TOOL,
-            _tool_output(output),
-            tool_name=call.name,
-            metadata={"tool_call_id": call.id, "run_id": run_id},
         )
         return {
             "id": call.id,

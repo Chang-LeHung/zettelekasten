@@ -60,7 +60,8 @@ class SessionTitleAgent:
                 if message.role in (AgentMessageRole.USER, AgentMessageRole.ASSISTANT) and message.content.strip()
             ]
             if not any(
-                message.role == AgentMessageRole.ASSISTANT and not message.metadata.get("cancelled")
+                message.role == AgentMessageRole.ASSISTANT
+                and any(run.turn_id == message.turn_id and run.status.value == "succeeded" for run in session.runs)
                 for message in messages
             ):
                 return

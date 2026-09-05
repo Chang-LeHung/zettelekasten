@@ -9,8 +9,6 @@ from sqlalchemy import select
 
 from ..models import AgentSessionListOptions, ArtifactListOptions
 from ..schemas import (
-    AgentMessageOut,
-    AgentMessageRole,
     AgentRunOut,
     AgentRunStatus,
     AgentSessionCreate,
@@ -24,8 +22,6 @@ from .models import (
     AgentRunModel,
     AgentSessionModel,
     AgentToolCallModel,
-    ContextSnapshotModel,
-    RawLogMessageModel,
     SessionAssetModel,
 )
 from .storage import Storage
@@ -178,8 +174,6 @@ class AgentSessionStorage(Storage[AgentSessionCreate, AgentSessionOut, str, Agen
             if model is None:
                 return False
             for child in (
-                RawLogMessageModel,
-                ContextSnapshotModel,
                 AgentRunModel,
                 AgentToolCallModel,
                 SessionAssetModel,
@@ -203,35 +197,6 @@ class AgentSessionStorage(Storage[AgentSessionCreate, AgentSessionOut, str, Agen
                 .offset(options.offset)
             )
             return [self._session_out(session, model, include_details=False) for model in session.scalars(statement)]
-
-    def append_message(
-        self,
-        session_id: str,
-        turn_id: str,
-        role: AgentMessageRole,
-        content: str,
-        *,
-        provider: str | None = None,
-        model: str | None = None,
-        tool_name: str | None = None,
-        metadata: dict[str, object] | None = None,
-    ) -> AgentMessageOut:
-        """Append a role-bearing message and assign the next session sequence number."""
-        from ..schemas import RawLogMessageCreate
-        from .context_dao import raw_log_message_storage
-
-        return raw_log_message_storage.append(
-            RawLogMessageCreate(
-                session_id=session_id,
-                turn_id=turn_id,
-                role=role,
-                content=content,
-                provider=provider,
-                model=model,
-                tool_name=tool_name,
-                metadata=metadata or {},
-            )
-        )
 
     def start_run(
         self,
@@ -336,14 +301,35 @@ class AgentSessionStorage(Storage[AgentSessionCreate, AgentSessionOut, str, Agen
         runs = []
         artifacts = []
         if include_details:
-            from ..models import RawLogMessageListOptions
-            from .context_dao import raw_log_message_storage
+            from .agent_runtime import list_agent_messages
 
-            messages = raw_log_message_storage.list(RawLogMessageListOptions(session_id=model.id))
+            messages = list_agent_messages(model.id)
             run_models = session.scalars(
                 select(AgentRunModel).where(AgentRunModel.session_id == model.id).order_by(AgentRunModel.started_at)
             ).all()
             runs = [_run_out(item, self._tool_calls(session, item.id)) for item in run_models]
+            runs_by_turn = {run.turn_id: run for run in runs}
+            messages = [
+                message.model_copy(
+                    update={
+                        "provider": runs_by_turn[message.turn_id].provider,
+                        "model": runs_by_turn[message.turn_id].model,
+                        "metadata": {
+                            **message.metadata,
+                            "run_id": runs_by_turn[message.turn_id].id,
+                            **({"reasoning_content": message.reasoning_content} if message.reasoning_content else {}),
+                            **(
+                                {"cancelled": True}
+                                if runs_by_turn[message.turn_id].status == AgentRunStatus.CANCELLED
+                                else {}
+                            ),
+                        },
+                    }
+                )
+                if message.turn_id in runs_by_turn
+                else message
+                for message in messages
+            ]
             from .artifact_dao import artifact_storage
 
             artifacts = list(artifact_storage.list(ArtifactListOptions(session_id=model.id)))
@@ -355,7 +341,7 @@ class AgentSessionStorage(Storage[AgentSessionCreate, AgentSessionOut, str, Agen
             created_at=model.created_at,
             updated_at=model.updated_at,
             last_activity_at=model.last_activity_at,
-            message_count=model.message_count,
+            message_count=self._message_count(model.id),
             turn_count=model.turn_count,
             total_input_tokens=model.total_input_tokens,
             total_output_tokens=model.total_output_tokens,
@@ -377,6 +363,13 @@ class AgentSessionStorage(Storage[AgentSessionCreate, AgentSessionOut, str, Agen
             runs=runs,
             artifacts=artifacts,
         )
+
+    @staticmethod
+    def _message_count(session_id: str) -> int:
+        """Read the authoritative count from kcs-agent's raw-message store."""
+        from .agent_runtime import get_agent_runtime_storage
+
+        return get_agent_runtime_storage().count_messages(session_id)
 
     @staticmethod
     def _require_session(session, session_id: str) -> AgentSessionModel:

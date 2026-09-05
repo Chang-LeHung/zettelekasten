@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ApiError, aiClient, libraryClient, tagClient } from './api/client'
-import type { AgentArtifact, AgentSession, AgentTimelineEntry, AgentToolActivity, AgentUsage, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, ReasoningEffort, SessionAsset, Tag } from './api/types'
+import type { AgentArtifact, AgentCompactionActivity, AgentSession, AgentTimelineEntry, AgentToolActivity, AgentUsage, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, ReasoningEffort, SessionAsset, Tag } from './api/types'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import { jsonSnapshot } from './utils/jsonSnapshot'
 
@@ -196,6 +196,13 @@ function updateToolActivity(activity: AgentToolActivity): void {
   }
 }
 
+function updateCompactionActivity(activity: AgentCompactionActivity): void {
+  const index = streamingTimeline.value.findIndex((item) => item.type === 'compaction')
+  const entry: AgentTimelineEntry = { id: 'context-compaction', type: 'compaction', activity }
+  if (index < 0) streamingTimeline.value.push(entry)
+  else streamingTimeline.value.splice(index, 1, entry)
+}
+
 function updateStreamText(type: 'reasoning' | 'message', content: string): void {
   const previous = type === 'reasoning' ? streamingReasoning.value : streamingMessage.value
   const delta = content.startsWith(previous) ? content.slice(previous.length) : content
@@ -267,6 +274,7 @@ function streamCallbacks() {
     onReasoning: (content: string) => { updateStreamText('reasoning', content) },
     onMessage: (content: string) => { updateStreamText('message', content) },
     onTool: updateToolActivity,
+    onCompaction: updateCompactionActivity,
     onUsage: updateSessionTelemetry,
     onArtifacts: applyArtifacts,
   }
@@ -1391,6 +1399,14 @@ onBeforeUnmount(() => {
                             <summary><span>Reasoning</span><small>Show process</small></summary>
                             <MarkdownContent class="reasoning-content" :content="entry.content" />
                           </details>
+                          <details v-else-if="entry.type === 'compaction'" class="reasoning-panel compaction-panel">
+                            <summary><span>Context compaction</span><small>{{ entry.activity.state }}</small></summary>
+                            <div class="compaction-content">
+                              <MarkdownContent v-if="entry.activity.reasoning" class="reasoning-content" :content="entry.activity.reasoning" />
+                              <MarkdownContent v-if="entry.activity.content" class="reasoning-content" :content="entry.activity.content" />
+                              <small v-if="entry.activity.compressed_from">Compressed {{ entry.activity.compressed_from }}–{{ entry.activity.compressed_to }} · kept {{ entry.activity.kept_from }}–{{ entry.activity.kept_to }}</small>
+                            </div>
+                          </details>
                           <details v-else-if="entry.type === 'tool'" class="tool-activity" :class="entry.activity.state">
                             <summary><i /><span>{{ entry.activity.name.replaceAll('_', ' ') }}</span><small v-if="entry.activity.duration_ms">{{ Math.round(entry.activity.duration_ms) }} ms</small></summary>
                             <div class="tool-activity-details">
@@ -1412,6 +1428,14 @@ onBeforeUnmount(() => {
                           <details v-if="entry.type === 'reasoning'" class="reasoning-panel streaming-reasoning" :open="entryIndex === streamingTimeline.length - 1">
                             <summary><span>Reasoning</span><small>{{ entryIndex === streamingTimeline.length - 1 ? 'Streaming' : 'Show process' }}</small></summary>
                             <MarkdownContent class="reasoning-content" :content="entry.content" />
+                          </details>
+                          <details v-else-if="entry.type === 'compaction'" class="reasoning-panel compaction-panel" :open="entry.activity.state !== 'completed'">
+                            <summary><span>Context compaction</span><small>{{ entry.activity.state === 'completed' ? 'Completed' : 'Streaming' }}</small></summary>
+                            <div class="compaction-content">
+                              <MarkdownContent v-if="entry.activity.reasoning" class="reasoning-content" :content="entry.activity.reasoning" />
+                              <MarkdownContent v-if="entry.activity.content" class="reasoning-content" :content="entry.activity.content" />
+                              <small v-if="entry.activity.compressed_from">Compressed {{ entry.activity.compressed_from }}–{{ entry.activity.compressed_to }} · kept {{ entry.activity.kept_from }}–{{ entry.activity.kept_to }}</small>
+                            </div>
                           </details>
                           <details v-else-if="entry.type === 'tool'" class="tool-activity" :class="entry.activity.state">
                             <summary><i /><span>{{ entry.activity.name.replaceAll('_', ' ') }}</span><small v-if="entry.activity.duration_ms">{{ Math.round(entry.activity.duration_ms) }} ms</small></summary>
@@ -1914,6 +1938,8 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .reasoning-panel[open] summary::before { transform: rotate(90deg); }
 .reasoning-panel summary small { margin-left: auto; color: var(--tertiary); font-size: .58rem; font-weight: 500; }
 .reasoning-content { max-height: 14rem; padding: .62rem .75rem .72rem; overflow: auto; border-top: 1px solid rgba(71,105,87,.08); color: #657068; font-size: .71rem; line-height: 1.58; }
+.compaction-panel { border-color: rgba(95, 79, 166, .16); background: #f8f7fc; }
+.compaction-content > small { display: block; padding: .48rem .75rem .65rem; color: var(--tertiary); font-size: .61rem; }
 .streaming-reasoning { box-shadow: inset .16rem 0 #9ab3a3; }
 .streaming-message .message-body { width: min(84%, 44rem); }
 .streaming-message .message-content, .streaming-message .message-body > p { width: fit-content; }

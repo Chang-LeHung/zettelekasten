@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, Float, Index, Integer, String, Table, Text
+from sqlalchemy import Boolean, Column, Float, Integer, String, Table, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -100,7 +100,6 @@ class AgentSessionModel(Base):
     created_at: Mapped[datetime] = mapped_column()
     updated_at: Mapped[datetime] = mapped_column()
     last_activity_at: Mapped[datetime] = mapped_column(index=True)
-    message_count: Mapped[int] = mapped_column(Integer, default=0)
     turn_count: Mapped[int] = mapped_column(Integer, default=0)
     total_input_tokens: Mapped[int] = mapped_column(Integer, default=0)
     total_output_tokens: Mapped[int] = mapped_column(Integer, default=0)
@@ -112,48 +111,6 @@ class AgentSessionModel(Base):
     timed_run_count: Mapped[int] = mapped_column(Integer, default=0)
     total_output_tokens_per_second: Mapped[float] = mapped_column(Float, default=0)
     throughput_run_count: Mapped[int] = mapped_column(Integer, default=0)
-
-
-class RawLogMessageModel(Base):
-    """Immutable conversation event used as the authoritative session log."""
-
-    __tablename__ = "raw_log_messages"
-    __table_args__ = (Index("ux_raw_log_session_sequence", "session_id", "sequence", unique=True),)
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    session_id: Mapped[str] = mapped_column(String(36), index=True)
-    turn_id: Mapped[str] = mapped_column(String(36), index=True)
-    sequence: Mapped[int] = mapped_column(Integer)
-    role: Mapped[int] = mapped_column(Integer, index=True)
-    content: Mapped[str] = mapped_column(Text)
-    model: Mapped[str | None] = mapped_column(String(128))
-    provider: Mapped[str | None] = mapped_column(String(64))
-    tool_name: Mapped[str | None] = mapped_column(String(100))
-    metadata_json: Mapped[str] = mapped_column(Text, default="{}")
-    created_at: Mapped[datetime] = mapped_column(index=True)
-
-
-class ContextSnapshotModel(Base):
-    """Versioned materialized context covering raw log entries through one sequence."""
-
-    __tablename__ = "context_snapshots"
-    __table_args__ = (
-        Index("ux_context_snapshot_session_version", "session_id", "version", unique=True),
-        Index("ux_context_snapshot_session_boundary", "session_id", "base_sequence", unique=True),
-    )
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    session_id: Mapped[str] = mapped_column(String(36), index=True)
-    version: Mapped[int] = mapped_column(Integer)
-    base_sequence: Mapped[int] = mapped_column(Integer, index=True)
-    summary: Mapped[str] = mapped_column(Text)
-    state_json: Mapped[str] = mapped_column(Text, default="{}")
-    source_message_count: Mapped[int] = mapped_column(Integer)
-    source_token_count: Mapped[int] = mapped_column(Integer)
-    summary_token_count: Mapped[int] = mapped_column(Integer)
-    provider: Mapped[str | None] = mapped_column(String(64))
-    model: Mapped[str | None] = mapped_column(String(128))
-    created_at: Mapped[datetime] = mapped_column(index=True)
 
 
 class AgentRunModel(Base):

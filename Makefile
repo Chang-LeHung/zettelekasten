@@ -47,4 +47,4 @@ check:
 kcs-agent-check:
 	uv run --directory backend/kcs-agent ruff format --check src tests examples
 	uv run --directory backend/kcs-agent ruff check src tests examples
-	uv run --directory backend/kcs-agent pytest
+	uv run --directory backend/kcs-agent pytest --cov --cov-report=term-missing

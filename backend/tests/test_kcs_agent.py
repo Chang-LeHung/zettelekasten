@@ -59,10 +59,15 @@ class StreamingTestModel:
         yield ModelEvent.completed(ModelResponse(AssistantMessage(content="unused")))
 
 
-def completed(text: str = "", calls: tuple[ToolCall, ...] = (), usage: ModelUsage = ModelUsage()) -> ModelEvent:
+def completed(
+    text: str = "",
+    calls: tuple[ToolCall, ...] = (),
+    usage: ModelUsage = ModelUsage(),
+    reasoning: str | None = None,
+) -> ModelEvent:
     return ModelEvent.completed(
         ModelResponse(
-            AssistantMessage(content=text, tool_calls=calls),
+            AssistantMessage(content=text, reasoning=reasoning, tool_calls=calls),
             finish_reason="tool_calls" if calls else "stop",
             usage=usage,
         )
@@ -76,6 +81,7 @@ class SuccessfulStreamingModel(StreamingTestModel):
             yield completed(
                 calls=(ToolCall("tool-1", "create_card", {"content": CARD_DRAFT}),),
                 usage=ModelUsage(input_tokens=12, output_tokens=8, reasoning_tokens=3),
+                reasoning="I should create a structured card.",
             )
             return
         yield ModelEvent.text("Created ")
@@ -190,7 +196,9 @@ async def test_stream_publishes_and_persists_complete_agent_turn(monkeypatch: py
 
     session = card_agent.agent_session_storage.get(session_id)
     assert session is not None
-    assert session.message_count == 3
+    # The raw log retains the model's tool-call message as well as user, tool,
+    # and final assistant messages.
+    assert session.message_count == 4
     assert len(session.artifacts) == 1
     assert session.artifacts[0].content.title == "Streaming knowledge cards"
     assert len(session.runs) == 1

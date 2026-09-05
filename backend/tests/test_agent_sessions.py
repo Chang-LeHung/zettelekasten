@@ -1,11 +1,13 @@
 from datetime import UTC, datetime
 
+from kcs_agent import UserMessage
 from sqlalchemy import update
 
 from kcs.application.services import KnowledgeWorkspaceApplicationService
 from kcs.infra import database
+from kcs.infra.agent_runtime import get_agent_runtime_storage
 from kcs.infra.agent_session_dao import agent_session_storage
-from kcs.infra.models import AgentSessionModel
+from kcs.infra.models import AgentSessionModel, Base
 from kcs.infra.storage import Storage
 from kcs.models import AgentSessionListOptions
 from kcs.schemas import AgentSessionCreate, AgentSessionTitleUpdate
@@ -48,3 +50,18 @@ def test_user_title_update_finalizes_the_session_title() -> None:
     assert updated.metadata["title_source"] == "user"
     assert updated.metadata["title_finalized"] is True
     assert KnowledgeWorkspaceApplicationService.should_generate_session_title(session.id) is False
+
+
+async def test_session_history_is_owned_and_deleted_by_kcs_agent() -> None:
+    session = agent_session_storage.create(AgentSessionCreate())
+    storage = get_agent_runtime_storage()
+    await storage.append(session.id, "request-1", UserMessage(content="Persisted by kcs-agent"))
+
+    loaded = agent_session_storage.get(session.id)
+    assert loaded is not None
+    assert loaded.messages[0].content == "Persisted by kcs-agent"
+    assert "raw_messages" not in Base.metadata.tables
+    assert "session_snapshots" not in Base.metadata.tables
+
+    assert KnowledgeWorkspaceApplicationService.delete_session(session.id) == {"ok": True}
+    assert storage.list_messages(session.id) == []

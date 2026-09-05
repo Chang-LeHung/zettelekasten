@@ -1,12 +1,26 @@
 from typing import cast
 
 import pytest
-from kcs_agent import AgentModel, AssistantMessage, ModelEvent, ModelResponse, ToolCall
+from kcs_agent import AgentModel, AssistantMessage, ModelEvent, ModelResponse, ToolCall, UserMessage
 
 from kcs.agent.session_title_agent import SessionTitleAgent, SessionTitleOutput
+from kcs.infra.agent_runtime import get_agent_runtime_storage
 from kcs.infra.agent_session_dao import agent_session_storage
 from kcs.models import AIProviderRuntime
-from kcs.schemas import AgentMessageRole, AgentSessionCreate
+from kcs.schemas import AgentRunStatus, AgentSessionCreate, ReasoningEffort
+
+
+async def append_messages(session_id: str, request_id: str, *messages) -> None:
+    """Append typed runtime messages through kcs-agent's authoritative store."""
+    storage = get_agent_runtime_storage()
+    for message in messages:
+        await storage.append(session_id, request_id, message)
+
+
+def complete_run(session_id: str, request_id: str) -> None:
+    """Create a successful observable KCS run for title eligibility."""
+    run = agent_session_storage.start_run(session_id, request_id, None, "fake", "model", ReasoningEffort.OFF)
+    agent_session_storage.finish_run(run.id, AgentRunStatus.SUCCEEDED, {})
 
 
 class FakeTitleModel:
@@ -31,18 +45,13 @@ def test_clean_title_removes_model_formatting() -> None:
 @pytest.mark.asyncio
 async def test_title_agent_silently_updates_session() -> None:
     session = agent_session_storage.create(AgentSessionCreate())
-    agent_session_storage.append_message(
+    await append_messages(
         session.id,
         "turn-1",
-        AgentMessageRole.USER,
-        "Please turn an agent workflow into an executable DSL.",
+        UserMessage(content="Please turn an agent workflow into an executable DSL."),
+        AssistantMessage(content="The DSL separates language semantics from execution."),
     )
-    agent_session_storage.append_message(
-        session.id,
-        "turn-1",
-        AgentMessageRole.ASSISTANT,
-        "The DSL separates language semantics from execution.",
-    )
+    complete_run(session.id, "turn-1")
     model = FakeTitleModel()
     agent = SessionTitleAgent(
         lambda _provider_id: (
@@ -62,12 +71,7 @@ async def test_title_agent_silently_updates_session() -> None:
     assert updated.metadata["title_finalized"] is True
     assert model.calls == 1
 
-    agent_session_storage.append_message(
-        session.id,
-        "turn-2",
-        AgentMessageRole.USER,
-        "Now add a parser example.",
-    )
+    await append_messages(session.id, "turn-2", UserMessage(content="Now add a parser example."))
     await agent.summarize(session.id, 1)
 
     refreshed = agent_session_storage.get(session.id)
@@ -79,8 +83,8 @@ async def test_title_agent_silently_updates_session() -> None:
 @pytest.mark.asyncio
 async def test_title_agent_does_not_replace_an_explicit_title() -> None:
     session = agent_session_storage.create(AgentSessionCreate(title="My title", metadata={"title_source": "user"}))
-    agent_session_storage.append_message(session.id, "turn-1", AgentMessageRole.USER, "Hello")
-    agent_session_storage.append_message(session.id, "turn-1", AgentMessageRole.ASSISTANT, "Hello back")
+    await append_messages(session.id, "turn-1", UserMessage(content="Hello"), AssistantMessage(content="Hello back"))
+    complete_run(session.id, "turn-1")
     model = FakeTitleModel()
     agent = SessionTitleAgent(
         lambda _provider_id: (
@@ -100,14 +104,14 @@ async def test_title_agent_does_not_replace_an_explicit_title() -> None:
 @pytest.mark.asyncio
 async def test_title_agent_waits_for_a_non_cancelled_response() -> None:
     session = agent_session_storage.create(AgentSessionCreate())
-    agent_session_storage.append_message(session.id, "turn-1", AgentMessageRole.USER, "Explain cancellation.")
-    agent_session_storage.append_message(
+    await append_messages(
         session.id,
         "turn-1",
-        AgentMessageRole.ASSISTANT,
-        "A partial answer",
-        metadata={"cancelled": True},
+        UserMessage(content="Explain cancellation."),
+        AssistantMessage(content="A partial answer"),
     )
+    run = agent_session_storage.start_run(session.id, "turn-1", None, "fake", "model", ReasoningEffort.OFF)
+    agent_session_storage.finish_run(run.id, AgentRunStatus.CANCELLED, {})
     model = FakeTitleModel()
     agent = SessionTitleAgent(
         lambda _provider_id: (

@@ -18,6 +18,7 @@ from .application.services import (
     TagApplicationService,
 )
 from .config import settings
+from .infra.agent_runtime import close_agent_runtime_storage, get_agent_runtime_storage
 from .infra.database import init_db
 from .infra.logging import configure_logging, get_logger, shutdown_logging
 from .models import AgentSessionListOptions, AIProviderListOptions, CardListOptions, LibraryListOptions
@@ -42,11 +43,13 @@ logger = get_logger(__name__)
 async def lifespan(_: FastAPI):
     log_path = configure_logging()
     init_db()
+    get_agent_runtime_storage()
     logger.info("KCS service started; log_file=%s", log_path)
     try:
         yield
     finally:
         logger.info("KCS service stopped")
+        close_agent_runtime_storage()
         shutdown_logging()
 
 

@@ -369,53 +369,6 @@ class AgentMessageOut(BaseModel):
     created_at: datetime = Field(description="UTC message creation timestamp")
 
 
-class RawLogMessageCreate(BaseModel):
-    """Write model for appending one immutable event to a session message log."""
-
-    session_id: str = Field(description="Owning session UUID")
-    turn_id: str = Field(description="Agent turn UUID")
-    role: AgentMessageRole = Field(description="Message author role")
-    content: str = Field(description="Complete persisted event content")
-    model: str | None = Field(default=None, description="Model associated with assistant output")
-    provider: str | None = Field(default=None, description="Provider associated with assistant output")
-    tool_name: str | None = Field(default=None, description="Tool name for tool-role messages")
-    metadata: dict[str, object] = Field(default_factory=dict, description="Extensible event metadata")
-
-
-class ContextState(BaseModel):
-    """Structured durable state retained across recursive context compactions."""
-
-    goals: list[str] = Field(default_factory=list, description="Current user goals")
-    preferences: list[str] = Field(default_factory=list, description="Stable user preferences and constraints")
-    decisions: list[str] = Field(default_factory=list, description="Decisions already made in the conversation")
-    facts: list[str] = Field(default_factory=list, description="Important established facts")
-    files: list[str] = Field(default_factory=list, description="Relevant session-relative files and assets")
-    current_plan: list[str] = Field(default_factory=list, description="Current execution or discussion plan")
-    open_questions: list[str] = Field(default_factory=list, description="Unresolved questions and blockers")
-
-
-class ContextSnapshotCreate(BaseModel):
-    """Write model for one versioned materialized conversation context."""
-
-    session_id: str = Field(description="Owning session UUID")
-    base_sequence: int = Field(ge=1, description="Highest raw-log sequence represented by this snapshot")
-    summary: str = Field(description="Compact narrative history through the base sequence")
-    state: ContextState = Field(default_factory=ContextState, description="Structured durable conversation state")
-    source_message_count: int = Field(ge=1, description="Number of new raw events consumed by this compaction")
-    source_token_count: int = Field(ge=0, description="Estimated tokens consumed by this compaction")
-    summary_token_count: int = Field(ge=0, description="Estimated tokens in the resulting snapshot")
-    provider: str | None = Field(default=None, description="Provider used to generate the snapshot")
-    model: str | None = Field(default=None, description="Model used to generate the snapshot")
-
-
-class ContextSnapshotOut(ContextSnapshotCreate):
-    """Read model for an immutable, versioned context snapshot."""
-
-    id: str = Field(description="Stable snapshot UUID")
-    version: int = Field(ge=1, description="Monotonic snapshot version within the session")
-    created_at: datetime = Field(description="UTC snapshot creation timestamp")
-
-
 class AgentToolCallOut(BaseModel):
     """Observable record for one tool execution inside an agent run."""
 
