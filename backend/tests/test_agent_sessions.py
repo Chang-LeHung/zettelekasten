@@ -64,4 +64,4 @@ async def test_session_history_is_owned_and_deleted_by_kcs_agent() -> None:
     assert "session_snapshots" not in Base.metadata.tables
 
     assert KnowledgeWorkspaceApplicationService.delete_session(session.id) == {"ok": True}
-    assert storage.list_messages(session.id) == []
+    assert storage.list_raw_messages(session.id) == []

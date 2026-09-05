@@ -61,7 +61,7 @@ def session_extensions(
 
 def list_agent_messages(session_id: str) -> list[AgentMessageOut]:
     """Project each raw request into user and assistant messages for the HTTP API."""
-    records = get_agent_runtime_storage().list_messages(session_id)
+    records = get_agent_runtime_storage().list_raw_messages(session_id)
     messages: list[AgentMessageOut] = []
     for _, request_records in groupby(records, key=lambda record: record.request_id):
         messages.extend(_request_messages(list(request_records)))
