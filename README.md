@@ -139,6 +139,14 @@ make check
 
 This runs Python formatting checks, linting, backend tests, frontend tests, TypeScript type checking, and the production frontend build.
 
+Install the repository's commit checks once after cloning:
+
+```bash
+make pre-commit-install
+```
+
+Every commit then requires Ruff formatting and lint checks for both Python projects and the Vue TypeScript type check to pass.
+
 ## CLI Examples
 
 ```bash

@@ -28,6 +28,7 @@ kcs-agent = { path = "kcs-agent", editable = true }
 
 [dependency-groups]
 dev = [
+  "pre-commit>=4,<5",
   "ruff>=0.11,<1",
   "pytest>=8,<9",
   "pytest-asyncio>=0.26,<2",

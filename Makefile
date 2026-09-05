@@ -1,7 +1,8 @@
 HOST ?= 127.0.0.1
 PORT ?= 6280
 
-.PHONY: help install backend-install kcs-agent-install frontend-install frontend-build start dev check kcs-agent-check
+.PHONY: help install backend-install kcs-agent-install frontend-install frontend-build start dev check \
+	kcs-agent-check ruff-check typecheck pre-commit-install
 
 help:
 	@echo "Available targets:"
@@ -10,6 +11,7 @@ help:
 	@echo "  make dev       Build and start the application from source"
 	@echo "  make check     Run backend lint and frontend type/build checks"
 	@echo "  make kcs-agent-check  Verify the standalone agent runtime"
+	@echo "  make pre-commit-install  Install the Ruff and TypeScript Git hooks"
 
 install: frontend-install frontend-build kcs-agent-install
 	uv tool install --force ./backend
@@ -35,13 +37,24 @@ start:
 dev: backend-install frontend-build
 	uv run --directory backend kcs start --host $(HOST) --port $(PORT) --reload
 
-check:
+ruff-check:
 	uv run --directory backend ruff format --check kcs tests
 	uv run --directory backend ruff check kcs tests
+	env -u VIRTUAL_ENV uv run --directory backend/kcs-agent ruff format --check src tests examples
+	env -u VIRTUAL_ENV uv run --directory backend/kcs-agent ruff check src tests examples
+
+typecheck:
+	npm --prefix frontend run typecheck
+
+pre-commit-install: backend-install frontend-install
+	GIT_CONFIG_GLOBAL=/dev/null uv run --directory backend pre-commit install
+
+check:
+	$(MAKE) ruff-check
 	uv run --directory backend pytest
 	$(MAKE) kcs-agent-check
 	npm --prefix frontend run test
-	npm --prefix frontend run typecheck
+	$(MAKE) typecheck
 	npm --prefix frontend run build
 
 kcs-agent-check:
