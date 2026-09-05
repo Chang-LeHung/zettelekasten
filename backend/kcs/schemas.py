@@ -422,7 +422,7 @@ class AgentToolCallOut(BaseModel):
     id: str = Field(description="Provider tool-call ID or generated UUID")
     run_id: str = Field(description="Owning agent run UUID")
     session_id: str = Field(description="Owning session UUID")
-    tool_name: str = Field(description="Executed LangChain tool name")
+    tool_name: str = Field(description="Executed KCS Agent tool name")
     status: AgentRunStatus = Field(description="Tool execution status")
     input: dict[str, object] = Field(default_factory=dict, description="Validated tool arguments")
     output: object | None = Field(default=None, description="Serialized tool result")

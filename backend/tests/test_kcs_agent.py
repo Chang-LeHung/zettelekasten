@@ -1,12 +1,17 @@
 import asyncio
 import json
 from collections.abc import AsyncIterator
-from typing import Any, cast
+from typing import cast
 
 import pytest
-from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
-from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
+from kcs_agent import (
+    AssistantMessage,
+    ModelEvent,
+    ModelRequest,
+    ModelResponse,
+    ModelUsage,
+    ToolCall,
+)
 
 from kcs import config
 from kcs.agent import card_agent
@@ -35,166 +40,109 @@ ARTICLE_DRAFT = {
 }
 
 
-class StreamingTestModel(BaseChatModel):
-    """Base LangChain chat model used by deterministic KCS Agent tests."""
+class StreamingTestModel:
+    """Deterministic provider-neutral model double for runtime integration tests."""
 
-    calls: int = 0
-    tool_names: list[str] = []
+    def __init__(self) -> None:
+        self.calls = 0
+        self.tool_names: list[str] = []
+        self.received_context = ""
 
-    @property
-    def _llm_type(self) -> str:
-        return "kcs-test"
+    async def stream(self, request: ModelRequest) -> AsyncIterator[ModelEvent]:
+        self.calls += 1
+        self.tool_names = [item.name for item in request.tools]
+        self.received_context = "\n".join(str(message.content) for message in request.messages)
+        async for event in self.generate():
+            yield event
 
-    def bind_tools(self, tools: object, **_kwargs: object) -> StreamingTestModel:
-        self.tool_names = [tool.name for tool in cast(list[object], tools)]
-        return self
+    async def generate(self) -> AsyncIterator[ModelEvent]:
+        yield ModelEvent.completed(ModelResponse(AssistantMessage(content="unused")))
 
-    def _generate(self, _messages: list[BaseMessage], **_kwargs: Any) -> ChatResult:
-        return ChatResult(generations=[ChatGeneration(message=AIMessage(content="unused"))])
+
+def completed(text: str = "", calls: tuple[ToolCall, ...] = (), usage: ModelUsage = ModelUsage()) -> ModelEvent:
+    return ModelEvent.completed(
+        ModelResponse(
+            AssistantMessage(content=text, tool_calls=calls),
+            finish_reason="tool_calls" if calls else "stop",
+            usage=usage,
+        )
+    )
 
 
 class SuccessfulStreamingModel(StreamingTestModel):
-    """Deterministic two-call model that creates one artifact and then responds."""
-
-    async def _astream(self, _messages: list[BaseMessage], **_kwargs: Any) -> AsyncIterator[ChatGenerationChunk]:
-        self.calls += 1
+    async def generate(self) -> AsyncIterator[ModelEvent]:
         if self.calls == 1:
-            yield ChatGenerationChunk(
-                message=AIMessageChunk(
-                    content="",
-                    additional_kwargs={"reasoning_content": "I should create a structured card."},
-                    tool_calls=[
-                        {
-                            "name": "create_card",
-                            "args": {"content": CARD_DRAFT},
-                            "id": "tool-1",
-                            "type": "tool_call",
-                        }
-                    ],
-                    usage_metadata={
-                        "input_tokens": 12,
-                        "output_tokens": 8,
-                        "total_tokens": 20,
-                        "output_token_details": {"reasoning": 3},
-                    },
-                )
+            yield ModelEvent.reasoning("I should create a structured card.")
+            yield completed(
+                calls=(ToolCall("tool-1", "create_card", {"content": CARD_DRAFT}),),
+                usage=ModelUsage(input_tokens=12, output_tokens=8, reasoning_tokens=3),
             )
             return
-        yield ChatGenerationChunk(message=AIMessageChunk(content="Created "))
-        yield ChatGenerationChunk(
-            message=AIMessageChunk(
-                content="the card.",
-                usage_metadata={"input_tokens": 20, "output_tokens": 4, "total_tokens": 24},
-                response_metadata={"finish_reason": "stop"},
-            )
-        )
+        yield ModelEvent.text("Created ")
+        yield ModelEvent.text("the card.")
+        yield completed("Created the card.", usage=ModelUsage(input_tokens=20, output_tokens=4))
 
 
 class FailingStreamingModel(StreamingTestModel):
-    """Model that fails during generation."""
-
-    async def _astream(self, _messages: list[BaseMessage], **_kwargs: Any) -> AsyncIterator[ChatGenerationChunk]:
-        yield ChatGenerationChunk(message=AIMessageChunk(content=""))
+    async def generate(self) -> AsyncIterator[ModelEvent]:
         raise RuntimeError("provider stream failed")
+        yield
 
 
 class ConversationOnlyStreamingModel(StreamingTestModel):
-    """Deterministic model that answers without producing an artifact."""
-
-    async def _astream(self, _messages: list[BaseMessage], **_kwargs: Any) -> AsyncIterator[ChatGenerationChunk]:
-        yield ChatGenerationChunk(message=AIMessageChunk(content="Let's explore "))
-        yield ChatGenerationChunk(
-            message=AIMessageChunk(
-                content="that idea first.",
-                usage_metadata={"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
-                response_metadata={"finish_reason": "stop"},
-            )
-        )
+    async def generate(self) -> AsyncIterator[ModelEvent]:
+        yield ModelEvent.text("Let's explore ")
+        yield ModelEvent.text("that idea first.")
+        yield completed("Let's explore that idea first.", usage=ModelUsage(input_tokens=10, output_tokens=5))
 
 
 class MultipleArtifactStreamingModel(StreamingTestModel):
-    """Deterministic model that produces different artifact types in one turn."""
-
-    async def _astream(self, _messages: list[BaseMessage], **_kwargs: Any) -> AsyncIterator[ChatGenerationChunk]:
-        self.calls += 1
+    async def generate(self) -> AsyncIterator[ModelEvent]:
         if self.calls == 1:
-            yield ChatGenerationChunk(
-                message=AIMessageChunk(
-                    content="",
-                    tool_calls=[
-                        {
-                            "name": "create_card",
-                            "args": {"content": CARD_DRAFT},
-                            "id": "card-tool",
-                            "type": "tool_call",
-                        },
-                        {
-                            "name": "create_article",
-                            "args": {"content": ARTICLE_DRAFT},
-                            "id": "article-tool",
-                            "type": "tool_call",
-                        },
-                    ],
+            yield completed(
+                calls=(
+                    ToolCall("card-tool", "create_card", {"content": CARD_DRAFT}),
+                    ToolCall("article-tool", "create_article", {"content": ARTICLE_DRAFT}),
                 )
             )
             return
-        yield ChatGenerationChunk(message=AIMessageChunk(content="Created both artifacts."))
+        yield ModelEvent.text("Created both artifacts.")
+        yield completed("Created both artifacts.")
 
 
 class FilesystemStreamingModel(StreamingTestModel):
-    """Model that exercises KCS filesystem tools inside a session root."""
-
-    async def _astream(self, _messages: list[BaseMessage], **_kwargs: Any) -> AsyncIterator[ChatGenerationChunk]:
-        self.calls += 1
+    async def generate(self) -> AsyncIterator[ModelEvent]:
         if self.calls == 1:
-            yield ChatGenerationChunk(
-                message=AIMessageChunk(
-                    content="",
-                    tool_calls=[
+            yield completed(
+                calls=(
+                    ToolCall(
+                        "file-tool",
+                        "write_file",
                         {
-                            "name": "write_file",
-                            "args": {"file_path": "/notes/context.md", "content": "Session-only context."},
-                            "id": "write-tool",
-                            "type": "tool_call",
-                        }
-                    ],
+                            "file_path": "/notes/context.md",
+                            "content": "Session-only context.",
+                        },
+                    ),
                 )
             )
             return
-        yield ChatGenerationChunk(message=AIMessageChunk(content="Stored a private working note."))
+        yield ModelEvent.text("Stored a private working note.")
+        yield completed("Stored a private working note.")
 
 
 class FilesystemTraversalModel(StreamingTestModel):
-    """Model that attempts to read beyond the KCS session workspace."""
-
-    async def _astream(self, _messages: list[BaseMessage], **_kwargs: Any) -> AsyncIterator[ChatGenerationChunk]:
-        self.calls += 1
+    async def generate(self) -> AsyncIterator[ModelEvent]:
         if self.calls == 1:
-            yield ChatGenerationChunk(
-                message=AIMessageChunk(
-                    content="",
-                    tool_calls=[
-                        {
-                            "name": "read_file",
-                            "args": {"file_path": "/../outside.txt"},
-                            "id": "traversal-tool",
-                            "type": "tool_call",
-                        }
-                    ],
-                )
-            )
+            yield completed(calls=(ToolCall("traversal-tool", "read_file", {"file_path": "/../outside.txt"}),))
             return
-        yield ChatGenerationChunk(message=AIMessageChunk(content="The file is outside my workspace."))
+        yield ModelEvent.text("The file is outside my workspace.")
+        yield completed("The file is outside my workspace.")
 
 
 class AssetContextStreamingModel(StreamingTestModel):
-    """Model that captures the effective prompt assembled by KCS Agent."""
-
-    received_context: str = ""
-
-    async def _astream(self, messages: list[BaseMessage], **_kwargs: Any) -> AsyncIterator[ChatGenerationChunk]:
-        self.received_context = "\n".join(str(message.content) for message in messages)
-        yield ChatGenerationChunk(message=AIMessageChunk(content="I used the supplied context."))
+    async def generate(self) -> AsyncIterator[ModelEvent]:
+        yield ModelEvent.text("I used the supplied context.")
+        yield completed("I used the supplied context.")
 
 
 def parse_event(value: str) -> tuple[str, object]:
@@ -217,8 +165,8 @@ async def test_stream_publishes_and_persists_complete_agent_turn(monkeypatch: py
     model = SuccessfulStreamingModel()
     monkeypatch.setattr(
         card_agent,
-        "create_chat_model",
-        lambda _provider_id, _reasoning_effort: (AIProviderRuntime(provider="fake", model="fake-stream"), model),
+        "create_agent_model",
+        lambda _provider_id: (AIProviderRuntime(provider="fake", model="fake-stream"), model),
     )
     monkeypatch.setattr(card_agent.TagApplicationService, "paths", staticmethod(lambda: []))
     session_id = agent_session_storage.create(AgentSessionCreate()).id
@@ -267,8 +215,8 @@ async def test_stream_publishes_and_persists_complete_agent_turn(monkeypatch: py
 async def test_stream_persists_failure_metrics_and_emits_error(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         card_agent,
-        "create_chat_model",
-        lambda _provider_id, _reasoning_effort: (
+        "create_agent_model",
+        lambda _provider_id: (
             AIProviderRuntime(provider="fake", model="failing-stream"),
             FailingStreamingModel(),
         ),
@@ -292,8 +240,8 @@ async def test_stream_persists_failure_metrics_and_emits_error(monkeypatch: pyte
 async def test_stream_allows_conversation_without_artifacts(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         card_agent,
-        "create_chat_model",
-        lambda _provider_id, _reasoning_effort: (
+        "create_agent_model",
+        lambda _provider_id: (
             AIProviderRuntime(provider="fake", model="conversation-only"),
             ConversationOnlyStreamingModel(),
         ),
@@ -319,8 +267,8 @@ async def test_stream_cancellation_persists_partial_answer_and_cancelled_run(
 ) -> None:
     monkeypatch.setattr(
         card_agent,
-        "create_chat_model",
-        lambda _provider_id, _reasoning_effort: (
+        "create_agent_model",
+        lambda _provider_id: (
             AIProviderRuntime(provider="fake", model="interruptible"),
             ConversationOnlyStreamingModel(),
         ),
@@ -347,8 +295,8 @@ async def test_stream_creates_multiple_artifact_types_in_one_turn(monkeypatch: p
     model = MultipleArtifactStreamingModel()
     monkeypatch.setattr(
         card_agent,
-        "create_chat_model",
-        lambda _provider_id, _reasoning_effort: (AIProviderRuntime(provider="fake", model="multi-output"), model),
+        "create_agent_model",
+        lambda _provider_id: (AIProviderRuntime(provider="fake", model="multi-output"), model),
     )
     monkeypatch.setattr(card_agent.TagApplicationService, "paths", staticmethod(lambda: []))
     session_id = agent_session_storage.create(AgentSessionCreate()).id
@@ -370,8 +318,8 @@ async def test_stream_uses_kcs_filesystem_inside_session_directory(
     model = FilesystemStreamingModel()
     monkeypatch.setattr(
         card_agent,
-        "create_chat_model",
-        lambda _provider_id, _reasoning_effort: (AIProviderRuntime(provider="fake", model="filesystem"), model),
+        "create_agent_model",
+        lambda _provider_id: (AIProviderRuntime(provider="fake", model="filesystem"), model),
     )
     monkeypatch.setattr(card_agent.TagApplicationService, "paths", staticmethod(lambda: []))
     session_id = agent_session_storage.create(AgentSessionCreate()).id
@@ -390,8 +338,8 @@ async def test_kcs_filesystem_rejects_parent_directory_traversal(monkeypatch: py
     model = FilesystemTraversalModel()
     monkeypatch.setattr(
         card_agent,
-        "create_chat_model",
-        lambda _provider_id, _reasoning_effort: (AIProviderRuntime(provider="fake", model="filesystem"), model),
+        "create_agent_model",
+        lambda _provider_id: (AIProviderRuntime(provider="fake", model="filesystem"), model),
     )
     monkeypatch.setattr(card_agent.TagApplicationService, "paths", staticmethod(lambda: []))
     session_id = agent_session_storage.create(AgentSessionCreate()).id
@@ -414,8 +362,8 @@ async def test_kcs_agent_receives_asset_content_and_prompt_boundaries(monkeypatc
     model = AssetContextStreamingModel()
     monkeypatch.setattr(
         card_agent,
-        "create_chat_model",
-        lambda _provider_id, _reasoning_effort: (AIProviderRuntime(provider="fake", model="asset-context"), model),
+        "create_agent_model",
+        lambda _provider_id: (AIProviderRuntime(provider="fake", model="asset-context"), model),
     )
     monkeypatch.setattr(card_agent.TagApplicationService, "paths", staticmethod(lambda: ["Engineering/Agents"]))
     session_id = agent_session_storage.create(AgentSessionCreate()).id
@@ -432,3 +380,42 @@ async def test_kcs_agent_receives_asset_content_and_prompt_boundaries(monkeypatc
     assert "untrusted reference data" in model.received_context
     assert "Create or modify artifacts only when the user explicitly asks" in model.received_context
     assert "Engineering/Agents" in model.received_context
+
+
+async def test_second_turn_replays_history_once_and_does_not_cross_sessions(monkeypatch) -> None:
+    model = AssetContextStreamingModel()
+    monkeypatch.setattr(
+        card_agent, "create_agent_model", lambda _: (AIProviderRuntime(provider="fake", model="test"), model)
+    )
+    first = agent_session_storage.create(AgentSessionCreate()).id
+    other = agent_session_storage.create(AgentSessionCreate()).id
+    _ = [
+        event
+        async for event in card_agent.kcs_agent.stream(first, AnalyzeRequest(raw_content="Remember the blue notebook"))
+    ]
+    _ = [event async for event in card_agent.kcs_agent.stream(first, AnalyzeRequest(raw_content="Which notebook?"))]
+    assert model.received_context.count("Remember the blue notebook") == 1
+    assert model.received_context.count("Which notebook?") == 1
+    assert "I used the supplied context." in model.received_context
+    _ = [event async for event in card_agent.kcs_agent.stream(other, AnalyzeRequest(raw_content="New conversation"))]
+    assert "blue notebook" not in model.received_context
+    assert "Which notebook?" not in model.received_context
+
+
+async def test_closing_stream_at_tool_start_records_cancelled_span(monkeypatch) -> None:
+    monkeypatch.setattr(
+        card_agent,
+        "create_agent_model",
+        lambda _: (AIProviderRuntime(provider="fake", model="test"), SuccessfulStreamingModel()),
+    )
+    session_id = agent_session_storage.create(AgentSessionCreate()).id
+    stream = card_agent.kcs_agent.stream(session_id, request())
+    while True:
+        name, payload = parse_event(await anext(stream))
+        if name == "tool" and payload["state"] == "started":
+            break
+    await stream.aclose()
+    session = agent_session_storage.get(session_id)
+    assert session.runs[0].status == AgentRunStatus.CANCELLED
+    assert session.runs[0].tool_calls[0].status == AgentRunStatus.CANCELLED
+    assert session.artifacts == []

@@ -1,25 +1,23 @@
 import pytest
 from fastapi import HTTPException
-from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, AIMessageChunk
-from langchain_openai import ChatOpenAI
+from kcs_agent import AgentModel, DeepSeekProvider, ModelRequest, ReasoningEffort
 
-from kcs.infra.provider_adapter import DeepSeekChatModel, create_chat_model
+from kcs.infra.provider_adapter import create_agent_model
 from kcs.infra.provider_dao import ai_provider_storage
 from kcs.models import AIProviderRuntime
-from kcs.schemas import AIProviderIn, ReasoningEffort
+from kcs.schemas import AIProviderIn
 
 
 @pytest.mark.parametrize(
     ("provider_name", "expected_model_class", "base_url", "api_key"),
     [
-        ("openai-compatible", "ChatOpenAI", None, "test-key"),
-        ("anthropic", "ChatAnthropic", None, "test-key"),
-        ("gemini", "ChatGoogleGenerativeAI", None, "test-key"),
-        ("ollama", "ChatOllama", "http://127.0.0.1:11434", None),
+        ("openai-compatible", "OpenAIProvider", None, "test-key"),
+        ("anthropic", "AnthropicProvider", None, "test-key"),
+        ("gemini", "GoogleProvider", None, "test-key"),
+        ("ollama", "OllamaProvider", "http://127.0.0.1:11434", None),
     ],
 )
-def test_create_chat_model_returns_session_independent_runtime(
+def test_create_agent_model_returns_session_independent_runtime(
     provider_name: str,
     expected_model_class: str,
     base_url: str | None,
@@ -38,14 +36,14 @@ def test_create_chat_model_returns_session_independent_runtime(
         )
     )
 
-    runtime, model = create_chat_model(provider.id)
+    runtime, model = create_agent_model(provider.id)
 
     assert runtime == AIProviderRuntime(provider=provider_name, model="test-model")
-    assert isinstance(model, BaseChatModel)
+    assert isinstance(model, AgentModel)
     assert type(model).__name__ == expected_model_class
 
 
-def test_create_chat_model_rejects_disabled_provider() -> None:
+def test_create_agent_model_rejects_disabled_provider() -> None:
     provider = ai_provider_storage.create(
         AIProviderIn(
             name="Disabled provider",
@@ -57,34 +55,14 @@ def test_create_chat_model_rejects_disabled_provider() -> None:
     )
 
     with pytest.raises(HTTPException, match="Enable and configure an AI provider first") as error:
-        create_chat_model(provider.id)
+        create_agent_model(provider.id)
     assert error.value.status_code == 400
 
 
-def test_openai_compatible_model_receives_selected_reasoning_effort() -> None:
+def test_deepseek_compatible_configuration_uses_native_adapter() -> None:
     provider = ai_provider_storage.create(
         AIProviderIn(
-            name="Reasoning provider",
-            provider="openai-compatible",
-            model="reasoning-model",
-            api_key="test-key",
-            enabled=True,
-        )
-    )
-
-    _, high_model = create_chat_model(provider.id, ReasoningEffort.HIGH)
-    _, off_model = create_chat_model(provider.id, ReasoningEffort.OFF)
-
-    assert isinstance(high_model, ChatOpenAI)
-    assert isinstance(off_model, ChatOpenAI)
-    assert high_model.reasoning_effort == "high"
-    assert off_model.reasoning_effort is None
-
-
-def test_deepseek_model_preserves_streamed_reasoning_content() -> None:
-    provider = ai_provider_storage.create(
-        AIProviderIn(
-            name="DeepSeek reasoning provider",
+            name="DeepSeek",
             provider="openai-compatible",
             model="deepseek-v4-flash",
             base_url="https://api.deepseek.com",
@@ -92,20 +70,12 @@ def test_deepseek_model_preserves_streamed_reasoning_content() -> None:
             enabled=True,
         )
     )
-
-    _, model = create_chat_model(provider.id, ReasoningEffort.HIGH)
-
-    assert isinstance(model, DeepSeekChatModel)
-    assert model.extra_body == {"thinking": {"type": "enabled"}}
-    generation = model._convert_chunk_to_generation_chunk(
-        {"choices": [{"delta": {"role": "assistant", "content": "", "reasoning_content": "Think."}}]},
-        AIMessageChunk,
-        None,
-    )
-    assert generation is not None
-    assert generation.message.additional_kwargs["reasoning_content"] == "Think."
-
-    payload = model._get_request_payload(
-        [AIMessage(content="Answer.", additional_kwargs={"reasoning_content": "Think."})]
-    )
-    assert payload["messages"][0]["reasoning_content"] == "Think."
+    _, model = create_agent_model(provider.id)
+    assert isinstance(model, DeepSeekProvider)
+    assert str(model._client.base_url) == "https://api.deepseek.com"
+    assert model._provider_specific_request_extra_fields(
+        ModelRequest(messages=(), reasoning_effort=ReasoningEffort.HIGH)
+    ) == {"thinking": {"type": "enabled"}}
+    assert model._provider_specific_request_extra_fields(
+        ModelRequest(messages=(), reasoning_effort=ReasoningEffort.OFF)
+    ) == {"thinking": {"type": "disabled"}}

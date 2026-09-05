@@ -46,13 +46,15 @@
 
 - Persist sessions, messages, artifacts, agent runs, tool calls, and observability metrics in SQLite.
 - Keep session records provider-neutral and align usage and latency names with GenAI observability conventions.
-- Define backend agent capabilities as explicit LangChain tools under `kcs/agent`.
-- Use LangChain structured output with typed Pydantic schemas whenever model output is consumed as structured data; do not parse model-authored JSON manually.
+- Define backend agent capabilities as typed KCS Agent tools under `kcs/agent`.
+- Use schema-bound tool output with typed Pydantic validation whenever model output is consumed as structured data; do not parse model-authored prose as JSON.
 - Use the custom KCS Agent loop; do not add Deep Agents or another prebuilt agent runtime.
 - Keep raw conversation messages append-only and build model context from the latest versioned snapshot plus its replay tail.
 - Implement context compaction as middleware before the primary model call; never rewrite or delete raw history during compaction.
 - Implement streaming agents through the `StreamingAgent` boundary and keep each concrete agent in its own module.
-- Group related typed tool operations in a class before adapting them to LangChain tools.
+- Group related typed tool operations in a class before adapting them to KCS Agent tools.
+- Keep the agent runtime small: direct message fields, explicit history and tools, and a readable model/tool loop. Do not add generic state containers or an extension framework without a concrete new requirement.
+- KCS owns session persistence, compaction, and observability; pass prepared history to the runtime explicitly.
 - A conversation may own multiple durable card artifacts and each artifact must have a stable ID.
 - Persist an artifact only when the user explicitly requests saving or invokes the save action.
 - Stream conversational text and artifact updates as separate SSE events.

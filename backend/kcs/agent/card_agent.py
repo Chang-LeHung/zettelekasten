@@ -1,70 +1,36 @@
 import asyncio
 import json
 from collections.abc import AsyncIterator
+from contextlib import aclosing
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from time import perf_counter
-from typing import cast
 from uuid import uuid4
 
 from fastapi import HTTPException
-from langchain_core.messages import (
-    AIMessage,
-    AIMessageChunk,
-    BaseMessage,
-    HumanMessage,
+from kcs_agent import (
+    Agent,
+    AgentEventType,
+    AgentModel,
+    AnyMessage,
+    AssistantMessage,
+    ModelResponse,
+    ReasoningEffort,
     SystemMessage,
-    ToolMessage,
-    message_chunk_to_message,
+    ToolCall,
+    UserMessage,
 )
-from langchain_core.tools import BaseTool
 
 from ..application.services import TagApplicationService
 from ..config import settings
 from ..infra.agent_session_dao import agent_session_storage
-from ..infra.provider_adapter import create_chat_model
+from ..infra.provider_adapter import close_agent_model, create_agent_model
 from ..schemas import AgentMessageOut, AgentMessageRole, AgentRunOut, AgentRunStatus, AnalyzeRequest
 from .base import StreamingAgent
 from .compaction import PreparedContext, compaction_middleware
 from .prompts import append_asset_content, build_kcs_system_prompt
 from .tools import ArtifactTools
 from .workspace_tools import WorkspaceTools
-
-
-def _chunk_text(content: object) -> str:
-    """Extract visible text from provider-specific LangChain chunk content."""
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        return "".join(
-            block.get("text", "")
-            for block in content
-            if isinstance(block, dict)
-            and block.get("type") not in ("reasoning", "thinking")
-            and isinstance(block.get("text"), str)
-        )
-    return ""
-
-
-def _reasoning_text(chunk: AIMessageChunk) -> str:
-    """Extract provider-supplied reasoning text without synthesizing hidden thoughts."""
-    if isinstance(chunk.content, list):
-        parts: list[str] = []
-        for block in chunk.content:
-            if not isinstance(block, dict) or block.get("type") not in ("reasoning", "thinking"):
-                continue
-            for key in ("text", "reasoning", "thinking"):
-                value = block.get(key)
-                if isinstance(value, str):
-                    parts.append(value)
-                    break
-        if parts:
-            return "".join(parts)
-    for key in ("reasoning_content", "reasoning", "thinking"):
-        value = chunk.additional_kwargs.get(key)
-        if isinstance(value, str):
-            return value
-    return ""
 
 
 def _sse(event: str, data: object) -> str:
@@ -90,46 +56,42 @@ def _append_timeline_text(timeline: list[dict[str, object]], event_type: str, co
         timeline.append({"type": event_type, "content": content})
 
 
-def _usage(response: object) -> dict[str, int | float | None]:
-    """Normalize LangChain usage metadata across supported providers."""
-    metadata = getattr(response, "usage_metadata", None) or {}
-    input_details = metadata.get("input_token_details") or {}
-    output_details = metadata.get("output_token_details") or {}
-    input_tokens = int(metadata.get("input_tokens") or 0)
-    output_tokens = int(metadata.get("output_tokens") or 0)
+def _usage(response: ModelResponse) -> dict[str, int | float | None]:
+    """Map standalone runtime usage to persisted KCS observability fields."""
+    usage = response.usage
     return {
-        "input_tokens": input_tokens,
-        "output_tokens": output_tokens,
-        "total_tokens": int(metadata.get("total_tokens") or input_tokens + output_tokens),
-        "cache_read_tokens": int(input_details.get("cache_read") or 0),
-        "cache_creation_tokens": int(input_details.get("cache_creation") or 0),
-        "reasoning_tokens": int(output_details.get("reasoning") or output_details.get("reasoning_tokens") or 0),
-        "input_cost": metadata.get("input_cost"),
-        "output_cost": metadata.get("output_cost"),
-        "total_cost": metadata.get("total_cost"),
+        "input_tokens": usage.input_tokens,
+        "output_tokens": usage.output_tokens,
+        "total_tokens": usage.total_tokens,
+        "cache_read_tokens": usage.cache_read_tokens,
+        "cache_creation_tokens": usage.cache_write_tokens,
+        "reasoning_tokens": usage.reasoning_tokens,
+        "input_cost": None,
+        "output_cost": None,
+        "total_cost": None,
     }
 
 
-def _history_message(message: AgentMessageOut) -> BaseMessage:
+def _history_message(message: AgentMessageOut) -> AnyMessage:
     """Convert a raw log event into a provider-safe replay message."""
-    if message.role == AgentMessageRole.USER:
-        return HumanMessage(content=message.content)
-    if message.role == AgentMessageRole.ASSISTANT:
-        return AIMessage(content=message.content)
-    return SystemMessage(content=f"Historical {message.tool_name or message.role.value} event:\n{message.content}")
+    match message.role:
+        case AgentMessageRole.USER:
+            return UserMessage(content=message.content)
+        case AgentMessageRole.ASSISTANT:
+            return AssistantMessage(content=message.content, reasoning=message.reasoning_content)
+        case _:
+            return UserMessage(
+                content=f"Historical {message.tool_name or message.role.value} result (reference data):\n{message.content}"
+            )
 
 
-def _context_messages(context: PreparedContext) -> list[BaseMessage]:
+def _context_messages(context: PreparedContext) -> list[AnyMessage]:
     """Build the dynamic context view from checkpoint plus raw-log replay tail."""
-    result: list[BaseMessage] = []
+    result: list[AnyMessage] = []
     if context.snapshot is not None:
         result.append(
             SystemMessage(
-                content=(
-                    f"Conversation checkpoint through raw-log sequence {context.snapshot.base_sequence}:\n"
-                    f"Summary: {context.snapshot.summary}\n"
-                    f"State: {context.snapshot.state.model_dump_json()}"
-                )
+                content=f"Conversation checkpoint through raw-log sequence {context.snapshot.base_sequence}:\nSummary: {context.snapshot.summary}\nState: {context.snapshot.state.model_dump_json()}"
             )
         )
     result.extend(_history_message(message) for message in context.messages)
@@ -165,6 +127,8 @@ class KCSAgent(StreamingAgent[AnalyzeRequest]):
         run_id: str | None = None
         provider_name: str | None = None
         model_name: str | None = None
+        chat_model: AgentModel | None = None
+        active_tool: tuple[ToolCall, datetime, float] | None = None
         state = _RunState()
         timeline: list[dict[str, object]] = []
         usage_totals: dict[str, int | float | None] = {
@@ -183,14 +147,14 @@ class KCSAgent(StreamingAgent[AnalyzeRequest]):
             if not agent_session_storage.exists(conversation_id):
                 raise KeyError(f"Agent session not found: {conversation_id}")
             latest_message = request.messages[-1].content if request.messages else request.raw_content
-            agent_session_storage.append_message(
+            user_message = agent_session_storage.append_message(
                 conversation_id, turn_id, AgentMessageRole.USER, latest_message, metadata={"source": "api"}
             )
             run = agent_session_storage.start_run(
                 conversation_id, turn_id, request.provider_id, None, None, request.reasoning_effort
             )
             run_id = run.id
-            runtime, chat_model = create_chat_model(request.provider_id, request.reasoning_effort)
+            runtime, chat_model = create_agent_model(request.provider_id)
             provider_name, model_name = runtime.provider, runtime.model
             yield _sse("status", {"state": "model_ready", "provider": provider_name, "model": model_name})
 
@@ -207,71 +171,101 @@ class KCSAgent(StreamingAgent[AnalyzeRequest]):
 
             artifact_tools = ArtifactTools(conversation_id, request.raw_content)
             workspace_tools = WorkspaceTools(conversation_id)
-            tools = [*artifact_tools.as_langchain_tools(), *workspace_tools.as_langchain_tools()]
-            tool_map = {tool.name: tool for tool in tools}
+            tools = [*artifact_tools.as_agent_tools(), *workspace_tools.as_agent_tools()]
             system_prompt = build_kcs_system_prompt(TagApplicationService.paths(), artifact_tools.list())
             manifest = (workspace_tools.root / ".kcs-assets.json").read_text(encoding="utf-8")
-            messages: list[BaseMessage] = [
-                SystemMessage(content=append_asset_content(system_prompt, manifest)),
-                *_context_messages(context),
-            ]
-            bound_model = chat_model.bind_tools(tools)
 
-            for _round in range(settings.agent_max_tool_rounds):
-                response: AIMessageChunk | None = None
-                call_started = perf_counter()
-                reasoning_started: float | None = None
-                async for streamed in bound_model.astream(messages):
-                    if not isinstance(streamed, AIMessageChunk):
-                        continue
-                    response = streamed if response is None else cast(AIMessageChunk, response + streamed)
-                    text = _chunk_text(streamed.content)
-                    reasoning_delta = _reasoning_text(streamed)
+            history = PreparedContext(
+                context.snapshot,
+                [message for message in context.messages if message.id != user_message.id],
+                context.compacted,
+            )
+            agent = Agent(
+                chat_model,
+                system_prompt=append_asset_content(system_prompt, manifest),
+                tools=tools,
+                max_iterations=settings.agent_max_tool_rounds,
+            )
+            call_started = perf_counter()
+            reasoning_started: float | None = None
+            async with aclosing(
+                agent.stream(
+                    UserMessage(content=latest_message),
+                    history=_context_messages(history),
+                    reasoning_effort=ReasoningEffort(request.reasoning_effort.value),
+                )
+            ) as events:
+                async for event in events:
                     if (
-                        text or reasoning_delta or streamed.tool_call_chunks or streamed.tool_calls
-                    ) and first_token_clock is None:
+                        event.type
+                        in (AgentEventType.TEXT_DELTA, AgentEventType.REASONING_DELTA, AgentEventType.TOOL_CALL_DELTA)
+                        and first_token_clock is None
+                    ):
                         first_token_clock, first_token_at = perf_counter(), datetime.now(UTC)
-                    if reasoning_delta:
-                        reasoning_started = reasoning_started or perf_counter()
-                        state.reasoning_text += reasoning_delta
-                        _append_timeline_text(timeline, "reasoning", reasoning_delta)
-                        yield _sse("reasoning", {"content": state.reasoning_text})
-                    if text:
-                        if reasoning_started is not None:
-                            state.reasoning_duration_ms += (perf_counter() - reasoning_started) * 1000
-                            reasoning_started = None
-                        state.assistant_text += text
-                        _append_timeline_text(timeline, "message", text)
-                        yield _sse("message", {"content": state.assistant_text})
-                if response is None:
-                    raise RuntimeError("Provider returned no agent response")
-                call_ended = perf_counter()
-                if reasoning_started is not None:
-                    state.reasoning_duration_ms += (call_ended - reasoning_started) * 1000
-                state.generation_duration_ms += (call_ended - call_started) * 1000
-                state.model_call_count += 1
-                self._merge_usage(usage_totals, _usage(response))
-                state.finish_reason = response.response_metadata.get("finish_reason") or state.finish_reason
-                yield _sse("usage", self._usage_event(usage_totals, state))
-
-                assistant_message = cast(AIMessage, message_chunk_to_message(response))
-                messages.append(assistant_message)
-                if not response.tool_calls:
-                    break
-                async for event in self._execute_tools(
-                    response.tool_calls,
-                    tool_map,
-                    messages,
-                    conversation_id,
-                    turn_id,
-                    run_id,
-                    artifact_tools,
-                    state,
-                    timeline,
-                ):
-                    yield event
-            else:
-                raise RuntimeError("Agent exceeded the configured tool-call round limit")
+                    match event.type:
+                        case AgentEventType.MODEL_STARTED:
+                            call_started = perf_counter()
+                        case AgentEventType.REASONING_DELTA:
+                            reasoning_started = reasoning_started or perf_counter()
+                            state.reasoning_text += event.delta
+                            _append_timeline_text(timeline, "reasoning", event.delta)
+                            yield _sse("reasoning", {"content": state.reasoning_text})
+                        case AgentEventType.TEXT_DELTA:
+                            if reasoning_started is not None:
+                                state.reasoning_duration_ms += (perf_counter() - reasoning_started) * 1000
+                                reasoning_started = None
+                            state.assistant_text += event.delta
+                            _append_timeline_text(timeline, "message", event.delta)
+                            yield _sse("message", {"content": state.assistant_text})
+                        case AgentEventType.MODEL_COMPLETED:
+                            if event.response is None:
+                                raise RuntimeError("Missing normalized model response")
+                            if reasoning_started is not None:
+                                state.reasoning_duration_ms += (perf_counter() - reasoning_started) * 1000
+                                reasoning_started = None
+                            state.generation_duration_ms += (perf_counter() - call_started) * 1000
+                            state.model_call_count += 1
+                            self._merge_usage(usage_totals, _usage(event.response))
+                            state.finish_reason = event.response.finish_reason or state.finish_reason
+                            yield _sse("usage", self._usage_event(usage_totals, state))
+                        case AgentEventType.TOOL_STARTED:
+                            if event.call is None:
+                                raise RuntimeError("Missing normalized tool call")
+                            active_tool = (event.call, datetime.now(UTC), perf_counter())
+                            timeline.append({"type": "tool", "tool_call_id": event.call.id})
+                            yield _sse(
+                                "tool",
+                                {
+                                    "id": event.call.id,
+                                    "name": event.call.name,
+                                    "state": "started",
+                                    "arguments": dict(event.call.arguments),
+                                },
+                            )
+                        case AgentEventType.TOOL_COMPLETED | AgentEventType.TOOL_FAILED:
+                            if active_tool is None or event.message is None:
+                                raise RuntimeError("Tool completed without a matching start")
+                            output = json.loads(event.message.content)
+                            status = (
+                                AgentRunStatus.FAILED
+                                if event.type == AgentEventType.TOOL_FAILED
+                                else AgentRunStatus.SUCCEEDED
+                            )
+                            payload = self._record_tool(
+                                active_tool,
+                                conversation_id,
+                                turn_id,
+                                run_id,
+                                state,
+                                output,
+                                status,
+                                str(event.error) if event.error else None,
+                            )
+                            active_tool = None
+                            yield _sse("tool", payload)
+                            yield _sse(
+                                "artifacts", [artifact.model_dump(mode="json") for artifact in artifact_tools.list()]
+                            )
 
             current_artifacts = artifact_tools.list()
             latest = max(current_artifacts, key=lambda artifact: artifact.updated_at) if current_artifacts else None
@@ -304,6 +298,18 @@ class KCSAgent(StreamingAgent[AnalyzeRequest]):
             yield _sse("result", latest.model_dump(mode="json") if latest else None)
         except (asyncio.CancelledError, GeneratorExit) as exc:
             if run_id is not None:
+                if active_tool is not None:
+                    self._record_tool(
+                        active_tool,
+                        conversation_id,
+                        turn_id,
+                        run_id,
+                        state,
+                        {"error": "Tool execution cancelled"},
+                        AgentRunStatus.CANCELLED,
+                        "Tool execution cancelled",
+                    )
+                    active_tool = None
                 if state.assistant_text.strip() or state.reasoning_text.strip() or timeline:
                     agent_session_storage.append_message(
                         conversation_id,
@@ -355,93 +361,55 @@ class KCSAgent(StreamingAgent[AnalyzeRequest]):
                 yield _sse("metrics", failed.model_dump(mode="json"))
             detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
             yield _sse("error", {"message": detail})
+        finally:
+            if chat_model is not None:
+                await close_agent_model(chat_model)
 
-    async def _execute_tools(
-        self,
-        calls: list[dict[str, object]],
-        tool_map: dict[str, BaseTool],
-        messages: list[BaseMessage],
+    @staticmethod
+    def _record_tool(
+        active: tuple[ToolCall, datetime, float],
         session_id: str,
         turn_id: str,
         run_id: str,
-        artifact_tools: ArtifactTools,
         state: _RunState,
-        timeline: list[dict[str, object]],
-    ) -> AsyncIterator[str]:
-        """Execute model-requested tools sequentially and stream each observable span."""
-        for call in calls:
-            tool_call_id = str(call.get("id") or uuid4())
-            name = str(call.get("name") or "unknown_tool")
-            raw_arguments = call.get("args")
-            arguments = cast(dict[str, object], raw_arguments if isinstance(raw_arguments, dict) else {})
-            started_at, started_clock = datetime.now(UTC), perf_counter()
-            timeline.append({"type": "tool", "tool_call_id": tool_call_id})
-            yield _sse("tool", {"id": tool_call_id, "name": name, "state": "started", "arguments": arguments})
-            error_message: str | None = None
-            cancellation: asyncio.CancelledError | None = None
-            try:
-                tool = tool_map.get(name)
-                if tool is None:
-                    raise ValueError(f"Unknown tool: {name}")
-                output = await tool.ainvoke(arguments)
-                status = AgentRunStatus.SUCCEEDED
-            except asyncio.CancelledError as error:
-                output = {"error": "Tool execution cancelled"}
-                error_message = "Tool execution cancelled"
-                status = AgentRunStatus.CANCELLED
-                cancellation = error
-            except Exception as error:
-                output = {"error": str(error)}
-                error_message = str(error)
-                status = AgentRunStatus.FAILED
-            ended_at = datetime.now(UTC)
-            duration_ms = (perf_counter() - started_clock) * 1000
-            state.tool_call_count += 1
-            state.tool_duration_ms += duration_ms
-            agent_session_storage.record_tool_call(
-                run_id,
-                session_id,
-                tool_call_id,
-                name,
-                arguments,
-                output,
-                status,
-                started_at,
-                ended_at,
-                duration_ms,
-                error_message,
-            )
-            serialized = _tool_output(output)
-            agent_session_storage.append_message(
-                session_id,
-                turn_id,
-                AgentMessageRole.TOOL,
-                serialized,
-                tool_name=name,
-                metadata={"tool_call_id": tool_call_id, "run_id": run_id},
-            )
-            messages.append(
-                ToolMessage(
-                    content=serialized,
-                    tool_call_id=tool_call_id,
-                    name=name,
-                    status="success" if status == AgentRunStatus.SUCCEEDED else "error",
-                )
-            )
-            if cancellation is not None:
-                raise cancellation
-            yield _sse(
-                "tool",
-                {
-                    "id": tool_call_id,
-                    "name": name,
-                    "state": status.value,
-                    "duration_ms": duration_ms,
-                    "output": output,
-                    "error_message": error_message,
-                },
-            )
-            yield _sse("artifacts", [artifact.model_dump(mode="json") for artifact in artifact_tools.list()])
+        output: object,
+        status: AgentRunStatus,
+        error_message: str | None,
+    ) -> dict[str, object]:
+        """Persist one completed or cancelled tool span and its append-only result."""
+        call, started_at, started_clock = active
+        duration_ms = (perf_counter() - started_clock) * 1000
+        state.tool_call_count += 1
+        state.tool_duration_ms += duration_ms
+        agent_session_storage.record_tool_call(
+            run_id,
+            session_id,
+            call.id,
+            call.name,
+            dict(call.arguments),
+            output,
+            status,
+            started_at,
+            datetime.now(UTC),
+            duration_ms,
+            error_message,
+        )
+        agent_session_storage.append_message(
+            session_id,
+            turn_id,
+            AgentMessageRole.TOOL,
+            _tool_output(output),
+            tool_name=call.name,
+            metadata={"tool_call_id": call.id, "run_id": run_id},
+        )
+        return {
+            "id": call.id,
+            "name": call.name,
+            "state": status.value,
+            "duration_ms": duration_ms,
+            "output": output,
+            "error_message": error_message,
+        }
 
     @staticmethod
     def _merge_usage(target: dict[str, int | float | None], source: dict[str, int | float | None]) -> None:

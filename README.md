@@ -37,7 +37,7 @@ Knowledge Cards System (KCS) combines a streamed AI conversation, durable sessio
 - Python 3.14
 - FastAPI and Typer
 - SQLAlchemy and SQLite
-- LangChain
+- KCS Agent with native provider SDK adapters
 - Vue 3 and TypeScript
 - Vite
 - `uv` for Python dependency management
@@ -164,11 +164,13 @@ HTTP and CLI interfaces call application services rather than storage implementa
 
 The Vue frontend keeps all backend calls in typed clients under `frontend/src/api`. Components do not hard-code backend URLs.
 
+The standalone [`kcs-agent`](backend/kcs-agent) package powers KCS conversations, tool execution, and streaming. Its current local development version uses direct message fields and a small model/tool loop. KCS passes prepared history from its context snapshot and raw-log tail, excluding the current input. Tools are supplied directly to the agent, with optional guidelines appended to system instructions. Title generation and compaction use schema-bound tool responses validated by Pydantic. This simplified API is not yet published; development and `make install` use the local `kcs-agent` package.
+
 ## Agent Sessions and Context
 
 Each conversation can own zero or many typed artifacts. Artifacts have stable IDs, lifecycle states, versions, type-specific content, and optional links to permanent library resources. Saving a card or article publishes it to the unified library only when explicitly requested.
 
-KCS Agent uses a bounded custom LangChain model-and-tool loop. Its typed tools can create and update artifacts and operate inside the current session workspace. Filesystem tools include directory listing, file reading, writing, editing, globbing, searching, and restricted command execution. Commands run without a shell interpreter, use allowlists, reject traversal and shell operators, and enforce output and execution limits.
+KCS Agent uses the standalone package's bounded model-and-tool loop. Its typed tools can create and update artifacts and operate inside the current session workspace. Filesystem tools include directory listing, file reading, writing, editing, globbing, searching, and restricted command execution. Commands run without a shell interpreter, use allowlists, reject traversal and shell operators, and enforce output and execution limits.
 
 Conversation history is stored as immutable raw log messages plus versioned context snapshots. Context reconstruction loads the newest snapshot and replays only messages after its boundary. Once the configured token threshold is reached, the compaction middleware summarizes older messages while preserving a recent verbatim tail. Raw logs and previous snapshot versions remain available for auditing and rebuilding context.
 

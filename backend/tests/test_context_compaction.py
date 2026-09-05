@@ -1,9 +1,7 @@
-from typing import Any, cast
+from typing import cast
 
 import pytest
-from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage
-from langchain_core.outputs import ChatGeneration, ChatResult
+from kcs_agent import AgentModel, AssistantMessage, ModelEvent, ModelResponse, ToolCall
 
 from kcs import config
 from kcs.agent.compaction import CompactionMiddleware, CompactionOutput, CompactionResult, ModelSnapshotSummarizer
@@ -14,15 +12,8 @@ from kcs.models import ContextSnapshotListOptions, RawLogMessageListOptions
 from kcs.schemas import AgentMessageRole, AgentSessionCreate, ContextState
 
 
-class UnusedChatModel(BaseChatModel):
-    """Model placeholder because the injected summarizer owns deterministic output."""
-
-    @property
-    def _llm_type(self) -> str:
-        return "unused"
-
-    def _generate(self, _messages: list[BaseMessage], **_kwargs: Any) -> ChatResult:
-        return ChatResult(generations=[ChatGeneration(message=AIMessage(content="unused"))])
+class UnusedChatModel:
+    """Model placeholder; deterministic summarizers do not invoke it."""
 
 
 class RecordingSummarizer:
@@ -40,17 +31,19 @@ class RecordingSummarizer:
 
 
 class StructuredCompactionModel:
-    """Capture the schema requested by the model-backed snapshot summarizer."""
+    """Capture provider-neutral structured tool output requirements."""
 
-    def __init__(self) -> None:
-        self.schema: type[CompactionOutput] | None = None
+    schema: dict | None = None
 
-    def with_structured_output(self, schema: type[CompactionOutput]) -> StructuredCompactionModel:
-        self.schema = schema
-        return self
-
-    async def ainvoke(self, _messages: object) -> CompactionOutput:
-        return CompactionOutput(summary="Structured snapshot", state=ContextState(facts=["Validated by Pydantic"]))
+    async def stream(self, request):
+        self.schema = dict(request.tools[0].parameters)
+        assert request.tool_choice == "submit_result"
+        output = CompactionOutput(summary="Structured snapshot", state=ContextState(facts=["Validated by Pydantic"]))
+        yield ModelEvent.completed(
+            ModelResponse(
+                AssistantMessage(tool_calls=(ToolCall("result-1", "submit_result", output.model_dump(mode="json")),))
+            )
+        )
 
 
 def append_messages(session_id: str, start: int, end: int) -> None:
@@ -70,9 +63,9 @@ async def test_model_snapshot_summarizer_uses_structured_output() -> None:
     messages = raw_log_message_storage.list(RawLogMessageListOptions(session_id=session_id))
     model = StructuredCompactionModel()
 
-    result = await ModelSnapshotSummarizer().summarize(cast(BaseChatModel, model), None, messages)
+    result = await ModelSnapshotSummarizer().summarize(cast(AgentModel, model), None, messages)
 
-    assert model.schema is CompactionOutput
+    assert model.schema == CompactionOutput.model_json_schema()
     assert result.summary == "Structured snapshot"
     assert result.state.facts == ["Validated by Pydantic"]
 

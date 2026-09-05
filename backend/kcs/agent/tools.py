@@ -1,12 +1,13 @@
 import builtins
 from collections.abc import Callable
 
-from langchain_core.tools import BaseTool, StructuredTool
+from kcs_agent import AgentTool
 from pydantic import BaseModel, Field
 
 from ..domain.services import ArtifactDomainService, ArtifactDraft
 from ..infra.agent_session_dao import agent_session_storage
 from ..infra.artifact_dao import artifact_storage
+from ..infra.tool_adapter import typed_tool
 from ..models import ArtifactListOptions
 from ..schemas import (
     AgentArtifact,
@@ -218,8 +219,8 @@ class ArtifactTools:
             ),
         )
 
-    def as_langchain_tools(self) -> builtins.list[BaseTool]:
-        """Expose polymorphic artifact operations as schema-validated LangChain tools."""
+    def as_agent_tools(self) -> builtins.list[AgentTool]:
+        """Expose schema-validated operations with explicit artifact lifecycle guidance."""
         specifications: builtins.list[tuple[str, str, Callable[..., object], type[BaseModel] | None]] = [
             ("create_card", self.create_card.__doc__ or "", self.create_card, CreateCardInput),
             ("create_article", self.create_article.__doc__ or "", self.create_article, CreateArticleInput),
@@ -231,25 +232,13 @@ class ArtifactTools:
             ("save_artifact", self.save.__doc__ or "", self.save, ArtifactIdInput),
         ]
         return [
-            StructuredTool.from_function(
-                func=self._serializable_operation(operation),
-                name=name,
-                description=description,
-                args_schema=args_schema,
+            typed_tool(
+                name,
+                operation,
+                args_schema,
+                "Save to the permanent library only when the user explicitly requests saving."
+                if name == "save_artifact"
+                else "Create or change artifacts only on user request; use returned stable IDs for subsequent operations.",
             )
             for name, description, operation, args_schema in specifications
         ]
-
-    @staticmethod
-    def _serializable_operation(operation: Callable[..., object]) -> Callable[..., object]:
-        """Adapt typed operation results to JSON values understood by LangChain tools."""
-
-        def invoke(**kwargs: object) -> object:
-            result = operation(**kwargs)
-            if isinstance(result, BaseModel):
-                return result.model_dump(mode="json")
-            if isinstance(result, list):
-                return [item.model_dump(mode="json") if isinstance(item, BaseModel) else item for item in result]
-            return result
-
-        return invoke

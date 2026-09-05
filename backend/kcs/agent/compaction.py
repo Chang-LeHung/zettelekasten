@@ -2,13 +2,13 @@ import json
 from dataclasses import dataclass
 from typing import Protocol
 
-from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import HumanMessage, SystemMessage
+from kcs_agent import AgentModel, SystemMessage, UserMessage
 from pydantic import BaseModel, Field
 
 from ..config import settings
 from ..domain.context import ContextCompactionPolicy, ContextLogEntry
 from ..infra.context_dao import context_snapshot_storage, raw_log_message_storage
+from ..infra.structured_output import structured_output
 from ..models import RawLogMessageListOptions
 from ..schemas import AgentMessageOut, ContextSnapshotCreate, ContextSnapshotOut, ContextState
 
@@ -42,7 +42,7 @@ class SnapshotSummarizer(Protocol):
 
     async def summarize(
         self,
-        model: BaseChatModel,
+        model: AgentModel,
         previous: ContextSnapshotOut | None,
         messages: list[AgentMessageOut],
     ) -> CompactionResult:
@@ -55,7 +55,7 @@ class ModelSnapshotSummarizer:
 
     async def summarize(
         self,
-        model: BaseChatModel,
+        model: AgentModel,
         previous: ContextSnapshotOut | None,
         messages: list[AgentMessageOut],
     ) -> CompactionResult:
@@ -76,17 +76,15 @@ class ModelSnapshotSummarizer:
             {"previous_snapshot": previous_payload, "new_log_messages": log_payload},
             ensure_ascii=False,
         )
-        structured_model = model.with_structured_output(CompactionOutput)
-        response = await structured_model.ainvoke(
+        response = await structured_output(
+            model,
+            CompactionOutput,
             [
                 SystemMessage(
-                    content=(
-                        "Update a conversation checkpoint from the previous checkpoint and new immutable log entries. "
-                        "Preserve durable facts and decisions, remove repetition, and do not invent details."
-                    )
+                    content="Update a conversation checkpoint from the previous checkpoint and new immutable log entries. Preserve durable facts and decisions, remove repetition, and do not invent details."
                 ),
-                HumanMessage(content=prompt),
-            ]
+                UserMessage(content=prompt),
+            ],
         )
         output = CompactionOutput.model_validate(response)
         return CompactionResult(summary=output.summary, state=output.state)
@@ -101,7 +99,7 @@ class CompactionMiddleware:
     async def prepare(
         self,
         session_id: str,
-        model: BaseChatModel,
+        model: AgentModel,
         provider: str | None,
         model_name: str | None,
     ) -> PreparedContext:

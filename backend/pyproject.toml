@@ -10,11 +10,7 @@ dependencies = [
   "cryptography>=43,<44",
   "httpx>=0.27,<1",
   "sqlalchemy>=2.0,<3",
-  "langchain-core>=0.3,<2",
-  "langchain-openai>=1.1,<2",
-  "langchain-anthropic>=1.7,<2",
-  "langchain-google-genai>=4.3,<5",
-  "langchain-ollama>=0.2,<1",
+  "kcs-agent==0.2.0.dev0",
 ]
 
 [build-system]
@@ -26,6 +22,9 @@ packages = ["kcs"]
 
 [tool.uv]
 package = true
+
+[tool.uv.sources]
+kcs-agent = { path = "kcs-agent", editable = true }
 
 [dependency-groups]
 dev = [
