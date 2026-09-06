@@ -1,8 +1,8 @@
 import pytest
 
-from kcs.agent.workspace_tools import WorkspaceTools
-from kcs.infra.agent_session_dao import agent_session_storage
-from kcs.schemas import AgentSessionCreate
+from zett.agent.workspace_tools import WorkspaceTools
+from zett.infra.agent_session_dao import agent_session_storage
+from zett.schemas import AgentSessionCreate
 
 
 def test_workspace_tools_read_write_edit_search_and_execute_command() -> None:

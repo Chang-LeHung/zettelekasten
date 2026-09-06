@@ -4,9 +4,9 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
-from kcs import config
-from kcs.infra import database
-from kcs.infra.models import Base
+from zett import config
+from zett.infra import database
+from zett.infra.models import Base
 
 
 @pytest.fixture(autouse=True)
@@ -21,7 +21,7 @@ def isolated_database(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Eng
     monkeypatch.setattr(database, "engine", engine)
     Base.metadata.create_all(engine)
     yield engine
-    from kcs.infra.agent_runtime import close_agent_runtime_storage
+    from zett.infra.agent_runtime import close_agent_runtime_storage
 
     close_agent_runtime_storage()
     engine.dispose()

@@ -4,7 +4,7 @@ backend/__pycache__/
 *.py[cod]
 frontend/node_modules/
 frontend/dist/
-backend/kcs/static/
+backend/zett/static/
 data/*.db
 .env
 .vscode/settings.json

@@ -1,28 +1,28 @@
 HOST ?= 127.0.0.1
 PORT ?= 6280
 
-.PHONY: help install backend-install kcs-agent-install frontend-install frontend-build start dev check \
-	kcs-agent-check ruff-check typecheck pre-commit-install
+.PHONY: help install backend-install zett-agent-install frontend-install frontend-build start dev check \
+	zett-agent-check ruff-check typecheck pre-commit-install
 
 help:
 	@echo "Available targets:"
-	@echo "  make install   Build the frontend, install the kcs command, and sync the kcs-agent runtime"
+	@echo "  make install   Build the frontend, install the zett command, and sync the zett-agent runtime"
 	@echo "  make start     Start the installed application"
 	@echo "  make dev       Build and start the application from source"
 	@echo "  make check     Run backend lint and frontend type/build checks"
-	@echo "  make kcs-agent-check  Verify the standalone agent runtime"
+	@echo "  make zett-agent-check  Verify the standalone agent runtime"
 	@echo "  make pre-commit-install  Install the Ruff and TypeScript Git hooks"
 
-install: frontend-install frontend-build kcs-agent-install
+install: frontend-install frontend-build zett-agent-install
 	uv tool install --force ./backend
-	@echo "Installed. Run: kcs start"
+	@echo "Installed. Run: zett start"
 
 backend-install:
 	uv sync --directory backend --locked
 
-kcs-agent-install:
-	uv sync --directory backend/kcs-agent
-	@echo "kcs-agent installed locally at backend/kcs-agent/.venv"
+zett-agent-install:
+	uv sync --directory backend/zett-agent
+	@echo "zett-agent installed locally at backend/zett-agent/.venv"
 
 frontend-install:
 	npm --prefix frontend install
@@ -32,16 +32,16 @@ frontend-build:
 	npm --prefix frontend run build
 
 start:
-	kcs start --host $(HOST) --port $(PORT)
+	zett start --host $(HOST) --port $(PORT)
 
 dev: backend-install frontend-build
-	uv run --directory backend kcs start --host $(HOST) --port $(PORT) --reload
+	uv run --directory backend zett start --host $(HOST) --port $(PORT) --reload
 
 ruff-check:
-	uv run --directory backend ruff format --check kcs tests
-	uv run --directory backend ruff check kcs tests
-	env -u VIRTUAL_ENV uv run --directory backend/kcs-agent ruff format --check src tests examples
-	env -u VIRTUAL_ENV uv run --directory backend/kcs-agent ruff check src tests examples
+	uv run --directory backend ruff format --check zett tests
+	uv run --directory backend ruff check zett tests
+	env -u VIRTUAL_ENV uv run --directory backend/zett-agent ruff format --check src tests examples
+	env -u VIRTUAL_ENV uv run --directory backend/zett-agent ruff check src tests examples
 
 typecheck:
 	npm --prefix frontend run typecheck
@@ -52,12 +52,12 @@ pre-commit-install: backend-install frontend-install
 check:
 	$(MAKE) ruff-check
 	uv run --directory backend pytest
-	$(MAKE) kcs-agent-check
+	$(MAKE) zett-agent-check
 	npm --prefix frontend run test
 	$(MAKE) typecheck
 	npm --prefix frontend run build
 
-kcs-agent-check:
-	uv run --directory backend/kcs-agent ruff format --check src tests examples
-	uv run --directory backend/kcs-agent ruff check src tests examples
-	uv run --directory backend/kcs-agent pytest --cov --cov-report=term-missing
+zett-agent-check:
+	uv run --directory backend/zett-agent ruff format --check src tests examples
+	uv run --directory backend/zett-agent ruff check src tests examples
+	uv run --directory backend/zett-agent pytest --cov --cov-report=term-missing

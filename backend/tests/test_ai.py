@@ -1,11 +1,11 @@
 import pytest
 from fastapi import HTTPException
-from kcs_agent import AgentModel, DeepSeekProvider, ModelRequest, ReasoningEffort
+from zett_agent import AgentModel, DeepSeekProvider, ModelRequest, ReasoningEffort
 
-from kcs.infra.provider_adapter import create_agent_model
-from kcs.infra.provider_dao import ai_provider_storage
-from kcs.models import AIProviderRuntime
-from kcs.schemas import AIProviderIn
+from zett.infra.provider_adapter import create_agent_model
+from zett.infra.provider_dao import ai_provider_storage
+from zett.models import AIProviderRuntime
+from zett.schemas import AIProviderIn
 
 
 @pytest.mark.parametrize(

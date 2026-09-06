@@ -1,6 +1,6 @@
-from kcs.infra.ai_settings_dao import ai_settings_storage
-from kcs.infra.storage import Storage
-from kcs.schemas import AISettingsIn, AISettingsOut
+from zett.infra.ai_settings_dao import ai_settings_storage
+from zett.infra.storage import Storage
+from zett.schemas import AISettingsIn, AISettingsOut
 
 
 def _settings(model: str = "deepseek-v4-flash") -> AISettingsIn:

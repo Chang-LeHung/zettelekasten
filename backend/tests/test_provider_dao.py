@@ -1,9 +1,9 @@
 import pytest
 from fastapi import HTTPException
 
-from kcs.infra.provider_dao import AIProviderConnection, ai_provider_storage
-from kcs.models import AIProviderListOptions
-from kcs.schemas import AIProviderIn, AIProviderOut
+from zett.infra.provider_dao import AIProviderConnection, ai_provider_storage
+from zett.models import AIProviderListOptions
+from zett.schemas import AIProviderIn, AIProviderOut
 
 
 def _provider(name: str, *, enabled: bool = True) -> AIProviderIn:

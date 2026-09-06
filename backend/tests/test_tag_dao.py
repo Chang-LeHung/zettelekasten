@@ -1,10 +1,10 @@
 import pytest
 from fastapi import HTTPException
 
-from kcs.infra.card_dao import card_storage
-from kcs.infra.tag_dao import tag_storage
-from kcs.models import TagListOptions
-from kcs.schemas import CardCreate, TagCreate
+from zett.infra.card_dao import card_storage
+from zett.infra.tag_dao import tag_storage
+from zett.models import TagListOptions
+from zett.schemas import CardCreate, TagCreate
 
 
 def test_tag_storage_uses_typed_models_for_recursive_queries() -> None:

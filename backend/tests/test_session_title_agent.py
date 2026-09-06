@@ -1,24 +1,24 @@
 from typing import cast
 
 import pytest
-from kcs_agent import AgentModel, AssistantMessage, ModelEvent, ModelResponse, ToolCall, UserMessage
+from zett_agent import AgentModel, AssistantMessage, ModelEvent, ModelResponse, ToolCall, UserMessage
 
-from kcs.agent.session_title_agent import SessionTitleAgent, SessionTitleOutput
-from kcs.infra.agent_runtime import get_agent_runtime_storage
-from kcs.infra.agent_session_dao import agent_session_storage
-from kcs.models import AIProviderRuntime
-from kcs.schemas import AgentRunStatus, AgentSessionCreate, ReasoningEffort
+from zett.agent.session_title_agent import SessionTitleAgent, SessionTitleOutput
+from zett.infra.agent_runtime import get_agent_runtime_storage
+from zett.infra.agent_session_dao import agent_session_storage
+from zett.models import AIProviderRuntime
+from zett.schemas import AgentRunStatus, AgentSessionCreate, ReasoningEffort
 
 
 async def append_messages(session_id: str, request_id: str, *messages) -> None:
-    """Append typed runtime messages through kcs-agent's authoritative store."""
+    """Append typed runtime messages through zett-agent's authoritative store."""
     storage = get_agent_runtime_storage()
     for message in messages:
         await storage.append(session_id, request_id, message)
 
 
 def complete_run(session_id: str, request_id: str) -> None:
-    """Create a successful observable KCS run for title eligibility."""
+    """Create a successful observable Zett run for title eligibility."""
     run = agent_session_storage.start_run(session_id, request_id, None, "fake", "model", ReasoningEffort.OFF)
     agent_session_storage.finish_run(run.id, AgentRunStatus.SUCCEEDED, {})
 
@@ -66,7 +66,7 @@ async def test_title_agent_silently_updates_session() -> None:
     updated = agent_session_storage.get(session.id)
     assert updated is not None
     assert updated.title == "Agent workflow DSL"
-    assert updated.metadata["title_generated_by"] == "KCS Session Title Agent"
+    assert updated.metadata["title_generated_by"] == "Zett Session Title Agent"
     assert updated.metadata["title_message_count"] == 2
     assert updated.metadata["title_finalized"] is True
     assert model.calls == 1

@@ -1,10 +1,10 @@
-from kcs.agent.tools import ArtifactTools
-from kcs.application.services import KnowledgeLibraryApplicationService
-from kcs.infra.agent_session_dao import agent_session_storage
-from kcs.infra.article_dao import ArticleStorage, article_storage
-from kcs.infra.storage import Storage
-from kcs.models import ArticleListOptions, LibraryListOptions
-from kcs.schemas import (
+from zett.agent.tools import ArtifactTools
+from zett.application.services import KnowledgeLibraryApplicationService
+from zett.infra.agent_session_dao import agent_session_storage
+from zett.infra.article_dao import ArticleStorage, article_storage
+from zett.infra.storage import Storage
+from zett.models import ArticleListOptions, LibraryListOptions
+from zett.schemas import (
     AgentSessionCreate,
     ArticleArtifactContent,
     ArticleCreate,
@@ -68,7 +68,7 @@ def test_saving_article_publishes_it_into_unified_library() -> None:
 
 
 def test_library_combines_cards_and_articles_and_deletes_by_resource_type() -> None:
-    from kcs.application.services import CardApplicationService
+    from zett.application.services import CardApplicationService
 
     card = CardApplicationService.create(CardCreate(title="Small note", content="A compact idea."))
     article = article_storage.create(ArticleCreate(title="Long article", content="A detailed explanation."))
@@ -82,7 +82,7 @@ def test_library_combines_cards_and_articles_and_deletes_by_resource_type() -> N
 
 
 def test_library_updates_editable_fields_and_preserves_resource_metadata() -> None:
-    from kcs.application.services import CardApplicationService
+    from zett.application.services import CardApplicationService
 
     card = CardApplicationService.create(
         CardCreate(type="idea", title="Initial card", content="Initial body", source="Notebook")

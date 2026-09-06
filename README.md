@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="frontend/public/logo.png" width="144" height="144" alt="Knowledge Cards System logo">
+  <img src="frontend/public/logo.png" width="144" height="144" alt="Zett logo">
 </p>
 
-<h1 align="center">Knowledge Cards System</h1>
+<h1 align="center">Zett</h1>
 
 <p align="center">
   A local-first, AI-assisted workspace for turning conversations, rough notes, links, and assets into reusable knowledge.
@@ -17,11 +17,11 @@
 
 ---
 
-Knowledge Cards System (KCS) combines a streamed AI conversation, durable session context, flexible artifacts, and a unified card-and-article library in one private local application.
+Zett combines a streamed AI conversation, durable session context, flexible artifacts, and a unified card-and-article library in one private local application.
 
 ## Highlights
 
-- Chat with KCS Agent through a streamed conversation interface.
+- Chat with Zett Agent through a streamed conversation interface.
 - Stream assistant text, reasoning, tool calls, arguments, and results in timeline order.
 - Create multiple card, article, and image artifacts in one conversation.
 - Publish cards and articles into a unified searchable library.
@@ -37,7 +37,7 @@ Knowledge Cards System (KCS) combines a streamed AI conversation, durable sessio
 - Python 3.14
 - FastAPI and Typer
 - SQLAlchemy and SQLite
-- KCS Agent with native provider SDK adapters
+- Zett Agent with native provider SDK adapters
 - Vue 3 and TypeScript
 - Vite
 - `uv` for Python dependency management
@@ -51,10 +51,10 @@ Install the frontend dependencies, build the Vue application, and install the Py
 make install
 ```
 
-The packaged `kcs` command serves both the API and the compiled frontend:
+The packaged `zett` command serves both the API and the compiled frontend:
 
 ```bash
-kcs start
+zett start
 ```
 
 The default application address is:
@@ -66,46 +66,46 @@ http://127.0.0.1:6280
 Use a different port when necessary:
 
 ```bash
-kcs start --port 9000
+zett start --port 9000
 ```
 
 Interactive API documentation is available at `/docs` while the service is running.
 
 ## Local Data
 
-KCS keeps personal data under the current user's home directory by default:
+Zett keeps personal data under the current user's home directory by default:
 
 ```text
-~/.knowledge_cards/
+~/.zett/
 ├── cards.db
 ├── agent.db
 ├── assets/
 │   └── <session-id>/
 └── logs/
-    ├── kcs.log
-    └── kcs.log.1
+    ├── zett.log
+    └── zett.log.1
 ```
 
 The rotating logger keeps two files with a maximum size of 64 MiB each. Session binaries are isolated in canonical UUID directories and filesystem paths are never exposed through the API.
 
 ## Configuration
 
-Runtime configuration uses the `KCS_` environment variable prefix:
+Runtime configuration uses the `ZETT_` environment variable prefix:
 
 | Variable | Purpose |
 | --- | --- |
-| `KCS_HOST` | HTTP bind address |
-| `KCS_PORT` | HTTP port |
-| `KCS_DATABASE_PATH` | KCS domain and observability SQLite database path |
-| `KCS_AGENT_DATABASE_PATH` | KCS Agent raw-message and snapshot SQLite database path |
-| `KCS_ASSET_DIR` | Session asset directory |
-| `KCS_MAX_ASSET_SIZE_BYTES` | Maximum binary asset size |
-| `KCS_LOG_DIR` | Rotating log directory |
-| `KCS_LOG_LEVEL` | Application log level |
-| `KCS_CORS_ORIGINS` | Allowed CORS origins |
-| `KCS_SECRET_KEY` | Local provider-secret encryption key |
-| `KCS_AGENT_CONTEXT_MAX_TOKENS` | Token threshold that triggers agent context compaction |
-| `KCS_AGENT_KEEP_RECENT_TOKENS` | Minimum recent token budget retained after compaction |
+| `ZETT_HOST` | HTTP bind address |
+| `ZETT_PORT` | HTTP port |
+| `ZETT_DATABASE_PATH` | Zett domain and observability SQLite database path |
+| `ZETT_AGENT_DATABASE_PATH` | Zett Agent raw-message and snapshot SQLite database path |
+| `ZETT_ASSET_DIR` | Session asset directory |
+| `ZETT_MAX_ASSET_SIZE_BYTES` | Maximum binary asset size |
+| `ZETT_LOG_DIR` | Rotating log directory |
+| `ZETT_LOG_LEVEL` | Application log level |
+| `ZETT_CORS_ORIGINS` | Allowed CORS origins |
+| `ZETT_SECRET_KEY` | Local provider-secret encryption key |
+| `ZETT_AGENT_CONTEXT_MAX_TOKENS` | Token threshold that triggers agent context compaction |
+| `ZETT_AGENT_KEEP_RECENT_TOKENS` | Minimum recent token budget retained after compaction |
 
 The frontend calls the same-origin `/api` path. During separate frontend development, point Vite at another backend without changing source code:
 
@@ -120,7 +120,7 @@ Start the backend directly:
 ```bash
 cd backend
 uv sync
-uv run kcs start
+uv run zett start
 ```
 
 Start the Vue development server:
@@ -150,11 +150,11 @@ Every commit then requires Ruff formatting and lint checks for both Python proje
 ## CLI Examples
 
 ```bash
-kcs tag add Technology
-kcs tag add Python --parent-id 1
-kcs add --type idea --tag-id 2 "Capture an idea"
-kcs search idea
-kcs tag tree
+zett tag add Technology
+zett tag add Python --parent-id 1
+zett add --type idea --tag-id 2 "Capture an idea"
+zett search idea
+zett tag tree
 ```
 
 ## Architecture
@@ -162,11 +162,11 @@ kcs tag tree
 The backend follows domain-driven design:
 
 ```text
-backend/kcs/
+backend/zett/
 ├── domain/       # Framework-independent domain rules and service boundaries
 ├── application/  # Use-case orchestration and process services
 ├── infra/        # SQLAlchemy storage, SQLite, logging, and provider adapters
-├── agent/        # KCS Agent, context compaction, and typed tools
+├── agent/        # Zett Agent, context compaction, and typed tools
 ├── main.py       # FastAPI interface
 └── cli.py        # Typer interface
 ```
@@ -175,19 +175,19 @@ HTTP and CLI interfaces call application services rather than storage implementa
 
 The Vue frontend keeps all backend calls in typed clients under `frontend/src/api`. Components do not hard-code backend URLs.
 
-The standalone [`kcs-agent`](backend/kcs-agent) package powers KCS conversations, tool execution, and streaming. Its current local development version uses direct message fields and a small model/tool loop. KCS passes prepared history from its context snapshot and raw-log tail, excluding the current input. Tools are supplied directly to the agent, with optional guidelines appended to system instructions. Title generation and compaction use schema-bound tool responses validated by Pydantic. This simplified API is not yet published; development and `make install` use the local `kcs-agent` package.
+The standalone [`zett-agent`](backend/zett-agent) package powers Zett conversations, tool execution, and streaming. Its current local development version uses direct message fields and a small model/tool loop. Zett passes prepared history from its context snapshot and raw-log tail, excluding the current input. Tools are supplied directly to the agent, with optional guidelines appended to system instructions. Title generation and compaction use schema-bound tool responses validated by Pydantic. This simplified API is not yet published; development and `make install` use the local `zett-agent` package.
 
 ## Agent Sessions and Context
 
 Each conversation can own zero or many typed artifacts. Artifacts have stable IDs, lifecycle states, versions, type-specific content, and optional links to permanent library resources. Saving a card or article publishes it to the unified library only when explicitly requested.
 
-KCS Agent uses the standalone package's bounded model-and-tool loop. Its typed tools can create and update artifacts and operate inside the current session workspace. Filesystem tools include directory listing, file reading, writing, editing, globbing, searching, and restricted command execution. Commands run without a shell interpreter, use allowlists, reject traversal and shell operators, and enforce output and execution limits.
+Zett Agent uses the standalone package's bounded model-and-tool loop. Its typed tools can create and update artifacts and operate inside the current session workspace. Filesystem tools include directory listing, file reading, writing, editing, globbing, searching, and restricted command execution. Commands run without a shell interpreter, use allowlists, reject traversal and shell operators, and enforce output and execution limits.
 
 Conversation history is stored as immutable raw log messages plus versioned context snapshots. Context reconstruction loads the newest snapshot and replays only messages after its boundary. Once the configured token threshold is reached, the compaction middleware summarizes older messages while preserving a recent verbatim tail. Raw logs and previous snapshot versions remain available for auditing and rebuilding context.
 
 ## API Models
 
-Pydantic request and response models in `backend/kcs/schemas.py` contain typed constraints and English field descriptions. Run the service and open `/docs` to inspect the generated OpenAPI schema.
+Pydantic request and response models in `backend/zett/schemas.py` contain typed constraints and English field descriptions. Run the service and open `/docs` to inspect the generated OpenAPI schema.
 
 ## License
 

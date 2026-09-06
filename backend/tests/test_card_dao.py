@@ -1,7 +1,7 @@
-from kcs.application.services import CardApplicationService
-from kcs.infra.card_dao import card_storage
-from kcs.infra.tag_dao import tag_storage
-from kcs.schemas import CardCreate, TagCreate
+from zett.application.services import CardApplicationService
+from zett.infra.card_dao import card_storage
+from zett.infra.tag_dao import tag_storage
+from zett.schemas import CardCreate, TagCreate
 
 
 def test_deleting_card_removes_card_and_explicit_tag_links() -> None:

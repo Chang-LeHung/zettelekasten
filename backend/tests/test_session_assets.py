@@ -4,13 +4,13 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from kcs import config
-from kcs.application.services import KnowledgeWorkspaceApplicationService, SessionAssetApplicationService
-from kcs.domain.services import DomainError
-from kcs.infra.agent_session_dao import agent_session_storage
-from kcs.infra.session_asset_dao import session_asset_storage
-from kcs.main import app
-from kcs.schemas import AgentSessionCreate, SessionLinkAssetIn, SessionTextAssetIn
+from zett import config
+from zett.application.services import KnowledgeWorkspaceApplicationService, SessionAssetApplicationService
+from zett.domain.services import DomainError
+from zett.infra.agent_session_dao import agent_session_storage
+from zett.infra.session_asset_dao import session_asset_storage
+from zett.main import app
+from zett.schemas import AgentSessionCreate, SessionLinkAssetIn, SessionTextAssetIn
 
 
 def test_session_assets_store_typed_metadata_and_binary_files() -> None:
@@ -124,7 +124,7 @@ def test_agent_workspace_manifest_projects_registered_session_assets() -> None:
     )
 
     workspace = session_asset_storage.prepare_agent_workspace(session.id)
-    manifest = json.loads((workspace / ".kcs-assets.json").read_text(encoding="utf-8"))
+    manifest = json.loads((workspace / ".zett-assets.json").read_text(encoding="utf-8"))
     entries = {item["id"]: item for item in manifest["assets"]}
 
     assert workspace == config.settings.asset_directory / session.id

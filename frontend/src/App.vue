@@ -95,7 +95,7 @@ const searchInput = ref<HTMLInputElement | null>(null)
 const agentThread = ref<HTMLElement | null>(null)
 const assetFileInput = ref<HTMLInputElement | null>(null)
 const titleRefreshTimers: number[] = []
-const activeSessionKey = 'kcs.active-session-id'
+const activeSessionKey = 'zett.active-session-id'
 const cardTypes: CardType[] = ['note', 'idea', 'quote', 'todo', 'reference']
 const assetFilters: Array<{ value: AssetFilter; label: string }> = [
   { value: 'all', label: 'All' },
@@ -1367,8 +1367,8 @@ onBeforeUnmount(() => {
 
             <section class="agent-chat" aria-label="Knowledge card conversation">
               <div class="agent-chat-header">
-                <div class="agent-identity"><img src="/logo.png" alt="" /><div><strong>KCS Agent</strong><small>Turn a conversation into knowledge</small></div></div>
-                <span class="streaming-status"><i />KCS Agent online</span>
+                <div class="agent-identity"><img src="/logo.png" alt="" /><div><strong>Zett Agent</strong><small>Turn a conversation into knowledge</small></div></div>
+                <span class="streaming-status"><i />Zett Agent online</span>
               </div>
 
               <div ref="agentThread" class="agent-thread" :class="{ empty: !conversationStarted }" aria-live="polite" @scroll.passive="handleAgentThreadScroll">
@@ -1392,7 +1392,7 @@ onBeforeUnmount(() => {
                       <svg v-else><use href="#icon-user" /></svg>
                     </div>
                     <div class="message-body">
-                      <div class="message-author"><strong>{{ message.role === 'assistant' ? 'KCS Agent' : 'You' }}</strong><small>{{ message.role === 'assistant' ? 'Knowledge assistant' : 'Personal workspace' }}</small></div>
+                      <div class="message-author"><strong>{{ message.role === 'assistant' ? 'Zett Agent' : 'You' }}</strong><small>{{ message.role === 'assistant' ? 'Knowledge assistant' : 'Personal workspace' }}</small></div>
                       <div class="agent-event-timeline">
                         <template v-for="entry in historicalTimeline(message)" :key="entry.id">
                           <details v-if="entry.type === 'reasoning'" class="reasoning-panel">
@@ -1422,7 +1422,7 @@ onBeforeUnmount(() => {
                   <div v-if="loading && streamingResponseVisible" class="message assistant-message streaming-message">
                     <div class="message-profile agent-profile" aria-hidden="true"><img src="/logo.png" alt="" /></div>
                     <div class="message-body">
-                      <div class="message-author"><strong>KCS Agent</strong><small class="live-agent-state"><i />{{ streamingStatus.replaceAll('_', ' ') }}</small></div>
+                      <div class="message-author"><strong>Zett Agent</strong><small class="live-agent-state"><i />{{ streamingStatus.replaceAll('_', ' ') }}</small></div>
                       <div v-if="streamingTimeline.length" class="agent-event-timeline">
                         <template v-for="(entry, entryIndex) in streamingTimeline" :key="entry.id">
                           <details v-if="entry.type === 'reasoning'" class="reasoning-panel streaming-reasoning" :open="entryIndex === streamingTimeline.length - 1">
@@ -1455,7 +1455,7 @@ onBeforeUnmount(() => {
               </div>
 
               <form class="agent-input" @submit.prevent="submitConversation">
-                <textarea v-if="!conversationStarted" v-model="raw" rows="3" autofocus placeholder="Message KCS Agent…" @keydown.enter.exact="handleComposerEnter" />
+                <textarea v-if="!conversationStarted" v-model="raw" rows="3" autofocus placeholder="Message Zett Agent…" @keydown.enter.exact="handleComposerEnter" />
                 <textarea v-else v-model="followUp" rows="3" placeholder="Continue the conversation…" @keydown.enter.exact="handleComposerEnter" />
                 <div class="agent-input-footer">
                   <div class="composer-controls">
@@ -1499,7 +1499,7 @@ onBeforeUnmount(() => {
               <div v-if="!artifactContent" class="artifact-placeholder">
                 <span><svg><use href="#icon-cards" /></svg></span>
                 <h2>No artifacts yet</h2>
-                <p>Keep talking with KCS Agent. Cards, articles, and images will appear here when the conversation produces them.</p>
+                <p>Keep talking with Zett Agent. Cards, articles, and images will appear here when the conversation produces them.</p>
               </div>
               <div v-else class="artifact-panel artifact-editor">
                 <div class="artifact-editor-accent" />
