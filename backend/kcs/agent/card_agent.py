@@ -91,7 +91,7 @@ class KCSAgent(StreamingAgent[AnalyzeRequest]):
         provider_name: str | None = None
         model_name: str | None = None
         chat_model: AgentModel | None = None
-        active_tool: tuple[ToolCall, datetime, float] | None = None
+        active_tools: dict[str, tuple[ToolCall, datetime, float]] = {}
         state = _RunState()
         compaction_text = ""
         compaction_reasoning = ""
@@ -215,21 +215,25 @@ class KCSAgent(StreamingAgent[AnalyzeRequest]):
                             state.finish_reason = event.response.finish_reason or state.finish_reason
                             yield _sse("usage", self._usage_event(usage_totals, state))
                         case AgentEventType.TOOL_STARTED:
-                            if event.call is None:
+                            if not event.tool_calls:
                                 raise RuntimeError("Missing normalized tool call")
-                            active_tool = (event.call, datetime.now(UTC), perf_counter())
-                            timeline.append({"type": "tool", "tool_call_id": event.call.id})
-                            yield _sse(
-                                "tool",
-                                {
-                                    "id": event.call.id,
-                                    "name": event.call.name,
-                                    "state": "started",
-                                    "arguments": dict(event.call.arguments),
-                                },
-                            )
+                            for call in event.tool_calls:
+                                active_tools[call.id] = (call, datetime.now(UTC), perf_counter())
+                                timeline.append({"type": "tool", "tool_call_id": call.id})
+                                yield _sse(
+                                    "tool",
+                                    {
+                                        "id": call.id,
+                                        "name": call.name,
+                                        "state": "started",
+                                        "arguments": dict(call.arguments),
+                                    },
+                                )
                         case AgentEventType.TOOL_COMPLETED | AgentEventType.TOOL_FAILED:
-                            if active_tool is None or event.message is None:
+                            if event.message is None:
+                                raise RuntimeError("Tool completed without a matching start")
+                            active_tool = active_tools.pop(event.message.tool_call_id, None)
+                            if active_tool is None:
                                 raise RuntimeError("Tool completed without a matching start")
                             output = json.loads(event.message.content)
                             status = (
@@ -247,7 +251,6 @@ class KCSAgent(StreamingAgent[AnalyzeRequest]):
                                 status,
                                 str(event.error) if event.error else None,
                             )
-                            active_tool = None
                             yield _sse("tool", payload)
                             yield _sse(
                                 "artifacts", [artifact.model_dump(mode="json") for artifact in artifact_tools.list()]
@@ -271,7 +274,7 @@ class KCSAgent(StreamingAgent[AnalyzeRequest]):
             yield _sse("result", latest.model_dump(mode="json") if latest else None)
         except (asyncio.CancelledError, GeneratorExit) as exc:
             if run_id is not None:
-                if active_tool is not None:
+                for active_tool in active_tools.values():
                     self._record_tool(
                         active_tool,
                         conversation_id,
@@ -282,7 +285,7 @@ class KCSAgent(StreamingAgent[AnalyzeRequest]):
                         AgentRunStatus.CANCELLED,
                         "Tool execution cancelled",
                     )
-                    active_tool = None
+                active_tools.clear()
                 if state.assistant_text.strip() or state.reasoning_text.strip() or timeline:
                     storage = get_agent_runtime_storage()
                     await storage.append(
