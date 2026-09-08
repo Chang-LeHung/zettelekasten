@@ -4,7 +4,7 @@ from pathlib import Path
 from threading import Lock
 from time import gmtime
 
-from ..config import settings
+from ...config import settings
 
 LOGGER_NAMESPACE = "zett"
 LOG_FILE_NAME = "zett.log"
@@ -92,7 +92,7 @@ def uvicorn_log_config(level: str | None = None) -> dict[str, object]:
         "disable_existing_loggers": False,
         "formatters": {
             "zett": {
-                "()": "zett.infra.logging.UTCFormatter",
+                "()": "zett.infra.log.UTCFormatter",
                 "fmt": LOG_FORMAT,
                 "datefmt": "%Y-%m-%dT%H:%M:%S",
             }

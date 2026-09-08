@@ -1,1 +1,1 @@
-"""Personal knowledge cards backend."""
+"""Zett session, asset, and artifact storage foundation."""

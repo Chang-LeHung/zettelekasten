@@ -2,17 +2,17 @@ import json
 from datetime import UTC, datetime
 from enum import IntEnum
 from typing import cast
-from uuid import uuid4
 
 from pydantic import TypeAdapter
 from sqlalchemy import delete as sql_delete
 from sqlalchemy import select
+from zett_agent import new_uuid7
 
-from ..models import ArtifactListOptions
-from ..schemas import AgentArtifact, AgentArtifactWrite, ArtifactContent, ArtifactStatus, ArtifactType
-from .database import session_scope
-from .models import AgentSessionModel, SessionArtifactModel
-from .storage import Storage
+from ...models import ArtifactListOptions
+from ...schemas import AgentArtifact, AgentArtifactWrite, ArtifactContent, ArtifactStatus, ArtifactType
+from ..database import session_scope
+from ..models import SessionArtifactModel
+from ..storage import Storage
 
 
 class ArtifactTypeCode(IntEnum):
@@ -57,9 +57,8 @@ def _artifact_out(model: SessionArtifactModel) -> AgentArtifact:
         status=CODE_TO_STATUS[model.status],
         content=CONTENT_ADAPTER.validate_python(_json_load(model.content_json, {})),
         raw_content=model.raw_content,
-        linked_resource_id=model.linked_resource_id,
         version=model.version,
-        metadata=_json_load(model.metadata_json, {}),
+        metadata=_json_load(model.metadata_value, {}),
         created_at=model.created_at,
         updated_at=model.updated_at,
     )
@@ -70,20 +69,21 @@ class ArtifactStorage(Storage[AgentArtifactWrite, AgentArtifact, str, ArtifactLi
 
     def create(self, entity: AgentArtifactWrite) -> AgentArtifact:
         now = datetime.now(UTC)
+        from ..agent_runtime import get_agent_runtime_storage
+
+        if get_agent_runtime_storage().get_session(entity.session_id) is None:
+            raise KeyError(f"Agent session not found: {entity.session_id}")
         with session_scope() as session:
-            if session.get(AgentSessionModel, entity.session_id) is None:
-                raise KeyError(f"Agent session not found: {entity.session_id}")
             model = SessionArtifactModel(
-                id=str(uuid4()),
+                id=new_uuid7(),
                 session_id=entity.session_id,
                 artifact_type=int(TYPE_TO_CODE[entity.content.artifact_type]),
                 status=int(STATUS_TO_CODE[entity.status]),
                 title=entity.content.title,
                 content_json=entity.content.model_dump_json(),
                 raw_content=entity.raw_content,
-                linked_resource_id=entity.linked_resource_id,
                 version=1,
-                metadata_json=json.dumps(entity.metadata, ensure_ascii=False),
+                metadata_value=json.dumps(entity.metadata, ensure_ascii=False),
                 created_at=now,
                 updated_at=now,
             )
@@ -106,8 +106,7 @@ class ArtifactStorage(Storage[AgentArtifactWrite, AgentArtifact, str, ArtifactLi
             model.title = entity.content.title
             model.content_json = entity.content.model_dump_json()
             model.raw_content = entity.raw_content
-            model.linked_resource_id = entity.linked_resource_id
-            model.metadata_json = json.dumps(entity.metadata, ensure_ascii=False)
+            model.metadata_value = json.dumps(entity.metadata, ensure_ascii=False)
             model.version += 1
             model.updated_at = datetime.now(UTC)
             session.flush()

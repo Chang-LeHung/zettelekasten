@@ -1,17 +1,12 @@
-"""Persisted Zett Agent runtime, session boundary, and tools."""
+"""Minimal zett-agent composition and SSE transport."""
 
-from .base import StreamingAgent
-from .card_agent import ZettAgent, zett_agent
-from .session_title_agent import SessionTitleAgent, session_title_agent
-from .tools import ArtifactTools
-from .workspace_tools import WorkspaceTools
+from .dispatcher import SSESend, ZettelkastenEventDispatcher, encode_sse, event_payload
+from .zettelkasten import ZettelkastenAgent
 
 __all__ = [
-    "ArtifactTools",
-    "ZettAgent",
-    "StreamingAgent",
-    "WorkspaceTools",
-    "SessionTitleAgent",
-    "zett_agent",
-    "session_title_agent",
+    "SSESend",
+    "ZettelkastenAgent",
+    "ZettelkastenEventDispatcher",
+    "encode_sse",
+    "event_payload",
 ]

@@ -3,7 +3,7 @@ from logging.handlers import RotatingFileHandler
 
 import pytest
 
-from zett.infra.logging import LOG_FILE_NAME, configure_logging, get_logger, shutdown_logging, uvicorn_log_config
+from zett.infra.log import LOG_FILE_NAME, configure_logging, get_logger, shutdown_logging, uvicorn_log_config
 
 
 @pytest.fixture(autouse=True)

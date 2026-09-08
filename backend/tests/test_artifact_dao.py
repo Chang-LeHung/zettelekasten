@@ -1,8 +1,8 @@
 from sqlalchemy import select
 
 from zett.infra import database
-from zett.infra.agent_session_dao import agent_session_storage
-from zett.infra.artifact_dao import artifact_storage
+from zett.infra.dao.artifact import artifact_storage
+from zett.infra.dao.session import session_storage
 from zett.infra.models import SessionArtifactModel
 from zett.infra.storage import Storage
 from zett.models import ArtifactListOptions
@@ -17,7 +17,7 @@ from zett.schemas import (
 
 
 def test_artifact_storage_persists_multiple_typed_outputs_per_session() -> None:
-    session_id = agent_session_storage.create(AgentSessionCreate()).id
+    session_id = session_storage.create(AgentSessionCreate()).session_id
     card = artifact_storage.create(
         AgentArtifactWrite(
             session_id=session_id,
@@ -56,8 +56,8 @@ def test_artifact_storage_persists_multiple_typed_outputs_per_session() -> None:
 
 
 def test_artifact_updates_are_versioned_and_cannot_cross_sessions() -> None:
-    first_session = agent_session_storage.create(AgentSessionCreate()).id
-    second_session = agent_session_storage.create(AgentSessionCreate()).id
+    first_session = session_storage.create(AgentSessionCreate()).session_id
+    second_session = session_storage.create(AgentSessionCreate()).session_id
     created = artifact_storage.create(
         AgentArtifactWrite(
             session_id=first_session,
@@ -92,7 +92,7 @@ def test_artifact_updates_are_versioned_and_cannot_cross_sessions() -> None:
 
 
 def test_artifact_filters_and_explicit_session_cleanup() -> None:
-    session_id = agent_session_storage.create(AgentSessionCreate()).id
+    session_id = session_storage.create(AgentSessionCreate()).session_id
     artifact_storage.create(
         AgentArtifactWrite(session_id=session_id, content=CardArtifactContent(title="Python", content="Code"))
     )

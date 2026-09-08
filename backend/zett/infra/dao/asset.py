@@ -5,17 +5,18 @@ import shutil
 from datetime import UTC, datetime
 from enum import IntEnum
 from pathlib import Path
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from sqlalchemy import delete as sql_delete
 from sqlalchemy import select
+from zett_agent import new_uuid7
 
-from ..config import settings
-from ..models import SessionAssetListOptions
-from ..schemas import SessionAssetCreate, SessionAssetOut, SessionAssetType
-from .database import session_scope
-from .models import AgentSessionModel, SessionAssetModel
-from .storage import Storage
+from ...config import settings
+from ...models import SessionAssetListOptions
+from ...schemas import SessionAssetCreate, SessionAssetOut, SessionAssetType
+from ..database import session_scope
+from ..models import SessionAssetModel
+from ..storage import Storage
 
 
 class AssetTypeCode(IntEnum):
@@ -53,7 +54,7 @@ def _asset_out(model: SessionAssetModel) -> SessionAssetOut:
         content_url=(
             f"/api/agent/{model.session_id}/assets/{model.id}/content" if asset_type != SessionAssetType.LINK else None
         ),
-        metadata=json.loads(model.metadata_json),
+        metadata=json.loads(model.metadata_value),
         created_at=model.created_at,
         updated_at=model.updated_at,
     )
@@ -65,17 +66,38 @@ def _safe_suffix(name: str) -> str:
     return suffix if re.fullmatch(r"\.[a-z0-9]+", suffix) else ""
 
 
+def _validate_payload(entity: SessionAssetCreate) -> None:
+    """Validate content consistently before any database or filesystem mutation."""
+    match entity.asset_type:
+        case SessionAssetType.IMAGE | SessionAssetType.FILE:
+            if entity.content is None:
+                raise ValueError("Binary asset content is required")
+        case SessionAssetType.TEXT:
+            if entity.text_content is None:
+                raise ValueError("Text asset content is required")
+        case SessionAssetType.LINK:
+            if not entity.source_url:
+                raise ValueError("Link asset URL is required")
+    payload = (
+        entity.content if entity.content is not None else (entity.text_content or entity.source_url or "").encode()
+    )
+    if len(payload) > settings.max_asset_size_bytes:
+        raise ValueError("Asset exceeds the configured size limit")
+
+
 class SessionAssetStorage(Storage[SessionAssetCreate, SessionAssetOut, str, SessionAssetListOptions]):
     """Persist session asset metadata in SQLite and binary payloads on local disk."""
 
     def create(self, entity: SessionAssetCreate) -> SessionAssetOut:
-        asset_id = str(uuid4())
+        _validate_payload(entity)
+        asset_id = new_uuid7()
         now = datetime.now(UTC)
         storage_name: str | None = None
         written_path: Path | None = None
-        with session_scope() as session:
-            if session.get(AgentSessionModel, entity.session_id) is None:
-                raise KeyError(f"Agent session not found: {entity.session_id}")
+        from ..agent_runtime import get_agent_runtime_storage
+
+        if get_agent_runtime_storage().get_session(entity.session_id) is None:
+            raise KeyError(f"Agent session not found: {entity.session_id}")
         if entity.asset_type in FILE_ASSET_TYPES:
             if entity.content is None:
                 raise ValueError("Binary asset content is required")
@@ -90,9 +112,6 @@ class SessionAssetStorage(Storage[SessionAssetCreate, SessionAssetOut, str, Sess
         payload = entity.content or (entity.text_content or entity.source_url or "").encode()
         try:
             with session_scope() as session:
-                owner = session.get(AgentSessionModel, entity.session_id)
-                if owner is None:
-                    raise KeyError(f"Agent session not found: {entity.session_id}")
                 model = SessionAssetModel(
                     id=asset_id,
                     session_id=entity.session_id,
@@ -104,12 +123,11 @@ class SessionAssetStorage(Storage[SessionAssetCreate, SessionAssetOut, str, Sess
                     storage_name=storage_name,
                     text_content=entity.text_content,
                     source_url=entity.source_url,
-                    metadata_json=json.dumps(entity.metadata, ensure_ascii=False),
+                    metadata_value=json.dumps(entity.metadata, ensure_ascii=False),
                     created_at=now,
                     updated_at=now,
                 )
                 session.add(model)
-                owner.updated_at = owner.last_activity_at = now
                 session.flush()
                 result = _asset_out(model)
             return result
@@ -125,6 +143,7 @@ class SessionAssetStorage(Storage[SessionAssetCreate, SessionAssetOut, str, Sess
             return _asset_out(model) if model else None
 
     def update(self, entity_id: str, entity: SessionAssetCreate) -> SessionAssetOut:
+        _validate_payload(entity)
         replacement_path: Path | None = None
         old_path: Path | None = None
         try:
@@ -139,7 +158,8 @@ class SessionAssetStorage(Storage[SessionAssetCreate, SessionAssetOut, str, Sess
                 if entity.asset_type in FILE_ASSET_TYPES:
                     if entity.content is None:
                         raise ValueError("Binary asset content is required")
-                    storage_name = f"{entity_id}-{uuid4().hex[:8]}{_safe_suffix(entity.name)}"
+                    revision = new_uuid7()
+                    storage_name = f"{entity_id}-{revision}{_safe_suffix(entity.name)}"
                     replacement_path = self._session_directory(entity.session_id) / storage_name
                     replacement_path.write_bytes(entity.content)
                 model.asset_type = int(ASSET_TO_CODE[entity.asset_type])
@@ -150,11 +170,8 @@ class SessionAssetStorage(Storage[SessionAssetCreate, SessionAssetOut, str, Sess
                 model.storage_name = storage_name
                 model.text_content = entity.text_content
                 model.source_url = entity.source_url
-                model.metadata_json = json.dumps(entity.metadata, ensure_ascii=False)
+                model.metadata_value = json.dumps(entity.metadata, ensure_ascii=False)
                 model.updated_at = datetime.now(UTC)
-                owner = session.get(AgentSessionModel, entity.session_id)
-                if owner is not None:
-                    owner.updated_at = owner.last_activity_at = model.updated_at
                 session.flush()
                 result = _asset_out(model)
         except Exception:
@@ -175,9 +192,6 @@ class SessionAssetStorage(Storage[SessionAssetCreate, SessionAssetOut, str, Sess
             session_id = model.session_id
             if model.storage_name:
                 stored_path = self._session_directory(model.session_id) / model.storage_name
-            owner = session.get(AgentSessionModel, model.session_id)
-            if owner is not None:
-                owner.updated_at = owner.last_activity_at = datetime.now(UTC)
             session.delete(model)
         if stored_path is not None:
             stored_path.unlink(missing_ok=True)
@@ -216,41 +230,6 @@ class SessionAssetStorage(Storage[SessionAssetCreate, SessionAssetOut, str, Sess
                 return None
             path = self._session_directory(session_id) / model.storage_name
             return path if path.is_file() else None
-
-    def prepare_agent_workspace(self, session_id: str) -> Path:
-        """Prepare a session-scoped filesystem and describe its registered assets."""
-        with session_scope() as session:
-            if session.get(AgentSessionModel, session_id) is None:
-                raise KeyError(f"Agent session not found: {session_id}")
-            models = session.scalars(
-                select(SessionAssetModel)
-                .where(SessionAssetModel.session_id == session_id)
-                .order_by(SessionAssetModel.created_at, SessionAssetModel.id)
-            ).all()
-            entries = [
-                {
-                    "id": model.id,
-                    "type": CODE_TO_ASSET[model.asset_type].value,
-                    "name": model.name,
-                    "mime_type": model.mime_type,
-                    "size_bytes": model.size_bytes,
-                    "file_path": f"/{model.storage_name}" if model.storage_name else None,
-                    "content": model.text_content
-                    or model.source_url
-                    or (f"Binary content is available at /{model.storage_name}" if model.storage_name else None),
-                    "metadata": json.loads(model.metadata_json),
-                }
-                for model in models
-            ]
-        directory = self._session_directory(session_id)
-        manifest = {
-            "description": "Zett session assets available to the agent",
-            "assets": entries,
-        }
-        (directory / ".zett-assets.json").write_text(
-            json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-        return directory
 
     def delete_session(self, session_id: str) -> None:
         """Explicitly remove all metadata and files owned by one session."""

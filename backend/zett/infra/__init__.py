@@ -1,1 +1,1 @@
-"""Infrastructure adapters for persistence and external providers."""
+"""Infrastructure for session persistence, assets, artifacts, and logging."""
