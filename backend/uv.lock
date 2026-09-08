@@ -1614,5 +1614,6 @@ docs = [
     { name = "pydata-sphinx-theme", specifier = ">=0.16,<1" },
     { name = "sphinx", specifier = ">=8,<10" },
     { name = "sphinx-copybutton", specifier = ">=0.5,<1" },
+    { name = "sphinxcontrib-mermaid", specifier = ">=2,<3" },
 ]
 docs-test = [{ name = "playwright", specifier = ">=1.50,<2" }]
