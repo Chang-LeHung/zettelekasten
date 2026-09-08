@@ -8,3 +8,5 @@ backend/zett/static/
 data/*.db
 .env
 .vscode/settings.json
+backend/zett-agent/docs/_build/
+backend/zett-agent/docs/_generated/

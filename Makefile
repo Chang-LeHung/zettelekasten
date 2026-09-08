@@ -1,8 +1,10 @@
 HOST ?= 127.0.0.1
 PORT ?= 6280
+DOCS_HOST ?= 127.0.0.1
+DOCS_PORT ?= 8000
 
 .PHONY: help install backend-install zett-agent-install frontend-install frontend-build start dev check \
-	zett-agent-check ruff-check typecheck pre-commit-install
+	zett-agent-check ruff-check typecheck pre-commit-install docs docs-serve docs-check docs-examples docs-ui-check
 
 help:
 	@echo "Available targets:"
@@ -12,6 +14,11 @@ help:
 	@echo "  make check     Run backend lint and frontend type/build checks"
 	@echo "  make zett-agent-check  Verify the standalone agent runtime"
 	@echo "  make pre-commit-install  Install the Ruff and TypeScript Git hooks"
+	@echo "  make docs      Build the Zett Agent API documentation"
+	@echo "  make docs-serve  Build and preview docs at http://$(DOCS_HOST):$(DOCS_PORT)"
+	@echo "  make docs-check  Validate public API coverage, examples, and local links"
+	@echo "  make docs-examples  Run all offline documentation examples"
+	@echo "  make docs-ui-check  Verify desktop/mobile navigation and search in Chromium"
 
 install: frontend-install frontend-build zett-agent-install
 	uv tool install --force ./backend
@@ -53,6 +60,7 @@ check:
 	$(MAKE) ruff-check
 	uv run --directory backend pytest
 	$(MAKE) zett-agent-check
+	$(MAKE) docs-check
 	npm --prefix frontend run test
 	$(MAKE) typecheck
 	npm --prefix frontend run build
@@ -61,3 +69,21 @@ zett-agent-check:
 	uv run --directory backend/zett-agent ruff format --check src tests examples
 	uv run --directory backend/zett-agent ruff check src tests examples
 	uv run --directory backend/zett-agent pytest --cov --cov-report=term-missing
+
+docs:
+	env -u VIRTUAL_ENV uv run --directory backend/zett-agent --group docs sphinx-build -E -a -W --keep-going -b html docs docs/_build/html
+
+docs-serve: docs
+	@echo "Zett Agent docs: http://$(DOCS_HOST):$(DOCS_PORT) (Ctrl+C to stop)"
+	env -u VIRTUAL_ENV uv run --directory backend/zett-agent --group docs python -m http.server $(DOCS_PORT) --bind $(DOCS_HOST) --directory docs/_build/html
+
+docs-examples:
+	env -u VIRTUAL_ENV uv run --directory backend/zett-agent --group docs pytest tests/test_documentation_examples.py -q
+
+docs-ui-check:
+	env -u VIRTUAL_ENV uv run --directory backend/zett-agent --group docs-test playwright install chromium
+	env -u VIRTUAL_ENV uv run --directory backend/zett-agent --group docs --group docs-test pytest tests/test_documentation.py -q
+
+docs-check:
+	env -u VIRTUAL_ENV uv run --directory backend/zett-agent --group docs ruff check docs
+	env -u VIRTUAL_ENV uv run --directory backend/zett-agent --group docs pytest tests/test_documentation.py tests/test_documentation_examples.py -q
