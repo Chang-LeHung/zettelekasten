@@ -38,27 +38,22 @@
 
 ## Logging
 
-- Obtain project loggers through `zett.infra.logging.get_logger` instead of calling `logging.getLogger` directly.
-- Configure logging through `zett.infra.logging.configure_logging` at process entry points.
+- Obtain project loggers through `zett.infra.log.get_logger` instead of calling `logging.getLogger` directly.
+- Configure logging through `zett.infra.log.configure_logging` at process entry points.
 - Store logs under the configured user data directory and never log provider secrets or card contents by default.
 
-## Agent Sessions
+## Current Rebuild Scope
 
-- Persist sessions, messages, artifacts, agent runs, tool calls, and observability metrics in SQLite.
-- Keep session records provider-neutral and align usage and latency names with GenAI observability conventions.
-- Define backend agent capabilities as typed Zett Agent tools under `zett/agent`.
-- Use schema-bound tool output with typed Pydantic validation whenever model output is consumed as structured data; do not parse model-authored prose as JSON.
-- Use the custom Zett Agent loop; do not add Deep Agents or another prebuilt agent runtime.
-- Keep raw conversation messages append-only and build model context from the latest versioned snapshot plus its replay tail.
-- Implement context compaction as middleware before the primary model call; never rewrite or delete raw history during compaction.
-- Implement streaming agents through the `StreamingAgent` boundary and keep each concrete agent in its own module.
-- Group related typed tool operations in a class before adapting them to Zett Agent tools.
-- Keep the agent runtime small: direct message fields, explicit history and tools, and a readable model/tool loop. Do not add generic state containers or an extension framework without a concrete new requirement.
-- Zett owns session persistence, compaction, and observability; pass prepared history to the runtime explicitly.
-- A conversation may own multiple durable card artifacts and each artifact must have a stable ID.
-- Persist an artifact only when the user explicitly requests saving or invokes the save action.
-- Stream conversational text and artifact updates as separate SSE events.
-- Treat client disconnects as cancellation: persist partial assistant output and mark the run and active tool call cancelled.
-- Store session asset metadata in SQLite and binary payloads under the configured user asset directory.
-- Isolate binary assets in one canonical UUID directory per session and never expose filesystem paths through APIs.
-- Delete session assets and their local directory explicitly; do not rely on foreign keys or cascade behavior.
+- Zett is currently a storage foundation, not a complete application.
+- Retain Session, Asset, Artifact, and Provider storage boundaries.
+- Session records, immutable raw messages, and versioned context snapshots belong to zett-agent; do not duplicate their tables in Zett.
+- Cards and articles are Artifact content variants, not separate library resources.
+- Do not reintroduce Tag, Workspace, permanent Resource adapters, legacy APIs, or migration code without a new requirement.
+- Keep the standalone zett-agent package unchanged when rebuilding application logic.
+- Preserve frontend UI source unless a frontend change is explicitly requested. Missing APIs are expected during this rebuild; do not invent compatibility responses.
+- Serve the frontend and the async health endpoint; design new business services and APIs separately.
+- Asset metadata, Artifact records, and encrypted Provider configurations use SQLAlchemy in the application database.
+- Store binary assets under the configured user asset directory, with one canonical UUID directory per session.
+- Never expose filesystem paths in public asset models.
+- Delete owned artifacts and asset files explicitly before removing the Agent session. Do not rely on foreign keys or cascades.
+- Tests must exercise actual temporary SQLite databases and clean up their data.

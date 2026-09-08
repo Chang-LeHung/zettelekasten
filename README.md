@@ -1,3 +1,10 @@
+> **Backend redesign in progress:** Zett currently retains Session, Asset,
+> Artifact, and Provider storage. Cards and articles are artifact variants. The frontend
+> is preserved, but former business APIs are removed. A minimal Agent/SSE facade
+> is available for the new application design.
+> See [the current backend scope](backend/README.md). Feature descriptions below
+> describe the previous application, not the currently available backend.
+
 <p align="center">
   <img src="frontend/public/logo.png" width="144" height="144" alt="Zett logo">
 </p>
