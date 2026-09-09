@@ -8,6 +8,7 @@ import { addAgentUsage, summarizeAgentUsage } from './utils/agentUsage'
 import { buildConversationTurns, formatTurnDuration, splitTurnTimeline, type ConversationTurn } from './utils/conversationTurns'
 import { jsonSnapshot } from './utils/jsonSnapshot'
 import { restorePersistedConversation } from './utils/persistedConversation'
+import { defaultProviderBaseUrl, providerBaseUrlHelp } from './utils/providerDefaults'
 import { todoFromTool } from './utils/toolPresentation'
 
 const MarkdownContent = defineAsyncComponent(() => import('./components/MarkdownContent.vue'))
@@ -1215,6 +1216,10 @@ function newProvider(): void {
   ai.value = { name: '', provider: 'openai_compatible', model: '', base_url: '', api_key: '', temperature: 0.2, enabled: true }
 }
 
+function selectProviderKind(): void {
+  ai.value.base_url = defaultProviderBaseUrl(ai.value.provider)
+}
+
 async function removeProvider(): Promise<void> {
   if (editingProviderId.value === null) return
   const confirmed = await requestConfirmation(
@@ -1692,9 +1697,9 @@ onBeforeUnmount(() => {
           <form class="settings-card" @submit.prevent="saveAI">
             <div class="form-grid">
               <label class="field"><span>Connection name</span><input v-model="ai.name" placeholder="e.g. Fast OpenAI" /><small>Shown in the conversation provider picker.</small></label>
-              <label class="field"><span>Provider</span><select v-model="ai.provider"><option value="openai_compatible">OpenAI compatible</option><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="anthropic">Anthropic</option><option value="google">Google Gemini</option><option value="ollama">Ollama</option></select><small>The API format used for model requests.</small></label>
+              <label class="field"><span>Provider</span><select v-model="ai.provider" @change="selectProviderKind"><option value="openai_compatible">OpenAI compatible</option><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="anthropic">Anthropic</option><option value="google">Google Gemini</option><option value="ollama">Ollama</option></select><small>The API format used for model requests.</small></label>
               <label class="field"><span>Model</span><input v-model="ai.model" placeholder="e.g. gpt-4.1-mini" /><small>Use the exact model identifier from your provider.</small></label>
-              <label class="field full"><span>Base URL <em>Optional</em></span><input v-model="ai.base_url" placeholder="https://api.example.com/v1" /><small>Only needed for compatible APIs or a local Ollama instance.</small></label>
+              <label class="field full"><span>Base URL <em>{{ ai.provider === 'openai_compatible' ? 'Custom' : 'Auto-filled' }}</em></span><input v-model="ai.base_url" placeholder="https://api.example.com/v1" /><small>{{ providerBaseUrlHelp(ai.provider) }}</small></label>
               <label class="field full"><span>API key</span><input v-model="ai.api_key" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved key" /><small>Your key is encrypted locally and never returned by the API.</small></label>
               <label class="field temperature-field"><span>Temperature <output>{{ ai.temperature.toFixed(1) }}</output></span><input v-model.number="ai.temperature" type="range" min="0" max="2" step="0.1" /></label>
             </div>
