@@ -14,12 +14,14 @@ from zett.infra.dao.artifact import artifact_storage
 from zett.infra.dao.asset import session_asset_storage
 from zett.infra.dao.session import session_storage
 from zett.infra.models import Base
+from zett.infra.storage import Storage
 from zett.main import app
 from zett.models import ArtifactListOptions, SessionAssetListOptions, SessionListOptions
 from zett.schemas import AgentArtifactWrite, AgentSessionCreate, CardArtifactContent, SessionAssetCreate
 
 
 async def test_sessions_reuse_agent_storage_and_paginate_raw_history():
+    assert isinstance(session_storage, Storage)
     first = session_storage.create(AgentSessionCreate(title="First"))
     second = session_storage.create(AgentSessionCreate(title="Second"))
     assert UUID(first.session_id).version == 7
@@ -46,6 +48,7 @@ async def test_sessions_reuse_agent_storage_and_paginate_raw_history():
     ],
 )
 def test_asset_crud_is_typed_and_session_scoped(kind, payload):
+    assert isinstance(session_asset_storage, Storage)
     owner = session_storage.create(AgentSessionCreate()).session_id
     other = session_storage.create(AgentSessionCreate()).session_id
     entity = SessionAssetCreate(session_id=owner, asset_type=kind, name="../asset.bin", **payload)
