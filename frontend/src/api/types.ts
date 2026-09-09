@@ -5,6 +5,7 @@ export interface Tag {
   description: string | null
   color: string | null
   created_at: string
+  updated_at: string
   path: string
   card_count: number
   children: Tag[]
@@ -17,12 +18,11 @@ export interface Card {
   content: string
   raw_content: string | null
   summary: string | null
-  source: string | null
   status: string
   created_at: string
   updated_at: string
-  tag_ids: number[]
-  tags: Tag[]
+  tags: string[]
+  metadata: Record<string, unknown>
 }
 
 export interface CardCreateRequest {
@@ -31,8 +31,8 @@ export interface CardCreateRequest {
   content: string
   raw_content?: string | null
   summary?: string | null
-  source?: string | null
-  tag_ids: number[]
+  tags: string[]
+  metadata?: Record<string, unknown>
 }
 
 export interface CardListOptions {
@@ -50,10 +50,10 @@ export interface LibraryItem {
   summary: string | null
   content: string
   raw_content: string | null
-  source: string | null
   card_type: CardType | null
   status: string
-  tag_paths: string[]
+  tags: string[]
+  metadata: Record<string, unknown>
   created_at: string
   updated_at: string
 }
@@ -63,6 +63,8 @@ export interface LibraryItemUpdate {
   subtitle: string | null
   summary: string | null
   content: string
+  tags?: string[] | null
+  metadata?: Record<string, unknown> | null
 }
 
 export interface SuggestedTag {
@@ -129,50 +131,30 @@ export type AgentTimelineEntry =
   | { id: string; type: 'tool'; activity: AgentToolActivity }
   | { id: string; type: 'compaction'; activity: AgentCompactionActivity }
 
-export interface AgentPersistedToolCall {
-  id: string
-  run_id: string
-  session_id: string
-  tool_name: string
-  status: 'started' | 'succeeded' | 'failed' | 'cancelled'
-  input: Record<string, unknown>
-  output: unknown
-  duration_ms: number | null
-  error_message: string | null
-  started_at: string
-  ended_at: string | null
+export interface AgentCustomEvent {
+  name: string
+  payload: Record<string, unknown>
 }
 
-export interface AgentRun {
-  id: string
-  turn_id: string
-  tool_calls: AgentPersistedToolCall[]
-  [key: string]: unknown
+export interface AgentTodoItem {
+  content: string
+  status: 'pending' | 'processing' | 'completed'
 }
 
-export interface AgentUsage {
-  input_tokens: number
-  output_tokens: number
-  total_tokens: number
-  cache_read_tokens: number
-  cache_creation_tokens: number
-  input_cost: number | null
-  output_cost: number | null
-  total_cost: number | null
-  model_call_count: number
-  cache_hit_rate: number | null
-  output_tokens_per_second: number | null
+export interface AgentTodoState {
+  todos: AgentTodoItem[]
+  processing_index: number | null
+  processing: AgentTodoItem | null
+  completed: boolean
 }
 
 export interface AgentStreamCallbacks {
   onStatus?: (state: string) => void
   onReasoning?: (content: string) => void
   onMessage?: (content: string) => void
-  onTool?: (activity: AgentToolActivity) => void
+  onTool?: (activity: AgentToolActivity) => void | Promise<void>
   onCompaction?: (activity: AgentCompactionActivity) => void
-  onUsage?: (usage: AgentUsage) => void
-  onMetrics?: (metrics: Record<string, unknown>) => void
-  onArtifacts?: (artifacts: AgentArtifact[]) => void
+  onCustom?: (event: AgentCustomEvent) => void
 }
 
 export interface AgentStart {
@@ -217,7 +199,6 @@ export interface AgentArtifact {
   status: ArtifactStatus
   content: ArtifactContent
   raw_content: string | null
-  linked_resource_id: string | null
   version: number
   metadata: Record<string, unknown>
   created_at: string
@@ -229,13 +210,21 @@ export interface AgentPersistedMessage {
   session_id: string
   turn_id: string
   sequence: number
-  role: 'system' | 'user' | 'assistant' | 'tool'
+  role: 'system' | 'user' | 'assistant' | 'tool' | 'agent'
   content: string
   reasoning_content: string | null
   model: string | null
   provider: string | null
   tool_name: string | null
+  attributes: Record<string, unknown>
   metadata: Record<string, unknown>
+  input_tokens: number | null
+  output_tokens: number | null
+  cache_read_tokens: number | null
+  cache_write_tokens: number | null
+  reasoning_tokens: number | null
+  total_tokens: number | null
+  cache_hit_rate: number | null
   created_at: string
 }
 
@@ -248,30 +237,9 @@ export interface AgentSession {
   updated_at: string
   last_activity_at: string
   message_count: number
-  turn_count: number
-  total_input_tokens: number
-  total_output_tokens: number
-  total_reasoning_tokens: number
-  total_cache_read_tokens: number
-  total_tokens: number
-  total_cost: number | null
-  average_time_to_first_token_ms: number | null
-  average_output_tokens_per_second: number | null
-  cache_hit_rate: number | null
-  metadata: Record<string, unknown>
   messages: AgentPersistedMessage[]
-  runs: AgentRun[]
   artifacts: AgentArtifact[]
   assets: SessionAsset[]
-}
-
-export interface AISettings {
-  provider: string
-  model: string
-  base_url: string
-  api_key: string
-  temperature: number
-  enabled: boolean
 }
 
 export interface AIProviderInput {

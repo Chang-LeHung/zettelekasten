@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ApiError, aiClient, libraryClient, tagClient } from './api/client'
-import type { AgentArtifact, AgentCompactionActivity, AgentSession, AgentTimelineEntry, AgentToolActivity, AgentUsage, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, ReasoningEffort, SessionAsset, Tag } from './api/types'
+import type { AgentArtifact, AgentCompactionActivity, AgentCustomEvent, AgentSession, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, ReasoningEffort, SessionAsset, Tag } from './api/types'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import { jsonSnapshot } from './utils/jsonSnapshot'
+import { todoFromTool } from './utils/toolPresentation'
 
 const MarkdownContent = defineAsyncComponent(() => import('./components/MarkdownContent.vue'))
 const LibraryEditor = defineAsyncComponent(() => import('./components/LibraryEditor.vue'))
@@ -12,17 +13,18 @@ type View = 'library' | 'search' | 'new' | 'settings'
 type NoticeKind = 'success' | 'error'
 type AssetEditorMode = 'closed' | 'text' | 'link'
 type AssetFilter = 'all' | 'documents' | 'images' | 'links' | 'notes' | 'code'
-interface SessionTelemetry {
-  totalTokens: number
-  inputTokens: number
-  cacheReadTokens: number
-  outputTokensPerSecond: number | null
-}
 interface ConfirmationState {
   open: boolean
   title: string
   message: string
   confirmLabel: string
+}
+interface AskUserState {
+  toolCallId: string
+  question: string
+  options: string[]
+  allowMultiple: boolean
+  responseEvent: string
 }
 
 const libraryItems = ref<LibraryItem[]>([])
@@ -45,8 +47,11 @@ const streamingReasoning = ref('')
 const streamingActivities = ref<AgentToolActivity[]>([])
 const streamingTimeline = ref<AgentTimelineEntry[]>([])
 const streamingResponseVisible = ref(false)
-const sessionTelemetry = ref<SessionTelemetry>({ totalTokens: 0, inputTokens: 0, cacheReadTokens: 0, outputTokensPerSecond: null })
-let turnTelemetryBaseline: SessionTelemetry = { totalTokens: 0, inputTokens: 0, cacheReadTokens: 0, outputTokensPerSecond: null }
+const pendingQuestion = ref<AskUserState | null>(null)
+const askAnswer = ref('')
+const selectedAskOptions = ref<string[]>([])
+const answeringQuestion = ref(false)
+const activeTodos = ref<AgentTodoState | null>(null)
 let agentScrollFrame: number | null = null
 let followAgentOutput = true
 const streamingStatus = ref('idle')
@@ -126,11 +131,6 @@ const selectedImageUrl = computed(() => {
   if (content.source_url) return content.source_url
   return assets.value.find((asset) => asset.id === content.asset_id)?.content_url || null
 })
-const sessionCacheHitRate = computed(() => (
-  sessionTelemetry.value.inputTokens
-    ? sessionTelemetry.value.cacheReadTokens / sessionTelemetry.value.inputTokens
-    : null
-))
 const visibleSessions = computed(() => sessions.value.filter((session) => (
   session.message_count > 0
   || (session.id === conversationId.value && (artifacts.value.length > 0 || assets.value.length > 0))
@@ -148,31 +148,14 @@ const filteredAssets = computed(() => {
 })
 
 function resetStreamState(): void {
-  turnTelemetryBaseline = { ...sessionTelemetry.value }
   streamingMessage.value = ''
   streamingReasoning.value = ''
   streamingActivities.value = []
   streamingTimeline.value = []
+  pendingQuestion.value = null
+  activeTodos.value = null
   streamingStatus.value = 'starting'
   streamingResponseVisible.value = true
-}
-
-function updateSessionTelemetry(usage: AgentUsage): void {
-  sessionTelemetry.value = {
-    totalTokens: turnTelemetryBaseline.totalTokens + usage.total_tokens,
-    inputTokens: turnTelemetryBaseline.inputTokens + usage.input_tokens,
-    cacheReadTokens: turnTelemetryBaseline.cacheReadTokens + usage.cache_read_tokens,
-    outputTokensPerSecond: usage.output_tokens_per_second ?? turnTelemetryBaseline.outputTokensPerSecond,
-  }
-}
-
-function applySessionTelemetry(session: AgentSession): void {
-  sessionTelemetry.value = {
-    totalTokens: session.total_tokens,
-    inputTokens: session.total_input_tokens,
-    cacheReadTokens: session.total_cache_read_tokens,
-    outputTokensPerSecond: session.average_output_tokens_per_second,
-  }
 }
 
 function updateToolActivity(activity: AgentToolActivity): void {
@@ -269,14 +252,79 @@ function formatToolValue(value: unknown): string {
 }
 
 function streamCallbacks() {
+  const sessionId = conversationId.value
   return {
     onStatus: (state: string) => { streamingStatus.value = state },
     onReasoning: (content: string) => { updateStreamText('reasoning', content) },
     onMessage: (content: string) => { updateStreamText('message', content) },
-    onTool: updateToolActivity,
+    onTool: async (activity: AgentToolActivity) => {
+      if (conversationId.value !== sessionId) return
+      updateToolActivity(activity)
+      const todos = todoFromTool(activity)
+      if (todos) activeTodos.value = todos
+      if (activity.state === 'started' || !sessionId) return
+      try {
+        const current = await aiClient.listAgentArtifacts(sessionId)
+        if (conversationId.value === sessionId) applyArtifacts(current)
+      } catch (error) {
+        if (conversationId.value === sessionId) showNotice(errorMessage(error), 'error')
+      }
+    },
     onCompaction: updateCompactionActivity,
-    onUsage: updateSessionTelemetry,
-    onArtifacts: applyArtifacts,
+    onCustom: handleCustomAgentEvent,
+  }
+}
+
+function handleCustomAgentEvent(event: AgentCustomEvent): void {
+  if (event.name !== 'ask_user') return
+  const payload = event.payload
+  if (typeof payload.tool_call_id !== 'string' || typeof payload.question !== 'string') return
+  pendingQuestion.value = {
+    toolCallId: payload.tool_call_id,
+    question: payload.question,
+    options: Array.isArray(payload.options) ? payload.options.filter((item): item is string => typeof item === 'string') : [],
+    allowMultiple: payload.allow_multiple === true,
+    responseEvent: typeof payload.response_event === 'string' ? payload.response_event : 'ask_user_response',
+  }
+  askAnswer.value = ''
+  selectedAskOptions.value = []
+  streamingStatus.value = 'waiting_for_user'
+}
+
+function toggleAskOption(option: string): void {
+  const question = pendingQuestion.value
+  if (!question) return
+  if (!question.allowMultiple) {
+    selectedAskOptions.value = [option]
+    return
+  }
+  selectedAskOptions.value = selectedAskOptions.value.includes(option)
+    ? selectedAskOptions.value.filter((item) => item !== option)
+    : [...selectedAskOptions.value, option]
+}
+
+async function answerAgentQuestion(): Promise<void> {
+  const question = pendingQuestion.value
+  const activeConversationId = conversationId.value
+  if (!question || !activeConversationId || answeringQuestion.value) return
+  const typedAnswer = askAnswer.value.trim()
+  const answer = question.allowMultiple
+    ? [...selectedAskOptions.value, ...(typedAnswer ? [typedAnswer] : [])]
+    : typedAnswer || selectedAskOptions.value[0]
+  if (!answer || (Array.isArray(answer) && !answer.length)) return
+  answeringQuestion.value = true
+  try {
+    await aiClient.emitAgentEvent(activeConversationId, question.responseEvent, {
+      session_id: activeConversationId,
+      tool_call_id: question.toolCallId,
+      answer,
+    })
+    pendingQuestion.value = null
+    streamingStatus.value = 'resuming'
+  } catch (error) {
+    showNotice(errorMessage(error), 'error')
+  } finally {
+    answeringQuestion.value = false
   }
 }
 
@@ -306,7 +354,7 @@ function scheduleSessionTitleRefresh(): void {
 }
 
 watch(
-  [streamingMessage, streamingReasoning, () => streamingTimeline.value.length],
+  [streamingMessage, streamingReasoning, () => streamingTimeline.value.length, pendingQuestion, activeTodos],
   () => scrollAgentThread(),
 )
 watch(
@@ -639,6 +687,8 @@ function handleComposerEnter(event: KeyboardEvent): void {
 }
 
 function stopGeneration(): void {
+  pendingQuestion.value = null
+  activeTodos.value = null
   activeStreamController.value?.abort()
 }
 
@@ -659,7 +709,6 @@ async function ensureConversation(): Promise<string> {
     }
   }
   const started = await aiClient.startAgent()
-  sessionTelemetry.value = { totalTokens: 0, inputTokens: 0, cacheReadTokens: 0, outputTokensPerSecond: null }
   conversationId.value = started.conversation_id
   window.localStorage.setItem(activeSessionKey, started.conversation_id)
   applyArtifacts(started.artifacts)
@@ -672,7 +721,6 @@ function applySession(session: AgentSession): void {
   window.localStorage.setItem(activeSessionKey, session.id)
   applyArtifacts(session.artifacts, false)
   assets.value = session.assets
-  applySessionTelemetry(session)
   const visibleMessages = session.messages.filter((message) => message.role === 'user' || message.role === 'assistant')
   const firstUser = visibleMessages.find((message) => message.role === 'user')
   raw.value = firstUser?.content || ''
@@ -682,16 +730,10 @@ function applySession(session: AgentSession): void {
       skippedFirstUser = true
       return []
     }
-    const run = session.runs.find((item) => item.turn_id === message.turn_id)
-    const activities = message.role === 'assistant' ? run?.tool_calls.map((toolCall) => ({
-      id: toolCall.id,
-      name: toolCall.tool_name,
-      state: toolCall.status,
-      arguments: toolCall.input,
-      output: toolCall.output,
-      error_message: toolCall.error_message,
-      duration_ms: toolCall.duration_ms ?? undefined,
-    })) || [] : []
+    const storedActivities = message.metadata.tool_activities
+    const activities = message.role === 'assistant' && Array.isArray(storedActivities)
+      ? storedActivities as AgentToolActivity[]
+      : []
     return [{
       role: message.role as 'user' | 'assistant',
       content: message.content,
@@ -767,8 +809,6 @@ async function loadSessions(reset = false): Promise<void> {
     const nextSessions = await aiClient.listAgentSessions(sessionPageSize, offset)
     sessions.value = reset ? nextSessions : [...sessions.value, ...nextSessions]
     sessionsHaveMore.value = nextSessions.length === sessionPageSize
-    const activeSession = sessions.value.find((session) => session.id === conversationId.value)
-    if (activeSession) applySessionTelemetry(activeSession)
   } catch (error) {
     showNotice(errorMessage(error), 'error')
   } finally {
@@ -818,7 +858,6 @@ async function resetWorkspace(): Promise<void> {
   selectedArtifactId.value = null
   artifactPreview.value = true
   conversationId.value = null
-  sessionTelemetry.value = { totalTokens: 0, inputTokens: 0, cacheReadTokens: 0, outputTokensPerSecond: null }
   resetStreamState()
   streamingStatus.value = 'idle'
   window.localStorage.removeItem(activeSessionKey)
@@ -1280,7 +1319,7 @@ onBeforeUnmount(() => {
               <p v-if="item.item_type === 'article' && item.subtitle" class="library-article-subtitle">{{ item.subtitle }}</p>
               <MarkdownContent class="card-excerpt" :content="item.summary || item.content" />
               <div class="card-footer">
-                <div class="card-tags"><span v-for="path in item.tag_paths.slice(0, 3)" :key="path">{{ path }}</span></div>
+                <div class="card-tags"><span v-for="path in item.tags.slice(0, 3)" :key="path">{{ path }}</span></div>
                 <svg><use href="#icon-arrow" /></svg>
               </div>
             </article>
@@ -1392,7 +1431,7 @@ onBeforeUnmount(() => {
                       <svg v-else><use href="#icon-user" /></svg>
                     </div>
                     <div class="message-body">
-                      <div class="message-author"><strong>{{ message.role === 'assistant' ? 'Zett Agent' : 'You' }}</strong><small>{{ message.role === 'assistant' ? 'Knowledge assistant' : 'Personal workspace' }}</small></div>
+                      <div class="message-author"><strong>{{ message.role === 'assistant' ? 'Zettelkasten Agent' : 'You' }}</strong><small>{{ message.role === 'assistant' ? 'Knowledge assistant' : 'Personal workspace' }}</small></div>
                       <div class="agent-event-timeline">
                         <template v-for="entry in historicalTimeline(message)" :key="entry.id">
                           <details v-if="entry.type === 'reasoning'" class="reasoning-panel">
@@ -1454,6 +1493,34 @@ onBeforeUnmount(() => {
                 </template>
               </div>
 
+              <section v-if="pendingQuestion" class="ask-user-panel" aria-live="polite">
+                <header><span>Agent question</span><small>Waiting for your input</small></header>
+                <h3>{{ pendingQuestion.question }}</h3>
+                <div v-if="pendingQuestion.options.length" class="ask-options">
+                  <button
+                    v-for="option in pendingQuestion.options"
+                    :key="option"
+                    :class="{ selected: selectedAskOptions.includes(option) }"
+                    type="button"
+                    @click="toggleAskOption(option)"
+                  >{{ option }}</button>
+                </div>
+                <form class="ask-response" @submit.prevent="answerAgentQuestion">
+                  <input v-model="askAnswer" :placeholder="pendingQuestion.options.length ? 'Or write another answer…' : 'Type your answer…'" />
+                  <button type="submit" :disabled="answeringQuestion || (!askAnswer.trim() && !selectedAskOptions.length)">{{ answeringQuestion ? 'Sending…' : 'Continue' }}</button>
+                </form>
+              </section>
+
+              <section v-if="loading && activeTodos?.todos.length" class="agent-todo-panel" aria-label="Agent task progress">
+                <header><span>Task progress</span><small>{{ activeTodos.completed ? 'Completed' : `${(activeTodos.processing_index ?? 0) + 1} of ${activeTodos.todos.length}` }}</small></header>
+                <ol>
+                  <li v-for="todo in activeTodos.todos" :key="todo.content" :class="todo.status">
+                    <i aria-hidden="true">{{ todo.status === 'completed' ? '✓' : todo.status === 'processing' ? '•' : '' }}</i>
+                    <span>{{ todo.content }}</span>
+                  </li>
+                </ol>
+              </section>
+
               <form class="agent-input" @submit.prevent="submitConversation">
                 <textarea v-if="!conversationStarted" v-model="raw" rows="3" autofocus placeholder="Message Zett Agent…" @keydown.enter.exact="handleComposerEnter" />
                 <textarea v-else v-model="followUp" rows="3" placeholder="Continue the conversation…" @keydown.enter.exact="handleComposerEnter" />
@@ -1474,11 +1541,6 @@ onBeforeUnmount(() => {
                         <option value="high">high</option>
                       </select>
                     </label>
-                    <div class="composer-telemetry" aria-label="Session telemetry">
-                      <span title="Total tokens used in this session"><small>Tokens</small><strong>{{ sessionTelemetry.totalTokens.toLocaleString() }}</strong></span>
-                      <span title="Share of session input tokens served from provider cache"><small>Cache</small><strong>{{ sessionCacheHitRate === null ? '—' : `${(sessionCacheHitRate * 100).toFixed(1)}%` }}</strong></span>
-                      <span title="Current speed while generating, otherwise the session average"><small>Speed</small><strong>{{ sessionTelemetry.outputTokensPerSecond == null ? '—' : `${sessionTelemetry.outputTokensPerSecond.toFixed(1)} tok/s` }}</strong></span>
-                    </div>
                   </div>
                   <div class="composer-submit"><small>{{ loading ? 'Enter for a new line' : 'Enter to send' }}</small><button class="send-button" :class="{ stop: loading }" :disabled="!loading && (conversationStarted ? !followUp.trim() : !raw.trim())" type="button" :aria-label="loading ? 'Stop generating' : 'Send message'" @click="loading ? stopGeneration() : submitConversation()"><svg><use :href="loading ? '#icon-stop' : '#icon-arrow'" /></svg></button></div>
                 </div>
@@ -1588,10 +1650,9 @@ onBeforeUnmount(() => {
               <h1>{{ selectedLibraryItem.title }}</h1>
               <p v-if="selectedLibraryItem.item_type === 'article' && selectedLibraryItem.subtitle" class="detail-subtitle">{{ selectedLibraryItem.subtitle }}</p>
               <MarkdownContent v-if="selectedLibraryItem.summary" class="detail-summary" :content="selectedLibraryItem.summary" />
-              <div v-if="selectedLibraryItem.tag_paths.length" class="detail-tags"><span v-for="path in selectedLibraryItem.tag_paths" :key="path">{{ path }}</span></div>
+              <div v-if="selectedLibraryItem.tags.length" class="detail-tags"><span v-for="path in selectedLibraryItem.tags" :key="path">{{ path }}</span></div>
 
               <section class="detail-section"><h2>{{ selectedLibraryItem.item_type === 'article' ? 'Article' : 'Content' }}</h2><MarkdownContent class="detail-body" :content="selectedLibraryItem.content" /></section>
-              <section v-if="selectedLibraryItem.source" class="detail-section"><h2>Source</h2><p>{{ selectedLibraryItem.source }}</p></section>
               <section v-if="selectedLibraryItem.raw_content" class="detail-section raw-section"><h2>Original input</h2><div class="detail-body">{{ selectedLibraryItem.raw_content }}</div></section>
 
               <dl class="detail-metadata">
@@ -1833,6 +1894,25 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .prompt-hints { display: flex; justify-content: center; gap: .45rem; margin-top: 1.1rem; }
 .prompt-hints button { padding: .48rem .65rem; border: 1px solid var(--line); border-radius: .58rem; color: #606065; background: rgba(247,247,248,.8); cursor: pointer; font-size: .64rem; }
 .agent-input { margin: .8rem; padding: .25rem; border: 1px solid rgba(29,29,31,.11); border-radius: .9rem; background: white; box-shadow: 0 3px 16px rgba(0,0,0,.055); }
+.ask-user-panel, .agent-todo-panel { margin: .55rem .8rem 0; padding: .85rem; border: 1px solid rgba(71,105,87,.16); border-radius: .9rem; background: #f8faf8; box-shadow: 0 3px 14px rgba(42,65,51,.045); }
+.ask-user-panel header, .agent-todo-panel header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; color: #476957; font-size: .66rem; font-weight: 720; letter-spacing: .025em; }
+.ask-user-panel header small, .agent-todo-panel header small { color: var(--tertiary); font-size: .6rem; font-weight: 560; }
+.ask-user-panel h3 { margin: .55rem 0 .7rem; color: var(--text); font-size: .84rem; line-height: 1.45; }
+.ask-options { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .65rem; }
+.ask-options button { min-height: 2rem; padding: 0 .65rem; border: 1px solid #dce4df; border-radius: .62rem; color: #536159; background: #fff; cursor: pointer; font-size: .68rem; }
+.ask-options button.selected { border-color: #789383; color: #315441; background: #edf4ef; box-shadow: inset 0 0 0 1px rgba(71,105,87,.08); }
+.ask-response { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: .45rem; }
+.ask-response input { min-width: 0; height: 2.3rem; padding: 0 .7rem; border: 1px solid #dfe5e1; border-radius: .65rem; outline: none; color: var(--text); background: #fff; font-size: .72rem; }
+.ask-response input:focus { border-color: #89a394; box-shadow: 0 0 0 3px rgba(71,105,87,.09); }
+.ask-response button { padding: 0 .8rem; border: 0; border-radius: .65rem; color: #fff; background: #476957; cursor: pointer; font-size: .7rem; font-weight: 660; }
+.ask-response button:disabled { opacity: .45; cursor: default; }
+.agent-todo-panel ol { display: grid; gap: .35rem; margin: .65rem 0 0; padding: 0; list-style: none; }
+.agent-todo-panel li { display: grid; grid-template-columns: 1.15rem minmax(0,1fr); align-items: start; color: #7b837e; font-size: .69rem; line-height: 1.45; }
+.agent-todo-panel li i { display: grid; place-items: center; width: .95rem; height: .95rem; margin-top: .03rem; border: 1px solid #d7dfda; border-radius: 50%; color: #fff; font-size: .58rem; font-style: normal; }
+.agent-todo-panel li.processing { color: #35483d; font-weight: 620; }
+.agent-todo-panel li.processing i { border-color: #6f8e7c; color: #476957; background: #e8f0eb; }
+.agent-todo-panel li.completed { color: #89908c; text-decoration: line-through; }
+.agent-todo-panel li.completed i { border-color: #789383; background: #789383; }
 .agent-input:focus-within { border-color: rgba(71,105,87,.4); box-shadow: 0 0 0 3px rgba(71,105,87,.1), 0 5px 20px rgba(0,0,0,.06); }
 .agent-input textarea { display: block; width: 100%; min-height: 4rem; padding: .7rem .8rem .25rem; resize: none; border: 0; outline: 0; color: var(--text); background: transparent; font-size: .78rem; line-height: 1.5; }
 .agent-input-footer { display: flex; align-items: center; justify-content: space-between; gap: .5rem; min-height: 2.45rem; padding: 0 .3rem .1rem .45rem; }
@@ -1846,10 +1926,6 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .composer-select select, .composer-select button { height: 1.85rem; min-width: 0; padding: 0 1.55rem 0 .55rem; overflow: hidden; border: 0; outline: 0; color: inherit; background: transparent; cursor: pointer; font-size: .61rem; font-weight: 590; text-overflow: ellipsis; white-space: nowrap; }
 .model-select select, .model-select button { width: clamp(8rem, 15vw, 13rem); padding-left: 1.45rem; }
 .reasoning-select select { width: clamp(7.7rem, 10vw, 9.5rem); }
-.composer-telemetry { min-width: 0; display: flex; align-items: center; gap: .25rem; flex-wrap: wrap; }
-.composer-telemetry > span { min-height: 1.85rem; display: inline-flex; align-items: center; gap: .32rem; padding: 0 .52rem; border: 1px solid #e4e7e5; border-radius: .55rem; color: #59645d; background: #f7f8f7; white-space: nowrap; }
-.composer-telemetry small { color: #929994; font-size: .5rem; font-weight: 600; letter-spacing: .035em; text-transform: uppercase; }
-.composer-telemetry strong { font-size: .58rem; font-weight: 650; }
 .composer-submit { flex: 0 0 auto; }
 .artifact-pane { overflow: hidden; background: #f3f4f1; }
 .artifact-workspace { display: flex; flex-direction: column; }
@@ -2177,8 +2253,6 @@ kbd, .card-type, .card-tags span { font-size: .69rem; }
   .artifact-pane { min-height: 30rem; }
   .composer-submit small { display: none; }
   .model-select select, .model-select button { width: min(42vw, 10rem); }
-  .composer-telemetry { width: 100%; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
-  .composer-telemetry::-webkit-scrollbar { display: none; }
   .conversation-panel { position: static; }
   .field.full { grid-column: auto; }
   .settings-actions, .panel-heading { align-items: flex-start; }

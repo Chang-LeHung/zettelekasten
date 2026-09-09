@@ -1,8 +1,8 @@
 import type {
   AnalysisMessage,
-  AISettings,
   AgentArtifact,
   AgentStreamCallbacks,
+  AgentCustomEvent,
   AgentSession,
   AgentStart,
   AIProvider,
@@ -97,14 +97,6 @@ export const tagClient = {
 }
 
 export const aiClient = {
-  getSettings(): Promise<Partial<AISettings> | null> {
-    return request<Partial<AISettings> | null>('/settings/ai')
-  },
-
-  saveSettings(payload: AISettings): Promise<Partial<AISettings>> {
-    return request<Partial<AISettings>>('/settings/ai', { method: 'PUT', body: JSON.stringify(payload) })
-  },
-
   async analyzeStream(
     conversationId: string,
     rawContent: string,
@@ -150,11 +142,9 @@ export const aiClient = {
         if (event === 'status') callbacks.onStatus?.(String(payload.state || ''))
         if (event === 'reasoning') callbacks.onReasoning?.(String(payload.content || ''))
         if (event === 'message') callbacks.onMessage?.(String(payload.content || ''))
-        if (event === 'tool') callbacks.onTool?.(payload as unknown as Parameters<NonNullable<typeof callbacks.onTool>>[0])
+        if (event === 'tool') await callbacks.onTool?.(payload as unknown as Parameters<NonNullable<typeof callbacks.onTool>>[0])
         if (event === 'compaction') callbacks.onCompaction?.(payload as unknown as Parameters<NonNullable<typeof callbacks.onCompaction>>[0])
-        if (event === 'usage') callbacks.onUsage?.(payload as unknown as Parameters<NonNullable<typeof callbacks.onUsage>>[0])
-        if (event === 'metrics') callbacks.onMetrics?.(payload)
-        if (event === 'artifacts') callbacks.onArtifacts?.(payload as unknown as AgentArtifact[])
+        if (event === 'custom') callbacks.onCustom?.(payload as unknown as AgentCustomEvent)
         if (event === 'error') throw new Error(String(payload.message || 'AI analysis failed'))
       }
       if (done) break
@@ -184,6 +174,17 @@ export const aiClient = {
 
   deleteAgentSession(conversationId: string): Promise<{ ok: boolean }> {
     return request<{ ok: boolean }>(`/agent/sessions/${conversationId}`, { method: 'DELETE' })
+  },
+
+  emitAgentEvent(
+    conversationId: string,
+    name: string,
+    payload: Record<string, unknown>,
+  ): Promise<{ accepted: boolean }> {
+    return request<{ accepted: boolean }>(`/agent/${conversationId}/events`, {
+      method: 'POST',
+      body: JSON.stringify({ name, payload }),
+    })
   },
 
   listSessionAssets(conversationId: string): Promise<SessionAsset[]> {
