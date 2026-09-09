@@ -119,6 +119,11 @@ def shutdown_logging() -> None:
 
 
 def get_logger(module_name: str) -> logging.Logger:
-    """Return a child logger inside the Zett namespace without global side effects."""
+    """Return a namespaced logger whose handlers report the caller location.
+
+    ``get_logger`` only selects the logger hierarchy. ``LOG_FORMAT`` uses the
+    standard ``filename`` and ``lineno`` LogRecord attributes, so each emitted
+    record points to the source call site rather than this factory function.
+    """
     normalized_name = module_name.removeprefix("zett.").strip(".")
     return logging.getLogger(f"{LOGGER_NAMESPACE}.{normalized_name}" if normalized_name else LOGGER_NAMESPACE)

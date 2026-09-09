@@ -1,4 +1,5 @@
 import logging
+import sys
 from logging.handlers import RotatingFileHandler
 
 import pytest
@@ -43,6 +44,18 @@ def test_logging_configuration_is_idempotent(tmp_path) -> None:
     configure_logging(tmp_path, max_bytes=1024, backup_count=1)
 
     assert len(logging.getLogger("zett").handlers) == handler_count
+
+
+def test_log_record_reports_the_exact_source_call_site(tmp_path) -> None:
+    log_path = configure_logging(tmp_path)
+    logger = get_logger("zett.tests.location")
+
+    expected_line = sys._getframe().f_lineno + 1
+    logger.info("location marker")
+    for handler in logging.getLogger("zett").handlers:
+        handler.flush()
+
+    assert f"test_logging.py:{expected_line} location marker" in log_path.read_text()
 
 
 def test_invalid_log_level_falls_back_to_info(tmp_path) -> None:
