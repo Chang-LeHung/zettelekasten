@@ -21,7 +21,7 @@ help:
 	@echo "  make docs-ui-check  Verify desktop/mobile navigation and search in Chromium"
 
 install: frontend-install frontend-build zett-agent-install
-	uv tool install --force ./backend
+	uv tool install --force --refresh-package zett --refresh-package zett-agent ./backend
 	@echo "Installed. Run: zett start"
 
 backend-install:
