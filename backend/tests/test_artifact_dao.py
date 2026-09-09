@@ -1,3 +1,4 @@
+import pytest
 from sqlalchemy import select
 
 from zett.infra import database
@@ -77,7 +78,7 @@ def test_artifact_updates_are_versioned_and_cannot_cross_sessions() -> None:
     assert updated.status == ArtifactStatus.SAVED
     assert updated.content.title == "Revised"
 
-    try:
+    with pytest.raises(KeyError):
         artifact_storage.update(
             created.id,
             AgentArtifactWrite(
@@ -85,10 +86,6 @@ def test_artifact_updates_are_versioned_and_cannot_cross_sessions() -> None:
                 content=ArticleArtifactContent(title="Wrong owner", content="Rejected"),
             ),
         )
-    except KeyError:
-        pass
-    else:
-        raise AssertionError("Cross-session artifact update should fail")
 
 
 def test_artifact_filters_and_explicit_session_cleanup() -> None:

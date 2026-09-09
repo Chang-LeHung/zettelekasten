@@ -1,4 +1,4 @@
-"""SQLAlchemy transactions for Asset and Artifact records only."""
+"""SQLAlchemy transactions for asset, artifact, and provider records."""
 
 from collections.abc import Generator
 from contextlib import contextmanager

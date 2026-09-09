@@ -96,6 +96,11 @@ class ArtifactStorage(Storage[AgentArtifactWrite, AgentArtifact, str, ArtifactLi
             model = session.get(SessionArtifactModel, entity_id)
             return _artifact_out(model) if model else None
 
+    def get_for_session(self, session_id: str, artifact_id: str) -> AgentArtifact | None:
+        """Read an artifact only when it belongs to the requested session."""
+        artifact = self.get(artifact_id)
+        return artifact if artifact is not None and artifact.session_id == session_id else None
+
     def update(self, entity_id: str, entity: AgentArtifactWrite) -> AgentArtifact:
         with session_scope() as session:
             model = session.get(SessionArtifactModel, entity_id)

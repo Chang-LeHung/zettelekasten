@@ -173,19 +173,26 @@ class ProviderStorage(Storage[ProviderWrite, ProviderOut, str, ProviderListOptio
             )
             return [_provider_out(model) for model in session.scalars(statement)]
 
-    def resolve_connection(self, entity_id: str | None = None) -> ProviderConnection | None:
-        """Decrypt one enabled configuration for immediate model construction."""
+    def resolve_connection(
+        self,
+        entity_id: str | None = None,
+        *,
+        enabled_only: bool = True,
+    ) -> ProviderConnection | None:
+        """Decrypt one configuration for immediate use at a trusted boundary.
+
+        Model construction keeps ``enabled_only=True``. The settings API uses
+        ``False`` only to preserve a hidden key while editing a disabled row.
+        """
         with session_scope() as session:
             if entity_id is None:
-                model = session.scalars(
-                    select(ProviderModel)
-                    .where(ProviderModel.enabled.is_(True))
-                    .order_by(ProviderModel.name, ProviderModel.id)
-                    .limit(1)
-                ).first()
+                statement = select(ProviderModel)
+                if enabled_only:
+                    statement = statement.where(ProviderModel.enabled.is_(True))
+                model = session.scalars(statement.order_by(ProviderModel.name, ProviderModel.id).limit(1)).first()
             else:
                 model = session.get(ProviderModel, entity_id)
-            if model is None or not model.enabled:
+            if model is None or (enabled_only and not model.enabled):
                 return None
             api_key = _decrypt_api_key(model.encrypted_api_key)
             return ProviderConnection(

@@ -52,12 +52,9 @@ async def test_agent_uses_create_agent_and_sends_ordered_sse_frames():
         frames.append(frame)
 
     owner = asyncio.current_task()
-    agent = await ZettelkastenAgent.create(
-        StreamingModel(),
-        send=send,
-        config=AgentConfig(session_id="session-1"),
-    )
-    events = [event async for event in agent.stream("Hello")]
+    agent = await ZettelkastenAgent.create(StreamingModel(), config=AgentConfig(session_id="session-1"))
+    client = agent.client(ZettelkastenEventDispatcher(send))
+    events = [event async for event in client.stream("Hello")]
     decoded = [decode_frame(frame) for frame in frames]
 
     assert [name for name, _ in decoded] == [event.type.value for event in events]
@@ -82,8 +79,8 @@ async def test_run_returns_answer_after_all_frames_are_sent():
     async def send(frame: str) -> None:
         frames.append(decode_frame(frame)[0])
 
-    agent = await ZettelkastenAgent.create(StreamingModel(), send=send)
-    answer = await agent.run("Hello")
+    agent = await ZettelkastenAgent.create(StreamingModel())
+    answer = await agent.client(ZettelkastenEventDispatcher(send)).run("Hello")
     assert answer.content == "Hi"
     assert frames[-1] == AgentEventType.RUN_COMPLETED.value
 
@@ -96,10 +93,39 @@ async def test_send_failure_propagates_and_stops_the_agent_stream():
         calls += 1
         raise RuntimeError("SSE disconnected")
 
-    agent = await ZettelkastenAgent.create(StreamingModel(), send=send)
+    agent = await ZettelkastenAgent.create(StreamingModel())
     with pytest.raises(RuntimeError, match="SSE disconnected"):
-        await agent.run("Hello")
+        await agent.client(ZettelkastenEventDispatcher(send)).run("Hello")
     assert calls == 1
+
+
+async def test_one_agent_uses_request_owned_models_and_dispatchers() -> None:
+    class NamedModel:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        async def stream(self, request: ModelRequest) -> AsyncIterator[ModelEvent]:
+            yield ModelEvent.text(self.name)
+            yield ModelEvent.completed(ModelResponse(AssistantMessage(content=self.name)))
+
+    agent = await ZettelkastenAgent.create()
+    received: dict[str, list[str]] = {"a": [], "b": []}
+
+    async def run(session_id: str) -> str:
+        async def send(frame: str) -> None:
+            received[session_id].append(decode_frame(frame)[0])
+
+        client = agent.client(ZettelkastenEventDispatcher(send))
+        result = await client.run(
+            "Hello",
+            config=AgentConfig(session_id=session_id),
+            model=NamedModel(session_id),
+        )
+        return result.content
+
+    assert await asyncio.gather(run("a"), run("b")) == ["a", "b"]
+    assert received["a"][-1] == AgentEventType.RUN_COMPLETED.value
+    assert received["b"][-1] == AgentEventType.RUN_COMPLETED.value
 
 
 @pytest.mark.parametrize(

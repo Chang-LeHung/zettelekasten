@@ -1,8 +1,4 @@
-"""Minimal async server while the application API is being redesigned.
-
-Only health and the existing packaged frontend are served. Retired business
-endpoints are deliberately absent; no compatibility responses are synthesized.
-"""
+"""Asynchronous FastAPI entry point and packaged Vue frontend."""
 
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -13,6 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
+from .agent import close_zettelkasten_agent, initialize_zettelkasten_agent
+from .application import api_router
 from .config import settings
 from .infra.agent_runtime import close_agent_runtime_storage, get_agent_runtime_storage
 from .infra.database import init_db
@@ -27,11 +25,13 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
     log_path = await run_in_threadpool(configure_logging)
     try:
         await run_in_threadpool(init_db)
-        await run_in_threadpool(get_agent_runtime_storage)
+        storage = await run_in_threadpool(get_agent_runtime_storage)
+        await initialize_zettelkasten_agent(storage)
         logger.info("Zett service started; log_file=%s", log_path)
         yield
     finally:
         logger.info("Zett service stopped")
+        close_zettelkasten_agent()
         try:
             await run_in_threadpool(close_agent_runtime_storage)
         finally:
@@ -45,8 +45,11 @@ app.add_middleware(
 
 
 @app.get("/api/health")
-async def health():
+async def health() -> dict[str, bool]:
     return {"ok": True}
+
+
+app.include_router(api_router)
 
 
 static_directory = Path(__file__).with_name("static")

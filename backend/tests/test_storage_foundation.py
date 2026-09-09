@@ -105,9 +105,15 @@ def test_schema_and_http_surface_contain_no_retired_business_logic(isolated_data
     assert all(not column.foreign_keys for table in Base.metadata.tables.values() for column in table.columns)
     with TestClient(app) as client:
         assert client.get("/api/health").json() == {"ok": True}
-        assert set(client.get("/openapi.json").json()["paths"]) == {"/api/health"}
+        paths = set(client.get("/openapi.json").json()["paths"])
+        assert "/api/agent/sessions" in paths
+        assert "/api/agent/{session_id}/assets" in paths
+        assert "/api/agent/{session_id}/artifacts" in paths
+        assert "/api/ai/providers" in paths
+        assert "/api/artifacts" in paths
         for path in ("/api/cards", "/api/tags", "/api/library", "/api/ai/providers"):
-            assert client.get(path).status_code == 404
+            expected = 200 if path == "/api/ai/providers" else 404
+            assert client.get(path).status_code == expected
         from zett import main
 
         if Path(main.static_directory, "index.html").is_file():

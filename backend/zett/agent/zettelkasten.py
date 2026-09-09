@@ -1,54 +1,41 @@
-"""Small application facade around zett-agent's standard AgentClient."""
+"""Reusable application facade around one multi-session zett-agent runtime."""
 
-from collections.abc import AsyncIterator, Mapping, Sequence
-from contextlib import aclosing
+from collections.abc import Sequence
 from typing import Self
 
 from zett_agent import (
+    Agent,
     AgentClient,
     AgentConfig,
-    AgentEvent,
+    AgentEventDispatcher,
     AgentExtension,
     AgentModel,
     AgentTool,
-    AssistantMessage,
-    JsonValue,
+    ExternalEvent,
     ReasoningEffort,
-    UserMessage,
     create_agent,
     new_uuid7,
 )
 
-from .dispatcher import SSESend, ZettelkastenEventDispatcher
-
 
 class ZettelkastenAgent:
-    """Create and use one zett-agent client with an injected SSE sender.
+    """Own one reusable Agent while requests provide models and dispatchers.
 
-    Use :meth:`create` because zett-agent initialization is asynchronous. The
-    class owns no provider, database, HTTP response, tool policy, or business
-    state. Callers compose those concerns through the model, extensions, tools,
-    and send callable.
-
-    Example::
-
-        async def send(frame: str) -> None:
-            await response.write(frame)
-
-        agent = await ZettelkastenAgent.create(model, send=send)
-        answer = await agent.run("Turn this thought into a card")
+    The underlying Agent isolates mutable state by session ID and rejects two
+    overlapping requests for the same session. A lightweight AgentClient is
+    created per HTTP request so each response owns its own SSE dispatcher.
+    Provider adapters are request-scoped and override the optional default
+    model without mutating this shared instance.
     """
 
-    def __init__(self, client: AgentClient, dispatcher: ZettelkastenEventDispatcher) -> None:
-        self.client = client
-        self.dispatcher = dispatcher
+    def __init__(self, agent: Agent) -> None:
+        self.agent = agent
 
     @classmethod
     async def create(
         cls,
-        model: AgentModel,
+        model: AgentModel | None = None,
         *,
-        send: SSESend,
         config: AgentConfig | None = None,
         system_prompt: str = "",
         tools: Sequence[AgentTool] = (),
@@ -56,56 +43,22 @@ class ZettelkastenAgent:
         reasoning_effort: ReasoningEffort = ReasoningEffort.MEDIUM,
         max_iterations: int = 12,
     ) -> Self:
-        """Build the underlying AgentClient with a request-ordered SSE dispatcher."""
-        dispatcher = ZettelkastenEventDispatcher(send)
+        """Create one initialized runtime that can serve many sessions."""
         client = await create_agent(
             model,
             config=config or AgentConfig(session_id=new_uuid7()),
-            event_dispatcher=dispatcher,
             system_prompt=system_prompt,
             tools=tools,
             extensions=extensions,
             reasoning_effort=reasoning_effort,
             max_iterations=max_iterations,
         )
-        return cls(client, dispatcher)
+        return cls(client.agent)
 
-    async def stream(
-        self,
-        message: UserMessage | str,
-        *,
-        config: AgentConfig | None = None,
-        reasoning_effort: ReasoningEffort | None = None,
-        metadata: Mapping[str, JsonValue] | None = None,
-        tags: Mapping[str, JsonValue] | None = None,
-    ) -> AsyncIterator[AgentEvent]:
-        """Yield original events after their corresponding SSE frame is sent."""
-        async with aclosing(
-            self.client.stream(
-                message,
-                config=config,
-                reasoning_effort=reasoning_effort,
-                metadata=metadata,
-                tags=tags,
-            )
-        ) as events:
-            async for event in events:
-                yield event
+    def client(self, dispatcher: AgentEventDispatcher) -> AgentClient:
+        """Bind a request-owned dispatcher to the shared Agent runtime."""
+        return AgentClient(self.agent, event_dispatcher=dispatcher)
 
-    async def run(
-        self,
-        message: UserMessage | str,
-        *,
-        config: AgentConfig | None = None,
-        reasoning_effort: ReasoningEffort | None = None,
-        metadata: Mapping[str, JsonValue] | None = None,
-        tags: Mapping[str, JsonValue] | None = None,
-    ) -> AssistantMessage:
-        """Return the final answer while sending every intermediate SSE frame."""
-        return await self.client.run(
-            message,
-            config=config,
-            reasoning_effort=reasoning_effort,
-            metadata=metadata,
-            tags=tags,
-        )
+    def emit_external_event(self, event: ExternalEvent, *, config: AgentConfig) -> list[str]:
+        """Route external input to extensions handling the identified request."""
+        return self.agent.emit_external_event(event, config=config)

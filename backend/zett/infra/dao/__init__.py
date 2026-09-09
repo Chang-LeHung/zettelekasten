@@ -1,4 +1,4 @@
-"""Typed persistence adapters for sessions, assets, and artifacts."""
+"""Typed persistence adapters for sessions, assets, artifacts, and providers."""
 
 from .artifact import ArtifactStorage, artifact_storage
 from .asset import SessionAssetStorage, session_asset_storage
