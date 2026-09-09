@@ -1495,24 +1495,26 @@ onBeforeUnmount(() => {
                   <div class="prompt-hints"><button type="button" @click="raw = 'I have an idea: '">Capture an idea</button><button type="button" @click="raw = 'Key point from what I just read: '">Summarize a note</button></div>
                 </div>
                 <div v-else class="turn-stack">
-                  <details
+                  <article
                     v-for="(turn, index) in conversationTurns"
                     :key="turn.id"
                     class="conversation-turn"
                     :class="{ running: isRunningTurn(index), latest: index === conversationTurns.length - 1 }"
-                    :open="index === conversationTurns.length - 1"
                   >
-                    <summary class="previous-turn-summary">
-                      <span><strong>{{ summarizeTurnPrompt(turn.prompt.content) }}</strong><small>Previous turn</small></span>
-                      <time>Completed · {{ turnDuration(turn, index) }}</time>
-                      <span class="turn-chevron" aria-hidden="true">›</span>
-                    </summary>
+                    <section class="turn-prompt" aria-label="User message">
+                      <MarkdownContent class="message-content" :content="turn.prompt.content" />
+                    </section>
 
-                    <div class="turn-content">
-                      <section class="turn-prompt" aria-label="User message">
-                        <MarkdownContent class="message-content" :content="turn.prompt.content" />
-                      </section>
+                    <details class="agent-reply" :open="index === conversationTurns.length - 1">
+                      <summary class="previous-turn-summary">
+                        <span>
+                          <strong>Processed in {{ turnDuration(turn, index) }}</strong>
+                          <small>{{ summarizeTurnPrompt(turn.response?.content || 'No response was recorded') }}</small>
+                        </span>
+                        <span class="turn-chevron" aria-hidden="true">›</span>
+                      </summary>
 
+                      <div class="turn-content">
                       <details class="turn-execution">
                         <summary>
                           <span class="turn-state-icon" aria-hidden="true"><i /></span>
@@ -1560,7 +1562,6 @@ onBeforeUnmount(() => {
                       </details>
 
                       <section class="turn-response" aria-label="Agent response">
-                        <span class="agent-response-profile" aria-hidden="true"><img src="/logo.png" alt="" /></span>
                         <div class="agent-response-content">
                           <template v-for="entry in turnAnswerTimeline(turn, index)" :key="entry.id">
                             <MarkdownContent class="final-response" :content="entry.content" />
@@ -1569,8 +1570,9 @@ onBeforeUnmount(() => {
                           <p v-else-if="!turnAnswerTimeline(turn, index).length" class="turn-empty-response">No response was recorded for this turn.</p>
                         </div>
                       </section>
-                    </div>
-                  </details>
+                      </div>
+                    </details>
+                  </article>
                 </div>
               </div>
 
@@ -1953,16 +1955,15 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .agent-thread { min-height: 0; padding: 1.2rem; overflow-y: auto; scrollbar-width: thin; scrollbar-gutter: stable; overflow-anchor: none; }
 .agent-thread.empty { display: grid; place-items: center; }
 .turn-stack { width: min(100%, 46rem); margin: 0 auto; }
-.conversation-turn { margin-bottom: 1.3rem; }
-.conversation-turn > summary { list-style: none; }
-.conversation-turn > summary::-webkit-details-marker { display: none; }
-.conversation-turn.latest > .previous-turn-summary { display: none; }
-.previous-turn-summary { min-height: 3.5rem; display: grid; grid-template-columns: minmax(0,1fr) auto auto; align-items: center; gap: .75rem; padding: .65rem .12rem; border-bottom: 1px solid #e5e9e6; color: #626b66; cursor: pointer; user-select: none; }
+.conversation-turn { display: grid; gap: .78rem; margin-bottom: 1.3rem; }
+.agent-reply > summary { list-style: none; }
+.agent-reply > summary::-webkit-details-marker { display: none; }
+.conversation-turn.latest > .agent-reply > .previous-turn-summary { display: none; }
+.previous-turn-summary { min-height: 3.5rem; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: .75rem; padding: .65rem .12rem; border-bottom: 1px solid #e5e9e6; color: #626b66; cursor: pointer; user-select: none; }
 .previous-turn-summary > span:first-child { min-width: 0; display: grid; gap: .16rem; }
 .previous-turn-summary strong { overflow: hidden; font-size: .68rem; font-weight: 630; text-overflow: ellipsis; white-space: nowrap; }
-.previous-turn-summary small, .previous-turn-summary time { color: #929995; font-size: .56rem; }
-.previous-turn-summary time { font-variant-numeric: tabular-nums; }
-.conversation-turn[open] > .previous-turn-summary .turn-chevron { transform: rotate(90deg); }
+.previous-turn-summary small { overflow: hidden; color: #929995; font-size: .56rem; text-overflow: ellipsis; white-space: nowrap; }
+.agent-reply[open] > .previous-turn-summary .turn-chevron { transform: rotate(90deg); }
 .turn-content { display: grid; gap: .95rem; padding: .25rem 0 1.25rem; }
 .turn-prompt { display: flex; justify-content: flex-end; padding-left: 18%; }
 .turn-prompt .message-content { width: fit-content; max-width: 100%; padding: .68rem .82rem; border: 0; border-radius: 1rem 1rem .3rem 1rem; color: #34483d; background: #eef1ef; box-shadow: none; }
@@ -1979,11 +1980,9 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .turn-execution-copy small { color: #929995; font-size: .56rem; font-variant-numeric: tabular-nums; }
 .turn-chevron { color: #8e9892; font-size: 1.05rem; line-height: 1; transition: transform 160ms ease; }
 .turn-execution[open] > summary .turn-chevron { transform: rotate(90deg); }
-.turn-execution-details { display: grid; gap: .55rem; padding: .72rem 0 .25rem 2.25rem; animation: turn-reveal 160ms ease-out; }
+.turn-execution-details { display: grid; gap: .55rem; padding: .72rem 0 .25rem; animation: turn-reveal 160ms ease-out; }
 .turn-empty-detail { margin: 0; color: #979e99; font-size: .62rem; }
-.turn-response { min-width: 0; display: grid; grid-template-columns: 1.7rem minmax(0,1fr); align-items: start; gap: .58rem; padding-right: 7%; }
-.agent-response-profile { width: 1.55rem; height: 1.55rem; display: grid; place-items: center; border-radius: .48rem; background: #edf2ee; }
-.agent-response-profile img { width: 1.12rem; height: 1.12rem; object-fit: contain; }
+.turn-response { min-width: 0; padding-right: 7%; }
 .agent-response-content { min-width: 0; padding-top: .1rem; }
 .agent-response-content .final-response { margin: 0; padding: 0; border: 0; border-radius: 0; color: #303632; background: transparent; box-shadow: none; }
 .turn-task-list { margin: .1rem 0 .55rem; padding: .25rem 0 .45rem; border-bottom: 1px solid #e8ebe9; }

@@ -31,6 +31,20 @@ describe('buildConversationTurns', () => {
     ])
   })
 
+  it('uses the final assistant message after intermediate model-tool iterations', () => {
+    expect(buildConversationTurns('', [
+      { role: 'user', content: 'Create a card' },
+      { role: 'assistant', content: '', reasoning: 'Selecting a tool' },
+      { role: 'assistant', content: 'The card is ready.' },
+    ])).toEqual([
+      {
+        id: 'turn-0',
+        prompt: { role: 'user', content: 'Create a card' },
+        response: { role: 'assistant', content: 'The card is ready.' },
+      },
+    ])
+  })
+
   it('ignores orphan assistant records instead of attaching them incorrectly', () => {
     expect(buildConversationTurns('', [{ role: 'assistant', content: 'Orphan' }])).toEqual([])
   })

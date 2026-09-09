@@ -22,7 +22,7 @@ export function buildConversationTurns(
       continue
     }
     const current = turns.at(-1)
-    if (current && current.response === undefined) current.response = message
+    if (current) current.response = message
   }
   return turns
 }
