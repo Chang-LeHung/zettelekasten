@@ -208,7 +208,7 @@ export interface AgentArtifact {
 export interface AgentPersistedMessage {
   id: string
   session_id: string
-  turn_id: string
+  request_id: string
   sequence: number
   role: 'system' | 'user' | 'assistant' | 'tool' | 'agent'
   content: string
@@ -218,6 +218,7 @@ export interface AgentPersistedMessage {
   tool_name: string | null
   attributes: Record<string, unknown>
   metadata: Record<string, unknown>
+  tags: Record<string, unknown>
   input_tokens: number | null
   output_tokens: number | null
   cache_read_tokens: number | null
@@ -225,17 +226,20 @@ export interface AgentPersistedMessage {
   reasoning_tokens: number | null
   total_tokens: number | null
   cache_hit_rate: number | null
+  started_at: string
+  completed_at: string
+  duration_ns: number
   created_at: string
+  updated_at: string
 }
 
 export interface AgentSession {
   id: string
-  agent_name: string
+  parent_session_id: string | null
+  agent_name: string | null
   title: string | null
-  status: 'active' | 'completed' | 'failed' | 'archived'
   created_at: string
   updated_at: string
-  last_activity_at: string
   message_count: number
   messages: AgentPersistedMessage[]
   artifacts: AgentArtifact[]
@@ -253,7 +257,7 @@ export interface AIProviderInput {
 }
 
 export interface AIProvider extends Omit<AIProviderInput, 'api_key' | 'base_url'> {
-  id: number
+  id: string
   base_url: string | null
   api_key_configured: boolean
   created_at: string

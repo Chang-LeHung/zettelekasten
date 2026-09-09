@@ -82,20 +82,18 @@ const confirmation = ref<ConfirmationState>({ open: false, title: '', message: '
 let resolveConfirmation: ((confirmed: boolean) => void) | null = null
 const selectedSuggestions = ref<string[]>([])
 const providers = ref<AIProvider[]>([])
-const selectedProviderId = ref<number | null>(null)
+const selectedProviderId = ref<string | null>(null)
 const reasoningEffort = ref<ReasoningEffort>('medium')
-const editingProviderId = ref<number | null>(null)
+const editingProviderId = ref<string | null>(null)
 const ai = ref<AIProviderInput>({
   name: '',
-  provider: 'openai-compatible',
+  provider: 'openai_compatible',
   model: '',
   base_url: '',
   api_key: '',
   temperature: 0.2,
   enabled: true,
 })
-const tagName = ref('')
-const tagParent = ref<number | null>(null)
 const searchInput = ref<HTMLInputElement | null>(null)
 const agentThread = ref<HTMLElement | null>(null)
 const assetFileInput = ref<HTMLInputElement | null>(null)
@@ -181,28 +179,37 @@ function updateToolActivity(activity: AgentToolActivity): void {
 
 function updateCompactionActivity(activity: AgentCompactionActivity): void {
   const index = streamingTimeline.value.findIndex((item) => item.type === 'compaction')
-  const entry: AgentTimelineEntry = { id: 'context-compaction', type: 'compaction', activity }
+  const previous = index >= 0 ? streamingTimeline.value[index] : null
+  const previousActivity = previous?.type === 'compaction' ? previous.activity : null
+  const entry: AgentTimelineEntry = {
+    id: 'context-compaction',
+    type: 'compaction',
+    activity: {
+      ...previousActivity,
+      ...activity,
+      content: `${previousActivity?.content || ''}${activity.content}`,
+      reasoning: `${previousActivity?.reasoning || ''}${activity.reasoning}`,
+    },
+  }
   if (index < 0) streamingTimeline.value.push(entry)
   else streamingTimeline.value.splice(index, 1, entry)
 }
 
 function updateStreamText(type: 'reasoning' | 'message', content: string): void {
-  const previous = type === 'reasoning' ? streamingReasoning.value : streamingMessage.value
-  const delta = content.startsWith(previous) ? content.slice(previous.length) : content
-  if (type === 'reasoning') streamingReasoning.value = content
-  else streamingMessage.value = content
-  if (!delta) return
+  if (!content) return
+  if (type === 'reasoning') streamingReasoning.value += content
+  else streamingMessage.value += content
 
   const last = streamingTimeline.value.at(-1)
   if (last?.type === type) {
-    last.content += delta
+    last.content += content
     streamingTimeline.value = [...streamingTimeline.value]
     return
   }
   streamingTimeline.value.push({
     id: `${type}-${streamingTimeline.value.length}`,
     type,
-    content: delta,
+    content,
   })
 }
 
@@ -842,8 +849,13 @@ async function refreshArtifacts(preferLatest = false): Promise<void> {
 }
 
 async function syncSelectedArtifact(): Promise<void> {
-  if (!conversationId.value || !selectedArtifactId.value || !artifactContent.value) return
-  const updated = await aiClient.updateAgentArtifact(conversationId.value, selectedArtifactId.value, artifactContent.value)
+  const current = selectedArtifact.value
+  if (!conversationId.value || !selectedArtifactId.value || !artifactContent.value || !current) return
+  const updated = await aiClient.updateAgentArtifact(
+    conversationId.value,
+    selectedArtifactId.value,
+    artifactContent.value,
+  )
   const index = artifacts.value.findIndex((artifact) => artifact.id === updated.id)
   if (index >= 0) artifacts.value.splice(index, 1, updated)
 }
@@ -1105,7 +1117,7 @@ function selectProvider(provider: AIProvider): void {
 
 function newProvider(): void {
   editingProviderId.value = null
-  ai.value = { name: '', provider: 'openai-compatible', model: '', base_url: '', api_key: '', temperature: 0.2, enabled: true }
+  ai.value = { name: '', provider: 'openai_compatible', model: '', base_url: '', api_key: '', temperature: 0.2, enabled: true }
 }
 
 async function removeProvider(): Promise<void> {
@@ -1123,21 +1135,6 @@ async function removeProvider(): Promise<void> {
   if (next) selectProvider(next)
   else newProvider()
   showNotice('Provider removed')
-}
-
-async function addTag(): Promise<void> {
-  if (!tagName.value.trim()) return
-  saving.value = true
-  try {
-    await tagClient.create({ name: tagName.value.trim(), parent_id: tagParent.value })
-    tagName.value = ''
-    tags.value = await tagClient.list()
-    showNotice('Tag added to your taxonomy')
-  } catch (error) {
-    showNotice(errorMessage(error), 'error')
-  } finally {
-    saving.value = false
-  }
 }
 
 function formatDate(value: string): string {
@@ -1528,7 +1525,7 @@ onBeforeUnmount(() => {
                   <div class="composer-controls">
                     <label class="composer-select model-select">
                       <svg><use href="#icon-spark" /></svg>
-                      <select v-if="providers.some((provider) => provider.enabled)" v-model.number="selectedProviderId" :disabled="loading" aria-label="Model">
+                      <select v-if="providers.some((provider) => provider.enabled)" v-model="selectedProviderId" :disabled="loading" aria-label="Model">
                         <option v-for="provider in providers.filter((item) => item.enabled)" :key="provider.id" :value="provider.id">{{ provider.model }}</option>
                       </select>
                       <button v-else type="button" @click="navigate('settings')">Add provider</button>
@@ -1616,7 +1613,7 @@ onBeforeUnmount(() => {
           <form class="settings-card" @submit.prevent="saveAI">
             <div class="form-grid">
               <label class="field"><span>Connection name</span><input v-model="ai.name" placeholder="e.g. Fast OpenAI" /><small>Shown in the conversation provider picker.</small></label>
-              <label class="field"><span>Provider</span><select v-model="ai.provider"><option value="openai-compatible">OpenAI compatible</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="gemini">Gemini</option><option value="ollama">Ollama</option></select><small>The API format used for model requests.</small></label>
+              <label class="field"><span>Provider</span><select v-model="ai.provider"><option value="openai_compatible">OpenAI compatible</option><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="anthropic">Anthropic</option><option value="google">Google Gemini</option><option value="ollama">Ollama</option></select><small>The API format used for model requests.</small></label>
               <label class="field"><span>Model</span><input v-model="ai.model" placeholder="e.g. gpt-4.1-mini" /><small>Use the exact model identifier from your provider.</small></label>
               <label class="field full"><span>Base URL <em>Optional</em></span><input v-model="ai.base_url" placeholder="https://api.example.com/v1" /><small>Only needed for compatible APIs or a local Ollama instance.</small></label>
               <label class="field full"><span>API key</span><input v-model="ai.api_key" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved key" /><small>Your key is encrypted locally and never returned by the API.</small></label>
@@ -1625,12 +1622,6 @@ onBeforeUnmount(() => {
             <div class="settings-actions"><button v-if="editingProviderId !== null" class="danger-button" type="button" @click="removeProvider">Delete provider</button><span v-else>Credentials are encrypted in your local database.</span><div><label class="switch"><input v-model="ai.enabled" type="checkbox" /><span /><small>{{ ai.enabled ? 'Enabled' : 'Disabled' }}</small></label><button class="primary-action" :disabled="saving || !ai.name || !ai.model" type="submit">{{ saving ? 'Saving…' : editingProviderId === null ? 'Add provider' : 'Save provider' }}</button></div></div>
           </form>
 
-          <div class="settings-intro taxonomy-heading"><div><h2>Tag taxonomy</h2><p>Add a root tag or nest one beneath any existing collection.</p></div></div>
-          <form class="settings-card taxonomy-form" @submit.prevent="addTag">
-            <label class="field"><span>Tag name</span><input v-model="tagName" placeholder="e.g. Distributed systems" /></label>
-            <label class="field"><span>Parent</span><select v-model="tagParent"><option :value="null">No parent — root tag</option><option v-for="tag in flatTags" :key="tag.id" :value="tag.id">{{ '— '.repeat(tag.depth) }}{{ tag.path }}</option></select></label>
-            <button class="primary-action" :disabled="saving || !tagName.trim()" type="submit"><svg><use href="#icon-add" /></svg>Add tag</button>
-          </form>
         </section>
       </template>
 

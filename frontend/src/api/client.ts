@@ -2,25 +2,23 @@ import type {
   AnalysisMessage,
   AgentArtifact,
   AgentStreamCallbacks,
-  AgentCustomEvent,
   AgentSession,
   AgentStart,
   AIProvider,
   AIProviderInput,
   ArtifactContent,
-  Card,
-  CardCreateRequest,
   CardListOptions,
   LibraryItem,
   LibraryItemType,
   LibraryItemUpdate,
   ReasoningEffort,
   Tag,
-  TagCreateRequest,
   SessionAsset,
 } from './types'
 
 const API_URL = (import.meta.env.VITE_API_URL ?? '/api').replace(/\/$/, '')
+const artifactIndex = new Map<string, AgentArtifact>()
+const tagIndex = new Map<number, string>()
 
 class ApiError extends Error {
   constructor(
@@ -43,56 +41,82 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return response.json() as Promise<T>
 }
 
-export const cardClient = {
-  list(options: CardListOptions = {}): Promise<Card[]> {
-    const params = new URLSearchParams()
-    if (options.query) params.set('q', options.query)
-    if (options.tagId) params.set('tag_id', String(options.tagId))
-    const suffix = params.size ? `?${params}` : ''
-    return request<Card[]>(`/cards${suffix}`)
-  },
-
-  create(payload: CardCreateRequest): Promise<Card> {
-    return request<Card>('/cards', { method: 'POST', body: JSON.stringify(payload) })
-  },
-
-  get(cardId: string): Promise<Card> {
-    return request<Card>(`/cards/${cardId}`)
-  },
-
-  delete(cardId: string): Promise<{ ok: boolean }> {
-    return request<{ ok: boolean }>(`/cards/${cardId}`, { method: 'DELETE' })
-  },
-}
-
 export const libraryClient = {
-  list(options: CardListOptions = {}): Promise<LibraryItem[]> {
+  async list(options: CardListOptions = {}): Promise<LibraryItem[]> {
     const params = new URLSearchParams()
     if (options.query) params.set('q', options.query)
-    if (options.tagId) params.set('tag_id', String(options.tagId))
+    params.append('artifact_types', 'card')
+    params.append('artifact_types', 'article')
+    params.append('statuses', 'saved')
     const suffix = params.size ? `?${params}` : ''
-    return request<LibraryItem[]>(`/library${suffix}`)
+    const artifacts = await request<AgentArtifact[]>(`/artifacts${suffix}`)
+    artifacts.forEach((artifact) => artifactIndex.set(artifact.id, artifact))
+    const tagPath = options.tagId == null ? null : tagIndex.get(options.tagId)
+    return artifacts.map(artifactToLibraryItem).filter((item) => !tagPath || item.tags.includes(tagPath))
   },
 
-  delete(itemType: LibraryItemType, itemId: string): Promise<{ ok: boolean }> {
-    return request<{ ok: boolean }>(`/library/${itemType}/${itemId}`, { method: 'DELETE' })
+  delete(_itemType: LibraryItemType, itemId: string): Promise<{ ok: boolean }> {
+    const artifact = requireIndexedArtifact(itemId)
+    artifactIndex.delete(itemId)
+    return request<{ ok: boolean }>(`/agent/${artifact.session_id}/artifacts/${itemId}`, { method: 'DELETE' })
   },
 
-  update(itemType: LibraryItemType, itemId: string, payload: LibraryItemUpdate): Promise<LibraryItem> {
-    return request<LibraryItem>(`/library/${itemType}/${itemId}`, {
+  async update(itemType: LibraryItemType, itemId: string, payload: LibraryItemUpdate): Promise<LibraryItem> {
+    const artifact = requireIndexedArtifact(itemId)
+    const suggestedTags = (payload.tags ?? artifact.content.suggested_tags.map((tag) => tag.path)).map((path) => ({
+      path,
+      existing: true,
+      confidence: 1,
+    }))
+    const content: ArtifactContent = itemType === 'article'
+      ? {
+          artifact_type: 'article',
+          title: payload.title,
+          subtitle: payload.subtitle || '',
+          summary: payload.summary || '',
+          content: payload.content,
+          suggested_tags: suggestedTags,
+          keywords: artifact.content.keywords,
+        }
+      : {
+          artifact_type: 'card',
+          title: payload.title,
+          card_type: artifact.content.artifact_type === 'card' ? artifact.content.card_type : 'note',
+          summary: payload.summary || '',
+          content: payload.content,
+          suggested_tags: suggestedTags,
+          keywords: artifact.content.keywords,
+        }
+    const updated = await request<AgentArtifact>(`/agent/${artifact.session_id}/artifacts/${itemId}`, {
       method: 'PUT',
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ content }),
     })
+    artifactIndex.set(updated.id, updated)
+    return artifactToLibraryItem(updated)
   },
 }
 
 export const tagClient = {
-  list(): Promise<Tag[]> {
-    return request<Tag[]>('/tags')
-  },
-
-  create(payload: TagCreateRequest): Promise<Tag> {
-    return request<Tag>('/tags', { method: 'POST', body: JSON.stringify(payload) })
+  async list(): Promise<Tag[]> {
+    const items = await libraryClient.list()
+    const paths = [...new Set(items.flatMap((item) => item.tags))].sort()
+    tagIndex.clear()
+    return paths.map((path, index) => {
+      const id = index + 1
+      tagIndex.set(id, path)
+      return {
+        id,
+        name: path.split('/').at(-1) || path,
+        parent_id: null,
+        description: null,
+        color: null,
+        created_at: '',
+        updated_at: '',
+        path,
+        card_count: items.filter((item) => item.tags.includes(path)).length,
+        children: [],
+      }
+    })
   },
 }
 
@@ -100,7 +124,7 @@ export const aiClient = {
   async analyzeStream(
     conversationId: string,
     rawContent: string,
-    providerId: number,
+    providerId: string,
     reasoningEffort: ReasoningEffort,
     messages: AnalysisMessage[],
     callbacks: AgentStreamCallbacks = {},
@@ -139,12 +163,35 @@ export const aiClient = {
           continue
         }
         if (payload === null) continue
-        if (event === 'status') callbacks.onStatus?.(String(payload.state || ''))
-        if (event === 'reasoning') callbacks.onReasoning?.(String(payload.content || ''))
-        if (event === 'message') callbacks.onMessage?.(String(payload.content || ''))
-        if (event === 'tool') await callbacks.onTool?.(payload as unknown as Parameters<NonNullable<typeof callbacks.onTool>>[0])
-        if (event === 'compaction') callbacks.onCompaction?.(payload as unknown as Parameters<NonNullable<typeof callbacks.onCompaction>>[0])
-        if (event === 'custom') callbacks.onCustom?.(payload as unknown as AgentCustomEvent)
+        if (event === 'model_started') callbacks.onStatus?.('generating')
+        if (event === 'reasoning_delta') callbacks.onReasoning?.(String(payload.delta || ''))
+        if (event === 'text_delta') callbacks.onMessage?.(String(payload.delta || ''))
+        if (event === 'tool_started') {
+          for (const call of asToolCalls(payload.tool_calls)) await callbacks.onTool?.({ ...call, state: 'started' })
+        }
+        if (['tool_completed', 'tool_failed', 'tool_skipped'].includes(event)) {
+          const message = payload.message as Record<string, unknown> | undefined
+          if (message) await callbacks.onTool?.({
+            id: String(message.tool_call_id || ''),
+            name: String(message.name || ''),
+            state: event === 'tool_completed' ? 'succeeded' : event === 'tool_skipped' ? 'cancelled' : 'failed',
+            output: message.output,
+            error_message: event === 'tool_failed'
+              ? String((payload.error as Record<string, unknown> | undefined)?.message || '')
+              : null,
+          })
+        }
+        if (event.startsWith('compaction_')) callbacks.onCompaction?.({
+          state: event === 'compaction_started' ? 'started' : event === 'compaction_completed' ? 'completed' : 'streaming',
+          applied: typeof payload.applied === 'boolean' ? payload.applied : null,
+          content: event === 'compaction_text_delta' ? String(payload.delta || '') : '',
+          reasoning: event === 'compaction_reasoning_delta' ? String(payload.delta || '') : '',
+        })
+        if (event === 'custom') callbacks.onCustom?.({
+          name: String(payload.name || ''),
+          payload: (payload.payload || {}) as Record<string, unknown>,
+        })
+        if (event === 'run_completed') callbacks.onStatus?.('completed')
         if (event === 'error') throw new Error(String(payload.message || 'AI analysis failed'))
       }
       if (done) break
@@ -228,10 +275,14 @@ export const aiClient = {
     return request<AgentArtifact>(`/agent/${conversationId}/artifacts/${artifactId}`)
   },
 
-  updateAgentArtifact(conversationId: string, artifactId: string, content: ArtifactContent): Promise<AgentArtifact> {
+  updateAgentArtifact(
+    conversationId: string,
+    artifactId: string,
+    content: ArtifactContent,
+  ): Promise<AgentArtifact> {
     return request<AgentArtifact>(`/agent/${conversationId}/artifacts/${artifactId}`, {
       method: 'PUT',
-      body: JSON.stringify(content),
+      body: JSON.stringify({ content }),
     })
   },
 
@@ -251,14 +302,56 @@ export const aiClient = {
     return request<AIProvider>('/ai/providers', { method: 'POST', body: JSON.stringify(payload) })
   },
 
-  updateProvider(providerId: number, payload: AIProviderInput): Promise<AIProvider> {
+  updateProvider(providerId: string, payload: AIProviderInput): Promise<AIProvider> {
     return request<AIProvider>(`/ai/providers/${providerId}`, { method: 'PUT', body: JSON.stringify(payload) })
   },
 
-  deleteProvider(providerId: number): Promise<{ ok: boolean }> {
+  deleteProvider(providerId: string): Promise<{ ok: boolean }> {
     return request<{ ok: boolean }>(`/ai/providers/${providerId}`, { method: 'DELETE' })
   },
 
+}
+
+function requireIndexedArtifact(id: string): AgentArtifact {
+  const artifact = artifactIndex.get(id)
+  if (!artifact) throw new Error(`Artifact ${id} is not loaded`)
+  return artifact
+}
+
+function artifactToLibraryItem(artifact: AgentArtifact): LibraryItem {
+  const content = artifact.content
+  if (content.artifact_type === 'image') throw new Error('Image artifacts are not library documents')
+  return {
+    id: artifact.id,
+    item_type: content.artifact_type,
+    title: content.title,
+    subtitle: content.artifact_type === 'article' ? content.subtitle : null,
+    summary: content.summary || null,
+    content: content.content,
+    raw_content: artifact.raw_content,
+    card_type: content.artifact_type === 'card' ? content.card_type : null,
+    status: artifact.status,
+    tags: content.suggested_tags.map((tag) => tag.path),
+    metadata: artifact.metadata,
+    created_at: artifact.created_at,
+    updated_at: artifact.updated_at,
+  }
+}
+
+function asToolCalls(value: unknown): Array<{ id: string; name: string; arguments: Record<string, unknown> }> {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((call) => {
+    if (!call || typeof call !== 'object') return []
+    const item = call as Record<string, unknown>
+    if (typeof item.id !== 'string' || typeof item.name !== 'string') return []
+    return [{
+      id: item.id,
+      name: item.name,
+      arguments: item.arguments && typeof item.arguments === 'object'
+        ? item.arguments as Record<string, unknown>
+        : {},
+    }]
+  })
 }
 
 export { ApiError }
