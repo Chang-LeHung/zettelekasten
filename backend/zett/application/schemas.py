@@ -14,12 +14,6 @@ class DeleteResponse(BaseModel):
     ok: bool
 
 
-class SessionTitleUpdate(BaseModel):
-    """Mutable user-facing session title."""
-
-    title: str = Field(min_length=1, max_length=200)
-
-
 class PersistedMessageOut(BaseModel):
     """One immutable raw message projected for the conversation UI."""
 

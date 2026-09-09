@@ -9,7 +9,7 @@ from ...models import ArtifactListOptions, SessionAssetListOptions, SessionListO
 from ...schemas import AgentSessionCreate
 from ..dependencies import run_sync
 from ..presentation import message_out, session_out
-from ..schemas import AgentStartOut, DeleteResponse, PersistedMessageOut, SessionOut, SessionTitleUpdate
+from ..schemas import AgentStartOut, DeleteResponse, PersistedMessageOut, SessionOut
 
 router = APIRouter(prefix="/agent", tags=["sessions"])
 
@@ -67,10 +67,10 @@ async def list_session_messages(
 
 
 @router.patch("/sessions/{session_id}/title", response_model=SessionOut)
-async def update_session_title(session_id: str, payload: SessionTitleUpdate) -> SessionOut:
+async def update_session_title(session_id: str, payload: AgentSessionCreate) -> SessionOut:
     """Update the title without rebuilding the full conversation."""
     try:
-        updated = await run_sync(session_storage.update, session_id, AgentSessionCreate(title=payload.title))
+        updated = await run_sync(session_storage.update, session_id, payload)
     except KeyError as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found") from error
     return session_out(updated)

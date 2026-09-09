@@ -27,6 +27,8 @@ class SessionStorage(Storage[AgentSessionCreate, SessionSummary, str, SessionLis
     def update(self, entity_id: str, entity: AgentSessionCreate) -> SessionSummary:
         if entity.title is None:
             raise ValueError("Session title is required for an update")
+        if self.get(entity_id) is None:
+            raise KeyError(f"Session not found: {entity_id}")
         result = get_agent_runtime_storage().update_session(entity_id, title=entity.title)
         if result is None:
             raise KeyError(f"Session not found: {entity_id}")
@@ -48,10 +50,6 @@ class SessionStorage(Storage[AgentSessionCreate, SessionSummary, str, SessionLis
     def list_raw_messages(self, session_id: str, *, limit: int = 100, offset: int = 0) -> list[RawMessageRecord]:
         """Read immutable history without assembling a workspace aggregate."""
         return get_agent_runtime_storage().list_raw_messages(session_id, limit=limit, offset=offset)
-
-    def set_title_if_empty(self, session_id: str, title: str) -> bool:
-        """Install one generated title without replacing user-owned text."""
-        return get_agent_runtime_storage().set_session_title_if_empty(session_id, title)
 
 
 session_storage = SessionStorage()

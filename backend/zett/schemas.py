@@ -179,9 +179,14 @@ class SessionAssetOut(BaseModel):
 
 
 class AgentSessionCreate(BaseModel):
-    """Fields used to create a persisted Zettelkasten Agent conversation."""
+    """Complete mutable fields for a persisted Agent conversation."""
 
-    title: str | None = Field(default=None, description="Optional user-facing conversation title")
+    title: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=200,
+        description="Optional user-facing conversation title",
+    )
 
 
 class ProviderType(StrEnum):

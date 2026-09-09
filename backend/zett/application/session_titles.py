@@ -4,14 +4,14 @@ from ..agent.model_factory import create_model
 from ..agent.session_title import SessionTitleAgent
 from ..infra.dao import session_storage
 from ..infra.log import get_logger
-from ..schemas import ProviderConnection
+from ..schemas import AgentSessionCreate, ProviderConnection
 from .dependencies import run_sync
 
 logger = get_logger(__name__)
 
 
 async def generate_initial_session_title(session_id: str, connection: ProviderConnection) -> None:
-    """Generate and atomically install a title when the session is still untitled."""
+    """Generate a title after the first response while the session remains untitled."""
     try:
         session = await run_sync(session_storage.get, session_id)
         if session is None or session.title is not None:
@@ -24,8 +24,11 @@ async def generate_initial_session_title(session_id: str, connection: ProviderCo
             title = await SessionTitleAgent(model).generate(records)
         finally:
             await model.aclose()
-        if title:
-            await run_sync(session_storage.set_title_if_empty, session_id, title)
+        if not title:
+            return
+        current = await run_sync(session_storage.get, session_id)
+        if current is not None and current.title is None:
+            await run_sync(session_storage.update, session_id, AgentSessionCreate(title=title))
     except Exception:
         # Title generation is intentionally best-effort and must never alter the
         # successful primary response already delivered to the user.
