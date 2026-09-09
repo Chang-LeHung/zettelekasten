@@ -102,6 +102,7 @@ export interface AnalysisMessage {
   reasoning?: string
   activities?: AgentToolActivity[]
   timeline?: AgentTimelineEntry[]
+  duration_ms?: number
 }
 
 export interface AgentToolActivity {

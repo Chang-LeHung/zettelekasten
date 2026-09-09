@@ -3,6 +3,7 @@ import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, r
 import { ApiError, aiClient, libraryClient, tagClient } from './api/client'
 import type { AgentArtifact, AgentCompactionActivity, AgentCustomEvent, AgentSession, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, ReasoningEffort, SessionAsset, Tag } from './api/types'
 import ConfirmDialog from './components/ConfirmDialog.vue'
+import { buildConversationTurns, formatTurnDuration, summarizeTurnPrompt, type ConversationTurn } from './utils/conversationTurns'
 import { jsonSnapshot } from './utils/jsonSnapshot'
 import { todoFromTool } from './utils/toolPresentation'
 
@@ -13,6 +14,7 @@ type View = 'library' | 'search' | 'new' | 'settings'
 type NoticeKind = 'success' | 'error'
 type AssetEditorMode = 'closed' | 'text' | 'link'
 type AssetFilter = 'all' | 'documents' | 'images' | 'links' | 'notes' | 'code'
+type AgentMessageTimelineEntry = Extract<AgentTimelineEntry, { type: 'message' }>
 interface ConfirmationState {
   open: boolean
   title: string
@@ -46,7 +48,6 @@ const streamingMessage = ref('')
 const streamingReasoning = ref('')
 const streamingActivities = ref<AgentToolActivity[]>([])
 const streamingTimeline = ref<AgentTimelineEntry[]>([])
-const streamingResponseVisible = ref(false)
 const pendingQuestion = ref<AskUserState | null>(null)
 const askAnswer = ref('')
 const selectedAskOptions = ref<string[]>([])
@@ -55,6 +56,7 @@ const activeTodos = ref<AgentTodoState | null>(null)
 let agentScrollFrame: number | null = null
 let followAgentOutput = true
 const streamingStatus = ref('idle')
+const turnElapsedMs = ref(0)
 const activeStreamController = ref<AbortController | null>(null)
 const artifactPreview = ref(true)
 const conversationId = ref<string | null>(null)
@@ -98,6 +100,8 @@ const searchInput = ref<HTMLInputElement | null>(null)
 const agentThread = ref<HTMLElement | null>(null)
 const assetFileInput = ref<HTMLInputElement | null>(null)
 const titleRefreshTimers: number[] = []
+let turnStartedAt = 0
+let turnClock: number | null = null
 const activeSessionKey = 'zett.active-session-id'
 const cardTypes: CardType[] = ['note', 'idea', 'quote', 'todo', 'reference']
 const assetFilters: Array<{ value: AssetFilter; label: string }> = [
@@ -122,6 +126,7 @@ const pageDescription = computed(() => {
 const conversationStarted = computed(
   () => conversationId.value !== null || artifactContent.value !== null || conversation.value.length > 0,
 )
+const conversationTurns = computed(() => buildConversationTurns(raw.value, conversation.value))
 const selectedArtifact = computed(() => artifacts.value.find((artifact) => artifact.id === selectedArtifactId.value) || null)
 const selectedImageUrl = computed(() => {
   const content = artifactContent.value
@@ -153,7 +158,64 @@ function resetStreamState(): void {
   pendingQuestion.value = null
   activeTodos.value = null
   streamingStatus.value = 'starting'
-  streamingResponseVisible.value = true
+}
+
+function startTurnClock(): void {
+  if (turnClock !== null) window.clearInterval(turnClock)
+  turnStartedAt = performance.now()
+  turnElapsedMs.value = 0
+  turnClock = window.setInterval(() => {
+    turnElapsedMs.value = performance.now() - turnStartedAt
+  }, 200)
+}
+
+function stopTurnClock(): number {
+  const duration = turnStartedAt ? performance.now() - turnStartedAt : turnElapsedMs.value
+  turnElapsedMs.value = duration
+  turnStartedAt = 0
+  if (turnClock !== null) window.clearInterval(turnClock)
+  turnClock = null
+  return duration
+}
+
+function isRunningTurn(index: number): boolean {
+  return loading.value && index === conversationTurns.value.length - 1
+}
+
+function turnTimeline(turn: ConversationTurn, index: number): AgentTimelineEntry[] {
+  if (isRunningTurn(index)) return streamingTimeline.value
+  return turn.response ? historicalTimeline(turn.response) : []
+}
+
+function turnExecutionTimeline(turn: ConversationTurn, index: number): AgentTimelineEntry[] {
+  return turnTimeline(turn, index).filter((entry) => entry.type !== 'message')
+}
+
+function turnAnswerTimeline(turn: ConversationTurn, index: number): AgentMessageTimelineEntry[] {
+  return turnTimeline(turn, index).filter((entry): entry is AgentMessageTimelineEntry => entry.type === 'message')
+}
+
+function turnTask(index: number): string {
+  if (!isRunningTurn(index)) return 'Completed'
+  const processing = activeTodos.value?.processing?.content
+  if (processing) return processing
+  const activeTool = [...streamingActivities.value].reverse().find((activity) => activity.state === 'started')
+  if (activeTool) return `Using ${activeTool.name.replaceAll('_', ' ')}`
+  const labels: Record<string, string> = {
+    starting: 'Preparing your request',
+    compacting: 'Organizing conversation context',
+    generating: 'Thinking through your request',
+    reasoning: 'Thinking through your request',
+    writing: 'Writing the response',
+    waiting_for_user: 'Waiting for your answer',
+    resuming: 'Resuming the task',
+  }
+  return labels[streamingStatus.value] || 'Working on your request'
+}
+
+function turnDuration(turn: ConversationTurn, index: number): string {
+  if (isRunningTurn(index)) return formatTurnDuration(turnElapsedMs.value)
+  return formatTurnDuration(turn.response?.duration_ms || 0)
 }
 
 function updateToolActivity(activity: AgentToolActivity): void {
@@ -214,7 +276,11 @@ function updateStreamText(type: 'reasoning' | 'message', content: string): void 
 }
 
 function historicalTimeline(message: AnalysisMessage): AgentTimelineEntry[] {
-  if (message.timeline?.length) return message.timeline
+  if (message.timeline?.length) {
+    return message.timeline.some((entry) => entry.type === 'message') || !message.content
+      ? message.timeline
+      : [...message.timeline, { id: 'message', type: 'message', content: message.content }]
+  }
   const entries: AgentTimelineEntry[] = []
   if (message.reasoning) {
     entries.push({ id: 'reasoning', type: 'reasoning', content: message.reasoning })
@@ -262,11 +328,18 @@ function streamCallbacks() {
   const sessionId = conversationId.value
   return {
     onStatus: (state: string) => { streamingStatus.value = state },
-    onReasoning: (content: string) => { updateStreamText('reasoning', content) },
-    onMessage: (content: string) => { updateStreamText('message', content) },
+    onReasoning: (content: string) => {
+      streamingStatus.value = 'reasoning'
+      updateStreamText('reasoning', content)
+    },
+    onMessage: (content: string) => {
+      streamingStatus.value = 'writing'
+      updateStreamText('message', content)
+    },
     onTool: async (activity: AgentToolActivity) => {
       if (conversationId.value !== sessionId) return
       updateToolActivity(activity)
+      streamingStatus.value = activity.state === 'started' ? 'running_tool' : 'generating'
       const todos = todoFromTool(activity)
       if (todos) activeTodos.value = todos
       if (activity.state === 'started' || !sessionId) return
@@ -277,7 +350,10 @@ function streamCallbacks() {
         if (conversationId.value === sessionId) showNotice(errorMessage(error), 'error')
       }
     },
-    onCompaction: updateCompactionActivity,
+    onCompaction: (activity: AgentCompactionActivity) => {
+      streamingStatus.value = activity.state === 'completed' ? 'generating' : 'compacting'
+      updateCompactionActivity(activity)
+    },
     onCustom: handleCustomAgentEvent,
   }
 }
@@ -570,6 +646,7 @@ async function analyze(): Promise<void> {
   const controller = new AbortController()
   activeStreamController.value = controller
   resetStreamState()
+  startTurnClock()
   try {
     const activeConversationId = await ensureConversation()
     const result = await aiClient.analyzeStream(
@@ -581,20 +658,19 @@ async function analyze(): Promise<void> {
       streamCallbacks(),
       controller.signal,
     )
-    streamingResponseVisible.value = false
     conversation.value = [{
       role: 'assistant',
       content: streamingMessage.value || (result ? 'The artifact is ready.' : 'How would you like to continue?'),
       reasoning: streamingReasoning.value || undefined,
       activities: [...streamingActivities.value],
       timeline: jsonSnapshot(streamingTimeline.value),
+      duration_ms: stopTurnClock(),
     }]
     await refreshArtifacts(true)
     await loadSessions(true)
     scheduleSessionTitleRefresh()
   } catch (error) {
     if (controller.signal.aborted || isAbortError(error)) {
-      streamingResponseVisible.value = false
       if (streamingMessage.value || streamingReasoning.value || streamingTimeline.value.length) {
         conversation.value = [{
           role: 'assistant',
@@ -602,6 +678,7 @@ async function analyze(): Promise<void> {
           reasoning: streamingReasoning.value || undefined,
           activities: [...streamingActivities.value],
           timeline: jsonSnapshot(streamingTimeline.value),
+          duration_ms: stopTurnClock(),
         }]
       }
       streamingStatus.value = 'cancelled'
@@ -610,7 +687,7 @@ async function analyze(): Promise<void> {
       showNotice(errorMessage(error), 'error')
     }
   } finally {
-    streamingResponseVisible.value = false
+    stopTurnClock()
     if (activeStreamController.value === controller) activeStreamController.value = null
     loading.value = false
     if (streamingStatus.value !== 'cancelled') streamingStatus.value = 'idle'
@@ -627,6 +704,7 @@ async function refine(): Promise<void> {
   const controller = new AbortController()
   activeStreamController.value = controller
   resetStreamState()
+  startTurnClock()
   try {
     if (selectedProviderId.value === null) throw new Error('Select an AI provider first')
     const activeConversationId = await ensureConversation()
@@ -640,7 +718,6 @@ async function refine(): Promise<void> {
       streamCallbacks(),
       controller.signal,
     )
-    streamingResponseVisible.value = false
     conversation.value = [
       ...history,
       {
@@ -649,13 +726,13 @@ async function refine(): Promise<void> {
         reasoning: streamingReasoning.value || undefined,
         activities: [...streamingActivities.value],
         timeline: jsonSnapshot(streamingTimeline.value),
+        duration_ms: stopTurnClock(),
       },
     ]
     await refreshArtifacts(true)
     await loadSessions(true)
   } catch (error) {
     if (controller.signal.aborted || isAbortError(error)) {
-      streamingResponseVisible.value = false
       if (streamingMessage.value || streamingReasoning.value || streamingTimeline.value.length) {
         conversation.value = [
           ...history,
@@ -665,6 +742,7 @@ async function refine(): Promise<void> {
             reasoning: streamingReasoning.value || undefined,
             activities: [...streamingActivities.value],
             timeline: jsonSnapshot(streamingTimeline.value),
+            duration_ms: stopTurnClock(),
           },
         ]
       }
@@ -674,7 +752,7 @@ async function refine(): Promise<void> {
       showNotice(errorMessage(error), 'error')
     }
   } finally {
-    streamingResponseVisible.value = false
+    stopTurnClock()
     if (activeStreamController.value === controller) activeStreamController.value = null
     loading.value = false
     if (streamingStatus.value !== 'cancelled') streamingStatus.value = 'idle'
@@ -749,6 +827,7 @@ function applySession(session: AgentSession): void {
       timeline: message.role === 'assistant'
         ? restorePersistedTimeline(message.metadata, activities)
         : undefined,
+      duration_ms: message.role === 'assistant' ? message.duration_ns / 1_000_000 : undefined,
     }]
   })
   followUp.value = ''
@@ -1175,6 +1254,7 @@ onBeforeUnmount(() => {
   resolveConfirmation?.(false)
   activeStreamController.value?.abort()
   if (agentScrollFrame !== null) window.cancelAnimationFrame(agentScrollFrame)
+  if (turnClock !== null) window.clearInterval(turnClock)
   window.removeEventListener('keydown', handleShortcut)
   for (const timer of titleRefreshTimers) window.clearTimeout(timer)
 })
@@ -1414,80 +1494,84 @@ onBeforeUnmount(() => {
                   <p>Share a rough thought, excerpt, or question. You can refine the result through conversation before saving it.</p>
                   <div class="prompt-hints"><button type="button" @click="raw = 'I have an idea: '">Capture an idea</button><button type="button" @click="raw = 'Key point from what I just read: '">Summarize a note</button></div>
                 </div>
-                <template v-else>
-                  <div class="message user-message">
-                    <div class="message-profile user-profile" aria-hidden="true"><svg><use href="#icon-user" /></svg></div>
-                    <div class="message-body">
-                      <div class="message-author"><strong>You</strong><small>Personal workspace</small></div>
-                      <MarkdownContent class="message-content" :content="raw" />
+                <div v-else class="turn-stack">
+                  <details
+                    v-for="(turn, index) in conversationTurns"
+                    :key="turn.id"
+                    class="conversation-turn"
+                    :class="{ running: isRunningTurn(index), latest: index === conversationTurns.length - 1 }"
+                    :open="index === conversationTurns.length - 1"
+                  >
+                    <summary class="previous-turn-summary">
+                      <span><strong>{{ summarizeTurnPrompt(turn.prompt.content) }}</strong><small>Previous turn</small></span>
+                      <time>Completed · {{ turnDuration(turn, index) }}</time>
+                      <span class="turn-chevron" aria-hidden="true">›</span>
+                    </summary>
+
+                    <div class="turn-content">
+                      <section class="turn-prompt" aria-label="User message">
+                        <MarkdownContent class="message-content" :content="turn.prompt.content" />
+                      </section>
+
+                      <details class="turn-execution">
+                        <summary>
+                          <span class="turn-state-icon" aria-hidden="true"><i /></span>
+                          <span class="turn-execution-copy">
+                            <strong>{{ isRunningTurn(index) ? turnTask(index) : `Processed in ${turnDuration(turn, index)}` }}</strong>
+                            <small>{{ isRunningTurn(index) ? `Running · ${turnDuration(turn, index)}` : 'Show reasoning, tools, and task details' }}</small>
+                          </span>
+                          <span class="turn-chevron" aria-hidden="true">›</span>
+                        </summary>
+                        <div class="turn-execution-details">
+                          <div v-if="isRunningTurn(index) && activeTodos?.todos.length" class="turn-task-list">
+                            <div><strong>Task progress</strong><small>{{ activeTodos.completed ? 'Completed' : `${(activeTodos.processing_index ?? 0) + 1} of ${activeTodos.todos.length}` }}</small></div>
+                            <ol>
+                              <li v-for="todo in activeTodos.todos" :key="todo.content" :class="todo.status">
+                                <i aria-hidden="true">{{ todo.status === 'completed' ? '✓' : todo.status === 'processing' ? '•' : '' }}</i>
+                                <span>{{ todo.content }}</span>
+                              </li>
+                            </ol>
+                          </div>
+                          <div v-if="turnExecutionTimeline(turn, index).length" class="agent-event-timeline">
+                            <template v-for="entry in turnExecutionTimeline(turn, index)" :key="entry.id">
+                            <details v-if="entry.type === 'reasoning'" class="reasoning-panel" :class="{ 'streaming-reasoning': isRunningTurn(index) }">
+                              <summary><span>Reasoning</span><small>{{ isRunningTurn(index) ? 'Live details' : 'Show process' }}</small></summary>
+                              <MarkdownContent class="reasoning-content" :content="entry.content" />
+                            </details>
+                            <details v-else-if="entry.type === 'compaction'" class="reasoning-panel compaction-panel">
+                              <summary><span>Context compaction</span><small>{{ entry.activity.state }}</small></summary>
+                              <div class="compaction-content">
+                                <MarkdownContent v-if="entry.activity.reasoning" class="reasoning-content" :content="entry.activity.reasoning" />
+                                <MarkdownContent v-if="entry.activity.content" class="reasoning-content" :content="entry.activity.content" />
+                                <small v-if="entry.activity.compressed_from">Compressed {{ entry.activity.compressed_from }}–{{ entry.activity.compressed_to }} · kept {{ entry.activity.kept_from }}–{{ entry.activity.kept_to }}</small>
+                              </div>
+                            </details>
+                            <details v-else-if="entry.type === 'tool'" class="tool-activity" :class="entry.activity.state">
+                              <summary><i /><span>{{ entry.activity.name.replaceAll('_', ' ') }}</span><small v-if="entry.activity.duration_ms">{{ Math.round(entry.activity.duration_ms) }} ms</small></summary>
+                              <div class="tool-activity-details">
+                                <div><strong>Arguments</strong><pre>{{ formatToolValue(entry.activity.arguments || {}) }}</pre></div>
+                                <div><strong>{{ entry.activity.error_message ? 'Error' : 'Result' }}</strong><pre :class="{ error: entry.activity.error_message }">{{ entry.activity.error_message || formatToolValue(entry.activity.output) }}</pre></div>
+                              </div>
+                            </details>
+                            </template>
+                          </div>
+                          <p v-else-if="isRunningTurn(index)" class="turn-empty-detail">Waiting for execution details…</p>
+                        </div>
+                      </details>
+
+                      <section class="turn-response" aria-label="Agent response">
+                        <span class="agent-response-profile" aria-hidden="true"><img src="/logo.png" alt="" /></span>
+                        <div class="agent-response-content">
+                          <template v-for="entry in turnAnswerTimeline(turn, index)" :key="entry.id">
+                            <MarkdownContent class="final-response" :content="entry.content" />
+                          </template>
+                          <span v-if="isRunningTurn(index)" class="streaming-dots compact" aria-label="Generating"><i /><i /><i /></span>
+                          <p v-else-if="!turnAnswerTimeline(turn, index).length" class="turn-empty-response">No response was recorded for this turn.</p>
+                        </div>
+                      </section>
                     </div>
-                  </div>
-                  <div v-for="(message, index) in conversation" :key="index" class="message" :class="`${message.role}-message`">
-                    <div class="message-profile" :class="message.role === 'assistant' ? 'agent-profile' : 'user-profile'" aria-hidden="true">
-                      <img v-if="message.role === 'assistant'" src="/logo.png" alt="" />
-                      <svg v-else><use href="#icon-user" /></svg>
-                    </div>
-                    <div class="message-body">
-                      <div class="message-author"><strong>{{ message.role === 'assistant' ? 'Zettelkasten Agent' : 'You' }}</strong><small>{{ message.role === 'assistant' ? 'Knowledge assistant' : 'Personal workspace' }}</small></div>
-                      <div class="agent-event-timeline">
-                        <template v-for="entry in historicalTimeline(message)" :key="entry.id">
-                          <details v-if="entry.type === 'reasoning'" class="reasoning-panel">
-                            <summary><span>Reasoning</span><small>Show process</small></summary>
-                            <MarkdownContent class="reasoning-content" :content="entry.content" />
-                          </details>
-                          <details v-else-if="entry.type === 'compaction'" class="reasoning-panel compaction-panel">
-                            <summary><span>Context compaction</span><small>{{ entry.activity.state }}</small></summary>
-                            <div class="compaction-content">
-                              <MarkdownContent v-if="entry.activity.reasoning" class="reasoning-content" :content="entry.activity.reasoning" />
-                              <MarkdownContent v-if="entry.activity.content" class="reasoning-content" :content="entry.activity.content" />
-                              <small v-if="entry.activity.compressed_from">Compressed {{ entry.activity.compressed_from }}–{{ entry.activity.compressed_to }} · kept {{ entry.activity.kept_from }}–{{ entry.activity.kept_to }}</small>
-                            </div>
-                          </details>
-                          <details v-else-if="entry.type === 'tool'" class="tool-activity" :class="entry.activity.state">
-                            <summary><i /><span>{{ entry.activity.name.replaceAll('_', ' ') }}</span><small v-if="entry.activity.duration_ms">{{ Math.round(entry.activity.duration_ms) }} ms</small></summary>
-                            <div class="tool-activity-details">
-                              <div><strong>Arguments</strong><pre>{{ formatToolValue(entry.activity.arguments || {}) }}</pre></div>
-                              <div><strong>{{ entry.activity.error_message ? 'Error' : 'Result' }}</strong><pre :class="{ error: entry.activity.error_message }">{{ entry.activity.error_message || formatToolValue(entry.activity.output) }}</pre></div>
-                            </div>
-                          </details>
-                          <MarkdownContent v-else class="message-content" :content="entry.content" />
-                        </template>
-                      </div>
-                    </div>
-                  </div>
-                  <div v-if="loading && streamingResponseVisible" class="message assistant-message streaming-message">
-                    <div class="message-profile agent-profile" aria-hidden="true"><img src="/logo.png" alt="" /></div>
-                    <div class="message-body">
-                      <div class="message-author"><strong>Zett Agent</strong><small class="live-agent-state"><i />{{ streamingStatus.replaceAll('_', ' ') }}</small></div>
-                      <div v-if="streamingTimeline.length" class="agent-event-timeline">
-                        <template v-for="(entry, entryIndex) in streamingTimeline" :key="entry.id">
-                          <details v-if="entry.type === 'reasoning'" class="reasoning-panel streaming-reasoning" :open="entryIndex === streamingTimeline.length - 1">
-                            <summary><span>Reasoning</span><small>{{ entryIndex === streamingTimeline.length - 1 ? 'Streaming' : 'Show process' }}</small></summary>
-                            <MarkdownContent class="reasoning-content" :content="entry.content" />
-                          </details>
-                          <details v-else-if="entry.type === 'compaction'" class="reasoning-panel compaction-panel" :open="entry.activity.state !== 'completed'">
-                            <summary><span>Context compaction</span><small>{{ entry.activity.state === 'completed' ? 'Completed' : 'Streaming' }}</small></summary>
-                            <div class="compaction-content">
-                              <MarkdownContent v-if="entry.activity.reasoning" class="reasoning-content" :content="entry.activity.reasoning" />
-                              <MarkdownContent v-if="entry.activity.content" class="reasoning-content" :content="entry.activity.content" />
-                              <small v-if="entry.activity.compressed_from">Compressed {{ entry.activity.compressed_from }}–{{ entry.activity.compressed_to }} · kept {{ entry.activity.kept_from }}–{{ entry.activity.kept_to }}</small>
-                            </div>
-                          </details>
-                          <details v-else-if="entry.type === 'tool'" class="tool-activity" :class="entry.activity.state">
-                            <summary><i /><span>{{ entry.activity.name.replaceAll('_', ' ') }}</span><small v-if="entry.activity.duration_ms">{{ Math.round(entry.activity.duration_ms) }} ms</small></summary>
-                            <div class="tool-activity-details">
-                              <div><strong>Arguments</strong><pre>{{ formatToolValue(entry.activity.arguments || {}) }}</pre></div>
-                              <div><strong>{{ entry.activity.error_message ? 'Error' : 'Result' }}</strong><pre :class="{ error: entry.activity.error_message }">{{ entry.activity.error_message || formatToolValue(entry.activity.output) }}</pre></div>
-                            </div>
-                          </details>
-                          <MarkdownContent v-else class="message-content" :content="entry.content" />
-                        </template>
-                        <span v-if="streamingMessage" class="streaming-dots compact" aria-label="Generating"><i /><i /><i /></span>
-                      </div>
-                      <p v-else class="stream-waiting"><i /><i /><i /></p>
-                    </div>
-                  </div>
-                </template>
+                  </details>
+                </div>
               </div>
 
               <section v-if="pendingQuestion" class="ask-user-panel" aria-live="polite">
@@ -1506,16 +1590,6 @@ onBeforeUnmount(() => {
                   <input v-model="askAnswer" :placeholder="pendingQuestion.options.length ? 'Or write another answer…' : 'Type your answer…'" />
                   <button type="submit" :disabled="answeringQuestion || (!askAnswer.trim() && !selectedAskOptions.length)">{{ answeringQuestion ? 'Sending…' : 'Continue' }}</button>
                 </form>
-              </section>
-
-              <section v-if="loading && activeTodos?.todos.length" class="agent-todo-panel" aria-label="Agent task progress">
-                <header><span>Task progress</span><small>{{ activeTodos.completed ? 'Completed' : `${(activeTodos.processing_index ?? 0) + 1} of ${activeTodos.todos.length}` }}</small></header>
-                <ol>
-                  <li v-for="todo in activeTodos.todos" :key="todo.content" :class="todo.status">
-                    <i aria-hidden="true">{{ todo.status === 'completed' ? '✓' : todo.status === 'processing' ? '•' : '' }}</i>
-                    <span>{{ todo.content }}</span>
-                  </li>
-                </ol>
               </section>
 
               <form class="agent-input" @submit.prevent="submitConversation">
@@ -1878,6 +1952,53 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .asset-drop-zone small { color: #989e9a; font-size: .48rem; }
 .agent-thread { min-height: 0; padding: 1.2rem; overflow-y: auto; scrollbar-width: thin; scrollbar-gutter: stable; overflow-anchor: none; }
 .agent-thread.empty { display: grid; place-items: center; }
+.turn-stack { width: min(100%, 46rem); margin: 0 auto; }
+.conversation-turn { margin-bottom: 1.3rem; }
+.conversation-turn > summary { list-style: none; }
+.conversation-turn > summary::-webkit-details-marker { display: none; }
+.conversation-turn.latest > .previous-turn-summary { display: none; }
+.previous-turn-summary { min-height: 3.5rem; display: grid; grid-template-columns: minmax(0,1fr) auto auto; align-items: center; gap: .75rem; padding: .65rem .12rem; border-bottom: 1px solid #e5e9e6; color: #626b66; cursor: pointer; user-select: none; }
+.previous-turn-summary > span:first-child { min-width: 0; display: grid; gap: .16rem; }
+.previous-turn-summary strong { overflow: hidden; font-size: .68rem; font-weight: 630; text-overflow: ellipsis; white-space: nowrap; }
+.previous-turn-summary small, .previous-turn-summary time { color: #929995; font-size: .56rem; }
+.previous-turn-summary time { font-variant-numeric: tabular-nums; }
+.conversation-turn[open] > .previous-turn-summary .turn-chevron { transform: rotate(90deg); }
+.turn-content { display: grid; gap: .95rem; padding: .25rem 0 1.25rem; }
+.turn-prompt { display: flex; justify-content: flex-end; padding-left: 18%; }
+.turn-prompt .message-content { width: fit-content; max-width: 100%; padding: .68rem .82rem; border: 0; border-radius: 1rem 1rem .3rem 1rem; color: #34483d; background: #eef1ef; box-shadow: none; }
+.turn-execution { margin-right: 7%; }
+.turn-execution > summary { min-height: 3.1rem; display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: .62rem; padding: .55rem .1rem; border-bottom: 1px solid #e7ebe8; cursor: pointer; list-style: none; user-select: none; }
+.turn-execution > summary::-webkit-details-marker { display: none; }
+.turn-state-icon { width: 1.55rem; height: 1.55rem; display: grid; place-items: center; border: 1px solid #d9e1dc; border-radius: 50%; background: #f5f8f6; }
+.turn-state-icon i { width: .43rem; height: .43rem; border-radius: 50%; background: #72907d; }
+.conversation-turn.running .turn-state-icon { border-color: #b8ccbf; background: #edf4ef; box-shadow: 0 0 0 .22rem rgba(96,139,112,.07); }
+.conversation-turn.running .turn-state-icon i { animation: activity-pulse 1.15s ease-in-out infinite; }
+.turn-execution-copy { min-width: 0; display: grid; gap: .16rem; }
+.turn-execution-copy strong { overflow: hidden; color: #59635d; font-size: .68rem; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
+.conversation-turn.running .turn-execution-copy strong { color: #355b45; }
+.turn-execution-copy small { color: #929995; font-size: .56rem; font-variant-numeric: tabular-nums; }
+.turn-chevron { color: #8e9892; font-size: 1.05rem; line-height: 1; transition: transform 160ms ease; }
+.turn-execution[open] > summary .turn-chevron { transform: rotate(90deg); }
+.turn-execution-details { display: grid; gap: .55rem; padding: .72rem 0 .25rem 2.25rem; animation: turn-reveal 160ms ease-out; }
+.turn-empty-detail { margin: 0; color: #979e99; font-size: .62rem; }
+.turn-response { min-width: 0; display: grid; grid-template-columns: 1.7rem minmax(0,1fr); align-items: start; gap: .58rem; padding-right: 7%; }
+.agent-response-profile { width: 1.55rem; height: 1.55rem; display: grid; place-items: center; border-radius: .48rem; background: #edf2ee; }
+.agent-response-profile img { width: 1.12rem; height: 1.12rem; object-fit: contain; }
+.agent-response-content { min-width: 0; padding-top: .1rem; }
+.agent-response-content .final-response { margin: 0; padding: 0; border: 0; border-radius: 0; color: #303632; background: transparent; box-shadow: none; }
+.turn-task-list { margin: .1rem 0 .55rem; padding: .25rem 0 .45rem; border-bottom: 1px solid #e8ebe9; }
+.turn-task-list > div { display: flex; align-items: center; justify-content: space-between; gap: .5rem; color: #53645a; }
+.turn-task-list > div strong { font-size: .62rem; }
+.turn-task-list > div small { color: #89928c; font-size: .56rem; }
+.turn-task-list ol { display: grid; gap: .3rem; margin: .42rem 0 0; padding: 0; list-style: none; }
+.turn-task-list li { display: grid; grid-template-columns: 1rem minmax(0,1fr); color: #838b86; font-size: .63rem; line-height: 1.4; }
+.turn-task-list li i { width: .82rem; height: .82rem; display: grid; place-items: center; border: 1px solid #d3ddd6; border-radius: 50%; font-size: .52rem; font-style: normal; }
+.turn-task-list li.processing { color: #355442; font-weight: 620; }
+.turn-task-list li.processing i { border-color: #76927f; color: #476957; background: #e7f0ea; }
+.turn-task-list li.completed { color: #969d98; text-decoration: line-through; }
+.turn-task-list li.completed i { border-color: #789383; color: white; background: #789383; }
+.turn-empty-response { margin: 0; padding: .55rem .7rem; color: #949b97; font-size: .66rem; font-style: italic; }
+@keyframes turn-reveal { from { opacity: 0; transform: translateY(-3px); } }
 .agent-welcome { max-width: 25rem; text-align: center; }
 .agent-welcome .feature-icon { margin: 0 auto; }
 .agent-welcome h2 { margin: 1rem 0 .4rem; font-size: 1.25rem; letter-spacing: -.025em; }
@@ -1885,9 +2006,9 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .prompt-hints { display: flex; justify-content: center; gap: .45rem; margin-top: 1.1rem; }
 .prompt-hints button { padding: .48rem .65rem; border: 1px solid var(--line); border-radius: .58rem; color: #606065; background: rgba(247,247,248,.8); cursor: pointer; font-size: .64rem; }
 .agent-input { margin: .8rem; padding: .25rem; border: 1px solid rgba(29,29,31,.11); border-radius: .9rem; background: white; box-shadow: 0 3px 16px rgba(0,0,0,.055); }
-.ask-user-panel, .agent-todo-panel { margin: .55rem .8rem 0; padding: .85rem; border: 1px solid rgba(71,105,87,.16); border-radius: .9rem; background: #f8faf8; box-shadow: 0 3px 14px rgba(42,65,51,.045); }
-.ask-user-panel header, .agent-todo-panel header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; color: #476957; font-size: .66rem; font-weight: 720; letter-spacing: .025em; }
-.ask-user-panel header small, .agent-todo-panel header small { color: var(--tertiary); font-size: .6rem; font-weight: 560; }
+.ask-user-panel { margin: .55rem .8rem 0; padding: .85rem; border: 1px solid rgba(71,105,87,.16); border-radius: .9rem; background: #f8faf8; box-shadow: 0 3px 14px rgba(42,65,51,.045); }
+.ask-user-panel header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; color: #476957; font-size: .66rem; font-weight: 720; letter-spacing: .025em; }
+.ask-user-panel header small { color: var(--tertiary); font-size: .6rem; font-weight: 560; }
 .ask-user-panel h3 { margin: .55rem 0 .7rem; color: var(--text); font-size: .84rem; line-height: 1.45; }
 .ask-options { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .65rem; }
 .ask-options button { min-height: 2rem; padding: 0 .65rem; border: 1px solid #dce4df; border-radius: .62rem; color: #536159; background: #fff; cursor: pointer; font-size: .68rem; }
@@ -1897,13 +2018,6 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .ask-response input:focus { border-color: #89a394; box-shadow: 0 0 0 3px rgba(71,105,87,.09); }
 .ask-response button { padding: 0 .8rem; border: 0; border-radius: .65rem; color: #fff; background: #476957; cursor: pointer; font-size: .7rem; font-weight: 660; }
 .ask-response button:disabled { opacity: .45; cursor: default; }
-.agent-todo-panel ol { display: grid; gap: .35rem; margin: .65rem 0 0; padding: 0; list-style: none; }
-.agent-todo-panel li { display: grid; grid-template-columns: 1.15rem minmax(0,1fr); align-items: start; color: #7b837e; font-size: .69rem; line-height: 1.45; }
-.agent-todo-panel li i { display: grid; place-items: center; width: .95rem; height: .95rem; margin-top: .03rem; border: 1px solid #d7dfda; border-radius: 50%; color: #fff; font-size: .58rem; font-style: normal; }
-.agent-todo-panel li.processing { color: #35483d; font-weight: 620; }
-.agent-todo-panel li.processing i { border-color: #6f8e7c; color: #476957; background: #e8f0eb; }
-.agent-todo-panel li.completed { color: #89908c; text-decoration: line-through; }
-.agent-todo-panel li.completed i { border-color: #789383; background: #789383; }
 .agent-input:focus-within { border-color: rgba(71,105,87,.4); box-shadow: 0 0 0 3px rgba(71,105,87,.1), 0 5px 20px rgba(0,0,0,.06); }
 .agent-input textarea { display: block; width: 100%; min-height: 4rem; padding: .7rem .8rem .25rem; resize: none; border: 0; outline: 0; color: var(--text); background: transparent; font-size: .78rem; line-height: 1.5; }
 .agent-input-footer { display: flex; align-items: center; justify-content: space-between; gap: .5rem; min-height: 2.45rem; padding: 0 .3rem .1rem .45rem; }
@@ -1959,57 +2073,38 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .conversation-heading h2 { margin: .2rem 0 0; font-size: 1rem; letter-spacing: -.015em; }
 .conversation-heading > span { color: var(--tertiary); font-size: .62rem; }
 .message-list { max-height: 28rem; min-height: 15rem; padding: 1rem; overflow: auto; scrollbar-width: thin; }
-.message { width: 100%; display: flex; align-items: flex-start; gap: .68rem; margin-bottom: 1.15rem; }
-.message-profile { width: 2rem; height: 2rem; flex: 0 0 auto; display: grid; place-items: center; overflow: hidden; border-radius: .68rem; }
-.message-profile svg { width: 1rem; height: 1rem; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; }
-.message-profile img { width: 1.45rem; height: 1.45rem; object-fit: contain; }
-.agent-profile { border: 1px solid rgba(71,105,87,.12); color: var(--accent-dark); background: #edf2ee; box-shadow: 0 2px 8px rgba(53,83,67,.08); }
-.user-profile { color: #fff; background: linear-gradient(145deg, #75827b, #4e5d55); box-shadow: 0 2px 8px rgba(45,58,51,.14); }
-.message-body { min-width: 0; max-width: min(84%, 44rem); }
-.message-author { min-height: 1.65rem; display: flex; align-items: baseline; gap: .42rem; padding: 0 .12rem .32rem; }
-.message-author strong { color: #3b3e3c; font-size: .72rem; font-weight: 680; letter-spacing: -.006em; }
-.message-author small { color: var(--tertiary); font-size: .6rem; }
-.message-content, .message-body > p { margin: 0; padding: .78rem .9rem; border: 1px solid rgba(29,29,31,.035); border-radius: .88rem; color: #303431; background: #f0f1f2; font-size: .76rem; line-height: 1.58; overflow-wrap: anywhere; }
-.assistant-message .message-content, .assistant-message .message-body > p { border-top-left-radius: .3rem; background: #f0f1f2; }
-.user-message { flex-direction: row-reverse; }
-.user-message .message-body { display: flex; flex-direction: column; align-items: flex-end; }
-.user-message .message-author { justify-content: flex-end; }
-.user-message .message-content { width: fit-content; max-width: 100%; border-color: rgba(71,105,87,.12); border-top-right-radius: .3rem; color: #294237; background: #e5ede8; box-shadow: 0 3px 12px rgba(46,77,60,.07); }
-.user-message .message-content h1, .user-message .message-content h2, .user-message .message-content h3, .user-message .message-content h4, .user-message .message-content p, .user-message .message-content li, .user-message .message-content strong, .user-message .message-content em { color: #294237; }
-.user-message .message-content a { color: #2f6849; text-decoration-color: rgba(47,104,73,.45); }
-.user-message .message-content blockquote { border-left-color: rgba(71,105,87,.34); color: #53685c; }
-.user-message .message-content code:not(pre code) { color: #315441; background: rgba(255,255,255,.72); }
+.message-content { margin: 0; padding: .78rem .9rem; border: 1px solid rgba(29,29,31,.035); border-radius: .88rem; color: #303431; background: #f0f1f2; font-size: .76rem; line-height: 1.58; overflow-wrap: anywhere; }
 .live-agent-state { display: inline-flex; align-items: center; gap: .3rem; text-transform: capitalize; }
 .live-agent-state i { width: .36rem; height: .36rem; border-radius: 50%; background: #4b9867; box-shadow: 0 0 0 .18rem rgba(75,152,103,.12); animation: activity-pulse 1.1s ease-in-out infinite; }
 .agent-event-timeline { width: 100%; display: grid; gap: .5rem; }
 .agent-event-timeline > .reasoning-panel, .agent-event-timeline > .tool-activity { margin: 0; }
 .tool-activity-list { display: grid; gap: .32rem; margin: 0 0 .48rem; }
-.tool-activity { min-width: min(100%, 25rem); overflow: hidden; border: 1px solid rgba(71,105,87,.12); border-radius: .68rem; color: #607067; background: #f5f8f6; font-size: .64rem; }
-.tool-activity summary { display: flex; align-items: center; gap: .38rem; min-height: 2rem; padding: .38rem .55rem; cursor: pointer; list-style: none; text-transform: capitalize; user-select: none; }
+.tool-activity { min-width: 0; color: #657068; font-size: .64rem; }
+.tool-activity summary { display: flex; align-items: center; gap: .42rem; min-height: 2rem; padding: .3rem .08rem; cursor: pointer; list-style: none; text-transform: capitalize; user-select: none; }
 .tool-activity summary::-webkit-details-marker { display: none; }
-.tool-activity summary::after { content: '›'; margin-left: .1rem; color: #8b948f; font-size: .82rem; transition: transform 150ms ease; }
+.tool-activity summary::after { content: '›'; margin-left: .12rem; color: #8b948f; font-size: .82rem; transition: transform 150ms ease; }
 .tool-activity[open] summary::after { transform: rotate(90deg); }
 .tool-activity summary i { width: .38rem; height: .38rem; flex: 0 0 auto; border-radius: 50%; background: #d59b45; animation: activity-pulse 1.1s ease-in-out infinite; }
 .tool-activity.succeeded summary i { background: #4b9867; animation: none; }
-.tool-activity.failed { color: #914d4d; background: #fff6f6; }
+.tool-activity.failed { color: #914d4d; }
 .tool-activity.failed summary i { background: #bd5656; animation: none; }
 .tool-activity summary small { margin-left: auto; color: var(--tertiary); font-size: .58rem; text-transform: none; }
-.tool-activity-details { display: grid; gap: .55rem; padding: .6rem; border-top: 1px solid rgba(71,105,87,.1); background: rgba(255,255,255,.72); }
+.tool-activity-details { display: grid; gap: .55rem; margin: .08rem 0 .55rem .82rem; padding: .2rem 0 .12rem .72rem; border-left: 1px solid #dfe5e1; }
 .tool-activity-details strong { display: block; margin-bottom: .28rem; color: #78827c; font-size: .56rem; letter-spacing: .055em; text-transform: uppercase; }
-.tool-activity-details pre { max-height: 11rem; margin: 0; padding: .52rem .58rem; overflow: auto; border: 1px solid rgba(29,29,31,.07); border-radius: .5rem; color: #39443e; background: #f3f4f3; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: .62rem; line-height: 1.48; text-transform: none; white-space: pre-wrap; overflow-wrap: anywhere; }
-.tool-activity-details pre.error { color: #8d4040; background: #fff1f1; }
-.reasoning-panel { width: 100%; margin: 0 0 .5rem; overflow: hidden; border: 1px solid rgba(71,105,87,.11); border-radius: .72rem; color: #526158; background: #f7f9f7; }
-.reasoning-panel summary { display: flex; align-items: center; gap: .42rem; min-height: 2.15rem; padding: .48rem .68rem; cursor: pointer; list-style: none; font-size: .7rem; font-weight: 650; user-select: none; }
+.tool-activity-details pre { max-height: 11rem; margin: 0; padding: .32rem 0; overflow: auto; border: 0; color: #465049; background: transparent; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: .62rem; line-height: 1.48; text-transform: none; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tool-activity-details pre.error { color: #8d4040; }
+.reasoning-panel { width: 100%; margin: 0; color: #5d6961; background: transparent; }
+.reasoning-panel summary { display: flex; align-items: center; gap: .42rem; min-height: 2rem; padding: .3rem .08rem; cursor: pointer; list-style: none; font-size: .68rem; font-weight: 630; user-select: none; }
 .reasoning-panel summary::-webkit-details-marker { display: none; }
 .reasoning-panel summary::before { content: '›'; color: #75827a; font-size: .9rem; transition: transform 150ms ease; }
 .reasoning-panel[open] summary::before { transform: rotate(90deg); }
 .reasoning-panel summary small { margin-left: auto; color: var(--tertiary); font-size: .58rem; font-weight: 500; }
-.reasoning-content { max-height: 14rem; padding: .62rem .75rem .72rem; overflow: auto; border-top: 1px solid rgba(71,105,87,.08); color: #657068; font-size: .71rem; line-height: 1.58; }
-.compaction-panel { border-color: rgba(95, 79, 166, .16); background: #f8f7fc; }
-.compaction-content > small { display: block; padding: .48rem .75rem .65rem; color: var(--tertiary); font-size: .61rem; }
-.streaming-reasoning { box-shadow: inset .16rem 0 #9ab3a3; }
-.streaming-message .message-body { width: min(84%, 44rem); }
-.streaming-message .message-content, .streaming-message .message-body > p { width: fit-content; }
+.reasoning-content { max-height: 14rem; margin: .08rem 0 .55rem .82rem; padding: .25rem 0 .25rem .72rem; overflow: auto; border-left: 1px solid #dfe5e1; color: #657068; font-size: .68rem; line-height: 1.58; }
+.compaction-panel { color: #6d658b; }
+.compaction-content { margin-left: .82rem; padding-left: .72rem; border-left: 1px solid #e2deed; }
+.compaction-content .reasoning-content { margin-left: 0; padding-left: 0; border-left: 0; }
+.compaction-content > small { display: block; padding: .32rem 0 .45rem; color: var(--tertiary); font-size: .61rem; }
+.streaming-reasoning > summary { color: #466554; }
 .stream-waiting { display: flex; gap: .25rem; padding: .8rem 1rem !important; }
 .stream-waiting i { width: .32rem; height: .32rem; border-radius: 50%; background: #929298; animation: typing-pulse 1s ease-in-out infinite; }
 .stream-waiting i:nth-child(2) { animation-delay: 140ms; }
