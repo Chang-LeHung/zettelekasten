@@ -1,8 +1,16 @@
-import type { AnalysisMessage } from '../api/types'
+import type { AgentTimelineEntry, AnalysisMessage } from '../api/types'
+
+export type MessageTimelineEntry = Extract<AgentTimelineEntry, { type: 'message' }>
+
+export interface TurnTimelineSections {
+  execution: AgentTimelineEntry[]
+  answer: MessageTimelineEntry[]
+}
 
 export interface ConversationTurn {
   id: string
   prompt: AnalysisMessage
+  responses: AnalysisMessage[]
   response?: AnalysisMessage
 }
 
@@ -18,13 +26,27 @@ export function buildConversationTurns(
 
   for (const message of stream) {
     if (message.role === 'user') {
-      turns.push({ id: `turn-${turns.length}`, prompt: message })
+      turns.push({ id: `turn-${turns.length}`, prompt: message, responses: [] })
       continue
     }
     const current = turns.at(-1)
-    if (current) current.response = message
+    if (current) {
+      current.responses.push(message)
+      current.response = message
+    }
   }
   return turns
+}
+
+/** Keep only a terminal text segment visible and place every earlier event in execution details. */
+export function splitTurnTimeline(timeline: readonly AgentTimelineEntry[]): TurnTimelineSections {
+  const finalIndex = timeline.length - 1
+  const finalEntry = timeline[finalIndex]
+  if (finalEntry?.type !== 'message') return { execution: [...timeline], answer: [] }
+  return {
+    execution: timeline.slice(0, finalIndex),
+    answer: [finalEntry],
+  }
 }
 
 /** Format a live or persisted millisecond duration without noisy precision. */

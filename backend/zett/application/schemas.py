@@ -14,6 +14,14 @@ class DeleteResponse(BaseModel):
     ok: bool
 
 
+class PersistedToolCallOut(BaseModel):
+    """One complete tool invocation selected by an Assistant message."""
+
+    id: str
+    name: str
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+
 class PersistedMessageOut(BaseModel):
     """One immutable raw message projected for the conversation UI."""
 
@@ -26,7 +34,10 @@ class PersistedMessageOut(BaseModel):
     reasoning_content: str | None = None
     model: str | None = None
     provider: str | None = None
+    tool_calls: list[PersistedToolCallOut] = Field(default_factory=list)
+    tool_call_id: str | None = None
     tool_name: str | None = None
+    tool_success: bool | None = None
     attributes: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
     tags: dict[str, Any] = Field(default_factory=dict)

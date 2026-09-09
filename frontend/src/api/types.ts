@@ -103,6 +103,16 @@ export interface AnalysisMessage {
   activities?: AgentToolActivity[]
   timeline?: AgentTimelineEntry[]
   duration_ms?: number
+  generation_duration_ms?: number
+  usage?: AgentModelUsage
+}
+
+export interface AgentModelUsage {
+  input_tokens: number
+  output_tokens: number
+  cache_read_tokens: number
+  cache_write_tokens: number
+  reasoning_tokens: number
 }
 
 export interface AgentToolActivity {
@@ -151,6 +161,8 @@ export interface AgentTodoState {
 
 export interface AgentStreamCallbacks {
   onStatus?: (state: string) => void
+  onModelStarted?: () => void
+  onUsage?: (usage: AgentModelUsage) => void
   onReasoning?: (content: string) => void
   onMessage?: (content: string) => void
   onTool?: (activity: AgentToolActivity) => void | Promise<void>
@@ -216,7 +228,10 @@ export interface AgentPersistedMessage {
   reasoning_content: string | null
   model: string | null
   provider: string | null
+  tool_calls: Array<{ id: string; name: string; arguments: Record<string, unknown> }>
+  tool_call_id: string | null
   tool_name: string | null
+  tool_success: boolean | null
   attributes: Record<string, unknown>
   metadata: Record<string, unknown>
   tags: Record<string, unknown>

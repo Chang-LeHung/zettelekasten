@@ -2,7 +2,7 @@
 
 from zett_agent import AgentMessage, AssistantMessage, RawMessageRecord, SessionSummary, ToolMessage, UserMessage
 
-from .schemas import PersistedMessageOut, SessionOut
+from .schemas import PersistedMessageOut, PersistedToolCallOut, SessionOut
 
 
 def message_out(record: RawMessageRecord) -> PersistedMessageOut:
@@ -12,22 +12,36 @@ def message_out(record: RawMessageRecord) -> PersistedMessageOut:
         case UserMessage():
             content = message.text
             reasoning = model = provider = tool_name = None
+            tool_calls = []
+            tool_call_id = tool_success = None
         case AssistantMessage():
             content = message.content
             reasoning = message.reasoning
             model = message.model
             provider = message.provider
             tool_name = None
+            tool_calls = [
+                PersistedToolCallOut(id=call.id, name=call.name, arguments=dict(call.arguments))
+                for call in message.tool_calls
+            ]
+            tool_call_id = tool_success = None
         case ToolMessage():
             content = message.content
             reasoning = model = provider = None
             tool_name = message.name
+            tool_calls = []
+            tool_call_id = message.tool_call_id
+            tool_success = message.success
         case AgentMessage():
             content = message.content
             reasoning = model = provider = tool_name = None
+            tool_calls = []
+            tool_call_id = tool_success = None
         case _:
             content = message.content
             reasoning = model = provider = tool_name = None
+            tool_calls = []
+            tool_call_id = tool_success = None
     return PersistedMessageOut(
         id=record.id,
         session_id=record.session_id,
@@ -38,7 +52,10 @@ def message_out(record: RawMessageRecord) -> PersistedMessageOut:
         reasoning_content=reasoning,
         model=model,
         provider=provider,
+        tool_calls=tool_calls,
+        tool_call_id=tool_call_id,
         tool_name=tool_name,
+        tool_success=tool_success,
         attributes=dict(message.attributes),
         metadata=dict(record.metadata),
         tags=dict(record.tags),

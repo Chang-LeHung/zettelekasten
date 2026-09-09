@@ -3,6 +3,7 @@
 import asyncio
 import json
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 
 import pytest
 from zett_agent import (
@@ -14,11 +15,13 @@ from zett_agent import (
     ModelRequest,
     ModelResponse,
     ModelUsage,
+    RawMessageRecord,
     ToolCall,
     ToolMessage,
 )
 
 from zett.agent import ZettelkastenAgent, ZettelkastenEventDispatcher, event_payload
+from zett.application.presentation import message_out
 
 
 class StreamingModel:
@@ -41,6 +44,53 @@ def decode_frame(frame: str) -> tuple[str, dict[str, object]]:
     """Decode the strict two-line JSON frame emitted by the dispatcher."""
     event_line, data_line = frame.strip().splitlines()
     return event_line.removeprefix("event: "), json.loads(data_line.removeprefix("data: "))
+
+
+def raw_record(message: AssistantMessage | ToolMessage, sequence: int) -> RawMessageRecord:
+    """Build a minimal persisted record for HTTP projection tests."""
+    now = datetime.now(UTC)
+    return RawMessageRecord(
+        id=f"message-{sequence}",
+        session_id="session-1",
+        request_id="request-1",
+        sequence=sequence,
+        message=message,
+        metadata={},
+        tags={},
+        started_at=now,
+        completed_at=now,
+        duration_ns=0,
+        reasoning_started_at=None,
+        reasoning_completed_at=None,
+        reasoning_duration_ns=None,
+        content_started_at=None,
+        content_completed_at=None,
+        content_duration_ns=None,
+        input_tokens=None,
+        output_tokens=None,
+        cache_read_tokens=None,
+        cache_write_tokens=None,
+        reasoning_tokens=None,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def test_persisted_message_projection_keeps_tool_calls_and_results_correlated():
+    call = ToolCall("call-1", "read_file", {"path": "README.md"})
+    assistant = message_out(raw_record(AssistantMessage(reasoning="Inspect first", tool_calls=[call]), 1))
+    result = message_out(
+        raw_record(ToolMessage(tool_call_id=call.id, name=call.name, content='{"lines": 12}', success=True), 2)
+    )
+
+    assert assistant.tool_calls[0].model_dump() == {
+        "id": "call-1",
+        "name": "read_file",
+        "arguments": {"path": "README.md"},
+    }
+    assert result.tool_call_id == "call-1"
+    assert result.tool_name == "read_file"
+    assert result.tool_success is True
 
 
 async def test_agent_uses_create_agent_and_sends_ordered_sse_frames():

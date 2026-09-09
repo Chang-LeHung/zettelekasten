@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ApiError, aiClient, libraryClient, tagClient } from './api/client'
-import type { AgentArtifact, AgentCompactionActivity, AgentCustomEvent, AgentSession, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, ReasoningEffort, SessionAsset, Tag } from './api/types'
+import type { AgentArtifact, AgentCompactionActivity, AgentCustomEvent, AgentModelUsage, AgentSession, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, ReasoningEffort, SessionAsset, Tag } from './api/types'
+import AgentComposerControls from './components/AgentComposerControls.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
-import { buildConversationTurns, formatTurnDuration, summarizeTurnPrompt, type ConversationTurn } from './utils/conversationTurns'
+import { addAgentUsage, summarizeAgentUsage } from './utils/agentUsage'
+import { buildConversationTurns, formatTurnDuration, splitTurnTimeline, type ConversationTurn } from './utils/conversationTurns'
 import { jsonSnapshot } from './utils/jsonSnapshot'
+import { restorePersistedConversation } from './utils/persistedConversation'
 import { todoFromTool } from './utils/toolPresentation'
 
 const MarkdownContent = defineAsyncComponent(() => import('./components/MarkdownContent.vue'))
@@ -48,6 +51,8 @@ const streamingMessage = ref('')
 const streamingReasoning = ref('')
 const streamingActivities = ref<AgentToolActivity[]>([])
 const streamingTimeline = ref<AgentTimelineEntry[]>([])
+const streamingUsage = ref<AgentModelUsage | null>(null)
+const streamingGenerationDurationMs = ref(0)
 const pendingQuestion = ref<AskUserState | null>(null)
 const askAnswer = ref('')
 const selectedAskOptions = ref<string[]>([])
@@ -102,6 +107,7 @@ const assetFileInput = ref<HTMLInputElement | null>(null)
 const titleRefreshTimers: number[] = []
 let turnStartedAt = 0
 let turnClock: number | null = null
+let modelStartedAt = 0
 const activeSessionKey = 'zett.active-session-id'
 const cardTypes: CardType[] = ['note', 'idea', 'quote', 'todo', 'reference']
 const assetFilters: Array<{ value: AssetFilter; label: string }> = [
@@ -127,6 +133,19 @@ const conversationStarted = computed(
   () => conversationId.value !== null || artifactContent.value !== null || conversation.value.length > 0,
 )
 const conversationTurns = computed(() => buildConversationTurns(raw.value, conversation.value))
+const conversationUsage = computed(() => {
+  const messages = conversationTurns.value.flatMap((turn) => turn.responses)
+  const activeTurn = conversationTurns.value.at(-1)
+  if (loading.value && activeTurn && !activeTurn.response && streamingUsage.value) {
+    messages.push({
+      role: 'assistant',
+      content: streamingMessage.value,
+      usage: streamingUsage.value,
+      generation_duration_ms: streamingGenerationDurationMs.value,
+    })
+  }
+  return summarizeAgentUsage(messages)
+})
 const selectedArtifact = computed(() => artifacts.value.find((artifact) => artifact.id === selectedArtifactId.value) || null)
 const selectedImageUrl = computed(() => {
   const content = artifactContent.value
@@ -155,6 +174,9 @@ function resetStreamState(): void {
   streamingReasoning.value = ''
   streamingActivities.value = []
   streamingTimeline.value = []
+  streamingUsage.value = null
+  streamingGenerationDurationMs.value = 0
+  modelStartedAt = 0
   pendingQuestion.value = null
   activeTodos.value = null
   streamingStatus.value = 'starting'
@@ -184,15 +206,15 @@ function isRunningTurn(index: number): boolean {
 
 function turnTimeline(turn: ConversationTurn, index: number): AgentTimelineEntry[] {
   if (isRunningTurn(index)) return streamingTimeline.value
-  return turn.response ? historicalTimeline(turn.response) : []
+  return turn.responses.flatMap((response) => historicalTimeline(response))
 }
 
 function turnExecutionTimeline(turn: ConversationTurn, index: number): AgentTimelineEntry[] {
-  return turnTimeline(turn, index).filter((entry) => entry.type !== 'message')
+  return splitTurnTimeline(turnTimeline(turn, index)).execution
 }
 
 function turnAnswerTimeline(turn: ConversationTurn, index: number): AgentMessageTimelineEntry[] {
-  return turnTimeline(turn, index).filter((entry): entry is AgentMessageTimelineEntry => entry.type === 'message')
+  return splitTurnTimeline(turnTimeline(turn, index)).answer
 }
 
 function turnTask(index: number): string {
@@ -292,28 +314,6 @@ function historicalTimeline(message: AnalysisMessage): AgentTimelineEntry[] {
   return entries
 }
 
-function restorePersistedTimeline(
-  metadata: Record<string, unknown>,
-  activities: AgentToolActivity[],
-): AgentTimelineEntry[] | undefined {
-  const stored = metadata.timeline
-  if (!Array.isArray(stored)) return undefined
-
-  const entries = stored.flatMap((value, index): AgentTimelineEntry[] => {
-    if (!value || typeof value !== 'object') return []
-    const event = value as Record<string, unknown>
-    if ((event.type === 'reasoning' || event.type === 'message') && typeof event.content === 'string') {
-      return [{ id: `persisted-${index}`, type: event.type, content: event.content }]
-    }
-    if (event.type === 'tool' && typeof event.tool_call_id === 'string') {
-      const activity = activities.find((item) => item.id === event.tool_call_id)
-      return activity ? [{ id: `persisted-${index}`, type: 'tool', activity }] : []
-    }
-    return []
-  })
-  return entries.length ? entries : undefined
-}
-
 function formatToolValue(value: unknown): string {
   if (value === undefined) return 'Waiting for result…'
   if (typeof value === 'string') return value
@@ -328,6 +328,12 @@ function streamCallbacks() {
   const sessionId = conversationId.value
   return {
     onStatus: (state: string) => { streamingStatus.value = state },
+    onModelStarted: () => { modelStartedAt = performance.now() },
+    onUsage: (usage: AgentModelUsage) => {
+      streamingUsage.value = addAgentUsage(streamingUsage.value, usage)
+      if (modelStartedAt) streamingGenerationDurationMs.value += performance.now() - modelStartedAt
+      modelStartedAt = 0
+    },
     onReasoning: (content: string) => {
       streamingStatus.value = 'reasoning'
       updateStreamText('reasoning', content)
@@ -415,6 +421,19 @@ function handleAgentThreadScroll(): void {
   const thread = agentThread.value
   if (!thread) return
   followAgentOutput = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 96
+  if (!followAgentOutput && agentScrollFrame !== null) {
+    window.cancelAnimationFrame(agentScrollFrame)
+    agentScrollFrame = null
+  }
+}
+
+function handleAgentThreadWheel(event: WheelEvent): void {
+  if (event.deltaY >= 0) return
+  followAgentOutput = false
+  if (agentScrollFrame !== null) {
+    window.cancelAnimationFrame(agentScrollFrame)
+    agentScrollFrame = null
+  }
 }
 
 function scrollAgentThread(force = false): void {
@@ -424,7 +443,9 @@ function scrollAgentThread(force = false): void {
     if (agentScrollFrame !== null) window.cancelAnimationFrame(agentScrollFrame)
     agentScrollFrame = window.requestAnimationFrame(() => {
       agentScrollFrame = null
-      thread.scrollTop = thread.scrollHeight
+      if (!force && !followAgentOutput) return
+      const bottom = Math.max(0, thread.scrollHeight - thread.clientHeight)
+      if (Math.abs(thread.scrollTop - bottom) > 1) thread.scrollTop = bottom
       followAgentOutput = true
     })
   })
@@ -442,7 +463,7 @@ watch(
 )
 watch(
   () => conversation.value.length,
-  () => scrollAgentThread(true),
+  () => scrollAgentThread(),
 )
 watch(loading, (isLoading) => {
   if (isLoading) scrollAgentThread(true)
@@ -665,6 +686,8 @@ async function analyze(): Promise<void> {
       activities: [...streamingActivities.value],
       timeline: jsonSnapshot(streamingTimeline.value),
       duration_ms: stopTurnClock(),
+      generation_duration_ms: streamingGenerationDurationMs.value,
+      usage: streamingUsage.value ? { ...streamingUsage.value } : undefined,
     }]
     await refreshArtifacts(true)
     await loadSessions(true)
@@ -679,6 +702,8 @@ async function analyze(): Promise<void> {
           activities: [...streamingActivities.value],
           timeline: jsonSnapshot(streamingTimeline.value),
           duration_ms: stopTurnClock(),
+          generation_duration_ms: streamingGenerationDurationMs.value,
+          usage: streamingUsage.value ? { ...streamingUsage.value } : undefined,
         }]
       }
       streamingStatus.value = 'cancelled'
@@ -727,6 +752,8 @@ async function refine(): Promise<void> {
         activities: [...streamingActivities.value],
         timeline: jsonSnapshot(streamingTimeline.value),
         duration_ms: stopTurnClock(),
+        generation_duration_ms: streamingGenerationDurationMs.value,
+        usage: streamingUsage.value ? { ...streamingUsage.value } : undefined,
       },
     ]
     await refreshArtifacts(true)
@@ -743,6 +770,8 @@ async function refine(): Promise<void> {
             activities: [...streamingActivities.value],
             timeline: jsonSnapshot(streamingTimeline.value),
             duration_ms: stopTurnClock(),
+            generation_duration_ms: streamingGenerationDurationMs.value,
+            usage: streamingUsage.value ? { ...streamingUsage.value } : undefined,
           },
         ]
       }
@@ -806,30 +835,9 @@ function applySession(session: AgentSession): void {
   window.localStorage.setItem(activeSessionKey, session.id)
   applyArtifacts(session.artifacts, false)
   assets.value = session.assets
-  const visibleMessages = session.messages.filter((message) => message.role === 'user' || message.role === 'assistant')
-  const firstUser = visibleMessages.find((message) => message.role === 'user')
-  raw.value = firstUser?.content || ''
-  let skippedFirstUser = false
-  conversation.value = visibleMessages.flatMap((message): AnalysisMessage[] => {
-    if (message.role === 'user' && !skippedFirstUser) {
-      skippedFirstUser = true
-      return []
-    }
-    const storedActivities = message.metadata.tool_activities
-    const activities = message.role === 'assistant' && Array.isArray(storedActivities)
-      ? storedActivities as AgentToolActivity[]
-      : []
-    return [{
-      role: message.role as 'user' | 'assistant',
-      content: message.content,
-      reasoning: message.reasoning_content || undefined,
-      activities: message.role === 'assistant' ? activities : undefined,
-      timeline: message.role === 'assistant'
-        ? restorePersistedTimeline(message.metadata, activities)
-        : undefined,
-      duration_ms: message.role === 'assistant' ? message.duration_ns / 1_000_000 : undefined,
-    }]
-  })
+  const restored = restorePersistedConversation(session.messages)
+  raw.value = restored.initialPrompt
+  conversation.value = restored.messages
   followUp.value = ''
 }
 
@@ -854,6 +862,14 @@ function startSessionTitleEdit(session: AgentSession): void {
 function cancelSessionTitleEdit(): void {
   editingSessionId.value = null
   sessionTitleDraft.value = ''
+}
+
+function handleSessionTitleFocusOut(event: FocusEvent): void {
+  const editor = event.currentTarget
+  const nextTarget = event.relatedTarget
+  if (!(editor instanceof HTMLFormElement)) return
+  if (nextTarget instanceof Node && editor.contains(nextTarget)) return
+  cancelSessionTitleEdit()
 }
 
 async function saveSessionTitle(sessionId: string): Promise<void> {
@@ -1302,7 +1318,7 @@ onBeforeUnmount(() => {
         <div class="sidebar-heading"><span>Conversations</span><button type="button" aria-label="Start a new session" @click="resetWorkspace"><svg><use href="#icon-add" /></svg></button></div>
         <div class="session-history-list">
           <div v-for="session in visibleSessions" :key="session.id" class="session-history-item" :class="{ active: conversationId === session.id }">
-            <form v-if="editingSessionId === session.id" class="session-title-editor" @submit.prevent="saveSessionTitle(session.id)">
+            <form v-if="editingSessionId === session.id" class="session-title-editor" @submit.prevent="saveSessionTitle(session.id)" @focusout="handleSessionTitleFocusOut">
               <input v-model="sessionTitleDraft" maxlength="100" aria-label="Conversation title" autofocus @keydown.esc.prevent="cancelSessionTitleEdit" />
               <button type="submit" aria-label="Save title">Save</button>
               <button type="button" aria-label="Cancel title edit" @click="cancelSessionTitleEdit">Cancel</button>
@@ -1483,11 +1499,11 @@ onBeforeUnmount(() => {
 
             <section class="agent-chat" aria-label="Knowledge card conversation">
               <div class="agent-chat-header">
-                <div class="agent-identity"><img src="/logo.png" alt="" /><div><strong>Zett Agent</strong><small>Turn a conversation into knowledge</small></div></div>
-                <span class="streaming-status"><i />Zett Agent online</span>
+                <div class="agent-identity"><img src="/logo.png" alt="" /><div><strong>Zettelkasten Agent</strong><small>Turn a conversation into knowledge</small></div></div>
+                <span class="streaming-status"><i />Zettelkasten Agent online</span>
               </div>
 
-              <div ref="agentThread" class="agent-thread" :class="{ empty: !conversationStarted }" aria-live="polite" @scroll.passive="handleAgentThreadScroll">
+              <div ref="agentThread" class="agent-thread" :class="{ empty: !conversationStarted }" aria-live="polite" @scroll.passive="handleAgentThreadScroll" @wheel.passive="handleAgentThreadWheel">
                 <div v-if="!conversationStarted" class="agent-welcome">
                   <span class="feature-icon"><svg><use href="#icon-spark" /></svg></span>
                   <h2>What should we remember?</h2>
@@ -1499,28 +1515,19 @@ onBeforeUnmount(() => {
                     v-for="(turn, index) in conversationTurns"
                     :key="turn.id"
                     class="conversation-turn"
-                    :class="{ running: isRunningTurn(index), latest: index === conversationTurns.length - 1 }"
+                    :class="{ running: isRunningTurn(index) }"
                   >
                     <section class="turn-prompt" aria-label="User message">
                       <MarkdownContent class="message-content" :content="turn.prompt.content" />
                     </section>
 
-                    <details class="agent-reply" :open="index === conversationTurns.length - 1">
-                      <summary class="previous-turn-summary">
-                        <span>
-                          <strong>Processed in {{ turnDuration(turn, index) }}</strong>
-                          <small>{{ summarizeTurnPrompt(turn.response?.content || 'No response was recorded') }}</small>
-                        </span>
-                        <span class="turn-chevron" aria-hidden="true">›</span>
-                      </summary>
-
-                      <div class="turn-content">
+                    <div class="turn-content">
                       <details class="turn-execution">
                         <summary>
                           <span class="turn-state-icon" aria-hidden="true"><i /></span>
                           <span class="turn-execution-copy">
                             <strong>{{ isRunningTurn(index) ? turnTask(index) : `Processed in ${turnDuration(turn, index)}` }}</strong>
-                            <small>{{ isRunningTurn(index) ? `Running · ${turnDuration(turn, index)}` : 'Show reasoning, tools, and task details' }}</small>
+                            <small>{{ isRunningTurn(index) ? `Running · ${turnDuration(turn, index)}` : 'Show thinking, tools, and task details' }}</small>
                           </span>
                           <span class="turn-chevron" aria-hidden="true">›</span>
                         </summary>
@@ -1537,9 +1544,10 @@ onBeforeUnmount(() => {
                           <div v-if="turnExecutionTimeline(turn, index).length" class="agent-event-timeline">
                             <template v-for="entry in turnExecutionTimeline(turn, index)" :key="entry.id">
                             <details v-if="entry.type === 'reasoning'" class="reasoning-panel" :class="{ 'streaming-reasoning': isRunningTurn(index) }">
-                              <summary><span>Reasoning</span><small>{{ isRunningTurn(index) ? 'Live details' : 'Show process' }}</small></summary>
+                              <summary><i aria-hidden="true" /><span>Thinking</span><small>{{ isRunningTurn(index) ? 'Live' : 'Completed' }}</small></summary>
                               <MarkdownContent class="reasoning-content" :content="entry.content" />
                             </details>
+                            <MarkdownContent v-else-if="entry.type === 'message'" class="intermediate-response" :content="entry.content" />
                             <details v-else-if="entry.type === 'compaction'" class="reasoning-panel compaction-panel">
                               <summary><span>Context compaction</span><small>{{ entry.activity.state }}</small></summary>
                               <div class="compaction-content">
@@ -1570,8 +1578,7 @@ onBeforeUnmount(() => {
                           <p v-else-if="!turnAnswerTimeline(turn, index).length" class="turn-empty-response">No response was recorded for this turn.</p>
                         </div>
                       </section>
-                      </div>
-                    </details>
+                    </div>
                   </article>
                 </div>
               </div>
@@ -1598,23 +1605,16 @@ onBeforeUnmount(() => {
                 <textarea v-if="!conversationStarted" v-model="raw" rows="3" autofocus placeholder="Message Zett Agent…" @keydown.enter.exact="handleComposerEnter" />
                 <textarea v-else v-model="followUp" rows="3" placeholder="Continue the conversation…" @keydown.enter.exact="handleComposerEnter" />
                 <div class="agent-input-footer">
-                  <div class="composer-controls">
-                    <label class="composer-select model-select">
-                      <svg><use href="#icon-spark" /></svg>
-                      <select v-if="providers.some((provider) => provider.enabled)" v-model="selectedProviderId" :disabled="loading" aria-label="Model">
-                        <option v-for="provider in providers.filter((item) => item.enabled)" :key="provider.id" :value="provider.id">{{ provider.model }}</option>
-                      </select>
-                      <button v-else type="button" @click="navigate('settings')">Add provider</button>
-                    </label>
-                    <label class="composer-select reasoning-select">
-                      <select v-model="reasoningEffort" :disabled="loading" aria-label="Reasoning effort">
-                        <option value="off">off</option>
-                        <option value="low">low</option>
-                        <option value="medium">medium</option>
-                        <option value="high">high</option>
-                      </select>
-                    </label>
-                  </div>
+                  <AgentComposerControls
+                    :providers="providers"
+                    :selected-provider-id="selectedProviderId"
+                    :effort="reasoningEffort"
+                    :disabled="loading"
+                    :usage="conversationUsage"
+                    @update:selected-provider-id="selectedProviderId = $event"
+                    @update:effort="reasoningEffort = $event"
+                    @add-provider="navigate('settings')"
+                  />
                   <div class="composer-submit"><small>{{ loading ? 'Enter for a new line' : 'Enter to send' }}</small><button class="send-button" :class="{ stop: loading }" :disabled="!loading && (conversationStarted ? !followUp.trim() : !raw.trim())" type="button" :aria-label="loading ? 'Stop generating' : 'Send message'" @click="loading ? stopGeneration() : submitConversation()"><svg><use :href="loading ? '#icon-stop' : '#icon-arrow'" /></svg></button></div>
                 </div>
               </form>
@@ -1682,9 +1682,12 @@ onBeforeUnmount(() => {
       <template v-else>
         <header class="topbar compact"><div><p class="eyebrow">Preferences</p><h1>Settings</h1></div></header>
         <section class="content settings-view">
-          <div class="settings-intro"><div><h2>AI providers</h2><p>Keep multiple model connections and choose one for each conversation.</p></div><button class="secondary-action" type="button" @click="newProvider"><svg><use href="#icon-add" /></svg>New provider</button></div>
-          <div v-if="providers.length" class="provider-list">
-            <button v-for="provider in providers" :key="provider.id" :class="{ active: editingProviderId === provider.id }" type="button" @click="selectProvider(provider)"><span class="status-dot" :class="{ online: provider.enabled }" /><span><strong>{{ provider.name }}</strong><small>{{ provider.provider }} · {{ provider.model }}</small></span></button>
+          <div class="settings-intro"><div><h2>AI providers</h2><p>Keep multiple model connections and choose one for each conversation.</p></div></div>
+          <div class="provider-toolbar">
+            <div v-if="providers.length" class="provider-list">
+              <button v-for="provider in providers" :key="provider.id" :class="{ active: editingProviderId === provider.id }" type="button" @click="selectProvider(provider)"><span class="status-dot" :class="{ online: provider.enabled }" /><span><strong>{{ provider.name }}</strong><small>{{ provider.provider }} · {{ provider.model }}</small></span></button>
+            </div>
+            <button class="secondary-action" type="button" @click="newProvider"><svg><use href="#icon-add" /></svg>New provider</button>
           </div>
           <form class="settings-card" @submit.prevent="saveAI">
             <div class="form-grid">
@@ -1952,18 +1955,10 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .asset-drop-zone svg { width: 1rem; height: 1rem; }
 .asset-drop-zone strong { font-size: .62rem; }
 .asset-drop-zone small { color: #989e9a; font-size: .48rem; }
-.agent-thread { min-height: 0; padding: 1.2rem; overflow-y: auto; scrollbar-width: thin; scrollbar-gutter: stable; overflow-anchor: none; }
+.agent-thread { min-height: 0; padding: 1.2rem; overflow-y: auto; overscroll-behavior: contain; scroll-behavior: auto; scrollbar-width: thin; scrollbar-gutter: stable; overflow-anchor: none; }
 .agent-thread.empty { display: grid; place-items: center; }
 .turn-stack { width: min(100%, 46rem); margin: 0 auto; }
 .conversation-turn { display: grid; gap: .78rem; margin-bottom: 1.3rem; }
-.agent-reply > summary { list-style: none; }
-.agent-reply > summary::-webkit-details-marker { display: none; }
-.conversation-turn.latest > .agent-reply > .previous-turn-summary { display: none; }
-.previous-turn-summary { min-height: 3.5rem; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: .75rem; padding: .65rem .12rem; border-bottom: 1px solid #e5e9e6; color: #626b66; cursor: pointer; user-select: none; }
-.previous-turn-summary > span:first-child { min-width: 0; display: grid; gap: .16rem; }
-.previous-turn-summary strong { overflow: hidden; font-size: .68rem; font-weight: 630; text-overflow: ellipsis; white-space: nowrap; }
-.previous-turn-summary small { overflow: hidden; color: #929995; font-size: .56rem; text-overflow: ellipsis; white-space: nowrap; }
-.agent-reply[open] > .previous-turn-summary .turn-chevron { transform: rotate(90deg); }
 .turn-content { display: grid; gap: .95rem; padding: .25rem 0 1.25rem; }
 .turn-prompt { display: flex; justify-content: flex-end; padding-left: 18%; }
 .turn-prompt .message-content { width: fit-content; max-width: 100%; padding: .68rem .82rem; border: 0; border-radius: 1rem 1rem .3rem 1rem; color: #34483d; background: #eef1ef; box-shadow: none; }
@@ -1980,7 +1975,7 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .turn-execution-copy small { color: #929995; font-size: .56rem; font-variant-numeric: tabular-nums; }
 .turn-chevron { color: #8e9892; font-size: 1.05rem; line-height: 1; transition: transform 160ms ease; }
 .turn-execution[open] > summary .turn-chevron { transform: rotate(90deg); }
-.turn-execution-details { display: grid; gap: .55rem; padding: .72rem 0 .25rem; animation: turn-reveal 160ms ease-out; }
+.turn-execution-details { display: grid; gap: .28rem; padding: .48rem 0 .2rem; animation: turn-reveal 160ms ease-out; }
 .turn-empty-detail { margin: 0; color: #979e99; font-size: .62rem; }
 .turn-response { min-width: 0; padding-right: 7%; }
 .agent-response-content { min-width: 0; padding-top: .1rem; }
@@ -2022,15 +2017,8 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .agent-input-footer { display: flex; align-items: center; justify-content: space-between; gap: .5rem; min-height: 2.45rem; padding: 0 .3rem .1rem .45rem; }
 .agent-input-footer small { color: var(--tertiary); font-size: .55rem; }
 .agent-input .send-button { position: static; }
-.composer-controls, .composer-submit { min-width: 0; display: flex; align-items: center; gap: .35rem; }
-.composer-controls { flex-wrap: wrap; }
-.composer-select { position: relative; min-width: 0; display: flex; align-items: center; border: 1px solid transparent; border-radius: .55rem; color: #606065; background: #f5f5f6; }
-.composer-select:hover { border-color: var(--line); background: #f0f0f2; }
-.composer-select svg { position: absolute; left: .48rem; z-index: 1; width: .72rem; height: .72rem; pointer-events: none; }
-.composer-select select, .composer-select button { height: 1.85rem; min-width: 0; padding: 0 1.55rem 0 .55rem; overflow: hidden; border: 0; outline: 0; color: inherit; background: transparent; cursor: pointer; font-size: .61rem; font-weight: 590; text-overflow: ellipsis; white-space: nowrap; }
-.model-select select, .model-select button { width: clamp(8rem, 15vw, 13rem); padding-left: 1.45rem; }
-.reasoning-select select { width: clamp(7.7rem, 10vw, 9.5rem); }
-.composer-submit { flex: 0 0 auto; }
+.agent-input-footer > :first-child { min-width: 0; flex: 1; }
+.composer-submit { min-width: 0; flex: 0 0 auto; display: flex; align-items: center; gap: .35rem; }
 .artifact-pane { overflow: hidden; background: #f3f4f1; }
 .artifact-workspace { display: flex; flex-direction: column; }
 .artifact-collection-header { display: flex; align-items: center; justify-content: space-between; gap: .7rem; padding: .85rem 1rem .72rem; border-bottom: 1px solid #e4e8e5; background: rgba(255,255,255,.92); }
@@ -2075,11 +2063,12 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .message-content { margin: 0; padding: .78rem .9rem; border: 1px solid rgba(29,29,31,.035); border-radius: .88rem; color: #303431; background: #f0f1f2; font-size: .76rem; line-height: 1.58; overflow-wrap: anywhere; }
 .live-agent-state { display: inline-flex; align-items: center; gap: .3rem; text-transform: capitalize; }
 .live-agent-state i { width: .36rem; height: .36rem; border-radius: 50%; background: #4b9867; box-shadow: 0 0 0 .18rem rgba(75,152,103,.12); animation: activity-pulse 1.1s ease-in-out infinite; }
-.agent-event-timeline { width: 100%; display: grid; gap: .5rem; }
+.agent-event-timeline { width: 100%; display: grid; gap: .12rem; }
 .agent-event-timeline > .reasoning-panel, .agent-event-timeline > .tool-activity { margin: 0; }
+.intermediate-response { margin: .18rem 0 .3rem; padding: .12rem 0; color: #4f5b54; font-size: .68rem; line-height: 1.58; }
 .tool-activity-list { display: grid; gap: .32rem; margin: 0 0 .48rem; }
 .tool-activity { min-width: 0; color: #657068; font-size: .64rem; }
-.tool-activity summary { display: flex; align-items: center; gap: .42rem; min-height: 2rem; padding: .3rem .08rem; cursor: pointer; list-style: none; text-transform: capitalize; user-select: none; }
+.tool-activity summary { display: flex; align-items: center; gap: .42rem; min-height: 1.7rem; padding: .12rem .08rem; cursor: pointer; list-style: none; text-transform: capitalize; user-select: none; }
 .tool-activity summary::-webkit-details-marker { display: none; }
 .tool-activity summary::after { content: '›'; margin-left: .12rem; color: #8b948f; font-size: .82rem; transition: transform 150ms ease; }
 .tool-activity[open] summary::after { transform: rotate(90deg); }
@@ -2088,22 +2077,24 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .tool-activity.failed { color: #914d4d; }
 .tool-activity.failed summary i { background: #bd5656; animation: none; }
 .tool-activity summary small { margin-left: auto; color: var(--tertiary); font-size: .58rem; text-transform: none; }
-.tool-activity-details { display: grid; gap: .55rem; margin: .08rem 0 .55rem .82rem; padding: .2rem 0 .12rem .72rem; border-left: 1px solid #dfe5e1; }
+.tool-activity-details { display: grid; gap: .55rem; margin: .08rem 0 .55rem; padding: .2rem 0 .12rem; }
 .tool-activity-details strong { display: block; margin-bottom: .28rem; color: #78827c; font-size: .56rem; letter-spacing: .055em; text-transform: uppercase; }
 .tool-activity-details pre { max-height: 11rem; margin: 0; padding: .32rem 0; overflow: auto; border: 0; color: #465049; background: transparent; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: .62rem; line-height: 1.48; text-transform: none; white-space: pre-wrap; overflow-wrap: anywhere; }
 .tool-activity-details pre.error { color: #8d4040; }
 .reasoning-panel { width: 100%; margin: 0; color: #5d6961; background: transparent; }
-.reasoning-panel summary { display: flex; align-items: center; gap: .42rem; min-height: 2rem; padding: .3rem .08rem; cursor: pointer; list-style: none; font-size: .68rem; font-weight: 630; user-select: none; }
+.reasoning-panel summary { display: flex; align-items: center; gap: .42rem; min-height: 1.7rem; padding: .12rem .08rem; cursor: pointer; list-style: none; font-size: .68rem; font-weight: 630; user-select: none; }
 .reasoning-panel summary::-webkit-details-marker { display: none; }
-.reasoning-panel summary::before { content: '›'; color: #75827a; font-size: .9rem; transition: transform 150ms ease; }
-.reasoning-panel[open] summary::before { transform: rotate(90deg); }
+.reasoning-panel summary::after { content: '›'; margin-left: .12rem; color: #8b948f; font-size: .82rem; transition: transform 150ms ease; }
+.reasoning-panel[open] summary::after { transform: rotate(90deg); }
+.reasoning-panel summary > i { width: .38rem; height: .38rem; flex: 0 0 auto; border-radius: 50%; background: #789383; }
 .reasoning-panel summary small { margin-left: auto; color: var(--tertiary); font-size: .58rem; font-weight: 500; }
-.reasoning-content { max-height: 14rem; margin: .08rem 0 .55rem .82rem; padding: .25rem 0 .25rem .72rem; overflow: auto; border-left: 1px solid #dfe5e1; color: #657068; font-size: .68rem; line-height: 1.58; }
+.reasoning-content { max-height: 14rem; margin: .08rem 0 .55rem; padding: .25rem 0; overflow: auto; color: #657068; font-size: .68rem; line-height: 1.58; }
 .compaction-panel { color: #6d658b; }
-.compaction-content { margin-left: .82rem; padding-left: .72rem; border-left: 1px solid #e2deed; }
+.compaction-content { margin-left: 0; padding-left: 0; }
 .compaction-content .reasoning-content { margin-left: 0; padding-left: 0; border-left: 0; }
 .compaction-content > small { display: block; padding: .32rem 0 .45rem; color: var(--tertiary); font-size: .61rem; }
 .streaming-reasoning > summary { color: #466554; }
+.streaming-reasoning > summary > i { animation: activity-pulse 1.1s ease-in-out infinite; }
 .stream-waiting { display: flex; gap: .25rem; padding: .8rem 1rem !important; }
 .stream-waiting i { width: .32rem; height: .32rem; border-radius: 50%; background: #929298; animation: typing-pulse 1s ease-in-out infinite; }
 .stream-waiting i:nth-child(2) { animation-delay: 140ms; }
@@ -2199,7 +2190,9 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .settings-view { max-width: 64rem; }
 .settings-intro { margin: .5rem 0 1rem; }
 .settings-card { padding: 1.5rem; border: 1px solid rgba(29,29,31,.075); border-radius: 1rem; background: rgba(255,255,255,.84); box-shadow: 0 2px 12px rgba(0,0,0,.025); }
-.provider-list { display: flex; gap: .55rem; margin: 0 0 .8rem; padding: .15rem 0; overflow-x: auto; }
+.provider-toolbar { display: flex; align-items: flex-start; gap: .8rem; margin: 0 0 .8rem; }
+.provider-toolbar > .secondary-action { flex: 0 0 auto; margin-left: auto; }
+.provider-list { min-width: 0; flex: 1; display: flex; gap: .55rem; margin: 0; padding: 0; overflow-x: auto; }
 .provider-list > button { min-width: 11rem; display: flex; align-items: center; gap: .6rem; padding: .68rem .75rem; border: 1px solid var(--line); border-radius: .72rem; color: var(--text); background: rgba(255,255,255,.48); cursor: pointer; text-align: left; }
 .provider-list > button.active { border-color: rgba(71,105,87,.28); background: var(--accent-soft); box-shadow: 0 2px 8px rgba(52,82,67,.08); }
 .provider-list strong, .provider-list small { display: block; }
@@ -2286,7 +2279,6 @@ kbd, .card-type, .card-tags span { font-size: .69rem; }
 .prompt-hints button { font-size: .72rem; }
 .agent-input textarea { font-size: .88rem; }
 .agent-input-footer small { font-size: .63rem; }
-.composer-select select, .composer-select button { font-size: .69rem; }
 .artifact-placeholder p { font-size: .78rem; }
 .provider-picker { font-size: .68rem; }
 .provider-picker select, .conversation-heading select { font-size: .78rem; }
@@ -2337,7 +2329,6 @@ kbd, .card-type, .card-tags span { font-size: .69rem; }
   .agent-chat { min-height: 70vh; }
   .artifact-pane { min-height: 30rem; }
   .composer-submit small { display: none; }
-  .model-select select, .model-select button { width: min(42vw, 10rem); }
   .conversation-panel { position: static; }
   .field.full { grid-column: auto; }
   .settings-actions, .panel-heading { align-items: flex-start; }

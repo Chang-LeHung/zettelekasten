@@ -1,6 +1,7 @@
 import type {
   AnalysisMessage,
   AgentArtifact,
+  AgentModelUsage,
   AgentStreamCallbacks,
   AgentSession,
   AgentStart,
@@ -19,6 +20,22 @@ import type {
 const API_URL = (import.meta.env.VITE_API_URL ?? '/api').replace(/\/$/, '')
 const artifactIndex = new Map<string, AgentArtifact>()
 const tagIndex = new Map<number, string>()
+
+function asNonNegativeNumber(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0
+}
+
+function asModelUsage(value: unknown): AgentModelUsage | null {
+  if (!value || typeof value !== 'object') return null
+  const usage = value as Record<string, unknown>
+  return {
+    input_tokens: asNonNegativeNumber(usage.input_tokens),
+    output_tokens: asNonNegativeNumber(usage.output_tokens),
+    cache_read_tokens: asNonNegativeNumber(usage.cache_read_tokens),
+    cache_write_tokens: asNonNegativeNumber(usage.cache_write_tokens),
+    reasoning_tokens: asNonNegativeNumber(usage.reasoning_tokens),
+  }
+}
 
 class ApiError extends Error {
   constructor(
@@ -163,7 +180,14 @@ export const aiClient = {
           continue
         }
         if (payload === null) continue
-        if (event === 'model_started') callbacks.onStatus?.('generating')
+        if (event === 'model_started') {
+          callbacks.onModelStarted?.()
+          callbacks.onStatus?.('generating')
+        }
+        if (event === 'model_completed') {
+          const usage = asModelUsage(payload.usage)
+          if (usage) callbacks.onUsage?.(usage)
+        }
         if (event === 'reasoning_delta') callbacks.onReasoning?.(String(payload.delta || ''))
         if (event === 'text_delta') callbacks.onMessage?.(String(payload.delta || ''))
         if (event === 'tool_started') {
