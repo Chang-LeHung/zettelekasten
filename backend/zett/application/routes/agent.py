@@ -6,8 +6,10 @@ from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
+from starlette.background import BackgroundTask
 from zett_agent import (
     AgentConfig,
+    AgentEventType,
     ExternalEvent,
     ReasoningEffort,
     new_uuid7,
@@ -19,6 +21,7 @@ from ...infra.dao import provider_storage, session_storage
 from ...infra.log import get_logger
 from ..dependencies import run_sync
 from ..schemas import AnalyzeRequest, ExternalEventIn, ExternalEventOut
+from ..session_titles import generate_initial_session_title
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 logger = get_logger(__name__)
@@ -75,6 +78,7 @@ async def stream_message(session_id: str, payload: AnalyzeRequest) -> StreamingR
     config = AgentConfig(session_id=session_id, request_id=new_uuid7())
     agent = get_zettelkasten_agent()
     client = agent.client(ZettelkastenEventDispatcher(send))
+    run_completed = False
     try:
         await active_requests.add(config)
     except Exception:
@@ -82,8 +86,9 @@ async def stream_message(session_id: str, payload: AnalyzeRequest) -> StreamingR
         raise
 
     async def body() -> AsyncIterator[str]:
+        nonlocal run_completed
         try:
-            async for _ in client.stream(
+            async for event in client.stream(
                 payload.current_message,
                 config=config,
                 model=model,
@@ -91,6 +96,8 @@ async def stream_message(session_id: str, payload: AnalyzeRequest) -> StreamingR
                 metadata=payload.metadata,
                 tags=payload.tags,
             ):
+                if event.type is AgentEventType.RUN_COMPLETED:
+                    run_completed = True
                 while frames:
                     yield frames.popleft()
             while frames:
@@ -104,10 +111,15 @@ async def stream_message(session_id: str, payload: AnalyzeRequest) -> StreamingR
             await active_requests.remove(config)
             await model.aclose()
 
+    async def title_after_success() -> None:
+        if run_completed:
+            await generate_initial_session_title(session_id, connection)
+
     return StreamingResponse(
         body(),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        background=BackgroundTask(title_after_success),
     )
 
 

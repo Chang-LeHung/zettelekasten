@@ -49,5 +49,9 @@ class SessionStorage(Storage[AgentSessionCreate, SessionSummary, str, SessionLis
         """Read immutable history without assembling a workspace aggregate."""
         return get_agent_runtime_storage().list_raw_messages(session_id, limit=limit, offset=offset)
 
+    def set_title_if_empty(self, session_id: str, title: str) -> bool:
+        """Install one generated title without replacing user-owned text."""
+        return get_agent_runtime_storage().set_session_title_if_empty(session_id, title)
+
 
 session_storage = SessionStorage()

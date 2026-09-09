@@ -4,7 +4,7 @@ import inspect
 from collections.abc import AsyncIterator
 
 from fastapi.testclient import TestClient
-from zett_agent import AssistantMessage, ModelEvent, ModelRequest, ModelResponse
+from zett_agent import AssistantMessage, ModelEvent, ModelRequest, ModelResponse, ToolCall, ToolMessage
 
 from zett.application.routes import agent as agent_routes
 from zett.infra.dao import provider_storage
@@ -153,3 +153,68 @@ def test_agent_stream_uses_provider_neutral_events_and_persists_messages(monkeyp
         assert [message["role"] for message in detail["messages"]] == ["user", "assistant"]
         assert detail["messages"][1]["reasoning_content"] == "checking"
     assert model.closed
+
+
+class TitleAwareModel:
+    """Serve a normal answer and submit a typed title in private Agent runs."""
+
+    def __init__(self) -> None:
+        self.title_requests = 0
+        self.closed = False
+
+    async def stream(self, request: ModelRequest) -> AsyncIterator[ModelEvent]:
+        title_tool = next((item for item in request.tools if item.name == "submit_session_title"), None)
+        if title_tool is None:
+            yield ModelEvent.text("I will help design the editor.")
+            yield ModelEvent.completed(ModelResponse(AssistantMessage(content="I will help design the editor.")))
+            return
+        self.title_requests += 1
+        if isinstance(request.messages[-1], ToolMessage):
+            yield ModelEvent.completed(ModelResponse(AssistantMessage(content="Title submitted.")))
+            return
+        yield ModelEvent.completed(
+            ModelResponse(
+                AssistantMessage(
+                    content="",
+                    tool_calls=[
+                        ToolCall(
+                            id="title-call",
+                            name="submit_session_title",
+                            arguments={"title": "Designing a knowledge card editor"},
+                        )
+                    ],
+                )
+            )
+        )
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+def test_first_successful_turn_generates_the_session_title_once(monkeypatch):
+    models: list[TitleAwareModel] = []
+
+    def model_factory(_connection):
+        model = TitleAwareModel()
+        models.append(model)
+        return model
+
+    monkeypatch.setattr(agent_routes, "create_model", model_factory)
+    monkeypatch.setattr("zett.application.session_titles.create_model", model_factory)
+    with TestClient(app) as client:
+        session_id = client.post("/api/agent/start").json()["conversation_id"]
+        provider_id = client.post("/api/ai/providers", json=_provider_payload()).json()["id"]
+        payload = {
+            "raw_content": "Help me design a knowledge card editor",
+            "provider_id": provider_id,
+            "reasoning_effort": "medium",
+            "messages": [],
+        }
+
+        assert client.post(f"/api/agent/{session_id}/messages", json=payload).status_code == 200
+        assert client.get(f"/api/agent/sessions/{session_id}").json()["title"] == "Designing a knowledge card editor"
+        assert client.post(f"/api/agent/{session_id}/messages", json=payload).status_code == 200
+
+    assert len(models) == 3
+    assert sum(model.title_requests > 0 for model in models) == 1
+    assert all(model.closed for model in models)
