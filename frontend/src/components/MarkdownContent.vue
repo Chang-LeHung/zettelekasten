@@ -49,6 +49,7 @@ const COPY_RESET_DELAY_MS = 1600
 hljs.registerLanguage('bash', bash)
 hljs.registerLanguage('c', c)
 hljs.registerLanguage('cpp', cpp)
+hljs.registerLanguage('cuda', cpp)
 hljs.registerLanguage('csharp', csharp)
 hljs.registerLanguage('css', css)
 hljs.registerLanguage('dart', dart)
@@ -91,9 +92,11 @@ const LANGUAGE_ALIASES: Record<string, string> = {
   'c++': 'cpp',
   'c#': 'csharp',
   console: 'bash',
+  cu: 'cuda',
   docker: 'dockerfile',
   jsx: 'javascript',
   make: 'makefile',
+  nvcc: 'cuda',
   objc: 'objectivec',
   'objective-c': 'objectivec',
   ps1: 'powershell',
