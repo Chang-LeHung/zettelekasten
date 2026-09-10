@@ -351,8 +351,14 @@ function streamCallbacks() {
       if (todos) activeTodos.value = todos
       if (activity.state === 'started' || !sessionId) return
       try {
-        const current = await aiClient.listAgentArtifacts(sessionId)
-        if (conversationId.value === sessionId) applyArtifacts(current)
+        const [currentArtifacts, currentAssets] = await Promise.all([
+          aiClient.listAgentArtifacts(sessionId),
+          aiClient.listSessionAssets(sessionId),
+        ])
+        if (conversationId.value === sessionId) {
+          applyArtifacts(currentArtifacts)
+          assets.value = currentAssets
+        }
       } catch (error) {
         if (conversationId.value === sessionId) showNotice(errorMessage(error), 'error')
       }

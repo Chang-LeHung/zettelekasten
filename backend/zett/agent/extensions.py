@@ -1,17 +1,17 @@
-"""Zett-specific artifact tools and session asset context."""
+"""Zett-specific artifact tools and conversation context."""
 
 import asyncio
 import json
 
 from zett_agent import AgentContext, AgentExtension, SystemMessage, tool
 
-from ..infra.dao import artifact_storage, session_asset_storage
-from ..models import ArtifactListOptions, SessionAssetListOptions
+from ..infra.dao import artifact_storage
+from ..models import ArtifactListOptions
 from ..schemas import AgentArtifact, AgentArtifactWrite, ArtifactContent, ArtifactStatus
 
 
 class ZettelkastenExtension(AgentExtension):
-    """Expose typed artifact operations and attached asset context to the model."""
+    """Expose typed artifact operations and current artifacts to the model."""
 
     async def on_tool(self, context: AgentContext) -> None:
         """Register artifact tools bound to the current conversation."""
@@ -107,33 +107,16 @@ class ZettelkastenExtension(AgentExtension):
             context.register_tool(registered)
 
     async def on_state(self, context: AgentContext) -> None:
-        """Expose attached asset content and current artifacts as model context."""
+        """Expose current artifacts as model context."""
         session_id = context.config.session_id
-        assets, artifacts = await asyncio.gather(
-            asyncio.to_thread(
-                session_asset_storage.list,
-                SessionAssetListOptions(session_id=session_id, limit=500),
-            ),
-            asyncio.to_thread(
-                artifact_storage.list,
-                ArtifactListOptions(session_id=session_id, limit=500),
-            ),
+        artifacts = await asyncio.to_thread(
+            artifact_storage.list,
+            ArtifactListOptions(session_id=session_id, limit=500),
         )
         payload = {
-            "assets": [
-                {
-                    "id": asset.id,
-                    "type": asset.asset_type,
-                    "name": asset.name,
-                    "mime_type": asset.mime_type,
-                    "text_content": asset.text_content,
-                    "source_url": asset.source_url,
-                }
-                for asset in assets
-            ],
             "artifacts": [artifact.model_dump(mode="json") for artifact in artifacts],
         }
-        if payload["assets"] or payload["artifacts"]:
+        if payload["artifacts"]:
             workspace = SystemMessage(
                 content="Current Zett conversation workspace:\n" + json.dumps(payload, ensure_ascii=False)
             )

@@ -1,6 +1,6 @@
 const providerBaseUrls: Readonly<Record<string, string>> = {
   anthropic: 'https://api.anthropic.com',
-  deepseek: 'https://api.deepseek.com',
+  deepseek: 'https://api.deepseek.com/v1',
   google: 'https://generativelanguage.googleapis.com',
   ollama: 'http://localhost:11434',
   openai: 'https://api.openai.com/v1',

@@ -13,6 +13,7 @@ from zett_agent import (
 )
 
 from ..infra.locks import synchronized
+from .assets import AssetExtension
 from .extensions import ZettelkastenExtension
 from .zettelkasten import ZettelkastenAgent
 
@@ -49,6 +50,7 @@ async def initialize_zettelkasten_agent(storage: SQLiteSessionStorage) -> Zettel
             system_prompt=SYSTEM_PROMPT,
             extensions=(
                 SessionPersistenceExtension(storage),
+                AssetExtension(),
                 ZettelkastenExtension(),
                 CodingExtension(),
                 AskUserExtension(),
