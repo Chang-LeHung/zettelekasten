@@ -4,6 +4,7 @@ import type { SessionAsset } from '../api/types'
 import { assetOpenAction } from '../utils/assetOpen'
 
 const MarkdownContent = defineAsyncComponent(() => import('./MarkdownContent.vue'))
+const PdfPreview = defineAsyncComponent(() => import('./PdfPreview.vue'))
 
 const props = defineProps<{
   asset: SessionAsset | null
@@ -19,6 +20,9 @@ const action = computed(() => {
   return assetOpenAction(props.asset)
 })
 const imageUrl = computed(() => action.value?.kind === 'preview' && action.value.preview === 'image'
+  ? action.value.url
+  : null)
+const pdfUrl = computed(() => action.value?.kind === 'preview' && action.value.preview === 'pdf'
   ? action.value.url
   : null)
 const previewsText = computed(() => action.value?.kind === 'preview' && action.value.preview === 'text')
@@ -79,8 +83,9 @@ onBeforeUnmount(() => {
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
             </button>
           </header>
-          <div class="image-preview-stage" :class="{ 'text-preview-stage': previewsText }">
+          <div class="image-preview-stage" :class="{ 'text-preview-stage': previewsText, 'pdf-preview-stage': pdfUrl }">
             <img v-if="imageUrl" :src="imageUrl" :alt="asset.name" />
+            <PdfPreview v-else-if="pdfUrl" :asset="asset" />
             <MarkdownContent v-else-if="previewsText" class="asset-markdown" :content="asset.text_content || ''" />
           </div>
         </section>
@@ -103,6 +108,7 @@ button:focus-visible { outline: 3px solid rgba(71, 105, 87, .2); outline-offset:
 button svg { width: 1.15rem; height: 1.15rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
 .image-preview-stage { display: grid; place-items: center; min-height: 0; overflow: auto; padding: clamp(1rem, 3vw, 2.5rem); background-color: #f1f3f1; background-image: linear-gradient(45deg, rgba(77, 96, 85, .035) 25%, transparent 25%), linear-gradient(-45deg, rgba(77, 96, 85, .035) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(77, 96, 85, .035) 75%), linear-gradient(-45deg, transparent 75%, rgba(77, 96, 85, .035) 75%); background-position: 0 0, 0 8px, 8px -8px, -8px 0; background-size: 16px 16px; }
 .image-preview-stage img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; border-radius: .3rem; box-shadow: 0 12px 38px rgba(33, 42, 36, .12); }
+.pdf-preview-stage { padding: 0; background: #e9ecea; }
 .text-preview-stage { display: block; padding: clamp(1.25rem, 3vw, 3rem); background: #fafbfa; }
 .asset-markdown { width: min(100%, 72rem); min-height: 100%; margin: 0 auto; color: #29312c; font-size: clamp(.82rem, .76rem + .18vw, .98rem); }
 .image-preview-enter-active, .image-preview-leave-active { transition: opacity 170ms ease; }

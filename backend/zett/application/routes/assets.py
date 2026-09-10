@@ -104,12 +104,12 @@ async def upload_asset(
 
 @router.get("/{asset_id}/content", response_class=FileResponse)
 async def get_asset_content(session_id: str, asset_id: str) -> FileResponse:
-    """Preview images inline and download other files after verifying ownership."""
+    """Preview images and PDFs inline and download other files after verifying ownership."""
     asset = await run_sync(session_asset_storage.get_for_session, session_id, asset_id)
     path = await run_sync(session_asset_storage.content_path, session_id, asset_id)
     if asset is None or path is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset content not found")
-    inline = asset.asset_type == SessionAssetType.IMAGE
+    inline = asset.asset_type == SessionAssetType.IMAGE or asset.mime_type == "application/pdf"
     headers = {"X-Content-Type-Options": "nosniff"}
     if inline:
         headers["Content-Security-Policy"] = "sandbox; default-src 'none'"

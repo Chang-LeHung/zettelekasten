@@ -78,6 +78,15 @@ def test_session_asset_and_artifact_http_lifecycle():
         file_content = client.get(f"/api/agent/{session_id}/assets/{uploaded_file.json()['id']}/content")
         assert file_content.headers["content-disposition"].startswith("attachment;")
 
+        uploaded_pdf = client.post(
+            f"/api/agent/{session_id}/assets/upload?name=paper.pdf",
+            content=b"%PDF-1.7\n",
+            headers={"content-type": "application/pdf"},
+        )
+        pdf_content = client.get(f"/api/agent/{session_id}/assets/{uploaded_pdf.json()['id']}/content")
+        assert pdf_content.content == b"%PDF-1.7\n"
+        assert pdf_content.headers["content-disposition"].startswith("inline;")
+
         created = client.post(
             f"/api/agent/{session_id}/artifacts",
             json={"content": _card_content(), "raw_content": "raw"},
@@ -103,6 +112,7 @@ def test_session_asset_and_artifact_http_lifecycle():
             text.json()["id"],
             asset_id,
             uploaded_file.json()["id"],
+            uploaded_pdf.json()["id"],
         }
         assert client.delete(f"/api/agent/{session_id}/artifacts/{artifact_id}").json() == {"ok": True}
         assert client.delete(f"/api/agent/{session_id}/assets/{asset_id}").json() == {"ok": True}

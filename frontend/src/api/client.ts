@@ -58,6 +58,12 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return response.json() as Promise<T>
 }
 
+async function requestBinary(path: string, signal?: AbortSignal): Promise<ArrayBuffer> {
+  const response = await fetch(`${API_URL}${path}`, { signal })
+  if (!response.ok) throw new ApiError(response.status, await response.text())
+  return response.arrayBuffer()
+}
+
 export const libraryClient = {
   async list(options: CardListOptions = {}): Promise<LibraryItem[]> {
     const params = new URLSearchParams()
@@ -289,6 +295,10 @@ export const aiClient = {
 
   deleteSessionAsset(conversationId: string, assetId: string): Promise<{ ok: boolean }> {
     return request<{ ok: boolean }>(`/agent/${conversationId}/assets/${assetId}`, { method: 'DELETE' })
+  },
+
+  getSessionAssetContent(conversationId: string, assetId: string, signal?: AbortSignal): Promise<ArrayBuffer> {
+    return requestBinary(`/agent/${conversationId}/assets/${assetId}/content`, signal)
   },
 
   listAgentArtifacts(conversationId: string): Promise<AgentArtifact[]> {

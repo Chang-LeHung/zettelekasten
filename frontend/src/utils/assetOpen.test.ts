@@ -38,6 +38,17 @@ describe('asset open action', () => {
     }))).toEqual({ kind: 'preview', preview: 'text' })
   })
 
+  it('previews PDFs identified by MIME type or filename', () => {
+    expect(assetOpenAction(asset({ name: 'paper', mime_type: 'application/pdf' }))).toEqual({
+      kind: 'preview',
+      preview: 'pdf',
+      url: '/api/assets/asset-1/content',
+    })
+    expect(assetOpenAction(asset({ name: 'paper.PDF', mime_type: 'application/octet-stream' }))?.kind).toBe(
+      'preview',
+    )
+  })
+
   it('previews image MIME types even when stored as generic files', () => {
     expect(assetOpenAction(asset({ mime_type: 'image/webp' }))?.kind).toBe('preview')
   })

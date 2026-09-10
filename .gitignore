@@ -11,3 +11,4 @@ data/*.db
 backend/zett-agent/docs/_build/
 backend/zett-agent/docs/_generated/
 backend/zett-agent/.coverage
+backend/.zett-tool-output/

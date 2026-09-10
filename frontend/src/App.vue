@@ -5,8 +5,9 @@ import type { AgentArtifact, AgentCompactionActivity, AgentCustomEvent, AgentMod
 import AgentComposerControls from './components/AgentComposerControls.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import AssetPreviewDialog from './components/AssetPreviewDialog.vue'
+import AskUserPrompt from './components/AskUserPrompt.vue'
 import { addAgentUsage, summarizeAgentUsage } from './utils/agentUsage'
-import { assetOpenAction } from './utils/assetOpen'
+import { assetOpenAction, isPdfAsset } from './utils/assetOpen'
 import { buildConversationTurns, formatTurnDuration, splitTurnTimeline, type ConversationTurn } from './utils/conversationTurns'
 import { jsonSnapshot } from './utils/jsonSnapshot'
 import { restorePersistedConversation } from './utils/persistedConversation'
@@ -15,6 +16,7 @@ import { todoFromTool } from './utils/toolPresentation'
 
 const MarkdownContent = defineAsyncComponent(() => import('./components/MarkdownContent.vue'))
 const LibraryEditor = defineAsyncComponent(() => import('./components/LibraryEditor.vue'))
+const PdfThumbnail = defineAsyncComponent(() => import('./components/PdfThumbnail.vue'))
 
 type View = 'library' | 'search' | 'new' | 'settings'
 type NoticeKind = 'success' | 'error'
@@ -397,11 +399,17 @@ function toggleAskOption(option: string): void {
   if (!question) return
   if (!question.allowMultiple) {
     selectedAskOptions.value = [option]
+    askAnswer.value = ''
     return
   }
   selectedAskOptions.value = selectedAskOptions.value.includes(option)
     ? selectedAskOptions.value.filter((item) => item !== option)
     : [...selectedAskOptions.value, option]
+}
+
+function updateAskAnswer(value: string): void {
+  askAnswer.value = value
+  if (value.trim() && !pendingQuestion.value?.allowMultiple) selectedAskOptions.value = []
 }
 
 async function answerAgentQuestion(): Promise<void> {
@@ -1506,6 +1514,7 @@ onBeforeUnmount(() => {
                   <button class="asset-row-main" type="button" @click="openAsset(asset)">
                     <span class="asset-thumbnail" :class="classifyAsset(asset)">
                       <img v-if="asset.asset_type === 'image' && asset.content_url" :src="asset.content_url" alt="" />
+                      <PdfThumbnail v-else-if="isPdfAsset(asset)" :asset="asset" />
                       <svg v-else><use :href="asset.asset_type === 'link' ? '#icon-link' : asset.asset_type === 'text' ? '#icon-text' : '#icon-attachment'" /></svg>
                       <small>{{ assetExtension(asset) }}</small>
                     </span>
@@ -1618,23 +1627,18 @@ onBeforeUnmount(() => {
                 </div>
               </div>
 
-              <section v-if="pendingQuestion" class="ask-user-panel" aria-live="polite">
-                <header><span>Agent question</span><small>Waiting for your input</small></header>
-                <h3>{{ pendingQuestion.question }}</h3>
-                <div v-if="pendingQuestion.options.length" class="ask-options">
-                  <button
-                    v-for="option in pendingQuestion.options"
-                    :key="option"
-                    :class="{ selected: selectedAskOptions.includes(option) }"
-                    type="button"
-                    @click="toggleAskOption(option)"
-                  >{{ option }}</button>
-                </div>
-                <form class="ask-response" @submit.prevent="answerAgentQuestion">
-                  <input v-model="askAnswer" :placeholder="pendingQuestion.options.length ? 'Or write another answer…' : 'Type your answer…'" />
-                  <button type="submit" :disabled="answeringQuestion || (!askAnswer.trim() && !selectedAskOptions.length)">{{ answeringQuestion ? 'Sending…' : 'Continue' }}</button>
-                </form>
-              </section>
+              <AskUserPrompt
+                v-if="pendingQuestion"
+                :question="pendingQuestion.question"
+                :options="pendingQuestion.options"
+                :allow-multiple="pendingQuestion.allowMultiple"
+                :selected-options="selectedAskOptions"
+                :answer="askAnswer"
+                :submitting="answeringQuestion"
+                @toggle="toggleAskOption"
+                @update:answer="updateAskAnswer"
+                @submit="answerAgentQuestion"
+              />
 
               <form class="agent-input" @submit.prevent="submitConversation">
                 <textarea v-if="!conversationStarted" v-model="raw" rows="3" autofocus placeholder="Message Zett Agent…" @keydown.enter.exact="handleComposerEnter" />
@@ -2035,18 +2039,6 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .prompt-hints { display: flex; justify-content: center; gap: .45rem; margin-top: 1.1rem; }
 .prompt-hints button { padding: .48rem .65rem; border: 1px solid var(--line); border-radius: .58rem; color: #606065; background: rgba(247,247,248,.8); cursor: pointer; font-size: .64rem; }
 .agent-input { margin: .8rem; padding: .25rem; border: 1px solid rgba(29,29,31,.11); border-radius: .9rem; background: white; box-shadow: 0 3px 16px rgba(0,0,0,.055); }
-.ask-user-panel { margin: .55rem .8rem 0; padding: .85rem; border: 1px solid rgba(71,105,87,.16); border-radius: .9rem; background: #f8faf8; box-shadow: 0 3px 14px rgba(42,65,51,.045); }
-.ask-user-panel header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; color: #476957; font-size: .66rem; font-weight: 720; letter-spacing: .025em; }
-.ask-user-panel header small { color: var(--tertiary); font-size: .6rem; font-weight: 560; }
-.ask-user-panel h3 { margin: .55rem 0 .7rem; color: var(--text); font-size: .84rem; line-height: 1.45; }
-.ask-options { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .65rem; }
-.ask-options button { min-height: 2rem; padding: 0 .65rem; border: 1px solid #dce4df; border-radius: .62rem; color: #536159; background: #fff; cursor: pointer; font-size: .68rem; }
-.ask-options button.selected { border-color: #789383; color: #315441; background: #edf4ef; box-shadow: inset 0 0 0 1px rgba(71,105,87,.08); }
-.ask-response { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: .45rem; }
-.ask-response input { min-width: 0; height: 2.3rem; padding: 0 .7rem; border: 1px solid #dfe5e1; border-radius: .65rem; outline: none; color: var(--text); background: #fff; font-size: .72rem; }
-.ask-response input:focus { border-color: #89a394; box-shadow: 0 0 0 3px rgba(71,105,87,.09); }
-.ask-response button { padding: 0 .8rem; border: 0; border-radius: .65rem; color: #fff; background: #476957; cursor: pointer; font-size: .7rem; font-weight: 660; }
-.ask-response button:disabled { opacity: .45; cursor: default; }
 .agent-input:focus-within { border-color: rgba(71,105,87,.4); box-shadow: 0 0 0 3px rgba(71,105,87,.1), 0 5px 20px rgba(0,0,0,.06); }
 .agent-input textarea { display: block; width: 100%; min-height: 4rem; padding: .7rem .8rem .25rem; resize: none; border: 0; outline: 0; color: var(--text); background: transparent; font-size: .78rem; line-height: 1.5; }
 .agent-input-footer { display: flex; align-items: center; justify-content: space-between; gap: .5rem; min-height: 2.45rem; padding: 0 .3rem .1rem .45rem; }

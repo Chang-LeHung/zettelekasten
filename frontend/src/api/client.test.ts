@@ -33,3 +33,14 @@ it('delivers usage for every completed model step in one tool loop', async () =>
   })
   expect(usages).toEqual([120, 180])
 })
+
+it('loads binary asset content through the typed API client', async () => {
+  const payload = new Uint8Array([37, 80, 68, 70])
+  const fetchMock = vi.fn().mockResolvedValue(new Response(payload))
+  vi.stubGlobal('fetch', fetchMock)
+
+  const result = await aiClient.getSessionAssetContent('session-1', 'asset-1')
+
+  expect(new Uint8Array(result)).toEqual(payload)
+  expect(fetchMock).toHaveBeenCalledWith('/api/agent/session-1/assets/asset-1/content', { signal: undefined })
+})
