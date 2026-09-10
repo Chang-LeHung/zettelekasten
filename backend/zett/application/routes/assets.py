@@ -104,12 +104,22 @@ async def upload_asset(
 
 @router.get("/{asset_id}/content", response_class=FileResponse)
 async def get_asset_content(session_id: str, asset_id: str) -> FileResponse:
-    """Serve binary content only after verifying session ownership."""
+    """Preview images inline and download other files after verifying ownership."""
     asset = await run_sync(session_asset_storage.get_for_session, session_id, asset_id)
     path = await run_sync(session_asset_storage.content_path, session_id, asset_id)
     if asset is None or path is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset content not found")
-    return FileResponse(path, media_type=asset.mime_type, filename=asset.name)
+    inline = asset.asset_type == SessionAssetType.IMAGE
+    headers = {"X-Content-Type-Options": "nosniff"}
+    if inline:
+        headers["Content-Security-Policy"] = "sandbox; default-src 'none'"
+    return FileResponse(
+        path,
+        media_type=asset.mime_type,
+        filename=asset.name,
+        content_disposition_type="inline" if inline else "attachment",
+        headers=headers,
+    )
 
 
 @router.delete("/{asset_id}", response_model=DeleteResponse)

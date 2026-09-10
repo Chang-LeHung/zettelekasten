@@ -4,7 +4,9 @@ import { ApiError, aiClient, libraryClient, tagClient } from './api/client'
 import type { AgentArtifact, AgentCompactionActivity, AgentCustomEvent, AgentModelUsage, AgentSession, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, ReasoningEffort, SessionAsset, Tag } from './api/types'
 import AgentComposerControls from './components/AgentComposerControls.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
+import AssetPreviewDialog from './components/AssetPreviewDialog.vue'
 import { addAgentUsage, summarizeAgentUsage } from './utils/agentUsage'
+import { assetOpenAction } from './utils/assetOpen'
 import { buildConversationTurns, formatTurnDuration, splitTurnTimeline, type ConversationTurn } from './utils/conversationTurns'
 import { jsonSnapshot } from './utils/jsonSnapshot'
 import { restorePersistedConversation } from './utils/persistedConversation'
@@ -70,6 +72,7 @@ const editingSessionId = ref<string | null>(null)
 const sessionTitleDraft = ref('')
 const artifacts = ref<AgentArtifact[]>([])
 const assets = ref<SessionAsset[]>([])
+const previewAsset = ref<SessionAsset | null>(null)
 const assetEditorMode = ref<AssetEditorMode>('closed')
 const assetName = ref('')
 const assetValue = ref('')
@@ -978,6 +981,7 @@ async function resetWorkspace(): Promise<void> {
   selectedSuggestions.value = []
   artifacts.value = []
   assets.value = []
+  previewAsset.value = null
   selectedArtifactId.value = null
   artifactPreview.value = true
   conversationId.value = null
@@ -1080,8 +1084,13 @@ async function pasteAssets(event: ClipboardEvent): Promise<void> {
 }
 
 function openAsset(asset: SessionAsset): void {
-  const target = asset.source_url || asset.content_url
-  if (target) window.open(target, '_blank', 'noopener,noreferrer')
+  const action = assetOpenAction(asset)
+  if (!action) return
+  if (action.kind === 'preview') {
+    previewAsset.value = asset
+    return
+  }
+  window.open(action.url, '_blank', 'noopener,noreferrer')
 }
 
 async function removeAsset(asset: SessionAsset): Promise<void> {
@@ -1095,6 +1104,7 @@ async function removeAsset(asset: SessionAsset): Promise<void> {
   try {
     await aiClient.deleteSessionAsset(conversationId.value, asset.id)
     assets.value = assets.value.filter((item) => item.id !== asset.id)
+    if (previewAsset.value?.id === asset.id) previewAsset.value = null
   } catch (error) {
     showNotice(errorMessage(error), 'error')
   }
@@ -1393,6 +1403,7 @@ onBeforeUnmount(() => {
       </Transition>
 
       <ConfirmDialog :open="confirmation.open" :title="confirmation.title" :message="confirmation.message" :confirm-label="confirmation.confirmLabel" @cancel="settleConfirmation(false)" @confirm="settleConfirmation(true)" />
+      <AssetPreviewDialog :asset="previewAsset" @close="previewAsset = null" />
       <LibraryEditor v-if="libraryEditorItem" :item="libraryEditorItem" :saving="libraryEditorSaving" @close="closeLibraryEditor" @save="saveLibraryEditor" />
 
       <template v-if="view === 'library' || view === 'search'">

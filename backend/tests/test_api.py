@@ -63,8 +63,20 @@ def test_session_asset_and_artifact_http_lifecycle():
         assert uploaded.status_code == 201
         asset_id = uploaded.json()["id"]
         assert uploaded.json()["asset_type"] == "image"
-        assert client.get(f"/api/agent/{session_id}/assets/{asset_id}/content").content == b"png-content"
+        image_content = client.get(f"/api/agent/{session_id}/assets/{asset_id}/content")
+        assert image_content.content == b"png-content"
+        assert image_content.headers["content-disposition"].startswith("inline;")
+        assert image_content.headers["x-content-type-options"] == "nosniff"
+        assert image_content.headers["content-security-policy"] == "sandbox; default-src 'none'"
         assert client.get(f"/api/agent/{other_id}/assets/{asset_id}").status_code == 404
+
+        uploaded_file = client.post(
+            f"/api/agent/{session_id}/assets/upload?name=notes.txt",
+            content=b"download me",
+            headers={"content-type": "application/octet-stream"},
+        )
+        file_content = client.get(f"/api/agent/{session_id}/assets/{uploaded_file.json()['id']}/content")
+        assert file_content.headers["content-disposition"].startswith("attachment;")
 
         created = client.post(
             f"/api/agent/{session_id}/artifacts",
@@ -87,7 +99,11 @@ def test_session_asset_and_artifact_http_lifecycle():
 
         detail = client.get(f"/api/agent/sessions/{session_id}").json()
         assert [item["id"] for item in detail["artifacts"]] == [artifact_id]
-        assert {item["id"] for item in detail["assets"]} == {text.json()["id"], asset_id}
+        assert {item["id"] for item in detail["assets"]} == {
+            text.json()["id"],
+            asset_id,
+            uploaded_file.json()["id"],
+        }
         assert client.delete(f"/api/agent/{session_id}/artifacts/{artifact_id}").json() == {"ok": True}
         assert client.delete(f"/api/agent/{session_id}/assets/{asset_id}").json() == {"ok": True}
 
