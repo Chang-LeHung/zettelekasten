@@ -86,7 +86,7 @@ async def upload_asset(
     async for chunk in request.stream():
         content.extend(chunk)
         if len(content) > settings.max_asset_size_bytes:
-            raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Asset exceeds the configured size limit")
+            raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "Asset exceeds the configured size limit")
     mime_type = request.headers.get("content-type", "application/octet-stream").split(";", 1)[0]
     asset_type = SessionAssetType.IMAGE if mime_type.startswith("image/") else SessionAssetType.FILE
     entity = SessionAssetCreate(
@@ -99,7 +99,7 @@ async def upload_asset(
     try:
         return await run_sync(session_asset_storage.create, entity)
     except ValueError as error:
-        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, str(error)) from error
+        raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, str(error)) from error
 
 
 @router.get("/{asset_id}/content", response_class=FileResponse)

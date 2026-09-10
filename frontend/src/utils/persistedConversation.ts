@@ -8,6 +8,7 @@ import type {
 
 export interface RestoredConversation {
   initialPrompt: string
+  initialParts: AgentPersistedMessage['parts']
   messages: AnalysisMessage[]
 }
 
@@ -43,7 +44,7 @@ export function restorePersistedConversation(records: readonly AgentPersistedMes
         skippedFirstUser = true
         continue
       }
-      messages.push({ role: 'user', content: record.content })
+      messages.push({ role: 'user', content: record.content, parts: record.parts })
       continue
     }
 
@@ -88,5 +89,5 @@ export function restorePersistedConversation(records: readonly AgentPersistedMes
     }
   }
 
-  return { initialPrompt: firstUser?.content || '', messages }
+  return { initialPrompt: firstUser?.content || '', initialParts: firstUser?.parts || [], messages }
 }

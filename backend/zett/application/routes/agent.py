@@ -1,6 +1,8 @@
 """Asynchronous Zettelkasten Agent streaming and external-event endpoints."""
 
 import asyncio
+import base64
+import binascii
 from collections import deque
 from collections.abc import AsyncIterator
 
@@ -11,20 +13,26 @@ from zett_agent import (
     AgentConfig,
     AgentEventType,
     ExternalEvent,
+    ImageBytesSource,
+    ImageContent,
     ReasoningEffort,
+    TextContent,
+    UserMessage,
     new_uuid7,
 )
 
 from ...agent import ZettelkastenEventDispatcher, encode_sse, get_zettelkasten_agent
 from ...agent.model_factory import create_model
+from ...config import settings
 from ...infra.dao import provider_storage, session_storage
 from ...infra.log import get_logger
 from ..dependencies import run_sync
-from ..schemas import AnalyzeRequest, ExternalEventIn, ExternalEventOut
+from ..schemas import AnalyzeRequest, ExternalEventIn, ExternalEventOut, MessageImagePartIn, MessageTextPartIn
 from ..session_titles import generate_initial_session_title
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 logger = get_logger(__name__)
+MAX_MESSAGE_IMAGES = 32
 
 
 class ActiveRequestRegistry:
@@ -56,6 +64,38 @@ class ActiveRequestRegistry:
 active_requests = ActiveRequestRegistry()
 
 
+def _user_message(payload: AnalyzeRequest) -> UserMessage:
+    """Decode bounded browser images into one provider-neutral multimodal turn."""
+    parts: list[TextContent | ImageContent] = []
+    total_size = 0
+    image_count = 0
+    for part in payload.parts or ([MessageTextPartIn(text=payload.current_message)] if payload.current_message else []):
+        match part:
+            case MessageTextPartIn(text=text):
+                if text:
+                    parts.append(TextContent(text))
+            case MessageImagePartIn() as image:
+                image_count += 1
+                if image_count > MAX_MESSAGE_IMAGES:
+                    raise HTTPException(
+                        status.HTTP_422_UNPROCESSABLE_CONTENT,
+                        f"A message can contain up to {MAX_MESSAGE_IMAGES} images",
+                    )
+                try:
+                    content = base64.b64decode(image.data_base64, validate=True)
+                except (ValueError, binascii.Error) as error:
+                    raise HTTPException(
+                        status.HTTP_422_UNPROCESSABLE_CONTENT, f"Invalid image data: {image.name}"
+                    ) from error
+                if not content:
+                    raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"Image is empty: {image.name}")
+                total_size += len(content)
+                if total_size > settings.max_asset_size_bytes:
+                    raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "Message images exceed the configured limit")
+                parts.append(ImageContent(source=ImageBytesSource(content, image.mime_type), alt_text=image.name))
+    return UserMessage(content=parts)
+
+
 @router.post("/{session_id}/messages")
 async def stream_message(session_id: str, payload: AnalyzeRequest) -> StreamingResponse:
     """Run one user turn and stream lossless zett-agent events as SSE."""
@@ -67,8 +107,9 @@ async def stream_message(session_id: str, payload: AnalyzeRequest) -> StreamingR
     try:
         effort = ReasoningEffort(payload.reasoning_effort)
     except ValueError as error:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Unsupported reasoning effort") from error
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Unsupported reasoning effort") from error
 
+    user_message = _user_message(payload)
     model = create_model(connection)
     frames: deque[str] = deque()
 
@@ -89,7 +130,7 @@ async def stream_message(session_id: str, payload: AnalyzeRequest) -> StreamingR
         nonlocal run_completed
         try:
             async for event in client.stream(
-                payload.current_message,
+                user_message,
                 config=config,
                 model=model,
                 reasoning_effort=effort,

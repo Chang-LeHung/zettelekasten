@@ -1,10 +1,20 @@
 """End-to-end tests for the categorized asynchronous FastAPI interface."""
 
+import base64
 import inspect
 from collections.abc import AsyncIterator
 
 from fastapi.testclient import TestClient
-from zett_agent import AssistantMessage, ModelEvent, ModelRequest, ModelResponse, ToolCall, ToolMessage
+from zett_agent import (
+    AssistantMessage,
+    ImageBytesSource,
+    ModelEvent,
+    ModelRequest,
+    ModelResponse,
+    ToolCall,
+    ToolMessage,
+    UserMessage,
+)
 
 from zett.application.routes import agent as agent_routes
 from zett.infra.dao import provider_storage
@@ -146,7 +156,11 @@ class FakeModel:
 
     closed = False
 
+    def __init__(self) -> None:
+        self.requests: list[ModelRequest] = []
+
     async def stream(self, request: ModelRequest) -> AsyncIterator[ModelEvent]:
+        self.requests.append(request)
         assert request.messages[-1].role == "user"
         yield ModelEvent.reasoning("checking")
         yield ModelEvent.text("answer")
@@ -179,6 +193,108 @@ def test_agent_stream_uses_provider_neutral_events_and_persists_messages(monkeyp
         assert [message["role"] for message in detail["messages"]] == ["user", "assistant"]
         assert detail["messages"][1]["reasoning_content"] == "checking"
     assert model.closed
+
+
+def test_pasted_image_is_persisted_in_the_user_message_not_session_assets(monkeypatch):
+    model = FakeModel()
+    monkeypatch.setattr(agent_routes, "create_model", lambda _connection: model)
+    image_bytes = b"not-decoded-by-the-provider-test"
+    with TestClient(app) as client:
+        session_id = client.post("/api/agent/start").json()["conversation_id"]
+        provider_id = client.post("/api/ai/providers", json=_provider_payload()).json()["id"]
+        response = client.post(
+            f"/api/agent/{session_id}/messages",
+            json={
+                "raw_content": "Before image, after image.",
+                "provider_id": provider_id,
+                "parts": [
+                    {"type": "text", "text": "Before image, "},
+                    {
+                        "type": "image",
+                        "name": "clipboard.png",
+                        "mime_type": "image/png",
+                        "data_base64": base64.b64encode(image_bytes).decode("ascii"),
+                    },
+                    {"type": "text", "text": "after image."},
+                ],
+            },
+        )
+
+        assert response.status_code == 200
+        message = model.requests[0].messages[-1]
+        assert isinstance(message, UserMessage)
+        assert [type(part).__name__ for part in message.parts] == ["TextContent", "ImageContent", "TextContent"]
+        image = message.parts[1]
+        assert isinstance(image.source, ImageBytesSource)
+        assert image.source.data == image_bytes
+        detail = client.get(f"/api/agent/sessions/{session_id}").json()
+        assert detail["assets"] == []
+        assert detail["messages"][0]["parts"] == [
+            {"type": "text", "text": "Before image, "},
+            {
+                "type": "image",
+                "name": "clipboard.png",
+                "mime_type": "image/png",
+                "content_url": f"data:image/png;base64,{base64.b64encode(image_bytes).decode('ascii')}",
+            },
+            {"type": "text", "text": "after image."},
+        ]
+
+
+def test_message_images_reject_empty_turns_invalid_base64_and_oversized_collections(monkeypatch):
+    model = FakeModel()
+    monkeypatch.setattr(agent_routes, "create_model", lambda _connection: model)
+    monkeypatch.setattr(agent_routes.settings, "max_asset_size_bytes", 3)
+    with TestClient(app) as client:
+        session_id = client.post("/api/agent/start").json()["conversation_id"]
+        provider_id = client.post("/api/ai/providers", json=_provider_payload()).json()["id"]
+        endpoint = f"/api/agent/{session_id}/messages"
+        common = {"provider_id": provider_id, "raw_content": ""}
+
+        assert client.post(endpoint, json=common).status_code == 422
+        invalid = client.post(
+            endpoint,
+            json={
+                **common,
+                "parts": [{"type": "image", "name": "bad.png", "mime_type": "image/png", "data_base64": "%%%"}],
+            },
+        )
+        assert invalid.status_code == 422
+        oversized = client.post(
+            endpoint,
+            json={
+                **common,
+                "parts": [
+                    {
+                        "type": "image",
+                        "name": "large.png",
+                        "mime_type": "image/png",
+                        "data_base64": base64.b64encode(b"1234").decode("ascii"),
+                    }
+                ],
+            },
+        )
+        assert oversized.status_code == 413
+
+        monkeypatch.setattr(agent_routes.settings, "max_asset_size_bytes", 100)
+        too_many = client.post(
+            endpoint,
+            json={
+                **common,
+                "parts": [
+                    {
+                        "type": "image",
+                        "name": f"image-{index}.png",
+                        "mime_type": "image/png",
+                        "data_base64": base64.b64encode(b"x").decode("ascii"),
+                    }
+                    for index in range(33)
+                ],
+            },
+        )
+        assert too_many.status_code == 422
+        assert "up to 32 images" in too_many.text
+    assert model.requests == []
 
 
 class TitleAwareModel:

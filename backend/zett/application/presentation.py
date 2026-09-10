@@ -1,8 +1,53 @@
 """Typed projections from zett-agent persistence records to HTTP models."""
 
-from zett_agent import AgentMessage, AssistantMessage, RawMessageRecord, SessionSummary, ToolMessage, UserMessage
+import base64
 
-from .schemas import PersistedMessageOut, PersistedToolCallOut, SessionOut
+from zett_agent import (
+    AgentMessage,
+    AssistantMessage,
+    ImageBytesSource,
+    ImageContent,
+    ImageUrlSource,
+    RawMessageRecord,
+    SessionSummary,
+    TextContent,
+    ToolMessage,
+    UserMessage,
+)
+
+from .schemas import (
+    MessageImagePartOut,
+    MessagePartOut,
+    MessageTextPartOut,
+    PersistedMessageOut,
+    PersistedToolCallOut,
+    SessionOut,
+)
+
+
+def _message_parts(message: UserMessage) -> list[MessagePartOut]:
+    """Expose persisted text and images without losing their semantic order."""
+    parts: list[MessagePartOut] = []
+    for index, part in enumerate(message.parts, start=1):
+        if isinstance(part, TextContent):
+            parts.append(MessageTextPartOut(text=part.text))
+            continue
+        if not isinstance(part, ImageContent):
+            continue
+        name = part.alt_text or f"Pasted image {index}"
+        match part.source:
+            case ImageBytesSource(data=data, media_type=media_type):
+                encoded = base64.b64encode(data).decode("ascii")
+                parts.append(
+                    MessageImagePartOut(
+                        name=name,
+                        mime_type=media_type,
+                        content_url=f"data:{media_type};base64,{encoded}",
+                    )
+                )
+            case ImageUrlSource(url=url):
+                parts.append(MessageImagePartOut(name=name, content_url=url))
+    return parts
 
 
 def message_out(record: RawMessageRecord) -> PersistedMessageOut:
@@ -11,11 +56,13 @@ def message_out(record: RawMessageRecord) -> PersistedMessageOut:
     match message:
         case UserMessage():
             content = message.text
+            parts = _message_parts(message)
             reasoning = model = provider = tool_name = None
             tool_calls = []
             tool_call_id = tool_success = None
         case AssistantMessage():
             content = message.content
+            parts = []
             reasoning = message.reasoning
             model = message.model
             provider = message.provider
@@ -27,6 +74,7 @@ def message_out(record: RawMessageRecord) -> PersistedMessageOut:
             tool_call_id = tool_success = None
         case ToolMessage():
             content = message.content
+            parts = []
             reasoning = model = provider = None
             tool_name = message.name
             tool_calls = []
@@ -34,11 +82,13 @@ def message_out(record: RawMessageRecord) -> PersistedMessageOut:
             tool_success = message.success
         case AgentMessage():
             content = message.content
+            parts = []
             reasoning = model = provider = tool_name = None
             tool_calls = []
             tool_call_id = tool_success = None
         case _:
             content = message.content
+            parts = []
             reasoning = model = provider = tool_name = None
             tool_calls = []
             tool_call_id = tool_success = None
@@ -49,6 +99,7 @@ def message_out(record: RawMessageRecord) -> PersistedMessageOut:
         sequence=record.sequence,
         role=message.role,
         content=content,
+        parts=parts,
         reasoning_content=reasoning,
         model=model,
         provider=provider,

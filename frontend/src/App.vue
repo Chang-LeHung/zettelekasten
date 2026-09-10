@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ApiError, aiClient, libraryClient, tagClient } from './api/client'
-import type { AgentArtifact, AgentCompactionActivity, AgentCustomEvent, AgentModelUsage, AgentSession, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, ReasoningEffort, SessionAsset, Tag } from './api/types'
+import type { AgentArtifact, AgentCompactionActivity, AgentCustomEvent, AgentModelUsage, AgentSession, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageContentPart, ReasoningEffort, SessionAsset, Tag } from './api/types'
 import AgentComposerControls from './components/AgentComposerControls.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import AssetPreviewDialog from './components/AssetPreviewDialog.vue'
@@ -10,6 +10,7 @@ import { addAgentUsage, summarizeAgentUsage } from './utils/agentUsage'
 import { assetOpenAction, isPdfAsset } from './utils/assetOpen'
 import { buildConversationTurns, formatTurnDuration, splitTurnTimeline, type ConversationTurn } from './utils/conversationTurns'
 import { jsonSnapshot } from './utils/jsonSnapshot'
+import { buildMessageParts, displayMessageParts, rebaseImagePositions, type PositionedMessageImage } from './utils/messageParts'
 import { restorePersistedConversation } from './utils/persistedConversation'
 import { defaultProviderBaseUrl, providerBaseUrlHelp } from './utils/providerDefaults'
 import { todoFromTool } from './utils/toolPresentation'
@@ -23,6 +24,7 @@ type NoticeKind = 'success' | 'error'
 type AssetEditorMode = 'closed' | 'text' | 'link'
 type AssetFilter = 'all' | 'documents' | 'images' | 'links' | 'notes' | 'code'
 type AgentMessageTimelineEntry = Extract<AgentTimelineEntry, { type: 'message' }>
+const maxMessageImages = 32
 interface ConfirmationState {
   open: boolean
   title: string
@@ -36,7 +38,6 @@ interface AskUserState {
   allowMultiple: boolean
   responseEvent: string
 }
-
 const libraryItems = ref<LibraryItem[]>([])
 const selectedLibraryItem = ref<LibraryItem | null>(null)
 const libraryEditorItem = ref<LibraryItem | null>(null)
@@ -52,6 +53,8 @@ const raw = ref('')
 const artifactContent = ref<ArtifactContent | null>(null)
 const conversation = ref<AnalysisMessage[]>([])
 const followUp = ref('')
+const initialMessageParts = ref<MessageContentPart[]>([])
+const pendingMessageImages = ref<PositionedMessageImage[]>([])
 const streamingMessage = ref('')
 const streamingReasoning = ref('')
 const streamingActivities = ref<AgentToolActivity[]>([])
@@ -140,7 +143,10 @@ const pageDescription = computed(() => {
 const conversationStarted = computed(
   () => conversationId.value !== null || artifactContent.value !== null || conversation.value.length > 0,
 )
-const conversationTurns = computed(() => buildConversationTurns(raw.value, conversation.value))
+const conversationTurns = computed(() => buildConversationTurns(raw.value, conversation.value, initialMessageParts.value))
+const canSubmitMessage = computed(() => (
+  (conversationStarted.value ? followUp.value : raw.value).trim().length > 0 || pendingMessageImages.value.length > 0
+))
 const conversationUsage = computed(() => {
   const messages = conversationTurns.value.flatMap((turn) => turn.responses)
   const activeTurn = conversationTurns.value.at(-1)
@@ -682,7 +688,7 @@ async function filterByTag(tagId: number | null): Promise<void> {
 }
 
 async function analyze(): Promise<void> {
-  if (!raw.value.trim()) return
+  if (!raw.value.trim() && !pendingMessageImages.value.length) return
   if (selectedProviderId.value === null) {
     showNotice('Add and select an AI provider first', 'error')
     view.value = 'settings'
@@ -693,16 +699,21 @@ async function analyze(): Promise<void> {
   activeStreamController.value = controller
   resetStreamState()
   startTurnClock()
+  const messageText = raw.value
+  const requestParts = buildMessageParts(messageText, pendingMessageImages.value)
+  initialMessageParts.value = displayMessageParts(requestParts, pendingMessageImages.value)
+  pendingMessageImages.value = []
   try {
     const activeConversationId = await ensureConversation()
     const result = await aiClient.analyzeStream(
       activeConversationId,
-      raw.value.trim(),
+      messageText,
       selectedProviderId.value,
       reasoningEffort.value,
       [],
       streamCallbacks(),
       controller.signal,
+      requestParts,
     )
     conversation.value = [{
       role: 'assistant',
@@ -745,28 +756,35 @@ async function analyze(): Promise<void> {
 }
 
 async function refine(): Promise<void> {
-  const content = followUp.value.trim()
-  if (!content) return
-  const history: AnalysisMessage[] = [...conversation.value, { role: 'user', content }]
+  const content = followUp.value
+  if (!content.trim() && !pendingMessageImages.value.length) return
+  if (selectedProviderId.value === null) {
+    showNotice('Select an AI provider first', 'error')
+    return
+  }
+  const requestParts = buildMessageParts(content, pendingMessageImages.value)
+  const visibleParts = displayMessageParts(requestParts, pendingMessageImages.value)
+  const history: AnalysisMessage[] = [...conversation.value, { role: 'user', content, parts: visibleParts }]
   conversation.value = history
   followUp.value = ''
+  pendingMessageImages.value = []
   loading.value = true
   const controller = new AbortController()
   activeStreamController.value = controller
   resetStreamState()
   startTurnClock()
   try {
-    if (selectedProviderId.value === null) throw new Error('Select an AI provider first')
     const activeConversationId = await ensureConversation()
     await syncSelectedArtifact()
     const result = await aiClient.analyzeStream(
       activeConversationId,
-      raw.value.trim(),
+      content,
       selectedProviderId.value,
       reasoningEffort.value,
       history,
       streamCallbacks(),
       controller.signal,
+      requestParts,
     )
     conversation.value = [
       ...history,
@@ -862,6 +880,8 @@ function applySession(session: AgentSession): void {
   assets.value = session.assets
   const restored = restorePersistedConversation(session.messages)
   raw.value = restored.initialPrompt
+  initialMessageParts.value = restored.initialParts
+  pendingMessageImages.value = []
   conversation.value = restored.messages
   followUp.value = ''
   followAgentOutput = true
@@ -986,6 +1006,8 @@ async function resetWorkspace(): Promise<void> {
   artifactContent.value = null
   conversation.value = []
   followUp.value = ''
+  initialMessageParts.value = []
+  pendingMessageImages.value = []
   selectedSuggestions.value = []
   artifacts.value = []
   assets.value = []
@@ -1049,24 +1071,88 @@ async function dropAssets(event: DragEvent): Promise<void> {
   await uploadAssetFiles(Array.from(event.dataTransfer?.files || []))
 }
 
+function readMessageImage(file: File, position: number): Promise<PositionedMessageImage> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(reader.error || new Error(`Unable to read ${file.name}`))
+    reader.onload = () => {
+      const contentUrl = typeof reader.result === 'string' ? reader.result : ''
+      const separator = contentUrl.indexOf(',')
+      if (separator < 0) {
+        reject(new Error(`Unable to encode ${file.name}`))
+        return
+      }
+      resolve({
+        id: crypto.randomUUID(),
+        type: 'image',
+        name: file.name || 'Pasted image',
+        mime_type: file.type,
+        data_base64: contentUrl.slice(separator + 1),
+        content_url: contentUrl,
+        position,
+      })
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
+async function attachPastedImages(files: File[], position: number): Promise<void> {
+  const available = Math.max(0, maxMessageImages - pendingMessageImages.value.length)
+  const images = files.filter((file) => file.type.startsWith('image/')).slice(0, available)
+  if (!images.length) return
+  try {
+    pendingMessageImages.value.push(...await Promise.all(images.map((file) => readMessageImage(file, position))))
+    if (images.length < files.filter((file) => file.type.startsWith('image/')).length) {
+      showNotice(`A message can contain up to ${maxMessageImages} images`, 'error')
+    }
+  } catch (error) {
+    showNotice(errorMessage(error), 'error')
+  }
+}
+
+function removeMessageImage(id: string): void {
+  pendingMessageImages.value = pendingMessageImages.value.filter((image) => image.id !== id)
+}
+
+function rebaseMessageImagePositions(previous: string, next: string): void {
+  pendingMessageImages.value = rebaseImagePositions(pendingMessageImages.value, previous, next)
+}
+
+function updateComposerText(event: Event, target: 'initial' | 'follow-up'): void {
+  const next = (event.target as HTMLTextAreaElement).value
+  const previous = target === 'initial' ? raw.value : followUp.value
+  rebaseMessageImagePositions(previous, next)
+  if (target === 'initial') raw.value = next
+  else followUp.value = next
+}
+
 async function pasteAssets(event: ClipboardEvent): Promise<void> {
   const clipboard = event.clipboardData
-  if (!clipboard || assetUploading.value) return
+  if (!clipboard) return
   const itemFiles = Array.from(clipboard.items)
     .filter((item) => item.kind === 'file')
     .map((item) => item.getAsFile())
     .filter((file): file is File => file !== null)
   const files = itemFiles.length ? itemFiles : Array.from(clipboard.files)
+  const target = event.target
+  const insideComposer = target instanceof Element && target.closest('.agent-input textarea') !== null
+  const editableTarget = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement
+  if (insideComposer && files.some((file) => file.type.startsWith('image/'))) {
+    event.preventDefault()
+    const position = target instanceof HTMLTextAreaElement ? target.selectionStart ?? target.value.length : 0
+    await attachPastedImages(files, position)
+    return
+  }
+  if (editableTarget && files.length) return
   if (files.length) {
+    if (assetUploading.value) return
     event.preventDefault()
     await uploadAssetFiles(files)
     showNotice(`${files.length} pasted ${files.length === 1 ? 'asset' : 'assets'} added`)
     return
   }
 
-  const target = event.target
   const insideAssetPane = target instanceof Element && target.closest('.assets-pane') !== null
-  const editableTarget = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement
   if (!insideAssetPane || editableTarget) return
   const content = clipboard.getData('text/plain').trim()
   if (!content) return
@@ -1562,7 +1648,24 @@ onBeforeUnmount(() => {
                     :class="{ running: isRunningTurn(index) }"
                   >
                     <section class="turn-prompt" aria-label="User message">
-                      <MarkdownContent class="message-content" :content="turn.prompt.content" />
+                      <div class="turn-prompt-content">
+                        <template v-if="turn.prompt.parts?.length">
+                          <template v-for="(part, partIndex) in turn.prompt.parts" :key="`${turn.id}-part-${partIndex}`">
+                            <MarkdownContent
+                              v-if="part.type === 'text' && part.text"
+                              class="message-content"
+                              :content="part.text"
+                            />
+                            <img
+                              v-else-if="part.type === 'image'"
+                              class="turn-prompt-image"
+                              :src="part.content_url"
+                              :alt="part.name"
+                            />
+                          </template>
+                        </template>
+                        <MarkdownContent v-else-if="turn.prompt.content" class="message-content" :content="turn.prompt.content" />
+                      </div>
                     </section>
 
                     <div class="turn-content">
@@ -1641,8 +1744,14 @@ onBeforeUnmount(() => {
               />
 
               <form class="agent-input" @submit.prevent="submitConversation">
-                <textarea v-if="!conversationStarted" v-model="raw" rows="3" autofocus placeholder="Message Zett Agent…" @keydown.enter.exact="handleComposerEnter" />
-                <textarea v-else v-model="followUp" rows="3" placeholder="Continue the conversation…" @keydown.enter.exact="handleComposerEnter" />
+                <div v-if="pendingMessageImages.length" class="message-image-drafts" aria-label="Images attached to this message">
+                  <figure v-for="image in pendingMessageImages" :key="image.id">
+                    <img :src="image.content_url" :alt="image.name" />
+                    <button type="button" :aria-label="`Remove ${image.name}`" @click="removeMessageImage(image.id)">×</button>
+                  </figure>
+                </div>
+                <textarea v-if="!conversationStarted" :value="raw" rows="3" autofocus placeholder="Message Zett Agent…" @input="updateComposerText($event, 'initial')" @keydown.enter.exact="handleComposerEnter" />
+                <textarea v-else :value="followUp" rows="3" placeholder="Continue the conversation…" @input="updateComposerText($event, 'follow-up')" @keydown.enter.exact="handleComposerEnter" />
                 <div class="agent-input-footer">
                   <AgentComposerControls
                     :providers="providers"
@@ -1654,7 +1763,7 @@ onBeforeUnmount(() => {
                     @update:effort="reasoningEffort = $event"
                     @add-provider="navigate('settings')"
                   />
-                  <div class="composer-submit"><small>{{ loading ? 'Enter for a new line' : 'Enter to send' }}</small><button class="send-button" :class="{ stop: loading }" :disabled="!loading && (conversationStarted ? !followUp.trim() : !raw.trim())" type="button" :aria-label="loading ? 'Stop generating' : 'Send message'" @click="loading ? stopGeneration() : submitConversation()"><svg><use :href="loading ? '#icon-stop' : '#icon-arrow'" /></svg></button></div>
+                  <div class="composer-submit"><small>{{ loading ? 'Enter for a new line' : 'Enter to send' }}</small><button class="send-button" :class="{ stop: loading }" :disabled="!loading && !canSubmitMessage" type="button" :aria-label="loading ? 'Stop generating' : 'Send message'" @click="loading ? stopGeneration() : submitConversation()"><svg><use :href="loading ? '#icon-stop' : '#icon-arrow'" /></svg></button></div>
                 </div>
               </form>
             </section>
@@ -2000,7 +2109,9 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .conversation-turn { display: grid; gap: .78rem; margin-bottom: 1.3rem; }
 .turn-content { display: grid; gap: .95rem; padding: .25rem 0 1.25rem; }
 .turn-prompt { display: flex; justify-content: flex-end; padding-left: 18%; }
-.turn-prompt .message-content { width: fit-content; max-width: 100%; padding: .68rem .82rem; border: 0; border-radius: 1rem 1rem .3rem 1rem; color: #34483d; background: #eef1ef; box-shadow: none; }
+.turn-prompt-content { width: fit-content; max-width: 100%; overflow: hidden; border-radius: 1rem 1rem .3rem 1rem; color: #34483d; background: #eef1ef; }
+.turn-prompt .message-content { width: auto; max-width: 100%; padding: .68rem .82rem; border: 0; border-radius: 0; color: inherit; background: transparent; box-shadow: none; }
+.turn-prompt-image { display: block; width: min(100%, 22rem); max-height: 18rem; margin: .32rem; border-radius: .75rem; object-fit: contain; background: #e2e7e4; }
 .turn-execution { margin-right: 7%; }
 .turn-execution > summary { min-height: 3.1rem; display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: .62rem; padding: .55rem .1rem; border-bottom: 1px solid #e7ebe8; cursor: pointer; list-style: none; user-select: none; }
 .turn-execution > summary::-webkit-details-marker { display: none; }
@@ -2039,6 +2150,10 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .prompt-hints { display: flex; justify-content: center; gap: .45rem; margin-top: 1.1rem; }
 .prompt-hints button { padding: .48rem .65rem; border: 1px solid var(--line); border-radius: .58rem; color: #606065; background: rgba(247,247,248,.8); cursor: pointer; font-size: .64rem; }
 .agent-input { margin: .8rem; padding: .25rem; border: 1px solid rgba(29,29,31,.11); border-radius: .9rem; background: white; box-shadow: 0 3px 16px rgba(0,0,0,.055); }
+.message-image-drafts { display: flex; gap: .42rem; padding: .55rem .58rem .1rem; overflow-x: auto; }
+.message-image-drafts figure { position: relative; width: 3.5rem; height: 3.5rem; flex: 0 0 auto; margin: 0; }
+.message-image-drafts img { display: block; width: 100%; height: 100%; border: 1px solid #dce3de; border-radius: .66rem; object-fit: cover; background: #f2f4f2; }
+.message-image-drafts button { position: absolute; top: -.28rem; right: -.28rem; width: 1rem; height: 1rem; display: grid; place-items: center; padding: 0; border: 2px solid #fff; border-radius: 50%; color: #fff; background: #59645d; box-shadow: 0 1px 4px rgba(31,39,34,.18); cursor: pointer; font-size: .67rem; line-height: 1; }
 .agent-input:focus-within { border-color: rgba(71,105,87,.4); box-shadow: 0 0 0 3px rgba(71,105,87,.1), 0 5px 20px rgba(0,0,0,.06); }
 .agent-input textarea { display: block; width: 100%; min-height: 4rem; padding: .7rem .8rem .25rem; resize: none; border: 0; outline: 0; color: var(--text); background: transparent; font-size: .78rem; line-height: 1.5; }
 .agent-input-footer { display: flex; align-items: center; justify-content: space-between; gap: .5rem; min-height: 2.45rem; padding: 0 .3rem .1rem .45rem; }

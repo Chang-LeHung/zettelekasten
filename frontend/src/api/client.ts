@@ -12,6 +12,7 @@ import type {
   LibraryItem,
   LibraryItemType,
   LibraryItemUpdate,
+  MessagePartInput,
   ReasoningEffort,
   Tag,
   SessionAsset,
@@ -152,6 +153,7 @@ export const aiClient = {
     messages: AnalysisMessage[],
     callbacks: AgentStreamCallbacks = {},
     signal?: AbortSignal,
+    parts: MessagePartInput[] = [],
   ): Promise<AgentArtifact | null> {
     const response = await fetch(`${API_URL}/agent/${conversationId}/messages`, {
       method: 'POST',
@@ -161,6 +163,7 @@ export const aiClient = {
         provider_id: providerId,
         reasoning_effort: reasoningEffort,
         messages,
+        parts,
       }),
       signal,
     })

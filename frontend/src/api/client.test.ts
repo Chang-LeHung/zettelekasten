@@ -44,3 +44,26 @@ it('loads binary asset content through the typed API client', async () => {
   expect(new Uint8Array(result)).toEqual(payload)
   expect(fetchMock).toHaveBeenCalledWith('/api/agent/session-1/assets/asset-1/content', { signal: undefined })
 })
+
+it('sends pasted images in their position among text segments', async () => {
+  const fetchMock = vi.fn().mockResolvedValue(new Response(
+    'event: run_completed\ndata: {"session_id":"session","phase":"completed"}\n\n',
+  ))
+  vi.stubGlobal('fetch', fetchMock)
+
+  await aiClient.analyzeStream('session', 'beforeafter', 'provider', 'medium', [], {}, undefined, [
+    { type: 'text', text: 'before' },
+    { type: 'image', name: 'paste.png', mime_type: 'image/png', data_base64: 'AA==' },
+    { type: 'text', text: 'after' },
+  ])
+
+  const request = fetchMock.mock.calls[0]?.[1] as RequestInit
+  expect(JSON.parse(String(request.body))).toMatchObject({
+    raw_content: 'beforeafter',
+    parts: [
+      { type: 'text', text: 'before' },
+      { type: 'image', name: 'paste.png', mime_type: 'image/png', data_base64: 'AA==' },
+      { type: 'text', text: 'after' },
+    ],
+  })
+})

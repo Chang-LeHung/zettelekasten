@@ -33,6 +33,23 @@ describe('buildConversationTurns', () => {
     ])
   })
 
+  it('creates a visible turn for an image-only initial message', () => {
+    const image = { type: 'image' as const, name: 'paste.png', mime_type: 'image/png', content_url: 'data:image/png;base64,AA==' }
+    expect(buildConversationTurns('', [], [image])).toEqual([
+      { id: 'turn-0', prompt: { role: 'user', content: '', parts: [image] }, responses: [] },
+    ])
+  })
+
+  it('keeps text and images in their original semantic order', () => {
+    const parts = [
+      { type: 'text' as const, text: 'before' },
+      { type: 'image' as const, name: 'paste.png', mime_type: 'image/png', content_url: 'image-data' },
+      { type: 'text' as const, text: 'after' },
+    ]
+
+    expect(buildConversationTurns('beforeafter', [], parts)[0]?.prompt.parts).toEqual(parts)
+  })
+
   it('uses the final assistant message after intermediate model-tool iterations', () => {
     expect(buildConversationTurns('', [
       { role: 'user', content: 'Create a card' },

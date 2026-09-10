@@ -14,6 +14,7 @@ function record(
     sequence,
     role,
     content: '',
+    parts: [],
     reasoning_content: null,
     model: null,
     provider: null,
@@ -93,5 +94,23 @@ describe('restorePersistedConversation', () => {
       state: 'failed',
       error_message: 'command failed',
     })
+  })
+
+  it('restores ordered text and image parts on their original user messages', () => {
+    const image = {
+      type: 'image' as const,
+      name: 'clipboard.png',
+      mime_type: 'image/png',
+      content_url: 'data:image/png;base64,AA==',
+    }
+    const initialParts = [{ type: 'text' as const, text: 'Before' }, image, { type: 'text' as const, text: 'after' }]
+    const restored = restorePersistedConversation([
+      record(1, 'user', { content: 'Before\nafter', parts: initialParts }),
+      record(2, 'assistant', { content: 'I can see it.' }),
+      record(3, 'user', { content: 'Look again', parts: [image, { type: 'text', text: 'Look again' }] }),
+    ])
+
+    expect(restored.initialParts).toEqual(initialParts)
+    expect(restored.messages.at(-1)?.parts).toEqual([image, { type: 'text', text: 'Look again' }])
   })
 })

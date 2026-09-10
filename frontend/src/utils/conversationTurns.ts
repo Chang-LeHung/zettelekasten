@@ -18,9 +18,13 @@ export interface ConversationTurn {
 export function buildConversationTurns(
   initialPrompt: string,
   messages: readonly AnalysisMessage[],
+  initialParts: AnalysisMessage['parts'] = [],
 ): ConversationTurn[] {
-  const stream: AnalysisMessage[] = initialPrompt.trim()
-    ? [{ role: 'user', content: initialPrompt }, ...messages]
+  const initialMessage: AnalysisMessage = initialParts.length
+    ? { role: 'user', content: initialPrompt, parts: initialParts }
+    : { role: 'user', content: initialPrompt }
+  const stream: AnalysisMessage[] = initialPrompt.trim() || initialParts.length
+    ? [initialMessage, ...messages]
     : [...messages]
   const turns: ConversationTurn[] = []
 

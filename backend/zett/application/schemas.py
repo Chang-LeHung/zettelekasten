@@ -1,9 +1,9 @@
 """HTTP application request and response models."""
 
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ..schemas import AgentArtifact, ArtifactContent, ArtifactStatus, ProviderType, SessionAssetOut
 
@@ -22,6 +22,25 @@ class PersistedToolCallOut(BaseModel):
     arguments: dict[str, Any] = Field(default_factory=dict)
 
 
+class MessageTextPartOut(BaseModel):
+    """One text segment in an ordered persisted user message."""
+
+    type: Literal["text"] = "text"
+    text: str
+
+
+class MessageImagePartOut(BaseModel):
+    """One image segment in an ordered persisted user message."""
+
+    type: Literal["image"] = "image"
+    name: str
+    mime_type: str | None = None
+    content_url: str
+
+
+MessagePartOut = Annotated[MessageTextPartOut | MessageImagePartOut, Field(discriminator="type")]
+
+
 class PersistedMessageOut(BaseModel):
     """One immutable raw message projected for the conversation UI."""
 
@@ -31,6 +50,7 @@ class PersistedMessageOut(BaseModel):
     sequence: int
     role: str
     content: str
+    parts: list[MessagePartOut] = Field(default_factory=list)
     reasoning_content: str | None = None
     model: str | None = None
     provider: str | None = None
@@ -149,25 +169,51 @@ class ProviderResponse(BaseModel):
     updated_at: datetime
 
 
+class MessageTextPartIn(BaseModel):
+    """One text segment in an ordered multimodal request."""
+
+    type: Literal["text"] = "text"
+    text: str
+
+
+class MessageImagePartIn(BaseModel):
+    """One base64-encoded image segment in an ordered multimodal request."""
+
+    type: Literal["image"] = "image"
+    name: str = Field(min_length=1, max_length=500)
+    mime_type: str = Field(pattern=r"^image/[A-Za-z0-9.+-]+$", max_length=255)
+    data_base64: str = Field(min_length=1)
+
+
+MessagePartIn = Annotated[MessageTextPartIn | MessageImagePartIn, Field(discriminator="type")]
+
+
 class AnalyzeRequest(BaseModel):
     """One user turn sent to the Zettelkasten Agent."""
 
-    raw_content: str = Field(min_length=1)
+    raw_content: str = ""
     provider_id: str
     reasoning_effort: str = "medium"
     messages: list[dict[str, Any]] = Field(default_factory=list)
+    # Thirty-two images may be interleaved with up to thirty-three text segments.
+    parts: list[MessagePartIn] = Field(default_factory=list, max_length=65)
     metadata: dict[str, Any] = Field(default_factory=dict)
     tags: dict[str, Any] = Field(default_factory=dict)
 
     @property
     def current_message(self) -> str:
-        """Use the last UI user turn when refining, otherwise the initial text."""
-        for message in reversed(self.messages):
-            if message.get("role") == "user" and isinstance(message.get("content"), str):
-                content = str(message["content"]).strip()
-                if content:
-                    return content
+        """Return only this request's text; persisted history is restored separately."""
         return self.raw_content.strip()
+
+    @model_validator(mode="after")
+    def require_message_content(self) -> AnalyzeRequest:
+        """Accept text, images, or both while rejecting an empty user turn."""
+        if not self.current_message and not any(
+            isinstance(part, MessageImagePartIn) or (isinstance(part, MessageTextPartIn) and part.text.strip())
+            for part in self.parts
+        ):
+            raise ValueError("A message requires text or at least one image")
+        return self
 
 
 class ExternalEventIn(BaseModel):

@@ -99,6 +99,7 @@ export interface SessionAsset {
 export interface AnalysisMessage {
   role: 'user' | 'assistant'
   content: string
+  parts?: MessageContentPart[]
   reasoning?: string
   activities?: AgentToolActivity[]
   timeline?: AgentTimelineEntry[]
@@ -106,6 +107,34 @@ export interface AnalysisMessage {
   generation_duration_ms?: number
   usage?: AgentModelUsage
 }
+
+export interface MessageTextPart {
+  type: 'text'
+  text: string
+}
+
+export interface MessageImagePart {
+  type: 'image'
+  name: string
+  mime_type: string | null
+  content_url: string
+}
+
+export type MessageContentPart = MessageTextPart | MessageImagePart
+
+export interface MessageTextPartInput {
+  type: 'text'
+  text: string
+}
+
+export interface MessageImagePartInput {
+  type: 'image'
+  name: string
+  mime_type: string
+  data_base64: string
+}
+
+export type MessagePartInput = MessageTextPartInput | MessageImagePartInput
 
 export interface AgentModelUsage {
   input_tokens: number
@@ -225,6 +254,7 @@ export interface AgentPersistedMessage {
   sequence: number
   role: 'system' | 'user' | 'assistant' | 'tool' | 'agent'
   content: string
+  parts: MessageContentPart[]
   reasoning_content: string | null
   model: string | null
   provider: string | null
