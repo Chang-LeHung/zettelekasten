@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import type { LibraryItem, LibraryItemUpdate } from '../api/types'
+import { isEditorSaveShortcut } from '../utils/editorShortcuts'
 import { linkedScrollTop } from '../utils/linkedScroll'
 import MarkdownContent from './MarkdownContent.vue'
 
@@ -85,7 +86,12 @@ function submit(): void {
   })
 }
 
-function handleEscape(event: KeyboardEvent): void {
+function handleEditorShortcut(event: KeyboardEvent): void {
+  if (isEditorSaveShortcut(event)) {
+    event.preventDefault()
+    if (dirty.value) submit()
+    return
+  }
   if (event.key === 'Escape') emit('close', dirty.value)
 }
 
@@ -96,12 +102,12 @@ watch(serializedDraft, () => {
 
 onMounted(() => {
   document.body.classList.add('library-editor-open')
-  window.addEventListener('keydown', handleEscape)
+  window.addEventListener('keydown', handleEditorShortcut)
 })
 
 onBeforeUnmount(() => {
   document.body.classList.remove('library-editor-open')
-  window.removeEventListener('keydown', handleEscape)
+  window.removeEventListener('keydown', handleEditorShortcut)
   if (scrollReleaseFrame !== null) window.cancelAnimationFrame(scrollReleaseFrame)
 })
 </script>
@@ -121,7 +127,7 @@ onBeforeUnmount(() => {
         <div class="editor-actions">
           <span class="save-state" :class="{ changed: dirty }"><i />{{ dirty ? 'Unsaved changes' : 'All changes saved' }}</span>
           <span class="live-indicator"><i />Live preview</span>
-          <button class="save-button" :disabled="saving || !dirty || !draft.title.trim() || !draft.content.trim()" type="button" @click="submit">
+          <button class="save-button" :disabled="saving || !dirty || !draft.title.trim() || !draft.content.trim()" type="button" title="Save (⌘S)" @click="submit">
             {{ saving ? 'Saving…' : 'Save' }}
           </button>
         </div>

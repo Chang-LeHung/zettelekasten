@@ -104,11 +104,13 @@ const ai = ref<AIProviderInput>({
 })
 const searchInput = ref<HTMLInputElement | null>(null)
 const agentThread = ref<HTMLElement | null>(null)
+const agentTurnStack = ref<HTMLElement | null>(null)
 const assetFileInput = ref<HTMLInputElement | null>(null)
 const titleRefreshTimers: number[] = []
 let turnStartedAt = 0
 let turnClock: number | null = null
 let modelStartedAt = 0
+let agentContentResizeObserver: ResizeObserver | null = null
 const activeSessionKey = 'zett.active-session-id'
 const cardTypes: CardType[] = ['note', 'idea', 'quote', 'todo', 'reference']
 const assetFilters: Array<{ value: AssetFilter; label: string }> = [
@@ -475,6 +477,10 @@ watch(
 watch(loading, (isLoading) => {
   if (isLoading) scrollAgentThread(true)
 })
+watch(agentTurnStack, (current, previous) => {
+  if (previous) agentContentResizeObserver?.unobserve(previous)
+  if (current) agentContentResizeObserver?.observe(current)
+})
 
 function flatten(nodes: Tag[], depth = 0): Array<Tag & { depth: number }> {
   return nodes.flatMap((tag) => [{ ...tag, depth }, ...flatten(tag.children || [], depth + 1)])
@@ -544,6 +550,7 @@ async function loadInitialData(): Promise<void> {
 function navigate(nextView: View): void {
   view.value = nextView
   notice.value = ''
+  if (nextView === 'new' && conversationStarted.value) scrollAgentThread(true)
   if (nextView === 'library') {
     activeQuery.value = ''
     query.value = ''
@@ -846,6 +853,8 @@ function applySession(session: AgentSession): void {
   raw.value = restored.initialPrompt
   conversation.value = restored.messages
   followUp.value = ''
+  followAgentOutput = true
+  scrollAgentThread(true)
 }
 
 async function openSession(sessionId: string): Promise<void> {
@@ -1275,6 +1284,8 @@ async function initializeWorkspace(): Promise<void> {
 
 onMounted(() => {
   window.addEventListener('keydown', handleShortcut)
+  agentContentResizeObserver = new ResizeObserver(() => scrollAgentThread())
+  if (agentTurnStack.value) agentContentResizeObserver.observe(agentTurnStack.value)
   void initializeWorkspace()
 })
 onBeforeUnmount(() => {
@@ -1282,6 +1293,8 @@ onBeforeUnmount(() => {
   activeStreamController.value?.abort()
   if (agentScrollFrame !== null) window.cancelAnimationFrame(agentScrollFrame)
   if (turnClock !== null) window.clearInterval(turnClock)
+  agentContentResizeObserver?.disconnect()
+  agentContentResizeObserver = null
   window.removeEventListener('keydown', handleShortcut)
   for (const timer of titleRefreshTimers) window.clearTimeout(timer)
 })
@@ -1521,7 +1534,7 @@ onBeforeUnmount(() => {
                   <p>Share a rough thought, excerpt, or question. You can refine the result through conversation before saving it.</p>
                   <div class="prompt-hints"><button type="button" @click="raw = 'I have an idea: '">Capture an idea</button><button type="button" @click="raw = 'Key point from what I just read: '">Summarize a note</button></div>
                 </div>
-                <div v-else class="turn-stack">
+                <div v-else ref="agentTurnStack" class="turn-stack">
                   <article
                     v-for="(turn, index) in conversationTurns"
                     :key="turn.id"
