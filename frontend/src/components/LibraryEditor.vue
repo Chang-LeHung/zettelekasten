@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import type { LibraryItem, LibraryItemUpdate } from '../api/types'
+import { linkedScrollTop } from '../utils/linkedScroll'
 import MarkdownContent from './MarkdownContent.vue'
 
 const props = defineProps<{
@@ -37,15 +38,6 @@ function applyItem(item: LibraryItem): void {
   })
 }
 
-function scrollProgress(element: HTMLElement): number {
-  const availableScroll = element.scrollHeight - element.clientHeight
-  return availableScroll > 0 ? element.scrollTop / availableScroll : 0
-}
-
-function applyScrollProgress(element: HTMLElement, progress: number): void {
-  element.scrollTop = progress * Math.max(0, element.scrollHeight - element.clientHeight)
-}
-
 function releaseScrollOwner(): void {
   if (scrollReleaseFrame !== null) window.cancelAnimationFrame(scrollReleaseFrame)
   scrollReleaseFrame = window.requestAnimationFrame(() => {
@@ -61,7 +53,7 @@ function syncSourceScroll(): void {
   if (lineGutter.value) lineGutter.value.scrollTop = source.scrollTop
   if (!preview || scrollOwner === 'preview') return
   scrollOwner = 'source'
-  applyScrollProgress(preview, scrollProgress(source))
+  preview.scrollTop = linkedScrollTop(source, preview)
   releaseScrollOwner()
 }
 
@@ -70,7 +62,7 @@ function syncPreviewScroll(): void {
   const preview = previewDocument.value
   if (!source || !preview || scrollOwner === 'source') return
   scrollOwner = 'preview'
-  applyScrollProgress(source, scrollProgress(preview))
+  source.scrollTop = linkedScrollTop(preview, source)
   if (lineGutter.value) lineGutter.value.scrollTop = source.scrollTop
   releaseScrollOwner()
 }
@@ -153,14 +145,14 @@ onBeforeUnmount(() => {
               autocorrect="off"
               spellcheck="false"
               @keydown="insertIndent"
-              @scroll="syncSourceScroll"
+              @scroll.passive="syncSourceScroll"
             />
           </div>
         </section>
 
         <section class="preview-pane" aria-label="Live Markdown preview">
           <header class="pane-heading"><span>Live preview</span><small><i />Live · scroll linked</small></header>
-          <article ref="previewDocument" class="preview-document" @scroll="syncPreviewScroll">
+          <article ref="previewDocument" class="preview-document" @scroll.passive="syncPreviewScroll">
             <span class="preview-type">{{ item.item_type }}</span>
             <h1>{{ draft.title || 'Untitled' }}</h1>
             <p v-if="draft.subtitle" class="preview-subtitle">{{ draft.subtitle }}</p>
@@ -204,7 +196,7 @@ onBeforeUnmount(() => {
 .line-gutter { min-height: 0; margin: 0; padding: 1.1rem .8rem 3rem 0; overflow: hidden; border-right: 1px solid #e2e5e3; color: #9aa09c; background: #f2f4f2; font-family: "SFMono-Regular", Consolas, monospace; font-size: .76rem; line-height: 1.72; text-align: right; user-select: none; }
 .line-gutter span { display: block; }
 .source-workspace textarea { min-width: 0; min-height: 0; width: 100%; height: 100%; padding: 1.1rem 1.25rem 3rem; resize: none; border: 0; outline: 0; color: #252c28; background: transparent; font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: .82rem; line-height: 1.72; tab-size: 2; white-space: pre; overflow: auto; }
-.preview-document { min-height: 0; overflow: auto; padding: 2.4rem clamp(2rem, 5vw, 5rem) 5rem; scroll-behavior: smooth; }
+.preview-document { min-height: 0; overflow: auto; padding: 2.4rem clamp(2rem, 5vw, 5rem) 5rem; }
 .preview-document h1 { max-width: 54rem; margin: .85rem 0 .7rem; font-size: clamp(2rem, 3.1vw, 3.2rem); line-height: 1.12; letter-spacing: -.04em; }
 .preview-subtitle { margin: 0 0 1rem; color: #777f7a; font-size: 1rem; line-height: 1.55; }
 .preview-summary { max-width: 52rem; color: #59635d; font-size: .94rem; line-height: 1.72; }
