@@ -23,6 +23,7 @@ const pageStyle = computed(() => ({
 let observer: IntersectionObserver | null = null
 let renderTask: RenderTask | null = null
 let renderVersion = 0
+let scaleRenderTimer: number | null = null
 
 async function render(): Promise<void> {
   if (!active.value) return
@@ -38,12 +39,9 @@ async function render(): Promise<void> {
     await nextTick()
     if (version !== renderVersion || !canvas.value) return
     const pixelRatio = Math.max(1, window.devicePixelRatio || 1)
-    const displayViewport = page.getViewport({ scale: props.scale })
     const renderViewport = page.getViewport({ scale: props.scale * pixelRatio })
     canvas.value.width = Math.ceil(renderViewport.width)
     canvas.value.height = Math.ceil(renderViewport.height)
-    canvas.value.style.width = `${Math.ceil(displayViewport.width)}px`
-    canvas.value.style.height = `${Math.ceil(displayViewport.height)}px`
     const currentTask = page.render({ canvas: canvas.value, viewport: renderViewport })
     renderTask = currentTask
     try {
@@ -55,6 +53,17 @@ async function render(): Promise<void> {
     if (version !== renderVersion) return
     if (!(error instanceof Error) || error.name !== 'RenderingCancelledException') failed.value = true
   }
+}
+
+function scheduleScaleRender(): void {
+  renderVersion += 1
+  renderTask?.cancel()
+  renderTask = null
+  if (scaleRenderTimer !== null) window.clearTimeout(scaleRenderTimer)
+  scaleRenderTimer = window.setTimeout(() => {
+    scaleRenderTimer = null
+    void render()
+  }, 120)
 }
 
 onMounted(() => {
@@ -71,10 +80,11 @@ onMounted(() => {
   if (root.value) observer.observe(root.value)
 })
 
-watch(() => props.scale, () => void render())
+watch(() => props.scale, scheduleScaleRender)
 onBeforeUnmount(() => {
   renderVersion += 1
   observer?.disconnect()
+  if (scaleRenderTimer !== null) window.clearTimeout(scaleRenderTimer)
   renderTask?.cancel()
 })
 </script>
@@ -88,9 +98,8 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.pdf-page { position: relative; flex: 0 0 auto; overflow: hidden; background: #fff; box-shadow: 0 8px 30px rgba(28,37,31,.16); transition: width 120ms ease, height 120ms ease; }
-canvas { display: block; max-width: none; background: #fff; }
+.pdf-page { position: relative; flex: 0 0 auto; overflow: hidden; background: #fff; box-shadow: 0 8px 30px rgba(28,37,31,.16); }
+canvas { display: block; width: 100%; height: 100%; max-width: none; background: #fff; }
 .page-placeholder { position: absolute; inset: 0; display: grid; place-items: center; color: #a0a7a2; font-size: .7rem; background: #f8f9f8; }
 .page-placeholder.error { padding: 2rem; color: #9b5959; text-align: center; }
-@media (prefers-reduced-motion: reduce) { .pdf-page { transition-duration: 1ms; } }
 </style>

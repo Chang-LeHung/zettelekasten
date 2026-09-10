@@ -42,6 +42,9 @@ let loadingTask: PDFDocumentLoadingTask | null = null
 let abortController: AbortController | null = null
 let loadVersion = 0
 let scrollFrame: number | null = null
+let zoomFrame: number | null = null
+let pendingZoomDelta = 0
+let zoomPointer = { x: 0, y: 0 }
 
 function flattenOutline(items: OutlineItem[], depth = 0, path = 'root'): OutlineEntry[] {
   return items.flatMap((item, index) => {
@@ -136,17 +139,25 @@ function handleWheel(event: WheelEvent): void {
   // Consume only that gesture so ordinary wheel scrolling remains native.
   if (!event.ctrlKey) return
   event.preventDefault()
+  pendingZoomDelta += event.deltaY
+  zoomPointer = { x: event.clientX, y: event.clientY }
+  if (zoomFrame !== null) return
+  zoomFrame = window.requestAnimationFrame(applyWheelZoom)
+}
+
+function applyWheelZoom(): void {
+  zoomFrame = null
   const container = stage.value
   if (!container) return
-
   const previousScale = scale.value
-  const normalizedDelta = Math.min(100, Math.max(-100, event.deltaY))
+  const normalizedDelta = Math.min(160, Math.max(-160, pendingZoomDelta))
+  pendingZoomDelta = 0
   const nextScale = Math.min(2.5, Math.max(0.5, previousScale * Math.exp(-normalizedDelta * 0.002)))
   if (Math.abs(nextScale - previousScale) < 0.005) return
 
   const bounds = container.getBoundingClientRect()
-  const pointerX = event.clientX - bounds.left
-  const pointerY = event.clientY - bounds.top
+  const pointerX = zoomPointer.x - bounds.left
+  const pointerY = zoomPointer.y - bounds.top
   const contentX = container.scrollLeft + pointerX
   const contentY = container.scrollTop + pointerY
   const ratio = nextScale / previousScale
@@ -201,6 +212,7 @@ watch(() => [props.asset.session_id, props.asset.id], () => void loadDocument(),
 onBeforeUnmount(() => {
   loadVersion += 1
   if (scrollFrame !== null) window.cancelAnimationFrame(scrollFrame)
+  if (zoomFrame !== null) window.cancelAnimationFrame(zoomFrame)
   void disposeDocument().catch(() => undefined)
 })
 </script>
