@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { SessionAsset } from '../api/types'
 import { assetOpenAction } from '../utils/assetOpen'
+
+const MarkdownContent = defineAsyncComponent(() => import('./MarkdownContent.vue'))
 
 const props = defineProps<{
   asset: SessionAsset | null
@@ -20,6 +22,7 @@ const imageUrl = computed(() => action.value?.kind === 'preview' && action.value
   ? action.value.url
   : null)
 const previewsText = computed(() => action.value?.kind === 'preview' && action.value.preview === 'text')
+const assetKindLabel = computed(() => props.asset?.mime_type || (previewsText.value ? 'Markdown text' : 'Image'))
 let previousFocus: HTMLElement | null = null
 let previousOverflow = ''
 let pageLocked = false
@@ -70,15 +73,15 @@ onBeforeUnmount(() => {
           <header>
             <div>
               <strong>{{ asset.name }}</strong>
-              <small>{{ asset.mime_type || 'Image' }}</small>
+              <small>{{ assetKindLabel }}</small>
             </div>
-            <button ref="closeButton" type="button" aria-label="Close image preview" title="Close" @click="close">
+            <button ref="closeButton" type="button" aria-label="Close asset preview" title="Close" @click="close">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
             </button>
           </header>
           <div class="image-preview-stage" :class="{ 'text-preview-stage': previewsText }">
             <img v-if="imageUrl" :src="imageUrl" :alt="asset.name" />
-            <pre v-else-if="previewsText">{{ asset.text_content }}</pre>
+            <MarkdownContent v-else-if="previewsText" class="asset-markdown" :content="asset.text_content || ''" />
           </div>
         </section>
       </div>
@@ -101,7 +104,7 @@ button svg { width: 1.15rem; height: 1.15rem; fill: none; stroke: currentColor; 
 .image-preview-stage { display: grid; place-items: center; min-height: 0; overflow: auto; padding: clamp(1rem, 3vw, 2.5rem); background-color: #f1f3f1; background-image: linear-gradient(45deg, rgba(77, 96, 85, .035) 25%, transparent 25%), linear-gradient(-45deg, rgba(77, 96, 85, .035) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(77, 96, 85, .035) 75%), linear-gradient(-45deg, transparent 75%, rgba(77, 96, 85, .035) 75%); background-position: 0 0, 0 8px, 8px -8px, -8px 0; background-size: 16px 16px; }
 .image-preview-stage img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; border-radius: .3rem; box-shadow: 0 12px 38px rgba(33, 42, 36, .12); }
 .text-preview-stage { display: block; padding: clamp(1.25rem, 3vw, 3rem); background: #fafbfa; }
-.text-preview-stage pre { width: min(100%, 72rem); min-height: 100%; margin: 0 auto; color: #29312c; font-family: "SF Mono", "Cascadia Code", ui-monospace, monospace; font-size: clamp(.78rem, .72rem + .18vw, .94rem); line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 4; }
+.asset-markdown { width: min(100%, 72rem); min-height: 100%; margin: 0 auto; color: #29312c; font-size: clamp(.82rem, .76rem + .18vw, .98rem); }
 .image-preview-enter-active, .image-preview-leave-active { transition: opacity 170ms ease; }
 .image-preview-enter-active .image-preview-panel, .image-preview-leave-active .image-preview-panel { transition: transform 220ms cubic-bezier(.2, .8, .2, 1), opacity 170ms ease; }
 .image-preview-enter-from, .image-preview-leave-to { opacity: 0; }
