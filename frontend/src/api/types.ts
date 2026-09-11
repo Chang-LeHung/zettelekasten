@@ -80,6 +80,10 @@ export type ArtifactStatus = 'draft' | 'saved'
 export type SessionAssetType = 'text' | 'image' | 'link' | 'file'
 export type ReasoningEffort = 'off' | 'low' | 'medium' | 'high'
 
+export interface RuntimeSettings {
+  max_message_images: number
+}
+
 export interface SessionAsset {
   id: string
   session_id: string

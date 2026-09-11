@@ -100,8 +100,9 @@ def test_missing_asset_payload_does_not_mutate_storage(kind):
 
 
 def test_schema_and_http_surface_contain_no_retired_business_logic(isolated_database):
-    assert set(Base.metadata.tables) == {"session_assets", "session_artifacts", "providers"}
-    assert set(inspect(isolated_database).get_table_names()) == {"session_assets", "session_artifacts", "providers"}
+    expected_tables = {"session_assets", "session_artifacts", "providers", "key_values"}
+    assert set(Base.metadata.tables) == expected_tables
+    assert set(inspect(isolated_database).get_table_names()) == expected_tables
     assert all(not column.foreign_keys for table in Base.metadata.tables.values() for column in table.columns)
     with TestClient(app) as client:
         assert client.get("/api/health").json() == {"ok": True}
@@ -111,6 +112,7 @@ def test_schema_and_http_surface_contain_no_retired_business_logic(isolated_data
         assert "/api/agent/{session_id}/artifacts" in paths
         assert "/api/ai/providers" in paths
         assert "/api/artifacts" in paths
+        assert "/api/settings" in paths
         for path in ("/api/cards", "/api/tags", "/api/library", "/api/ai/providers"):
             expected = 200 if path == "/api/ai/providers" else 404
             assert client.get(path).status_code == expected

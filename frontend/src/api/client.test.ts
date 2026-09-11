@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { aiClient } from './client'
+import { aiClient, settingsClient } from './client'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -65,5 +65,20 @@ it('sends pasted images in their position among text segments', async () => {
       { type: 'image', name: 'paste.png', mime_type: 'image/png', data_base64: 'AA==' },
       { type: 'text', text: 'after' },
     ],
+  })
+})
+
+it('loads and replaces runtime settings through the typed client', async () => {
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify({ max_message_images: 32 })))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ max_message_images: 48 })))
+  vi.stubGlobal('fetch', fetchMock)
+
+  expect(await settingsClient.get()).toEqual({ max_message_images: 32 })
+  expect(await settingsClient.update({ max_message_images: 48 })).toEqual({ max_message_images: 48 })
+  expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/settings', expect.any(Object))
+  expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+    method: 'PUT',
+    body: JSON.stringify({ max_message_images: 48 }),
   })
 })

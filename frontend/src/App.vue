@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ApiError, aiClient, libraryClient, tagClient } from './api/client'
-import type { AgentArtifact, AgentCompactionActivity, AgentCustomEvent, AgentModelUsage, AgentSession, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageContentPart, ReasoningEffort, SessionAsset, Tag } from './api/types'
+import { ApiError, aiClient, libraryClient, settingsClient, tagClient } from './api/client'
+import type { AgentArtifact, AgentCompactionActivity, AgentCustomEvent, AgentModelUsage, AgentSession, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageContentPart, ReasoningEffort, RuntimeSettings, SessionAsset, Tag } from './api/types'
 import AgentComposerControls from './components/AgentComposerControls.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import AssetPreviewDialog from './components/AssetPreviewDialog.vue'
@@ -24,7 +24,6 @@ type NoticeKind = 'success' | 'error'
 type AssetEditorMode = 'closed' | 'text' | 'link'
 type AssetFilter = 'all' | 'documents' | 'images' | 'links' | 'notes' | 'code'
 type AgentMessageTimelineEntry = Extract<AgentTimelineEntry, { type: 'message' }>
-const maxMessageImages = 32
 interface ConfirmationState {
   open: boolean
   title: string
@@ -110,6 +109,8 @@ const ai = ref<AIProviderInput>({
   temperature: 0.2,
   enabled: true,
 })
+const runtimeSettings = ref<RuntimeSettings>({ max_message_images: 32 })
+const runtimeSettingsSaving = ref(false)
 const searchInput = ref<HTMLInputElement | null>(null)
 const agentThread = ref<HTMLElement | null>(null)
 const agentTurnStack = ref<HTMLElement | null>(null)
@@ -546,14 +547,16 @@ async function loadLibrary(): Promise<void> {
 
 async function loadInitialData(): Promise<void> {
   try {
-    const [tagData, libraryData, providerData] = await Promise.all([
+    const [tagData, libraryData, providerData, runtimeSettingsData] = await Promise.all([
       tagClient.list(),
       libraryClient.list(),
       aiClient.listProviders(),
+      settingsClient.get(),
     ])
     tags.value = tagData
     libraryItems.value = libraryData
     providers.value = providerData
+    runtimeSettings.value = runtimeSettingsData
     const firstProvider = providerData.find((provider) => provider.enabled)
     if (firstProvider) {
       selectedProviderId.value = firstProvider.id
@@ -1097,13 +1100,13 @@ function readMessageImage(file: File, position: number): Promise<PositionedMessa
 }
 
 async function attachPastedImages(files: File[], position: number): Promise<void> {
-  const available = Math.max(0, maxMessageImages - pendingMessageImages.value.length)
+  const available = Math.max(0, runtimeSettings.value.max_message_images - pendingMessageImages.value.length)
   const images = files.filter((file) => file.type.startsWith('image/')).slice(0, available)
   if (!images.length) return
   try {
     pendingMessageImages.value.push(...await Promise.all(images.map((file) => readMessageImage(file, position))))
     if (images.length < files.filter((file) => file.type.startsWith('image/')).length) {
-      showNotice(`A message can contain up to ${maxMessageImages} images`, 'error')
+      showNotice(`A message can contain up to ${runtimeSettings.value.max_message_images} images`, 'error')
     }
   } catch (error) {
     showNotice(errorMessage(error), 'error')
@@ -1313,6 +1316,19 @@ async function saveAI(): Promise<void> {
     showNotice(errorMessage(error), 'error')
   } finally {
     saving.value = false
+  }
+}
+
+async function saveRuntimeSettings(): Promise<void> {
+  if (runtimeSettingsSaving.value) return
+  runtimeSettingsSaving.value = true
+  try {
+    runtimeSettings.value = await settingsClient.update(runtimeSettings.value)
+    showNotice('Runtime settings saved')
+  } catch (error) {
+    showNotice(errorMessage(error), 'error')
+  } finally {
+    runtimeSettingsSaving.value = false
   }
 }
 
@@ -1849,6 +1865,23 @@ onBeforeUnmount(() => {
             <div class="settings-actions"><button v-if="editingProviderId !== null" class="danger-button" type="button" @click="removeProvider">Delete provider</button><span v-else>Credentials are encrypted in your local database.</span><div><label class="switch"><input v-model="ai.enabled" type="checkbox" /><span /><small>{{ ai.enabled ? 'Enabled' : 'Disabled' }}</small></label><button class="primary-action" :disabled="saving || !ai.name || !ai.model" type="submit">{{ saving ? 'Saving…' : editingProviderId === null ? 'Add provider' : 'Save provider' }}</button></div></div>
           </form>
 
+          <div class="settings-intro runtime-settings-heading">
+            <div><h2>Conversation limits</h2><p>Control local limits applied to new Agent requests.</p></div>
+          </div>
+          <form class="settings-card" @submit.prevent="saveRuntimeSettings">
+            <div class="form-grid">
+              <label class="field">
+                <span>Images per message</span>
+                <input v-model.number="runtimeSettings.max_message_images" type="number" min="1" max="256" step="1" />
+                <small>Maximum number of images that can be pasted into one user message.</small>
+              </label>
+            </div>
+            <div class="settings-actions">
+              <span>Stored locally and applied without restarting Zett.</span>
+              <div><button class="primary-action" :disabled="runtimeSettingsSaving" type="submit">{{ runtimeSettingsSaving ? 'Saving…' : 'Save limits' }}</button></div>
+            </div>
+          </form>
+
         </section>
       </template>
 
@@ -2331,6 +2364,7 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 
 .settings-view { max-width: 64rem; }
 .settings-intro { margin: .5rem 0 1rem; }
+.runtime-settings-heading { margin-top: 1.8rem; }
 .settings-card { padding: 1.5rem; border: 1px solid rgba(29,29,31,.075); border-radius: 1rem; background: rgba(255,255,255,.84); box-shadow: 0 2px 12px rgba(0,0,0,.025); }
 .provider-toolbar { display: flex; align-items: flex-start; gap: .8rem; margin: 0 0 .8rem; }
 .provider-toolbar > .secondary-action { flex: 0 0 auto; margin-left: auto; }

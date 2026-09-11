@@ -61,3 +61,16 @@ class ProviderModel(Base):
     metadata_value: Mapped[str] = mapped_column("metadata", Text, default="{}")
     created_at: Mapped[datetime] = mapped_column()
     updated_at: Mapped[datetime] = mapped_column(index=True)
+
+
+class KeyValueModel(Base):
+    """One immutable version of a JSON value stored under an indexed key."""
+
+    __tablename__ = "key_values"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    key: Mapped[str] = mapped_column(String(500), index=True)
+    value: Mapped[str] = mapped_column(Text)
+    version: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(index=True)
+    updated_at: Mapped[datetime] = mapped_column(index=True)

@@ -294,6 +294,25 @@ def test_message_images_reject_empty_turns_invalid_base64_and_oversized_collecti
         )
         assert too_many.status_code == 422
         assert "up to 32 images" in too_many.text
+
+        assert client.put("/api/settings", json={"max_message_images": 1}).status_code == 200
+        configured_limit = client.post(
+            endpoint,
+            json={
+                **common,
+                "parts": [
+                    {
+                        "type": "image",
+                        "name": f"configured-{index}.png",
+                        "mime_type": "image/png",
+                        "data_base64": base64.b64encode(b"x").decode("ascii"),
+                    }
+                    for index in range(2)
+                ],
+            },
+        )
+        assert configured_limit.status_code == 422
+        assert "up to 1 image" in configured_limit.text
     assert model.requests == []
 
 

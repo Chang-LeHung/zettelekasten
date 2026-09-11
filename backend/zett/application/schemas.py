@@ -195,8 +195,8 @@ class AnalyzeRequest(BaseModel):
     provider_id: str
     reasoning_effort: str = "medium"
     messages: list[dict[str, Any]] = Field(default_factory=list)
-    # Thirty-two images may be interleaved with up to thirty-three text segments.
-    parts: list[MessagePartIn] = Field(default_factory=list, max_length=65)
+    # Up to 256 configured images may be interleaved with 257 text segments.
+    parts: list[MessagePartIn] = Field(default_factory=list, max_length=513)
     metadata: dict[str, Any] = Field(default_factory=dict)
     tags: dict[str, Any] = Field(default_factory=dict)
 

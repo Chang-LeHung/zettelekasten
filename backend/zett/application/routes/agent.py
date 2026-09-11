@@ -29,10 +29,10 @@ from ...infra.log import get_logger
 from ..dependencies import run_sync
 from ..schemas import AnalyzeRequest, ExternalEventIn, ExternalEventOut, MessageImagePartIn, MessageTextPartIn
 from ..session_titles import generate_initial_session_title
+from ..settings import runtime_settings_service
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 logger = get_logger(__name__)
-MAX_MESSAGE_IMAGES = 32
 
 
 class ActiveRequestRegistry:
@@ -64,7 +64,7 @@ class ActiveRequestRegistry:
 active_requests = ActiveRequestRegistry()
 
 
-def _user_message(payload: AnalyzeRequest) -> UserMessage:
+def _user_message(payload: AnalyzeRequest, *, max_images: int) -> UserMessage:
     """Decode bounded browser images into one provider-neutral multimodal turn."""
     parts: list[TextContent | ImageContent] = []
     total_size = 0
@@ -76,10 +76,11 @@ def _user_message(payload: AnalyzeRequest) -> UserMessage:
                     parts.append(TextContent(text))
             case MessageImagePartIn() as image:
                 image_count += 1
-                if image_count > MAX_MESSAGE_IMAGES:
+                if image_count > max_images:
+                    image_label = "image" if max_images == 1 else "images"
                     raise HTTPException(
                         status.HTTP_422_UNPROCESSABLE_CONTENT,
-                        f"A message can contain up to {MAX_MESSAGE_IMAGES} images",
+                        f"A message can contain up to {max_images} {image_label}",
                     )
                 try:
                     content = base64.b64decode(image.data_base64, validate=True)
@@ -109,7 +110,8 @@ async def stream_message(session_id: str, payload: AnalyzeRequest) -> StreamingR
     except ValueError as error:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Unsupported reasoning effort") from error
 
-    user_message = _user_message(payload)
+    runtime_settings = await run_sync(runtime_settings_service.get)
+    user_message = _user_message(payload, max_images=runtime_settings.max_message_images)
     model = create_model(connection)
     frames: deque[str] = deque()
 

@@ -4,6 +4,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
+type JsonValue = None | bool | int | float | str | list[JsonValue] | dict[str, JsonValue]
+
 
 class CardType(StrEnum):
     """Supported knowledge card categories."""
@@ -244,3 +246,14 @@ class ProviderConnection(BaseModel):
     base_url: str | None = None
     api_key: SecretStr | None = Field(default=None, repr=False)
     metadata: dict[str, object] = Field(default_factory=dict)
+
+
+class KeyValueRecord(BaseModel):
+    """One immutable revision returned by the versioned key-value boundary."""
+
+    id: str = Field(description="UUIDv7 identity of this specific revision")
+    key: str = Field(description="Indexed logical key shared by all of its revisions")
+    value: JsonValue = Field(description="JSON-compatible value decoded from SQLite text")
+    version: int = Field(ge=1, description="Per-key revision number starting at one")
+    created_at: datetime = Field(description="UTC time when this revision was appended")
+    updated_at: datetime = Field(description="UTC time when this immutable revision was last written")

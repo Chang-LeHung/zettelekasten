@@ -14,6 +14,7 @@ import type {
   LibraryItemUpdate,
   MessagePartInput,
   ReasoningEffort,
+  RuntimeSettings,
   Tag,
   SessionAsset,
 } from './types'
@@ -347,6 +348,16 @@ export const aiClient = {
     return request<{ ok: boolean }>(`/ai/providers/${providerId}`, { method: 'DELETE' })
   },
 
+}
+
+export const settingsClient = {
+  get(): Promise<RuntimeSettings> {
+    return request<RuntimeSettings>('/settings')
+  },
+
+  update(payload: RuntimeSettings): Promise<RuntimeSettings> {
+    return request<RuntimeSettings>('/settings', { method: 'PUT', body: JSON.stringify(payload) })
+  },
 }
 
 function requireIndexedArtifact(id: string): AgentArtifact {
