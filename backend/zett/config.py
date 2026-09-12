@@ -14,11 +14,6 @@ class Settings:
     log_level: str = os.getenv("ZETT_LOG_LEVEL", "INFO").upper()
     host: str = os.getenv("ZETT_HOST", "127.0.0.1")
     port: int = int(os.getenv("ZETT_PORT", "6280"))
-    cors_origins: str = os.getenv("ZETT_CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
-
-    @property
-    def origins(self) -> list[str]:
-        return [x.strip() for x in self.cors_origins.split(",") if x.strip()]
 
 
 settings = Settings()

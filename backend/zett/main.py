@@ -5,13 +5,11 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
 from .agent import close_zettelkasten_agent, initialize_zettelkasten_agent
 from .application import api_router
-from .config import settings
 from .infra.agent_runtime import close_agent_runtime_storage, get_agent_runtime_storage
 from .infra.database import init_db
 from .infra.log import configure_logging, get_logger, shutdown_logging
@@ -39,9 +37,6 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
 
 
 app = FastAPI(title="Zett API", version="0.1.0", lifespan=lifespan)
-app.add_middleware(
-    CORSMiddleware, allow_origins=settings.origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"]
-)
 
 
 @app.get("/api/health")
