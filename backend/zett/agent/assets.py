@@ -7,7 +7,7 @@ import json
 from typing import Annotated, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from zett_agent import AgentContext, AgentExtension, SystemMessage, tool
+from zett_agent import AgentExtension, AgentRunContext, SystemMessage, tool
 
 from ..infra.dao import session_asset_storage
 from ..models import SessionAssetListOptions
@@ -83,7 +83,7 @@ def _write_model(session_id: str, asset: AssetInput) -> SessionAssetCreate:
 class AssetExtension(AgentExtension):
     """Expose session-isolated asset CRUD tools and current asset context."""
 
-    async def on_tool(self, context: AgentContext) -> None:
+    async def on_tool(self, context: AgentRunContext) -> None:
         """Register asset tools bound to the current session identity."""
         session_id = context.config.session_id
 
@@ -195,7 +195,7 @@ class AssetExtension(AgentExtension):
         for registered in (create_asset, get_asset, update_asset, delete_asset, list_assets):
             context.register_tool(registered)
 
-    async def on_state(self, context: AgentContext) -> None:
+    async def on_state(self, context: AgentRunContext) -> None:
         """Expose lightweight asset content without injecting binary payloads."""
         assets = await asyncio.to_thread(
             session_asset_storage.list,

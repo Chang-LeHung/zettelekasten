@@ -1,7 +1,7 @@
 """Process-level composition for the reusable multi-session Agent."""
 
 from zett_agent import (
-    AgentConfig,
+    AgentRunConfig,
     AskUserExtension,
     CodingExtension,
     CompactionExtension,
@@ -46,7 +46,7 @@ async def initialize_zettelkasten_agent(storage: SQLiteSessionStorage) -> Zettel
     current = _current_agent()
     if current is None:
         candidate = await ZettelkastenAgent.create(
-            config=AgentConfig(session_id=new_uuid7()),
+            config=AgentRunConfig(session_id=new_uuid7()),
             system_prompt=SYSTEM_PROMPT,
             extensions=(
                 SessionPersistenceExtension(storage),

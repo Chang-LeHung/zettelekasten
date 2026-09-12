@@ -6,10 +6,10 @@ from typing import Self
 from zett_agent import (
     Agent,
     AgentClient,
-    AgentConfig,
     AgentEventDispatcher,
     AgentExtension,
     AgentModel,
+    AgentRunConfig,
     AgentTool,
     ExternalEvent,
     ReasoningEffort,
@@ -36,7 +36,7 @@ class ZettelkastenAgent:
         cls,
         model: AgentModel | None = None,
         *,
-        config: AgentConfig | None = None,
+        config: AgentRunConfig | None = None,
         system_prompt: str = "",
         tools: Sequence[AgentTool] = (),
         extensions: Sequence[AgentExtension] = (),
@@ -46,7 +46,7 @@ class ZettelkastenAgent:
         """Create one initialized runtime that can serve many sessions."""
         client = await create_agent(
             model,
-            config=config or AgentConfig(session_id=new_uuid7()),
+            config=config or AgentRunConfig(session_id=new_uuid7()),
             system_prompt=system_prompt,
             tools=tools,
             extensions=extensions,
@@ -59,6 +59,6 @@ class ZettelkastenAgent:
         """Bind a request-owned dispatcher to the shared Agent runtime."""
         return AgentClient(self.agent, event_dispatcher=dispatcher)
 
-    def emit_external_event(self, event: ExternalEvent, *, config: AgentConfig) -> list[str]:
+    def emit_external_event(self, event: ExternalEvent, *, config: AgentRunConfig) -> list[str]:
         """Route external input to extensions handling the identified request."""
         return self.agent.emit_external_event(event, config=config)

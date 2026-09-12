@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator
 
 from zett_agent import (
     Agent,
-    AgentConfig,
+    AgentRunConfig,
     AssistantMessage,
     ModelEvent,
     ModelRequest,
@@ -146,7 +146,7 @@ class BinaryAssetModel:
 async def test_asset_extension_runs_complete_session_scoped_crud() -> None:
     session_id = session_storage.create(AgentSessionCreate()).session_id
     model = AssetCrudModel()
-    agent = await Agent.create(model, config=AgentConfig(session_id=session_id), extensions=[AssetExtension()])
+    agent = await Agent.create(model, config=AgentRunConfig(session_id=session_id), extensions=[AssetExtension()])
 
     result = await agent.run("Manage my text asset")
 
@@ -161,7 +161,7 @@ async def test_asset_extension_runs_complete_session_scoped_crud() -> None:
 async def test_asset_extension_reads_binary_only_when_explicitly_requested() -> None:
     session_id = session_storage.create(AgentSessionCreate()).session_id
     model = BinaryAssetModel(b"\x89PNG\r\n")
-    agent = await Agent.create(model, config=AgentConfig(session_id=session_id), extensions=[AssetExtension()])
+    agent = await Agent.create(model, config=AgentRunConfig(session_id=session_id), extensions=[AssetExtension()])
 
     result = await agent.run("Store and inspect this image")
 
@@ -198,7 +198,7 @@ async def test_asset_extension_rejects_cross_session_reads_without_leaking_data(
 
     agent = await Agent.create(
         CrossSessionModel(),
-        config=AgentConfig(session_id=other),
+        config=AgentRunConfig(session_id=other),
         extensions=[AssetExtension()],
     )
     result = await agent.run("Read the other asset")
@@ -242,7 +242,7 @@ async def test_asset_extension_rejects_invalid_base64_without_creating_an_asset(
 
     agent = await Agent.create(
         InvalidBinaryModel(),
-        config=AgentConfig(session_id=session_id),
+        config=AgentRunConfig(session_id=session_id),
         extensions=[AssetExtension()],
     )
     result = await agent.run("Create an invalid file")

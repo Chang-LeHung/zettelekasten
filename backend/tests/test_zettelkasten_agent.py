@@ -7,9 +7,9 @@ from datetime import UTC, datetime
 
 import pytest
 from zett_agent import (
-    AgentConfig,
     AgentEvent,
     AgentEventType,
+    AgentRunConfig,
     AssistantMessage,
     ModelEvent,
     ModelRequest,
@@ -102,7 +102,7 @@ async def test_agent_uses_create_agent_and_sends_ordered_sse_frames():
         frames.append(frame)
 
     owner = asyncio.current_task()
-    agent = await ZettelkastenAgent.create(StreamingModel(), config=AgentConfig(session_id="session-1"))
+    agent = await ZettelkastenAgent.create(StreamingModel(), config=AgentRunConfig(session_id="session-1"))
     client = agent.client(ZettelkastenEventDispatcher(send))
     events = [event async for event in client.stream("Hello")]
     decoded = [decode_frame(frame) for frame in frames]
@@ -168,7 +168,7 @@ async def test_one_agent_uses_request_owned_models_and_dispatchers() -> None:
         client = agent.client(ZettelkastenEventDispatcher(send))
         result = await client.run(
             "Hello",
-            config=AgentConfig(session_id=session_id),
+            config=AgentRunConfig(session_id=session_id),
             model=NamedModel(session_id),
         )
         return result.content

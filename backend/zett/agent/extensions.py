@@ -3,7 +3,7 @@
 import asyncio
 import json
 
-from zett_agent import AgentContext, AgentExtension, SystemMessage, tool
+from zett_agent import AgentExtension, AgentRunContext, SystemMessage, tool
 
 from ..infra.dao import artifact_storage
 from ..models import ArtifactListOptions
@@ -13,7 +13,7 @@ from ..schemas import AgentArtifact, AgentArtifactWrite, ArtifactContent, Artifa
 class ZettelkastenExtension(AgentExtension):
     """Expose typed artifact operations and current artifacts to the model."""
 
-    async def on_tool(self, context: AgentContext) -> None:
+    async def on_tool(self, context: AgentRunContext) -> None:
         """Register artifact tools bound to the current conversation."""
         session_id = context.config.session_id
 
@@ -106,7 +106,7 @@ class ZettelkastenExtension(AgentExtension):
         for registered in (create_artifact, update_artifact, save_artifact, delete_artifact):
             context.register_tool(registered)
 
-    async def on_state(self, context: AgentContext) -> None:
+    async def on_state(self, context: AgentRunContext) -> None:
         """Expose current artifacts as model context."""
         session_id = context.config.session_id
         artifacts = await asyncio.to_thread(

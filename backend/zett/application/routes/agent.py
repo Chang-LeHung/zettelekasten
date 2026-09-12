@@ -10,8 +10,8 @@ from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
 from zett_agent import (
-    AgentConfig,
     AgentEventType,
+    AgentRunConfig,
     ExternalEvent,
     ImageBytesSource,
     ImageContent,
@@ -39,16 +39,16 @@ class ActiveRequestRegistry:
     """Route external UI events to one active request per session."""
 
     def __init__(self) -> None:
-        self._requests: dict[str, AgentConfig] = {}
+        self._requests: dict[str, AgentRunConfig] = {}
         self._lock = asyncio.Lock()
 
-    async def add(self, config: AgentConfig) -> None:
+    async def add(self, config: AgentRunConfig) -> None:
         async with self._lock:
             if config.session_id in self._requests:
                 raise HTTPException(status.HTTP_409_CONFLICT, "This session already has an active request")
             self._requests[config.session_id] = config
 
-    async def remove(self, config: AgentConfig) -> None:
+    async def remove(self, config: AgentRunConfig) -> None:
         async with self._lock:
             if self._requests.get(config.session_id) == config:
                 self._requests.pop(config.session_id)
@@ -118,7 +118,7 @@ async def stream_message(session_id: str, payload: AnalyzeRequest) -> StreamingR
     async def send(frame: str) -> None:
         frames.append(frame)
 
-    config = AgentConfig(session_id=session_id, request_id=new_uuid7())
+    config = AgentRunConfig(session_id=session_id, request_id=new_uuid7())
     agent = get_zettelkasten_agent()
     client = agent.client(ZettelkastenEventDispatcher(send))
     run_completed = False
