@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ApiError, aiClient, libraryClient, settingsClient, tagClient } from './api/client'
-import type { AgentArtifact, AgentCompactionActivity, AgentCustomEvent, AgentModelUsage, AgentSession, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageContentPart, ReasoningEffort, RuntimeSettings, SessionAsset, Tag } from './api/types'
+import type { AgentArtifact, AgentCompactionActivity, AgentCustomEvent, AgentModelUsage, AgentServerToolActivity, AgentSession, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageContentPart, ReasoningEffort, RuntimeSettings, SessionAsset, Tag } from './api/types'
 import AgentComposerControls from './components/AgentComposerControls.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import AssetPreviewDialog from './components/AssetPreviewDialog.vue'
@@ -300,6 +300,28 @@ function updateToolActivity(activity: AgentToolActivity): void {
   }
 }
 
+function updateServerToolActivity(activity: AgentServerToolActivity): void {
+  const index = streamingTimeline.value.findIndex(
+    (item) => item.type === 'server_tool' && item.activity.id === activity.id,
+  )
+  if (index < 0) {
+    streamingTimeline.value.push({ id: `server-tool-${activity.id}`, type: 'server_tool', activity })
+    return
+  }
+  const current = streamingTimeline.value[index]
+  if (current.type !== 'server_tool') return
+  streamingTimeline.value.splice(index, 1, {
+    ...current,
+    activity: {
+      ...current.activity,
+      ...activity,
+      name: activity.name || current.activity.name,
+      input: activity.input ?? current.activity.input,
+      input_delta: `${current.activity.input_delta || ''}${activity.input_delta || ''}`,
+    },
+  })
+}
+
 const agentResourceRefresh = createAsyncRefreshScheduler(
   async (sessionId: string) => {
     const [currentArtifacts, currentAssets] = await Promise.all([
@@ -405,6 +427,15 @@ function streamCallbacks() {
       const todos = todoFromTool(activity)
       if (todos) activeTodos.value = todos
       if (activity.state !== 'started' && !toolsStillRunning && sessionId) agentResourceRefresh.schedule(sessionId)
+    },
+    onServerTool: (activity: AgentServerToolActivity) => {
+      if (conversationId.value !== sessionId) return
+      updateServerToolActivity(activity)
+      const hostedToolStillRunning = streamingTimeline.value.some(
+        entry => entry.type === 'server_tool'
+          && (entry.activity.state === 'started' || entry.activity.state === 'streaming'),
+      )
+      streamingStatus.value = hostedToolStillRunning ? 'running_tool' : 'generating'
     },
     onCompaction: (activity: AgentCompactionActivity) => {
       streamingStatus.value = activity.state === 'completed' ? 'generating' : 'compacting'
@@ -1712,6 +1743,13 @@ onBeforeUnmount(() => {
                               <div class="tool-activity-details">
                                 <div><strong>Arguments</strong><pre>{{ formatToolValue(entry.activity.arguments || {}) }}</pre></div>
                                 <div><strong>{{ entry.activity.error_message ? 'Error' : 'Result' }}</strong><pre :class="{ error: entry.activity.error_message }">{{ entry.activity.error_message || formatToolValue(entry.activity.output) }}</pre></div>
+                              </div>
+                            </details>
+                            <details v-else-if="entry.type === 'server_tool'" class="tool-activity server-tool-activity" :class="entry.activity.state">
+                              <summary><i /><span>{{ entry.activity.name.replaceAll('_', ' ') }}</span><small>Provider tool · {{ entry.activity.state }}</small></summary>
+                              <div class="tool-activity-details">
+                                <div><strong>Input</strong><pre>{{ entry.activity.input_delta || (entry.activity.input === null ? 'Waiting for streamed input…' : formatToolValue(entry.activity.input)) }}</pre></div>
+                                <div v-if="entry.activity.output !== undefined || entry.activity.error_code"><strong>{{ entry.activity.error_code ? 'Error' : 'Result' }}</strong><pre :class="{ error: entry.activity.error_code }">{{ entry.activity.error_code || formatToolValue(entry.activity.output) }}</pre></div>
                               </div>
                             </details>
                             </template>

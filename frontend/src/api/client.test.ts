@@ -44,6 +44,32 @@ it('delivers a parallel batch and correlates reverse mixed outcomes by tool-call
   ])
 })
 
+it('delivers provider-hosted tool lifecycle events independently of local tools', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
+    'event: server_tool_started\ndata: {"session_id":"session","phase":"generating","server_tool_call":{"id":"hosted-1","name":"web_fetch","input":null}}\n\n'
+    + 'event: server_tool_input_delta\ndata: {"session_id":"session","phase":"generating","server_tool_input_delta":{"call_id":"hosted-1","delta":"{\\"url\\":\\"https://example.com\\"}"}}\n\n'
+    + 'event: server_tool_completed\ndata: {"session_id":"session","phase":"generating","server_tool_result":{"call_id":"hosted-1","name":"web_fetch","output":{"status":200},"error_code":null}}\n\n',
+  )))
+  const hosted: Array<{ id: string; state: string; delta?: string }> = []
+  const local: string[] = []
+
+  await aiClient.analyzeStream('session', 'fetch', 'provider', 'medium', [], {
+    onServerTool: activity => hosted.push({
+      id: activity.id,
+      state: activity.state,
+      delta: activity.input_delta,
+    }),
+    onTool: activity => local.push(activity.id),
+  })
+
+  expect(hosted).toEqual([
+    { id: 'hosted-1', state: 'started', delta: undefined },
+    { id: 'hosted-1', state: 'streaming', delta: '{"url":"https://example.com"}' },
+    { id: 'hosted-1', state: 'succeeded', delta: undefined },
+  ])
+  expect(local).toEqual([])
+})
+
 it('delivers usage for every completed model step in one tool loop', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
     'event: model_completed\ndata: {"session_id":"session","phase":"ready","usage":{"input_tokens":100,"output_tokens":20,"cache_read_tokens":80,"cache_write_tokens":0,"reasoning_tokens":5}}\n\n'

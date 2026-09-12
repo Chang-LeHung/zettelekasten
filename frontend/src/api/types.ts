@@ -159,6 +159,16 @@ export interface AgentToolActivity {
   duration_ms?: number
 }
 
+export interface AgentServerToolActivity {
+  id: string
+  name: string
+  state: 'started' | 'streaming' | 'succeeded' | 'failed'
+  input: Record<string, unknown> | null
+  input_delta?: string
+  output?: unknown
+  error_code?: string | null
+}
+
 export interface AgentCompactionActivity {
   state: 'started' | 'streaming' | 'completed'
   applied?: boolean | null
@@ -174,6 +184,7 @@ export type AgentTimelineEntry =
   | { id: string; type: 'reasoning'; content: string }
   | { id: string; type: 'message'; content: string }
   | { id: string; type: 'tool'; activity: AgentToolActivity }
+  | { id: string; type: 'server_tool'; activity: AgentServerToolActivity }
   | { id: string; type: 'compaction'; activity: AgentCompactionActivity }
 
 export interface AgentCustomEvent {
@@ -200,6 +211,7 @@ export interface AgentStreamCallbacks {
   onReasoning?: (content: string) => void
   onMessage?: (content: string) => void
   onTool?: (activity: AgentToolActivity) => void | Promise<void>
+  onServerTool?: (activity: AgentServerToolActivity) => void
   onCompaction?: (activity: AgentCompactionActivity) => void
   onCustom?: (event: AgentCustomEvent) => void
 }

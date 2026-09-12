@@ -204,6 +204,48 @@ def test_tool_results_are_forwarded_without_tool_specific_logic(content, expecte
     }
 
 
+def test_server_tool_lifecycle_is_forwarded_without_local_tool_message():
+    from zett_agent import ServerToolCall, ServerToolInputDelta, ServerToolResult
+
+    started = event_payload(
+        AgentEvent(
+            AgentEventType.SERVER_TOOL_STARTED,
+            session_id="session-1",
+            server_tool_call=ServerToolCall("hosted-1", "web_fetch", {"url": "https://example.com"}),
+        )
+    )
+    completed = event_payload(
+        AgentEvent(
+            AgentEventType.SERVER_TOOL_COMPLETED,
+            session_id="session-1",
+            server_tool_result=ServerToolResult("hosted-1", "web_fetch", {"status": 200}),
+        )
+    )
+    input_delta = event_payload(
+        AgentEvent(
+            AgentEventType.SERVER_TOOL_INPUT_DELTA,
+            session_id="session-1",
+            server_tool_input_delta=ServerToolInputDelta("hosted-1", '{"url":"https://example.com"}'),
+        )
+    )
+
+    assert started["server_tool_call"] == {
+        "id": "hosted-1",
+        "name": "web_fetch",
+        "input": {"url": "https://example.com"},
+    }
+    assert completed["server_tool_result"] == {
+        "call_id": "hosted-1",
+        "name": "web_fetch",
+        "output": {"status": 200},
+        "error_code": None,
+    }
+    assert input_delta["server_tool_input_delta"] == {
+        "call_id": "hosted-1",
+        "delta": '{"url":"https://example.com"}',
+    }
+
+
 async def test_custom_event_keeps_name_and_payload_namespaces():
     frames = []
 

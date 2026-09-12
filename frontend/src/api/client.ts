@@ -2,6 +2,7 @@ import type {
   AnalysisMessage,
   AgentArtifact,
   AgentModelUsage,
+  AgentServerToolActivity,
   AgentStreamCallbacks,
   AgentSession,
   AgentStart,
@@ -36,6 +37,30 @@ function asModelUsage(value: unknown): AgentModelUsage | null {
     cache_read_tokens: asNonNegativeNumber(usage.cache_read_tokens),
     cache_write_tokens: asNonNegativeNumber(usage.cache_write_tokens),
     reasoning_tokens: asNonNegativeNumber(usage.reasoning_tokens),
+  }
+}
+
+function asServerToolActivity(event: string, payload: Record<string, unknown>): AgentServerToolActivity | null {
+  const call = payload.server_tool_call as Record<string, unknown> | undefined
+  const inputDelta = payload.server_tool_input_delta as Record<string, unknown> | undefined
+  const result = payload.server_tool_result as Record<string, unknown> | undefined
+  const id = String(call?.id || inputDelta?.call_id || result?.call_id || '')
+  const name = String(call?.name || result?.name || '')
+  if (!id || (event !== 'server_tool_input_delta' && !name)) return null
+  return {
+    id,
+    name,
+    state: event === 'server_tool_started'
+      ? 'started'
+      : event === 'server_tool_input_delta'
+        ? 'streaming'
+        : event === 'server_tool_completed'
+          ? 'succeeded'
+          : 'failed',
+    input: call?.input && typeof call.input === 'object' ? call.input as Record<string, unknown> : null,
+    input_delta: event === 'server_tool_input_delta' ? String(inputDelta?.delta || '') : undefined,
+    output: result?.output,
+    error_code: typeof result?.error_code === 'string' ? result.error_code : null,
   }
 }
 
@@ -230,6 +255,15 @@ export const aiClient = {
               ? String((payload.error as Record<string, unknown> | undefined)?.message || '')
               : null,
           })
+        }
+        if ([
+          'server_tool_started',
+          'server_tool_input_delta',
+          'server_tool_completed',
+          'server_tool_failed',
+        ].includes(event)) {
+          const activity = asServerToolActivity(event, payload)
+          if (activity) callbacks.onServerTool?.(activity)
         }
         if (event.startsWith('compaction_')) callbacks.onCompaction?.({
           state: event === 'compaction_started' ? 'started' : event === 'compaction_completed' ? 'completed' : 'streaming',

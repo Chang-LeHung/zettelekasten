@@ -68,6 +68,21 @@ def event_payload(event: AgentEvent) -> dict[str, object]:
         payload["tool_call_delta"] = asdict(event.tool_call_delta)
     if event.tool_calls:
         payload["tool_calls"] = [_tool_call(call) for call in event.tool_calls]
+    if event.server_tool_call is not None:
+        payload["server_tool_call"] = {
+            "id": event.server_tool_call.id,
+            "name": event.server_tool_call.name,
+            "input": dict(event.server_tool_call.input) if event.server_tool_call.input is not None else None,
+        }
+    if event.server_tool_input_delta is not None:
+        payload["server_tool_input_delta"] = asdict(event.server_tool_input_delta)
+    if event.server_tool_result is not None:
+        payload["server_tool_result"] = {
+            "call_id": event.server_tool_result.call_id,
+            "name": event.server_tool_result.name,
+            "output": event.server_tool_result.output,
+            "error_code": event.server_tool_result.error_code,
+        }
     if event.message is not None:
         payload["message"] = _message(event.message)
     if event.response is not None:
@@ -102,6 +117,7 @@ class ZettelkastenEventDispatcher(AgentEventDispatcher):
     The SSE event name is exactly ``AgentEvent.type.value``. Every payload has
     ``session_id`` and ``phase``; type-specific fields retain their framework
     names: ``delta``, ``tool_call_delta``, ``tool_calls``, ``message``,
+    ``server_tool_call``, ``server_tool_input_delta``, ``server_tool_result``,
     ``finish_reason``, ``usage``, ``internal_message``, ``steering_message``,
     ``error``, ``compaction``, ``applied``, ``name``, and ``payload``.
 
@@ -114,6 +130,15 @@ class ZettelkastenEventDispatcher(AgentEventDispatcher):
 
         event: text_delta
         data: {"session_id":"...","phase":"generating","delta":"Hello"}
+
+        event: server_tool_started
+        data: {"session_id":"...","phase":"generating","server_tool_call":{"id":"srvtoolu_1","name":"web_fetch","input":null}}
+
+        event: server_tool_input_delta
+        data: {"session_id":"...","phase":"generating","server_tool_input_delta":{"call_id":"srvtoolu_1","delta":"{\"url\":...}"}}
+
+        event: server_tool_completed
+        data: {"session_id":"...","phase":"generating","server_tool_result":{"call_id":"srvtoolu_1","name":"web_fetch","output":{...},"error_code":null}}
 
     ``message.output`` is decoded JSON when a ToolMessage contains valid JSON;
     otherwise it remains a string. Exceptions expose only type and message.
