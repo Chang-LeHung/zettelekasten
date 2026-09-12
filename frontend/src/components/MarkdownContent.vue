@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import DOMPurify from 'dompurify'
 import hljs from 'highlight.js/lib/core'
 import bash from 'highlight.js/lib/languages/bash'
@@ -39,12 +39,16 @@ import xml from 'highlight.js/lib/languages/xml'
 import yaml from 'highlight.js/lib/languages/yaml'
 import { katex } from '@mdit/plugin-katex'
 import MarkdownIt from 'markdown-it'
+import { renderMermaid } from '../utils/mermaidRenderer'
 import 'highlight.js/styles/github.css'
 import 'katex/dist/katex.min.css'
 
 const props = defineProps<{ content: string }>()
 
 const COPY_RESET_DELAY_MS = 1600
+const markdownRoot = ref<HTMLElement | null>(null)
+let renderGeneration = 0
+let renderFrame: number | null = null
 
 hljs.registerLanguage('bash', bash)
 hljs.registerLanguage('c', c)
@@ -142,6 +146,10 @@ renderer.renderer.rules.link_open = (tokens, index, options, _environment, self)
 renderer.renderer.rules.fence = (tokens, index) => {
   const token = tokens[index]
   const language = token.info.trim().split(/\s+/u)[0] ?? ''
+  if (language.toLowerCase() === 'mermaid') {
+    const source = renderer.utils.escapeHtml(token.content)
+    return `<div class="mermaid-block"><div class="mermaid-toolbar"><span>Diagram</span><button type="button" class="code-copy-button" data-mermaid-copy aria-label="Copy Mermaid source">Copy source</button></div><pre class="mermaid-source" aria-hidden="true">${source}</pre><div class="mermaid-canvas" data-mermaid-canvas><span class="mermaid-loading">Rendering diagram…</span></div></div>`
+  }
   const resolvedLanguage = resolveLanguage(language)
   const highlighted = resolvedLanguage
     ? hljs.highlight(token.content, { language: resolvedLanguage, ignoreIllegals: true }).value
@@ -156,8 +164,10 @@ async function handleMarkdownClick(event: MouseEvent): Promise<void> {
   const target = event.target
   if (!(target instanceof Element)) return
 
-  const button = target.closest<HTMLButtonElement>('[data-code-copy]')
-  const code = button?.closest('.code-block')?.querySelector('code')?.textContent
+  const button = target.closest<HTMLButtonElement>('[data-code-copy], [data-mermaid-copy]')
+  const code = button?.hasAttribute('data-mermaid-copy')
+    ? button.closest('.mermaid-block')?.querySelector('.mermaid-source')?.textContent
+    : button?.closest('.code-block')?.querySelector('code')?.textContent
   if (!button || code === null || code === undefined) return
 
   try {
@@ -176,11 +186,70 @@ async function handleMarkdownClick(event: MouseEvent): Promise<void> {
   }
 }
 
+function showMermaidError(canvas: HTMLElement, source: string): void {
+  canvas.replaceChildren()
+  canvas.classList.add('is-error')
+  const message = document.createElement('p')
+  message.className = 'mermaid-error-message'
+  message.textContent = 'This Mermaid diagram could not be rendered.'
+  const pre = document.createElement('pre')
+  const code = document.createElement('code')
+  code.textContent = source
+  pre.append(code)
+  canvas.append(message, pre)
+}
+
+async function renderMermaidDiagrams(generation: number): Promise<void> {
+  const root = markdownRoot.value
+  if (root === null) return
+  const diagrams = [...root.querySelectorAll<HTMLElement>('[data-mermaid-canvas]')]
+  if (!diagrams.length) return
+
+  for (const canvas of diagrams) {
+    if (generation !== renderGeneration || !canvas.isConnected) return
+    const source = canvas.closest('.mermaid-block')?.querySelector('.mermaid-source')?.textContent ?? ''
+    try {
+      const { svg, bindFunctions } = await renderMermaid(source)
+      if (generation !== renderGeneration || !canvas.isConnected) return
+      canvas.classList.remove('is-error')
+      canvas.innerHTML = DOMPurify.sanitize(svg, {
+        ADD_TAGS: ['foreignObject'],
+        FORBID_CONTENTS: [],
+        HTML_INTEGRATION_POINTS: { foreignobject: true },
+        USE_PROFILES: { html: true, svg: true, svgFilters: true },
+      })
+      bindFunctions?.(canvas)
+    } catch {
+      if (generation === renderGeneration && canvas.isConnected) showMermaidError(canvas, source)
+    }
+  }
+}
+
+function scheduleMermaidRender(): void {
+  const generation = ++renderGeneration
+  if (renderFrame !== null) window.cancelAnimationFrame(renderFrame)
+  renderFrame = window.requestAnimationFrame(() => {
+    renderFrame = null
+    void renderMermaidDiagrams(generation)
+  })
+}
+
 const html = computed(() => DOMPurify.sanitize(renderer.render(props.content)))
+
+onMounted(scheduleMermaidRender)
+watch(
+  () => props.content,
+  scheduleMermaidRender,
+  { flush: 'post' },
+)
+onBeforeUnmount(() => {
+  renderGeneration += 1
+  if (renderFrame !== null) window.cancelAnimationFrame(renderFrame)
+})
 </script>
 
 <template>
-  <div class="markdown-body" @click="handleMarkdownClick" v-html="html" />
+  <div ref="markdownRoot" class="markdown-body" @click="handleMarkdownClick" v-html="html" />
 </template>
 
 <style scoped>
@@ -203,6 +272,15 @@ const html = computed(() => DOMPurify.sanitize(renderer.render(props.content)))
 .markdown-body :deep(.code-copy-button:hover) { border-color: #d4ddd7; color: #294d3b; background: #fff; }
 .markdown-body :deep(.code-copy-button:focus-visible) { outline: 2px solid #719681; outline-offset: 1px; }
 .markdown-body :deep(.code-copy-button.is-copied) { color: #2f6a4b; }
+.markdown-body :deep(.mermaid-block) { max-width: 100%; margin: .75em 0; overflow: hidden; border: 1px solid #dfe5e1; border-radius: .8rem; background: #fbfcfb; }
+.markdown-body :deep(.mermaid-toolbar) { display: flex; align-items: center; justify-content: space-between; min-height: 2.25rem; padding: .35rem .55rem .35rem .9rem; border-bottom: 1px solid #e3e8e5; color: #78817c; background: #f3f6f4; font-size: .72em; font-weight: 600; letter-spacing: .02em; }
+.markdown-body :deep(.mermaid-source) { display: none; }
+.markdown-body :deep(.mermaid-canvas) { display: flex; width: 100%; min-height: 6rem; padding: 1rem; overflow: auto; align-items: center; justify-content: center; }
+.markdown-body :deep(.mermaid-canvas svg) { display: block; width: 100% !important; max-width: none !important; height: auto; }
+.markdown-body :deep(.mermaid-loading) { color: #89928d; font-size: .84em; }
+.markdown-body :deep(.mermaid-canvas.is-error) { display: block; color: #875348; }
+.markdown-body :deep(.mermaid-error-message) { margin: 0 0 .55rem; font-size: .86em; }
+.markdown-body :deep(.mermaid-canvas.is-error pre) { margin: 0; }
 .markdown-body :deep(.code-block pre) { margin: 0; border: 0; border-radius: 0; box-shadow: none; }
 .markdown-body :deep(pre) { max-width: 100%; padding: .9rem 1rem; overflow: auto; border: 1px solid #dfe5e1; border-radius: .72rem; background: #f6f8f7; box-shadow: inset 0 1px rgba(255,255,255,.72); }
 .markdown-body :deep(pre code) { padding: 0; color: #242b27; background: transparent; font-size: .84em; line-height: 1.62; }
