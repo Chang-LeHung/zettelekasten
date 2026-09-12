@@ -8,12 +8,14 @@ import AssetPreviewDialog from './components/AssetPreviewDialog.vue'
 import AskUserPrompt from './components/AskUserPrompt.vue'
 import { addAgentUsage, summarizeAgentUsage } from './utils/agentUsage'
 import { assetOpenAction, isPdfAsset } from './utils/assetOpen'
+import { createAsyncRefreshScheduler } from './utils/asyncRefresh'
 import { buildConversationTurns, formatTurnDuration, splitTurnTimeline, type ConversationTurn } from './utils/conversationTurns'
 import { jsonSnapshot } from './utils/jsonSnapshot'
 import { buildMessageParts, displayMessageParts, rebaseImagePositions, type PositionedMessageImage } from './utils/messageParts'
 import { restorePersistedConversation } from './utils/persistedConversation'
 import { defaultProviderBaseUrl, providerBaseUrlHelp } from './utils/providerDefaults'
 import { todoFromTool } from './utils/toolPresentation'
+import { hasRunningTool, upsertToolActivity } from './utils/toolActivities'
 
 const MarkdownContent = defineAsyncComponent(() => import('./components/MarkdownContent.vue'))
 const LibraryEditor = defineAsyncComponent(() => import('./components/LibraryEditor.vue'))
@@ -256,9 +258,7 @@ function turnDuration(turn: ConversationTurn, index: number): string {
 }
 
 function updateToolActivity(activity: AgentToolActivity): void {
-  const index = streamingActivities.value.findIndex((item) => item.id === activity.id)
-  if (index < 0) streamingActivities.value.push(activity)
-  else streamingActivities.value.splice(index, 1, { ...streamingActivities.value[index], ...activity })
+  streamingActivities.value = upsertToolActivity(streamingActivities.value, activity)
 
   const timelineIndex = streamingTimeline.value.findIndex(
     (item) => item.type === 'tool' && item.activity.id === activity.id,
@@ -275,6 +275,22 @@ function updateToolActivity(activity: AgentToolActivity): void {
     }
   }
 }
+
+const agentResourceRefresh = createAsyncRefreshScheduler(
+  async (sessionId: string) => {
+    const [currentArtifacts, currentAssets] = await Promise.all([
+      aiClient.listAgentArtifacts(sessionId),
+      aiClient.listSessionAssets(sessionId),
+    ])
+    if (conversationId.value === sessionId) {
+      applyArtifacts(currentArtifacts)
+      assets.value = currentAssets
+    }
+  },
+  (error, sessionId) => {
+    if (conversationId.value === sessionId) showNotice(errorMessage(error), 'error')
+  },
+)
 
 function updateCompactionActivity(activity: AgentCompactionActivity): void {
   const index = streamingTimeline.value.findIndex((item) => item.type === 'compaction')
@@ -357,25 +373,14 @@ function streamCallbacks() {
       streamingStatus.value = 'writing'
       updateStreamText('message', content)
     },
-    onTool: async (activity: AgentToolActivity) => {
+    onTool: (activity: AgentToolActivity) => {
       if (conversationId.value !== sessionId) return
       updateToolActivity(activity)
-      streamingStatus.value = activity.state === 'started' ? 'running_tool' : 'generating'
+      const toolsStillRunning = hasRunningTool(streamingActivities.value)
+      streamingStatus.value = toolsStillRunning ? 'running_tool' : 'generating'
       const todos = todoFromTool(activity)
       if (todos) activeTodos.value = todos
-      if (activity.state === 'started' || !sessionId) return
-      try {
-        const [currentArtifacts, currentAssets] = await Promise.all([
-          aiClient.listAgentArtifacts(sessionId),
-          aiClient.listSessionAssets(sessionId),
-        ])
-        if (conversationId.value === sessionId) {
-          applyArtifacts(currentArtifacts)
-          assets.value = currentAssets
-        }
-      } catch (error) {
-        if (conversationId.value === sessionId) showNotice(errorMessage(error), 'error')
-      }
+      if (activity.state !== 'started' && !toolsStillRunning && sessionId) agentResourceRefresh.schedule(sessionId)
     },
     onCompaction: (activity: AgentCompactionActivity) => {
       streamingStatus.value = activity.state === 'completed' ? 'generating' : 'compacting'

@@ -21,6 +21,29 @@ it('awaits ordinary tool callbacks before delivering later text', async () => {
   expect(result).toBeNull()
 })
 
+it('delivers a parallel batch and correlates reverse mixed outcomes by tool-call ID', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
+    'event: tool_started\ndata: {"session_id":"session","phase":"running_tool","tool_calls":[{"id":"slow","name":"read_file","arguments":{"path":"slow"}},{"id":"fast","name":"read_file","arguments":{"path":"fast"}},{"id":"bad","name":"read_file","arguments":{"path":"bad"}}]}\n\n'
+    + 'event: tool_completed\ndata: {"session_id":"session","phase":"running_tool","message":{"role":"tool","tool_call_id":"fast","name":"read_file","success":true,"output":"fast","attributes":{}}}\n\n'
+    + 'event: tool_failed\ndata: {"session_id":"session","phase":"running_tool","message":{"role":"tool","tool_call_id":"bad","name":"read_file","success":false,"output":{"error":"failed"},"attributes":{}},"error":{"type":"RuntimeError","message":"failed"}}\n\n'
+    + 'event: tool_completed\ndata: {"session_id":"session","phase":"ready","message":{"role":"tool","tool_call_id":"slow","name":"read_file","success":true,"output":"slow","attributes":{}}}\n\n',
+  )))
+  const tools: Array<{ id: string; state: string }> = []
+
+  await aiClient.analyzeStream('session', 'hello', 'provider', 'medium', [], {
+    onTool: (activity) => { tools.push({ id: activity.id, state: activity.state }) },
+  })
+
+  expect(tools).toEqual([
+    { id: 'slow', state: 'started' },
+    { id: 'fast', state: 'started' },
+    { id: 'bad', state: 'started' },
+    { id: 'fast', state: 'succeeded' },
+    { id: 'bad', state: 'failed' },
+    { id: 'slow', state: 'succeeded' },
+  ])
+})
+
 it('delivers usage for every completed model step in one tool loop', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
     'event: model_completed\ndata: {"session_id":"session","phase":"ready","usage":{"input_tokens":100,"output_tokens":20,"cache_read_tokens":80,"cache_write_tokens":0,"reasoning_tokens":5}}\n\n'

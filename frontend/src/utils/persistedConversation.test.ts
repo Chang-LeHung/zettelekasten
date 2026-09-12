@@ -96,6 +96,29 @@ describe('restorePersistedConversation', () => {
     })
   })
 
+  it('restores same-named parallel calls completed in a different order', () => {
+    const restored = restorePersistedConversation([
+      record(1, 'user', { content: 'Read both' }),
+      record(2, 'assistant', {
+        tool_calls: [
+          { id: 'slow', name: 'read_file', arguments: { path: 'slow' } },
+          { id: 'fast', name: 'read_file', arguments: { path: 'fast' } },
+        ],
+      }),
+      record(3, 'tool', {
+        content: '"fast result"', tool_call_id: 'fast', tool_name: 'read_file', tool_success: true,
+      }),
+      record(4, 'tool', {
+        content: 'slow failed', tool_call_id: 'slow', tool_name: 'read_file', tool_success: false,
+      }),
+    ])
+
+    expect(restored.messages[0]?.activities).toMatchObject([
+      { id: 'slow', state: 'failed', error_message: 'slow failed' },
+      { id: 'fast', state: 'succeeded', output: 'fast result' },
+    ])
+  })
+
   it('restores ordered text and image parts on their original user messages', () => {
     const image = {
       type: 'image' as const,
