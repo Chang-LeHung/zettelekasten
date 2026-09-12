@@ -110,6 +110,7 @@ export interface AnalysisMessage {
   duration_ms?: number
   generation_duration_ms?: number
   usage?: AgentModelUsage
+  error?: string
 }
 
 export interface MessageTextPart {

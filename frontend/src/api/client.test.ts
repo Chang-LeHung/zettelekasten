@@ -57,6 +57,16 @@ it('delivers usage for every completed model step in one tool loop', async () =>
   expect(usages).toEqual([120, 180])
 })
 
+it('exposes the backend error detail instead of discarding it', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
+    JSON.stringify({ detail: 'The selected provider is unavailable' }),
+    { status: 503 },
+  )))
+
+  await expect(aiClient.analyzeStream('session', 'hello', 'provider', 'medium', []))
+    .rejects.toThrow('The selected provider is unavailable')
+})
+
 it('loads binary asset content through the typed API client', async () => {
   const payload = new Uint8Array([37, 80, 68, 70])
   const fetchMock = vi.fn().mockResolvedValue(new Response(payload))

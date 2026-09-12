@@ -44,8 +44,24 @@ class ApiError extends Error {
     readonly status: number,
     readonly body: string,
   ) {
-    super(`API request failed with status ${status}`)
+    super(apiErrorMessage(status, body))
   }
+}
+
+function apiErrorMessage(status: number, body: string): string {
+  try {
+    const payload = JSON.parse(body) as Record<string, unknown>
+    if (typeof payload.detail === 'string' && payload.detail.trim()) return payload.detail
+    const nested = payload.error
+    if (nested && typeof nested === 'object') {
+      const message = (nested as Record<string, unknown>).message
+      if (typeof message === 'string' && message.trim()) return message
+    }
+  } catch {
+    const plainText = body.trim()
+    if (plainText && !plainText.startsWith('<')) return plainText
+  }
+  return `Request failed (${status})`
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {

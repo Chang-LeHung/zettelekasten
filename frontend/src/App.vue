@@ -13,6 +13,7 @@ import { buildConversationTurns, formatTurnDuration, splitTurnTimeline, type Con
 import { jsonSnapshot } from './utils/jsonSnapshot'
 import { buildMessageParts, displayMessageParts, rebaseImagePositions, type PositionedMessageImage } from './utils/messageParts'
 import { restorePersistedConversation } from './utils/persistedConversation'
+import { appendStreamedAssistantMessage } from './utils/streamedAssistant'
 import { defaultProviderBaseUrl, providerBaseUrlHelp } from './utils/providerDefaults'
 import { todoFromTool } from './utils/toolPresentation'
 import { hasRunningTool, upsertToolActivity } from './utils/toolActivities'
@@ -197,6 +198,29 @@ function resetStreamState(): void {
   pendingQuestion.value = null
   activeTodos.value = null
   streamingStatus.value = 'starting'
+}
+
+function commitStreamedResponse(
+  messages: readonly AnalysisMessage[],
+  options: { fallbackContent?: string; error?: string } = {},
+): void {
+  conversation.value = appendStreamedAssistantMessage(
+    messages,
+    {
+      content: streamingMessage.value,
+      reasoning: streamingReasoning.value || undefined,
+      activities: streamingActivities.value,
+      timeline: streamingTimeline.value,
+      duration_ms: stopTurnClock(),
+      generation_duration_ms: streamingGenerationDurationMs.value,
+      usage: streamingUsage.value || undefined,
+    },
+    options,
+  )
+}
+
+function hasStreamedResponse(): boolean {
+  return Boolean(streamingMessage.value || streamingReasoning.value || streamingTimeline.value.length)
 }
 
 function startTurnClock(): void {
@@ -518,7 +542,7 @@ function showNotice(message: string, kind: NoticeKind = 'success'): void {
 }
 
 function errorMessage(error: unknown): string {
-  if (error instanceof ApiError) return `Request failed (${error.status})`
+  if (error instanceof ApiError) return error.message
   return error instanceof Error ? error.message : 'Something went wrong'
 }
 
@@ -723,37 +747,19 @@ async function analyze(): Promise<void> {
       controller.signal,
       requestParts,
     )
-    conversation.value = [{
-      role: 'assistant',
-      content: streamingMessage.value || (result ? 'The artifact is ready.' : 'How would you like to continue?'),
-      reasoning: streamingReasoning.value || undefined,
-      activities: [...streamingActivities.value],
-      timeline: jsonSnapshot(streamingTimeline.value),
-      duration_ms: stopTurnClock(),
-      generation_duration_ms: streamingGenerationDurationMs.value,
-      usage: streamingUsage.value ? { ...streamingUsage.value } : undefined,
-    }]
+    commitStreamedResponse([], {
+      fallbackContent: result ? 'The artifact is ready.' : 'How would you like to continue?',
+    })
     await refreshArtifacts(true)
     await loadSessions(true)
     scheduleSessionTitleRefresh()
   } catch (error) {
     if (controller.signal.aborted || isAbortError(error)) {
-      if (streamingMessage.value || streamingReasoning.value || streamingTimeline.value.length) {
-        conversation.value = [{
-          role: 'assistant',
-          content: streamingMessage.value,
-          reasoning: streamingReasoning.value || undefined,
-          activities: [...streamingActivities.value],
-          timeline: jsonSnapshot(streamingTimeline.value),
-          duration_ms: stopTurnClock(),
-          generation_duration_ms: streamingGenerationDurationMs.value,
-          usage: streamingUsage.value ? { ...streamingUsage.value } : undefined,
-        }]
-      }
+      if (hasStreamedResponse()) commitStreamedResponse([])
       streamingStatus.value = 'cancelled'
       await loadSessions(true)
     } else {
-      showNotice(errorMessage(error), 'error')
+      commitStreamedResponse([], { error: errorMessage(error) })
     }
   } finally {
     stopTurnClock()
@@ -794,42 +800,18 @@ async function refine(): Promise<void> {
       controller.signal,
       requestParts,
     )
-    conversation.value = [
-      ...history,
-      {
-        role: 'assistant',
-        content: streamingMessage.value || (result ? 'The artifact is ready.' : 'How would you like to continue?'),
-        reasoning: streamingReasoning.value || undefined,
-        activities: [...streamingActivities.value],
-        timeline: jsonSnapshot(streamingTimeline.value),
-        duration_ms: stopTurnClock(),
-        generation_duration_ms: streamingGenerationDurationMs.value,
-        usage: streamingUsage.value ? { ...streamingUsage.value } : undefined,
-      },
-    ]
+    commitStreamedResponse(history, {
+      fallbackContent: result ? 'The artifact is ready.' : 'How would you like to continue?',
+    })
     await refreshArtifacts(true)
     await loadSessions(true)
   } catch (error) {
     if (controller.signal.aborted || isAbortError(error)) {
-      if (streamingMessage.value || streamingReasoning.value || streamingTimeline.value.length) {
-        conversation.value = [
-          ...history,
-          {
-            role: 'assistant',
-            content: streamingMessage.value,
-            reasoning: streamingReasoning.value || undefined,
-            activities: [...streamingActivities.value],
-            timeline: jsonSnapshot(streamingTimeline.value),
-            duration_ms: stopTurnClock(),
-            generation_duration_ms: streamingGenerationDurationMs.value,
-            usage: streamingUsage.value ? { ...streamingUsage.value } : undefined,
-          },
-        ]
-      }
+      if (hasStreamedResponse()) commitStreamedResponse(history)
       streamingStatus.value = 'cancelled'
       await loadSessions(true)
     } else {
-      showNotice(errorMessage(error), 'error')
+      commitStreamedResponse(history, { error: errorMessage(error) })
     }
   } finally {
     stopTurnClock()
@@ -1011,6 +993,7 @@ async function syncSelectedArtifact(): Promise<void> {
 }
 
 async function resetWorkspace(): Promise<void> {
+  raw.value = ''
   artifactContent.value = null
   conversation.value = []
   followUp.value = ''
@@ -1743,7 +1726,11 @@ onBeforeUnmount(() => {
                             <MarkdownContent class="final-response" :content="entry.content" />
                           </template>
                           <span v-if="isRunningTurn(index)" class="streaming-dots compact" aria-label="Generating"><i /><i /><i /></span>
-                          <p v-else-if="!turnAnswerTimeline(turn, index).length" class="turn-empty-response">No response was recorded for this turn.</p>
+                          <p v-else-if="!turnAnswerTimeline(turn, index).length && !turn.response?.error" class="turn-empty-response">No response was recorded for this turn.</p>
+                          <div v-if="turn.response?.error" class="turn-error" role="alert">
+                            <strong>Request failed</strong>
+                            <span>{{ turn.response.error }}</span>
+                          </div>
                         </div>
                       </section>
                     </div>
@@ -2180,6 +2167,9 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .turn-task-list li.completed { color: #969d98; text-decoration: line-through; }
 .turn-task-list li.completed i { border-color: #789383; color: white; background: #789383; }
 .turn-empty-response { margin: 0; padding: .55rem .7rem; color: #949b97; font-size: .66rem; font-style: italic; }
+.turn-error { display: grid; gap: .2rem; margin-top: .7rem; padding: .58rem .72rem; border-left: 2px solid #c46c66; border-radius: 0 .55rem .55rem 0; color: #774541; background: #fbf3f2; font-size: .64rem; line-height: 1.45; }
+.turn-error strong { font-size: .66rem; font-weight: 650; }
+.turn-error span { overflow-wrap: anywhere; color: #8a5752; }
 @keyframes turn-reveal { from { opacity: 0; transform: translateY(-3px); } }
 .agent-welcome { max-width: 25rem; text-align: center; }
 .agent-welcome .feature-icon { margin: 0 auto; }
