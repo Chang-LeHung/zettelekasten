@@ -41,7 +41,7 @@ class ZettelkastenAgent:
         tools: Sequence[AgentTool] = (),
         extensions: Sequence[AgentExtension] = (),
         reasoning_effort: ReasoningEffort = ReasoningEffort.MEDIUM,
-        max_iterations: int = 12,
+        max_iterations: int = 36,
     ) -> Self:
         """Create one initialized runtime that can serve many sessions."""
         client = await create_agent(
