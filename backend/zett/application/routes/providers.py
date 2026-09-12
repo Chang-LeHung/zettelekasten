@@ -13,6 +13,7 @@ router = APIRouter(prefix="/ai/providers", tags=["providers"])
 
 def _response(provider: ProviderOut) -> ProviderResponse:
     temperature = provider.metadata.get("temperature")
+    response = provider.metadata.get("response", False)
     return ProviderResponse(
         id=provider.id,
         name=provider.name,
@@ -21,6 +22,7 @@ def _response(provider: ProviderOut) -> ProviderResponse:
         base_url=provider.base_url,
         api_key_configured=provider.api_key_configured,
         temperature=float(temperature) if isinstance(temperature, int | float) else None,
+        response=response if isinstance(response, bool) else False,
         enabled=provider.enabled,
         created_at=provider.created_at,
         updated_at=provider.updated_at,
@@ -38,6 +40,7 @@ async def _write(payload: ProviderIn, *, existing_id: str | None = None) -> Prov
     metadata: dict[str, object] = {}
     if payload.temperature is not None:
         metadata["temperature"] = payload.temperature
+    metadata["response"] = payload.response
     return ProviderWrite(
         name=payload.name,
         provider=payload.provider,

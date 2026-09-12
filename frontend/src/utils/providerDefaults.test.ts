@@ -18,6 +18,11 @@ describe('provider defaults', () => {
     expect(providerBaseUrlHelp('openai_compatible')).toContain('Enter the endpoint')
   })
 
+  it('uses the unversioned DeepSeek root for the Responses API', () => {
+    expect(defaultProviderBaseUrl('deepseek', true)).toBe('https://api.deepseek.com')
+    expect(defaultProviderBaseUrl('deepseek', false)).toBe('https://api.deepseek.com/v1')
+  })
+
   it('describes the local Ollama default separately', () => {
     expect(providerBaseUrlHelp('ollama')).toContain('local Ollama')
     expect(providerBaseUrlHelp('openai')).toContain('standard API endpoint')

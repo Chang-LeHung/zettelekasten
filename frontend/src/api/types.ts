@@ -316,6 +316,7 @@ export interface AIProviderInput {
   base_url: string
   api_key: string
   temperature: number
+  response: boolean
   enabled: boolean
 }
 

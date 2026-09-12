@@ -29,6 +29,7 @@ def _provider_payload(**changes):
         "base_url": "https://example.invalid/v1",
         "api_key": "secret",
         "temperature": 0.3,
+        "response": True,
         "enabled": True,
     }
     payload.update(changes)
@@ -135,6 +136,7 @@ def test_provider_http_lifecycle_preserves_blank_update_key():
         provider_id = created.json()["id"]
         assert created.json()["api_key_configured"] is True
         assert created.json()["temperature"] == 0.3
+        assert created.json()["response"] is True
         assert "api_key" not in created.json()
 
         updated = client.put(
@@ -146,9 +148,17 @@ def test_provider_http_lifecycle_preserves_blank_update_key():
         connection = provider_storage.resolve_connection(provider_id)
         assert connection is not None and connection.api_key is not None
         assert connection.api_key.get_secret_value() == "secret"
+        assert connection.metadata["response"] is True
         assert client.get(f"/api/ai/providers/{provider_id}").json()["id"] == provider_id
         assert client.delete(f"/api/ai/providers/{provider_id}").json() == {"ok": True}
         assert client.get(f"/api/ai/providers/{provider_id}").status_code == 404
+
+
+def test_provider_http_rejects_response_mode_for_native_non_responses_adapter():
+    with TestClient(app) as client:
+        result = client.post("/api/ai/providers", json=_provider_payload(provider="anthropic", response=True))
+
+    assert result.status_code == 422
 
 
 class FakeModel:

@@ -139,6 +139,7 @@ class ProviderIn(BaseModel):
     base_url: str | None = None
     api_key: str | None = None
     temperature: float | None = Field(default=None, ge=0, le=2)
+    response: bool = Field(default=False, description="Use a Responses API endpoint instead of chat completions")
     enabled: bool = True
 
     @field_validator("provider", mode="before")
@@ -153,6 +154,14 @@ class ProviderIn(BaseModel):
     def empty_string_is_none(cls, value: object) -> object:
         return None if value == "" else value
 
+    @model_validator(mode="after")
+    def responses_api_requires_compatible_provider(self) -> ProviderIn:
+        """Reject a Responses mode that the selected native adapter cannot use."""
+        supported = {ProviderType.OPENAI, ProviderType.OPENAI_COMPATIBLE, ProviderType.DEEPSEEK}
+        if self.response and self.provider not in supported:
+            raise ValueError(f"Responses API is not supported by {self.provider.value}")
+        return self
+
 
 class ProviderResponse(BaseModel):
     """Safe provider settings; credentials are never returned."""
@@ -164,6 +173,7 @@ class ProviderResponse(BaseModel):
     base_url: str | None
     api_key_configured: bool
     temperature: float | None = None
+    response: bool = False
     enabled: bool
     created_at: datetime
     updated_at: datetime

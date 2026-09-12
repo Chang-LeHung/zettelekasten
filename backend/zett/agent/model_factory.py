@@ -20,6 +20,8 @@ def create_model(
     api_key = connection.api_key.get_secret_value() if connection.api_key is not None else ""
     temperature_value = connection.metadata.get("temperature")
     temperature = float(temperature_value) if isinstance(temperature_value, int | float) else None
+    response_value = connection.metadata.get("response", False)
+    response = response_value if isinstance(response_value, bool) else False
     match connection.provider:
         case ProviderType.OPENAI | ProviderType.OPENAI_COMPATIBLE:
             return OpenAIProvider(
@@ -27,6 +29,7 @@ def create_model(
                 api_key=api_key,
                 base_url=connection.base_url,
                 temperature=temperature,
+                response=response,
             )
         case ProviderType.DEEPSEEK:
             return DeepSeekProvider(
@@ -34,17 +37,20 @@ def create_model(
                 api_key=api_key,
                 base_url=connection.base_url,
                 temperature=temperature,
+                response=response,
             )
         case ProviderType.ANTHROPIC:
             return AnthropicProvider(
                 model=connection.model,
                 api_key=api_key,
                 **({"base_url": connection.base_url} if connection.base_url else {}),
+                response=response,
             )
         case ProviderType.GOOGLE:
-            return GoogleProvider(model=connection.model, api_key=api_key)
+            return GoogleProvider(model=connection.model, api_key=api_key, response=response)
         case ProviderType.OLLAMA:
             return OllamaProvider(
                 model=connection.model,
                 **({"base_url": connection.base_url} if connection.base_url else {}),
+                response=response,
             )

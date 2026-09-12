@@ -8,7 +8,8 @@ const providerBaseUrls: Readonly<Record<string, string>> = {
 }
 
 /** Return the conventional API endpoint for a provider, or an empty value when it cannot be inferred. */
-export function defaultProviderBaseUrl(provider: string): string {
+export function defaultProviderBaseUrl(provider: string, response = false): string {
+  if (provider === 'deepseek' && response) return 'https://api.deepseek.com'
   return providerBaseUrls[provider] ?? ''
 }
 

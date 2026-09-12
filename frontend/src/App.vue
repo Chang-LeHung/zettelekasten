@@ -110,6 +110,7 @@ const ai = ref<AIProviderInput>({
   base_url: '',
   api_key: '',
   temperature: 0.2,
+  response: false,
   enabled: true,
 })
 const runtimeSettings = ref<RuntimeSettings>({ max_message_images: 32 })
@@ -1361,17 +1362,22 @@ function selectProvider(provider: AIProvider): void {
     base_url: provider.base_url || '',
     api_key: '',
     temperature: provider.temperature,
+    response: provider.response,
     enabled: provider.enabled,
   }
 }
 
 function newProvider(): void {
   editingProviderId.value = null
-  ai.value = { name: '', provider: 'openai_compatible', model: '', base_url: '', api_key: '', temperature: 0.2, enabled: true }
+  ai.value = { name: '', provider: 'openai_compatible', model: '', base_url: '', api_key: '', temperature: 0.2, response: false, enabled: true }
 }
 
 function selectProviderKind(): void {
-  ai.value.base_url = defaultProviderBaseUrl(ai.value.provider)
+  ai.value.base_url = defaultProviderBaseUrl(ai.value.provider, ai.value.response)
+}
+
+function selectResponseApi(): void {
+  ai.value.base_url = defaultProviderBaseUrl(ai.value.provider, ai.value.response)
 }
 
 async function removeProvider(): Promise<void> {
@@ -1891,6 +1897,7 @@ onBeforeUnmount(() => {
               <label class="field full"><span>Base URL <em>{{ ai.provider === 'openai_compatible' ? 'Custom' : 'Auto-filled' }}</em></span><input v-model="ai.base_url" placeholder="https://api.example.com/v1" /><small>{{ providerBaseUrlHelp(ai.provider) }}</small></label>
               <label class="field full"><span>API key</span><input v-model="ai.api_key" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved key" /><small>Your key is encrypted locally and never returned by the API.</small></label>
               <label class="field temperature-field"><span>Temperature <output>{{ ai.temperature.toFixed(1) }}</output></span><input v-model.number="ai.temperature" type="range" min="0" max="2" step="0.1" /></label>
+              <label v-if="['openai', 'openai_compatible', 'deepseek'].includes(ai.provider)" class="field"><span>API mode</span><span class="switch"><input v-model="ai.response" type="checkbox" @change="selectResponseApi" /><span /><small>{{ ai.response ? 'Responses API' : 'Chat Completions' }}</small></span><small>Responses mode enables provider-hosted tools such as web search.</small></label>
             </div>
             <div class="settings-actions"><button v-if="editingProviderId !== null" class="danger-button" type="button" @click="removeProvider">Delete provider</button><span v-else>Credentials are encrypted in your local database.</span><div><label class="switch"><input v-model="ai.enabled" type="checkbox" /><span /><small>{{ ai.enabled ? 'Enabled' : 'Disabled' }}</small></label><button class="primary-action" :disabled="saving || !ai.name || !ai.model" type="submit">{{ saving ? 'Saving…' : editingProviderId === null ? 'Add provider' : 'Save provider' }}</button></div></div>
           </form>
