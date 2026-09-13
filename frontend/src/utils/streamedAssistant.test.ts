@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { reactive } from 'vue'
 import { appendStreamedAssistantMessage, createStreamedAssistantMessage } from './streamedAssistant'
 
 describe('createStreamedAssistantMessage', () => {
@@ -46,16 +47,17 @@ describe('createStreamedAssistantMessage', () => {
   })
 
   it('copies mutable stream collections before they are reset for the next turn', () => {
-    const activities = [{ id: 'call-1', name: 'read_file', state: 'started' as const }]
-    const timeline = [{ id: 'tool-call-1', type: 'tool' as const, activity: activities[0] }]
+    const activities = reactive([{ id: 'call-1', name: 'read_file', state: 'started' as const }])
+    const timeline = reactive([{ id: 'tool-call-1', type: 'tool' as const, activity: activities[0] }])
     const message = createStreamedAssistantMessage({
       content: '', activities, timeline, duration_ms: 0, generation_duration_ms: 0,
     })
 
-    activities.length = 0
+    activities[0].name = 'changed_after_commit'
     timeline.length = 0
 
     expect(message.activities).toHaveLength(1)
+    expect(message.activities?.[0]?.name).toBe('read_file')
     expect(message.timeline).toHaveLength(1)
   })
 

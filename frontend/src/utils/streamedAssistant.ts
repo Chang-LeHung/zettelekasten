@@ -1,4 +1,5 @@
 import type { AgentModelUsage, AgentTimelineEntry, AgentToolActivity, AnalysisMessage } from '../api/types'
+import { jsonSnapshot } from './jsonSnapshot'
 
 export interface StreamedAssistantSnapshot {
   content: string
@@ -24,8 +25,11 @@ export function createStreamedAssistantMessage(
     role: 'assistant',
     content: snapshot.content || options.fallbackContent || '',
     reasoning: snapshot.reasoning,
-    activities: [...snapshot.activities],
-    timeline: structuredClone(snapshot.timeline),
+    // Vue wraps live stream collections in proxies. structuredClone rejects
+    // proxies with DataCloneError exactly when the completed turn is handed
+    // off from transient stream state to durable conversation state.
+    activities: jsonSnapshot(snapshot.activities),
+    timeline: jsonSnapshot(snapshot.timeline),
     duration_ms: snapshot.duration_ms,
     generation_duration_ms: snapshot.generation_duration_ms,
     usage: snapshot.usage ? { ...snapshot.usage } : undefined,
