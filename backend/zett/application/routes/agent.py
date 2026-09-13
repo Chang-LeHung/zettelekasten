@@ -180,6 +180,8 @@ async def _prepare_agent_request(session_id: str, payload: AnalyzeRequest) -> _P
         agent = await ZettelkastenAgentConfig(
             session_id=session_id,
             max_iterations=runtime_settings.max_turn_iterations,
+            compaction_max_tokens=runtime_settings.compaction_max_tokens,
+            compaction_keep_recent_tokens=runtime_settings.compaction_keep_recent_tokens,
         ).create(storage)
         await active_requests.bind(config, agent)
         # Remember only a fully prepared request. Validation, Model creation,

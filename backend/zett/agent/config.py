@@ -20,6 +20,7 @@ from zett_agent import (
 )
 
 from .assets import AssetExtension
+from .context_composition import ContextCompositionExtension
 from .extensions import ZettelkastenExtension
 from .zettelkasten import ZettelkastenAgent
 
@@ -45,6 +46,8 @@ class ZettelkastenAgentConfig:
 
     session_id: str
     max_iterations: int = 36
+    compaction_max_tokens: int = 128_000
+    compaction_keep_recent_tokens: int = 32_000
     skill_roots: tuple[str | Path, ...] = ("~/.zett/skills",)
     mcp_servers: tuple[McpServer, ...] = ()
     mcp_config_path: str | Path | None = DEFAULT_MCP_CONFIG_PATH
@@ -55,6 +58,12 @@ class ZettelkastenAgentConfig:
             raise ValueError("session_id cannot be empty")
         if isinstance(self.max_iterations, bool) or self.max_iterations < 1:
             raise ValueError("max_iterations must be a positive integer")
+        if not 128_000 <= self.compaction_max_tokens <= 800_000:
+            raise ValueError("compaction_max_tokens must be between 128000 and 800000")
+        if not 32_000 <= self.compaction_keep_recent_tokens <= 256_000:
+            raise ValueError("compaction_keep_recent_tokens must be between 32000 and 256000")
+        if self.compaction_keep_recent_tokens >= self.compaction_max_tokens:
+            raise ValueError("compaction_keep_recent_tokens must be below compaction_max_tokens")
 
     async def create(self, storage: SQLiteSessionStorage) -> ZettelkastenAgent:
         """Build a fresh Agent whose persistence extension restores the session."""
@@ -69,7 +78,10 @@ class ZettelkastenAgentConfig:
                 CodingExtension(),
                 AskUserExtension(),
                 TodoWriteExtension(),
-                CompactionExtension(),
+                CompactionExtension(
+                    max_tokens=self.compaction_max_tokens,
+                    keep_recent_tokens=self.compaction_keep_recent_tokens,
+                ),
                 SkillExtension(self.skill_roots),
                 McpExtension(
                     servers=self.mcp_servers,
@@ -77,6 +89,7 @@ class ZettelkastenAgentConfig:
                     server_keys=self.mcp_server_keys,
                 ),
                 ToolGuidelinesExtension(),
+                ContextCompositionExtension(),
             ),
             max_iterations=self.max_iterations,
         )

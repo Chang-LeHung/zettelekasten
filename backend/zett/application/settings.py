@@ -1,6 +1,6 @@
 """Typed application settings backed by the local versioned key-value store."""
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ..infra.dao import KeyValueStorage, key_value_storage
 
@@ -24,6 +24,25 @@ class RuntimeSettings(BaseModel):
         le=256,
         description="Maximum number of primary model calls allowed for one turn",
     )
+    compaction_max_tokens: int = Field(
+        default=128_000,
+        ge=128_000,
+        le=800_000,
+        description="Estimated active-context tokens that trigger compaction",
+    )
+    compaction_keep_recent_tokens: int = Field(
+        default=32_000,
+        ge=32_000,
+        le=256_000,
+        description="Recent estimated tokens retained after compaction",
+    )
+
+    @model_validator(mode="after")
+    def validate_compaction_window(self) -> RuntimeSettings:
+        """Keep a non-empty budget for the generated compact snapshot."""
+        if self.compaction_keep_recent_tokens >= self.compaction_max_tokens:
+            raise ValueError("compaction_keep_recent_tokens must be below compaction_max_tokens")
+        return self
 
 
 class RuntimeSettingsService:

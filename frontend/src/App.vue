@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ApiError, aiClient, libraryClient, settingsClient, tagClient } from './api/client'
-import type { AgentArtifact, AgentCompactionActivity, AgentCustomEvent, AgentModelUsage, AgentServerToolActivity, AgentSession, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageContentPart, ReasoningEffort, RuntimeSettings, SessionAsset, Tag } from './api/types'
+import type { AgentArtifact, AgentCompactionActivity, AgentContextComposition, AgentCustomEvent, AgentModelUsage, AgentServerToolActivity, AgentSession, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageContentPart, ReasoningEffort, RuntimeSettings, SessionAsset, Tag } from './api/types'
 import AgentComposerControls from './components/AgentComposerControls.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import AssetPreviewDialog from './components/AssetPreviewDialog.vue'
 import AskUserPrompt from './components/AskUserPrompt.vue'
-import { addAgentUsage, summarizeAgentUsage } from './utils/agentUsage'
+import { addAgentUsage, latestAgentUsage, summarizeAgentUsage } from './utils/agentUsage'
 import { assetOpenAction, isPdfAsset } from './utils/assetOpen'
 import { createAsyncRefreshScheduler } from './utils/asyncRefresh'
 import { buildConversationTurns, formatTurnDuration, splitTurnTimeline, type ConversationTurn } from './utils/conversationTurns'
@@ -18,6 +18,7 @@ import { defaultProviderBaseUrl, providerBaseUrlHelp } from './utils/providerDef
 import { todoFromTool } from './utils/toolPresentation'
 import { hasRunningTool, upsertToolActivity } from './utils/toolActivities'
 import { splitSlides } from './utils/slides'
+import { asContextComposition } from './utils/contextComposition'
 
 const MarkdownContent = defineAsyncComponent(() => import('./components/MarkdownContent.vue'))
 const LibraryEditor = defineAsyncComponent(() => import('./components/LibraryEditor.vue'))
@@ -64,6 +65,8 @@ const streamingReasoning = ref('')
 const streamingActivities = ref<AgentToolActivity[]>([])
 const streamingTimeline = ref<AgentTimelineEntry[]>([])
 const streamingUsage = ref<AgentModelUsage | null>(null)
+const currentContextUsage = ref<AgentModelUsage | null>(null)
+const contextComposition = ref<AgentContextComposition | null>(null)
 const streamingGenerationDurationMs = ref(0)
 const pendingQuestion = ref<AskUserState | null>(null)
 const askAnswer = ref('')
@@ -115,7 +118,12 @@ const ai = ref<AIProviderInput>({
   response: false,
   enabled: true,
 })
-const runtimeSettings = ref<RuntimeSettings>({ max_message_images: 32, max_turn_iterations: 36 })
+const runtimeSettings = ref<RuntimeSettings>({
+  max_message_images: 32,
+  max_turn_iterations: 36,
+  compaction_max_tokens: 128_000,
+  compaction_keep_recent_tokens: 32_000,
+})
 const runtimeSettingsSaving = ref(false)
 const searchInput = ref<HTMLInputElement | null>(null)
 const agentThread = ref<HTMLElement | null>(null)
@@ -420,6 +428,7 @@ function streamCallbacks() {
     onModelStarted: () => { modelStartedAt = performance.now() },
     onUsage: (usage: AgentModelUsage) => {
       streamingUsage.value = addAgentUsage(streamingUsage.value, usage)
+      currentContextUsage.value = usage
       if (modelStartedAt) streamingGenerationDurationMs.value += performance.now() - modelStartedAt
       modelStartedAt = 0
     },
@@ -458,6 +467,10 @@ function streamCallbacks() {
 }
 
 function handleCustomAgentEvent(event: AgentCustomEvent): void {
+  if (event.name === 'context_composition') {
+    contextComposition.value = asContextComposition(event.payload)
+    return
+  }
   if (event.name !== 'ask_user') return
   const payload = event.payload
   if (typeof payload.tool_call_id !== 'string' || typeof payload.question !== 'string') return
@@ -917,6 +930,8 @@ function applySession(session: AgentSession): void {
   initialMessageParts.value = restored.initialParts
   pendingMessageImages.value = []
   conversation.value = restored.messages
+  currentContextUsage.value = latestAgentUsage(restored.messages)
+  contextComposition.value = null
   followUp.value = ''
   followAgentOutput = true
   scrollAgentThread(true)
@@ -1065,6 +1080,8 @@ async function resetWorkspace(): Promise<void> {
   selectedArtifactId.value = null
   artifactPreview.value = true
   conversationId.value = null
+  currentContextUsage.value = null
+  contextComposition.value = null
   resetStreamState()
   streamingStatus.value = 'idle'
   window.localStorage.removeItem(activeSessionKey)
@@ -1841,6 +1858,9 @@ onBeforeUnmount(() => {
                     :effort="reasoningEffort"
                     :disabled="loading"
                     :usage="conversationUsage"
+                    :current-usage="currentContextUsage"
+                    :context-composition="contextComposition"
+                    :compaction-max-tokens="runtimeSettings.compaction_max_tokens"
                     @update:selected-provider-id="selectedProviderId = $event"
                     @update:effort="reasoningEffort = $event"
                     @add-provider="navigate('settings')"
@@ -1950,6 +1970,16 @@ onBeforeUnmount(() => {
                 <span>Model steps per turn</span>
                 <input v-model.number="runtimeSettings.max_turn_iterations" type="number" min="1" max="256" step="1" />
                 <small>Maximum model calls, including tool-loop continuations, allowed in one turn.</small>
+              </label>
+              <label class="field">
+                <span>Compact context at</span>
+                <input v-model.number="runtimeSettings.compaction_max_tokens" type="number" min="128000" max="800000" step="1000" />
+                <small>Estimated active-context tokens that trigger a compact snapshot.</small>
+              </label>
+              <label class="field">
+                <span>Keep recent context</span>
+                <input v-model.number="runtimeSettings.compaction_keep_recent_tokens" type="number" min="32000" max="256000" step="1000" />
+                <small>Recent estimated tokens retained verbatim after compaction.</small>
               </label>
             </div>
             <div class="settings-actions">

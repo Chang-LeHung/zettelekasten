@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import type { AIProvider, ReasoningEffort } from '../api/types'
+import type { AgentContextComposition, AgentModelUsage, AIProvider, ReasoningEffort } from '../api/types'
 import { formatTokenCount, type AgentUsageSummary } from '../utils/agentUsage'
+import ContextCompositionRing from './ContextCompositionRing.vue'
 
 const props = defineProps<{
   providers: AIProvider[]
@@ -9,6 +10,9 @@ const props = defineProps<{
   effort: ReasoningEffort
   disabled: boolean
   usage: AgentUsageSummary | null
+  currentUsage: AgentModelUsage | null
+  contextComposition: AgentContextComposition | null
+  compactionMaxTokens: number
 }>()
 
 const emit = defineEmits<{
@@ -142,11 +146,17 @@ onBeforeUnmount(() => {
     </div>
 
     <dl v-if="usage" class="usage-strip" aria-label="Conversation token usage">
-      <div title="Total provider input tokens"><dt>Input</dt><dd>{{ formatTokenCount(usage.input_tokens) }}</dd></div>
-      <div title="Total provider output tokens"><dt>Output</dt><dd>{{ formatTokenCount(usage.output_tokens) }}</dd></div>
+      <div title="Input tokens accumulated across every model step"><dt>Total in</dt><dd>{{ formatTokenCount(usage.input_tokens) }}</dd></div>
+      <div title="Output tokens accumulated across every model step"><dt>Total out</dt><dd>{{ formatTokenCount(usage.output_tokens) }}</dd></div>
       <div title="Cached input tokens divided by all input tokens"><dt>Cache</dt><dd>{{ usage.cache_hit_rate === null ? '—' : `${(usage.cache_hit_rate * 100).toFixed(1)}%` }}</dd></div>
       <div title="Output tokens per second of model generation"><dt>Speed</dt><dd>{{ usage.tokens_per_second === null ? '—' : `${usage.tokens_per_second.toFixed(1)} tok/s` }}</dd></div>
     </dl>
+    <ContextCompositionRing
+      v-if="contextComposition"
+      :composition="contextComposition"
+      :current-tokens="currentUsage?.input_tokens ?? null"
+      :max-tokens="compactionMaxTokens"
+    />
   </div>
 </template>
 

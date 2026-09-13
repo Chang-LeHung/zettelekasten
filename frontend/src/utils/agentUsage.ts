@@ -52,6 +52,15 @@ export function summarizeAgentUsage(messages: readonly AnalysisMessage[]): Agent
   }
 }
 
+/** Return the provider counters for the latest completed model step. */
+export function latestAgentUsage(messages: readonly AnalysisMessage[]): AgentModelUsage | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const usage = messages[index]?.usage
+    if (usage) return usage
+  }
+  return null
+}
+
 /** Render large token counters compactly without hiding their magnitude. */
 export function formatTokenCount(value: number): string {
   if (value < 1_000) return String(value)

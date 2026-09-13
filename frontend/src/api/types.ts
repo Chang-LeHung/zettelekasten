@@ -83,6 +83,16 @@ export type ReasoningEffort = 'off' | 'low' | 'medium' | 'high'
 export interface RuntimeSettings {
   max_message_images: number
   max_turn_iterations: number
+  compaction_max_tokens: number
+  compaction_keep_recent_tokens: number
+}
+
+export interface AgentContextComposition {
+  system_prompt: number
+  tool_prompt: number
+  tool_output: number
+  user: number
+  assistant: number
 }
 
 export interface SessionAsset {

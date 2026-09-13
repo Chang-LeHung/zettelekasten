@@ -128,6 +128,26 @@ it('delivers usage for every completed model step in one tool loop', async () =>
   expect(usages).toEqual([120, 180])
 })
 
+it('forwards context composition ratios without interpreting custom payloads', async () => {
+  const composition = {
+    system_prompt: 0.1,
+    tool_prompt: 0.2,
+    tool_output: 0.3,
+    user: 0.15,
+    assistant: 0.25,
+  }
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
+    `event: custom\ndata: ${JSON.stringify({ session_id: 'session', phase: 'ready', name: 'context_composition', payload: composition })}\n\n`,
+  )))
+  const events: Array<{ name: string; payload: Record<string, unknown> }> = []
+
+  await aiClient.analyzeStream('session', 'hello', 'provider', 'medium', [], {
+    onCustom: event => events.push(event),
+  })
+
+  expect(events).toEqual([{ name: 'context_composition', payload: composition }])
+})
+
 it('exposes the backend error detail instead of discarding it', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
     JSON.stringify({ detail: 'The selected provider is unavailable' }),
@@ -174,19 +194,22 @@ it('sends pasted images in their position among text segments', async () => {
 
 it('loads and replaces runtime settings through the typed client', async () => {
   const fetchMock = vi.fn()
-    .mockResolvedValueOnce(new Response(JSON.stringify({ max_message_images: 32, max_turn_iterations: 36 })))
-    .mockResolvedValueOnce(new Response(JSON.stringify({ max_message_images: 48, max_turn_iterations: 64 })))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ max_message_images: 32, max_turn_iterations: 36, compaction_max_tokens: 128000, compaction_keep_recent_tokens: 32000 })))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ max_message_images: 48, max_turn_iterations: 64, compaction_max_tokens: 512000, compaction_keep_recent_tokens: 64000 })))
   vi.stubGlobal('fetch', fetchMock)
 
-  expect(await settingsClient.get()).toEqual({ max_message_images: 32, max_turn_iterations: 36 })
-  expect(await settingsClient.update({ max_message_images: 48, max_turn_iterations: 64 })).toEqual({
+  expect(await settingsClient.get()).toEqual({ max_message_images: 32, max_turn_iterations: 36, compaction_max_tokens: 128000, compaction_keep_recent_tokens: 32000 })
+  const update = { max_message_images: 48, max_turn_iterations: 64, compaction_max_tokens: 512000, compaction_keep_recent_tokens: 64000 }
+  expect(await settingsClient.update(update)).toEqual({
     max_message_images: 48,
     max_turn_iterations: 64,
+    compaction_max_tokens: 512000,
+    compaction_keep_recent_tokens: 64000,
   })
   expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/settings', expect.any(Object))
   expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
     method: 'PUT',
-    body: JSON.stringify({ max_message_images: 48, max_turn_iterations: 64 }),
+    body: JSON.stringify(update),
   })
 })
 

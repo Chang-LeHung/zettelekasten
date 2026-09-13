@@ -105,23 +105,65 @@ def test_runtime_settings_http_lifecycle_uses_defaults_and_persists_updates() ->
         assert client.get("/api/settings").json() == {
             "max_message_images": 32,
             "max_turn_iterations": 36,
+            "compaction_max_tokens": 128_000,
+            "compaction_keep_recent_tokens": 32_000,
         }
 
         updated = client.put(
             "/api/settings",
-            json={"max_message_images": 48, "max_turn_iterations": 64},
+            json={
+                "max_message_images": 48,
+                "max_turn_iterations": 64,
+                "compaction_max_tokens": 512_000,
+                "compaction_keep_recent_tokens": 64_000,
+            },
         )
         assert updated.status_code == 200
-        assert updated.json() == {"max_message_images": 48, "max_turn_iterations": 64}
+        assert updated.json() == {
+            "max_message_images": 48,
+            "max_turn_iterations": 64,
+            "compaction_max_tokens": 512_000,
+            "compaction_keep_recent_tokens": 64_000,
+        }
         assert client.get("/api/settings").json() == {
             "max_message_images": 48,
             "max_turn_iterations": 64,
+            "compaction_max_tokens": 512_000,
+            "compaction_keep_recent_tokens": 64_000,
         }
 
         assert client.put("/api/settings", json={"max_message_images": 0}).status_code == 422
         assert client.put("/api/settings", json={"max_message_images": 257}).status_code == 422
         assert client.put("/api/settings", json={"max_turn_iterations": 0}).status_code == 422
         assert client.put("/api/settings", json={"max_turn_iterations": 257}).status_code == 422
+        assert (
+            client.put(
+                "/api/settings",
+                json={"compaction_max_tokens": 32_000, "compaction_keep_recent_tokens": 32_000},
+            ).status_code
+            == 422
+        )
+        assert (
+            client.put(
+                "/api/settings",
+                json={"compaction_max_tokens": 801_000, "compaction_keep_recent_tokens": 32_000},
+            ).status_code
+            == 422
+        )
+        assert (
+            client.put(
+                "/api/settings",
+                json={"compaction_max_tokens": 800_000, "compaction_keep_recent_tokens": 31_000},
+            ).status_code
+            == 422
+        )
+        assert (
+            client.put(
+                "/api/settings",
+                json={"compaction_max_tokens": 800_000, "compaction_keep_recent_tokens": 257_000},
+            ).status_code
+            == 422
+        )
 
     with session_scope() as session:
         revisions = list(session.scalars(select(KeyValueModel).where(KeyValueModel.key == "settings.runtime")))
@@ -130,4 +172,6 @@ def test_runtime_settings_http_lifecycle_uses_defaults_and_persists_updates() ->
         assert json.loads(revisions[0].value) == {
             "max_message_images": 48,
             "max_turn_iterations": 64,
+            "compaction_max_tokens": 512_000,
+            "compaction_keep_recent_tokens": 64_000,
         }

@@ -11,7 +11,10 @@ from zett_agent import (
     DEFAULT_MCP_SERVER_KEYS,
     AgentEvent,
     AgentEventType,
+    AgentMessage,
     AgentRunConfig,
+    AgentRunContext,
+    AgentState,
     AssistantMessage,
     McpExtension,
     McpHttpServer,
@@ -22,11 +25,21 @@ from zett_agent import (
     RawMessageRecord,
     SkillExtension,
     SQLiteSessionStorage,
+    SystemMessage,
     ToolCall,
+    ToolDefinition,
     ToolMessage,
+    UserMessage,
 )
 
-from zett.agent import ZettelkastenAgent, ZettelkastenAgentConfig, ZettelkastenEventDispatcher, event_payload
+from zett.agent import (
+    ContextCompositionExtension,
+    ZettelkastenAgent,
+    ZettelkastenAgentConfig,
+    ZettelkastenEventDispatcher,
+    context_composition,
+    event_payload,
+)
 from zett.application.presentation import message_out
 from zett.infra.agent_runtime import get_agent_runtime_storage
 
@@ -202,6 +215,73 @@ def test_factory_configuration_exposes_skill_and_mcp_defaults() -> None:
     assert config.mcp_servers == ()
     assert config.mcp_config_path == DEFAULT_MCP_CONFIG_PATH
     assert config.mcp_server_keys == DEFAULT_MCP_SERVER_KEYS
+    assert config.compaction_max_tokens == 128_000
+    assert config.compaction_keep_recent_tokens == 32_000
+
+
+def test_context_composition_returns_only_normalized_semantic_ratios() -> None:
+    request = ModelRequest(
+        messages=[
+            SystemMessage(content="Answer concisely."),
+            SystemMessage(content="# Tool guidelines\n\n## read_file\n- Read before writing."),
+            UserMessage(content="Inspect the project."),
+            AssistantMessage(content="I will inspect it."),
+            ToolMessage(tool_call_id="call-1", name="read_file", content='{"content":"README"}'),
+            AgentMessage(content="Continue after inspection."),
+        ],
+        tools=[
+            ToolDefinition(
+                name="read_file",
+                description="Read a file.",
+                parameters={"type": "object", "properties": {"path": {"type": "string"}}},
+            )
+        ],
+    )
+
+    ratios = context_composition(request)
+
+    assert set(ratios) == {
+        "system_prompt",
+        "tool_prompt",
+        "tool_output",
+        "user",
+        "assistant",
+    }
+    assert all(0 < ratio < 1 for ratio in ratios.values())
+    assert sum(ratios.values()) == pytest.approx(1)
+    assert all("token" not in key for key in ratios)
+
+
+async def test_context_composition_extension_is_registered_after_prompt_extensions(tmp_path) -> None:
+    storage = SQLiteSessionStorage(tmp_path / "agent.db")
+    try:
+        agent = await ZettelkastenAgentConfig("context-composition").create(storage)
+        extensions = agent.agent.extensions
+        names = [extension.name for extension in extensions]
+        assert names.index("ContextCompositionExtension") > names.index("ToolGuidelinesExtension")
+    finally:
+        storage.close()
+
+
+async def test_context_composition_is_refreshed_after_the_assistant_message() -> None:
+    extension = ContextCompositionExtension()
+    context = AgentRunContext(
+        config=AgentRunConfig(session_id="session-context"),
+        state=AgentState(messages=[SystemMessage(content="System"), UserMessage(content="Question")]),
+        tools={},
+    )
+    request = ModelRequest(messages=tuple(context.state.messages))
+    before = [event async for event in extension.before_model_events(context, request)]
+    response = ModelResponse(AssistantMessage(content="A sufficiently long assistant response."))
+    context.state.messages.append(response.message)
+
+    after = [event async for event in extension.after_model_events(context, response)]
+
+    assert before[0].payload is not None
+    assert after[0].payload is not None
+    assert before[0].payload["assistant"] == 0
+    assert after[0].payload["assistant"] > 0
+    assert sum(after[0].payload.values()) == pytest.approx(1)
 
 
 async def test_factory_loads_default_user_skills_and_mcp_configuration(tmp_path, monkeypatch) -> None:
