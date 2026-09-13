@@ -64,12 +64,12 @@ class ProviderModel(Base):
 
 
 class KeyValueModel(Base):
-    """One immutable version of a JSON value stored under an indexed key."""
+    """One mutable, versioned JSON value stored under a unique key."""
 
     __tablename__ = "key_values"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    key: Mapped[str] = mapped_column(String(500), index=True)
+    key: Mapped[str] = mapped_column(String(500), unique=True, index=True)
     value: Mapped[str] = mapped_column(Text)
     version: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(index=True)

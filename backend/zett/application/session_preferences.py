@@ -1,0 +1,51 @@
+"""Per-session UI preferences backed by the versioned application KV store."""
+
+from pydantic import BaseModel, ConfigDict
+
+from ..infra.dao import KeyValueStorage, key_value_storage
+from ..schemas import ProviderConnection, ProviderType
+
+SESSION_MODEL_KEY_PREFIX = "sessions.model."
+
+
+class SessionModelPreference(BaseModel):
+    """The provider configuration most recently used by one conversation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider_id: str
+    provider: ProviderType
+    model: str
+
+
+class SessionModelPreferenceService:
+    """Remember and restore model selection without extending Agent session rows."""
+
+    def __init__(self, storage: KeyValueStorage = key_value_storage) -> None:
+        self._storage = storage
+
+    @staticmethod
+    def _key(session_id: str) -> str:
+        return f"{SESSION_MODEL_KEY_PREFIX}{session_id}"
+
+    def get(self, session_id: str) -> SessionModelPreference | None:
+        """Return the last model used by a session, if it has completed selection."""
+        record = self._storage.get(self._key(session_id))
+        return None if record is None else SessionModelPreference.model_validate(record.value)
+
+    def remember(self, session_id: str, connection: ProviderConnection) -> SessionModelPreference:
+        """Update the preference after an enabled provider has been resolved."""
+        preference = SessionModelPreference(
+            provider_id=connection.id,
+            provider=connection.provider,
+            model=connection.model,
+        )
+        self._storage.update(self._key(session_id), preference.model_dump(mode="json"))
+        return preference
+
+    def delete(self, session_id: str) -> bool:
+        """Remove every preference revision owned by one deleted session."""
+        return self._storage.delete(self._key(session_id))
+
+
+session_model_preference_service = SessionModelPreferenceService()

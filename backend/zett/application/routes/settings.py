@@ -16,5 +16,5 @@ async def get_runtime_settings() -> RuntimeSettings:
 
 @router.put("", response_model=RuntimeSettings)
 async def update_runtime_settings(payload: RuntimeSettings) -> RuntimeSettings:
-    """Append a new version of the complete runtime settings document."""
+    """Replace the complete runtime settings document and increment its version."""
     return await run_sync(runtime_settings_service.update, payload)

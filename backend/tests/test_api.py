@@ -5,6 +5,7 @@ import inspect
 from collections.abc import AsyncIterator
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from zett_agent import (
     AssistantMessage,
     ImageBytesSource,
@@ -17,7 +18,10 @@ from zett_agent import (
 )
 
 from zett.application.routes import agent as agent_routes
+from zett.application.session_preferences import SESSION_MODEL_KEY_PREFIX
 from zett.infra.dao import provider_storage
+from zett.infra.database import session_scope
+from zett.infra.models import KeyValueModel
 from zett.main import app
 
 
@@ -400,9 +404,27 @@ def test_first_successful_turn_generates_the_session_title_once(monkeypatch):
             "messages": [],
         }
 
+        assert client.get(f"/api/agent/sessions/{session_id}/model").json() is None
         assert client.post(f"/api/agent/{session_id}/messages", json=payload).status_code == 200
         assert client.get(f"/api/agent/sessions/{session_id}").json()["title"] == "Designing a knowledge card editor"
         assert client.post(f"/api/agent/{session_id}/messages", json=payload).status_code == 200
+        assert client.get(f"/api/agent/sessions/{session_id}/model").json() == {
+            "provider_id": provider_id,
+            "provider": "openai_compatible",
+            "model": "test-model",
+        }
+
+    with session_scope() as session:
+        revisions = list(
+            session.scalars(
+                select(KeyValueModel)
+                .where(KeyValueModel.key == f"{SESSION_MODEL_KEY_PREFIX}{session_id}")
+                .order_by(KeyValueModel.version)
+            )
+        )
+        versions = [revision.version for revision in revisions]
+    assert len(revisions) == 1
+    assert versions == [2]
 
     assert len(models) == 3
     assert sum(model.title_requests > 0 for model in models) == 1

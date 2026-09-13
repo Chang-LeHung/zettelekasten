@@ -309,6 +309,12 @@ export interface AgentSession {
   assets: SessionAsset[]
 }
 
+export interface SessionModelPreference {
+  provider_id: string
+  provider: AIProviderKind
+  model: string
+}
+
 export type AIProviderKind =
   | 'openai_compatible'
   | 'responses_compatible'

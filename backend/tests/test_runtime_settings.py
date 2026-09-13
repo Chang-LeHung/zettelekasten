@@ -15,39 +15,32 @@ from zett.infra.models import KeyValueModel
 from zett.main import app
 
 
-def test_key_value_storage_appends_versions_and_reads_latest_revision() -> None:
+def test_key_value_storage_updates_one_record_and_increments_its_version() -> None:
     storage = KeyValueStorage()
 
-    first = storage.set("settings.example", {"label": "value-中文", "enabled": True})
-    second = storage.set("settings.example", {"label": "updated", "count": 2})
+    first = storage.update("settings.example", {"label": "value-中文", "enabled": True})
+    second = storage.update("settings.example", {"label": "updated", "count": 2})
 
     assert UUID(first.id).version == 7
-    assert UUID(second.id).version == 7
-    assert first.id != second.id
+    assert first.id == second.id
     assert first.version == 1
     assert second.version == 2
     assert storage.get("settings.example") == second
 
     with session_scope() as session:
-        revisions = list(
-            session.scalars(
-                select(KeyValueModel).where(KeyValueModel.key == "settings.example").order_by(KeyValueModel.version)
-            )
-        )
-        assert [revision.version for revision in revisions] == [1, 2]
-        assert [json.loads(revision.value) for revision in revisions] == [
-            {"label": "value-中文", "enabled": True},
-            {"label": "updated", "count": 2},
-        ]
+        records = list(session.scalars(select(KeyValueModel).where(KeyValueModel.key == "settings.example")))
+        assert len(records) == 1
+        assert records[0].version == 2
+        assert json.loads(records[0].value) == {"label": "updated", "count": 2}
 
 
 def test_key_value_storage_prefix_returns_only_latest_values_in_key_order() -> None:
     storage = KeyValueStorage()
-    storage.set("providers.second", {"value": 1})
-    storage.set("settings.runtime", {"value": "runtime"})
-    storage.set("providers.first", {"value": "first"})
-    storage.set("providers.second", {"value": 2})
-    storage.set("providers_%literal", {"value": "literal"})
+    storage.update("providers.second", {"value": 1})
+    storage.update("settings.runtime", {"value": "runtime"})
+    storage.update("providers.first", {"value": "first"})
+    storage.update("providers.second", {"value": 2})
+    storage.update("providers_%literal", {"value": "literal"})
 
     providers = list(storage.iter_prefix("providers."))
     assert [(record.key, record.version, record.value) for record in providers] == [
@@ -64,10 +57,10 @@ def test_key_value_storage_prefix_returns_only_latest_values_in_key_order() -> N
     assert [record.key for record in storage.iter_prefix("providers_%")] == ["providers_%literal"]
 
 
-def test_key_value_storage_delete_removes_all_revisions() -> None:
+def test_key_value_storage_delete_removes_the_record() -> None:
     storage = KeyValueStorage()
-    storage.set("settings.example", 1)
-    storage.set("settings.example", 2)
+    storage.update("settings.example", 1)
+    storage.update("settings.example", 2)
 
     assert storage.delete("settings.example") is True
     assert storage.delete("settings.example") is False
@@ -78,7 +71,7 @@ def test_key_value_storage_serializes_concurrent_versions() -> None:
     storage = KeyValueStorage()
 
     with ThreadPoolExecutor(max_workers=4) as executor:
-        records = list(executor.map(lambda value: storage.set("concurrent.key", value), range(8)))
+        records = list(executor.map(lambda value: storage.update("concurrent.key", value), range(8)))
 
     assert sorted(record.version for record in records) == list(range(1, 9))
     latest = storage.get("concurrent.key")
@@ -92,19 +85,19 @@ def test_key_value_storage_validates_keys_and_json_values() -> None:
     with pytest.raises(ValueError, match="cannot be empty"):
         storage.get("  ")
     with pytest.raises(ValueError, match="cannot exceed"):
-        storage.set("x" * 501, None)
+        storage.update("x" * 501, None)
     with pytest.raises((TypeError, ValueError)):
-        storage.set("invalid.value", {"not_json": object()})  # type: ignore[dict-item]
+        storage.update("invalid.value", {"not_json": object()})  # type: ignore[dict-item]
 
 
-def test_key_column_has_a_non_unique_sqlite_index(isolated_database: Engine) -> None:
+def test_key_column_has_a_unique_sqlite_index(isolated_database: Engine) -> None:
     key_column = KeyValueModel.__table__.c.key
 
     assert key_column.index is True
-    assert key_column.unique is not True
+    assert key_column.unique is True
     indexes = inspect(isolated_database).get_indexes(KeyValueModel.__tablename__)
     key_index = next(index for index in indexes if index["column_names"] == ["key"])
-    assert key_index["unique"] == 0
+    assert key_index["unique"] == 1
 
 
 def test_runtime_settings_http_lifecycle_uses_defaults_and_persists_updates() -> None:

@@ -28,6 +28,7 @@ from ...infra.dao import provider_storage, session_storage
 from ...infra.log import get_logger
 from ..dependencies import run_sync
 from ..schemas import AnalyzeRequest, ExternalEventIn, ExternalEventOut, MessageImagePartIn, MessageTextPartIn
+from ..session_preferences import session_model_preference_service
 from ..session_titles import generate_initial_session_title
 from ..settings import runtime_settings_service
 
@@ -112,6 +113,9 @@ async def stream_message(session_id: str, payload: AnalyzeRequest) -> StreamingR
 
     runtime_settings = await run_sync(runtime_settings_service.get)
     user_message = _user_message(payload, max_images=runtime_settings.max_message_images)
+    # Persist after all request validation so reopening the session restores
+    # the last model that was actually accepted for a model run.
+    await run_sync(session_model_preference_service.remember, session_id, connection)
     model = create_model(connection)
     frames: deque[str] = deque()
 

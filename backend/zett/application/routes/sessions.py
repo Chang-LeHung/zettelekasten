@@ -10,6 +10,7 @@ from ...schemas import AgentSessionCreate
 from ..dependencies import run_sync
 from ..presentation import message_out, session_out
 from ..schemas import AgentStartOut, DeleteResponse, PersistedMessageOut, SessionOut
+from ..session_preferences import SessionModelPreference, session_model_preference_service
 
 router = APIRouter(prefix="/agent", tags=["sessions"])
 
@@ -53,6 +54,14 @@ async def get_session(session_id: str) -> SessionOut:
     return await _session_detail(session_id)
 
 
+@router.get("/sessions/{session_id}/model", response_model=SessionModelPreference | None)
+async def get_session_model(session_id: str) -> SessionModelPreference | None:
+    """Return the provider configuration most recently used by this session."""
+    if await run_sync(session_storage.get, session_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+    return await run_sync(session_model_preference_service.get, session_id)
+
+
 @router.get("/sessions/{session_id}/messages", response_model=list[PersistedMessageOut])
 async def list_session_messages(
     session_id: str,
@@ -79,4 +88,7 @@ async def update_session_title(session_id: str, payload: AgentSessionCreate) -> 
 @router.delete("/sessions/{session_id}", response_model=DeleteResponse)
 async def delete_session(session_id: str) -> DeleteResponse:
     """Explicitly delete a session and its owned assets and artifacts."""
-    return DeleteResponse(ok=await run_sync(session_storage.delete, session_id))
+    deleted = await run_sync(session_storage.delete, session_id)
+    if deleted:
+        await run_sync(session_model_preference_service.delete, session_id)
+    return DeleteResponse(ok=deleted)

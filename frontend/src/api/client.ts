@@ -16,6 +16,7 @@ import type {
   MessagePartInput,
   ReasoningEffort,
   RuntimeSettings,
+  SessionModelPreference,
   Tag,
   SessionAsset,
 } from './types'
@@ -289,6 +290,10 @@ export const aiClient = {
 
   getAgentSession(conversationId: string): Promise<AgentSession> {
     return request<AgentSession>(`/agent/sessions/${conversationId}`)
+  },
+
+  getAgentSessionModel(conversationId: string): Promise<SessionModelPreference | null> {
+    return request<SessionModelPreference | null>(`/agent/sessions/${conversationId}/model`)
   },
 
   updateAgentSessionTitle(conversationId: string, title: string): Promise<AgentSession> {

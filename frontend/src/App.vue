@@ -882,6 +882,7 @@ async function ensureConversation(): Promise<string> {
     try {
       const persisted = await aiClient.getAgentSession(persistedId)
       applySession(persisted)
+      await restoreSessionModel(persisted.id)
       return persisted.id
     } catch {
       window.localStorage.removeItem(activeSessionKey)
@@ -910,11 +911,26 @@ function applySession(session: AgentSession): void {
   scrollAgentThread(true)
 }
 
+async function restoreSessionModel(sessionId: string): Promise<void> {
+  const fallback = providers.value.find((provider) => provider.enabled) || null
+  try {
+    const preference = await aiClient.getAgentSessionModel(sessionId)
+    const selected = providers.value.find(
+      (provider) => provider.enabled && provider.id === preference?.provider_id,
+    ) || fallback
+    selectedProviderId.value = selected?.id ?? null
+  } catch {
+    selectedProviderId.value = fallback?.id ?? null
+  }
+}
+
 async function openSession(sessionId: string): Promise<void> {
   if (loading.value || sessionId === conversationId.value) return
   sessionsLoading.value = true
   try {
-    applySession(await aiClient.getAgentSession(sessionId))
+    const session = await aiClient.getAgentSession(sessionId)
+    applySession(session)
+    await restoreSessionModel(session.id)
     view.value = 'new'
   } catch (error) {
     showNotice(errorMessage(error), 'error')
@@ -1420,7 +1436,9 @@ async function initializeWorkspace(): Promise<void> {
   const persistedId = window.localStorage.getItem(activeSessionKey)
   if (persistedId) {
     try {
-      applySession(await aiClient.getAgentSession(persistedId))
+      const session = await aiClient.getAgentSession(persistedId)
+      applySession(session)
+      await restoreSessionModel(session.id)
     } catch {
       window.localStorage.removeItem(activeSessionKey)
     }

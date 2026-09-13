@@ -34,7 +34,7 @@ class RuntimeSettingsService:
     def update(self, value: RuntimeSettings) -> RuntimeSettings:
         """Atomically replace all runtime settings and return the stored value."""
         stored = value.model_copy(deep=True)
-        self._storage.set(RUNTIME_SETTINGS_KEY, stored.model_dump(mode="json"))
+        self._storage.update(RUNTIME_SETTINGS_KEY, stored.model_dump(mode="json"))
         return stored
 
 

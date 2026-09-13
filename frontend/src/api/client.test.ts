@@ -141,3 +141,16 @@ it('loads and replaces runtime settings through the typed client', async () => {
     body: JSON.stringify({ max_message_images: 48 }),
   })
 })
+
+it('loads the model most recently used by one session', async () => {
+  const preference = {
+    provider_id: 'provider-7',
+    provider: 'deepseek',
+    model: 'deepseek-v4-flash',
+  }
+  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(preference)))
+  vi.stubGlobal('fetch', fetchMock)
+
+  expect(await aiClient.getAgentSessionModel('session-7')).toEqual(preference)
+  expect(fetchMock).toHaveBeenCalledWith('/api/agent/sessions/session-7/model', expect.any(Object))
+})
