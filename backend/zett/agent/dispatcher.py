@@ -1,11 +1,20 @@
 """Lossless server-sent event projection for zett-agent events."""
 
+import base64
 import json
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict
 from enum import Enum
 
-from zett_agent import AgentEvent, AgentEventDispatcher, AssistantMessage, ToolCall, ToolMessage
+from zett_agent import (
+    AgentEvent,
+    AgentEventDispatcher,
+    AssistantMessage,
+    ImageContent,
+    ImageUrlSource,
+    ToolCall,
+    ToolMessage,
+)
 
 type SSESend = Callable[[str], Awaitable[None]]
 
@@ -20,6 +29,14 @@ def _json_default(value: object) -> object:
     """Serialize framework dataclasses and enums without exposing exceptions."""
     if isinstance(value, Enum):
         return value.value
+    if isinstance(value, ImageContent):
+        source = value.source
+        url = (
+            source.url
+            if isinstance(source, ImageUrlSource)
+            else f"data:{source.media_type};base64,{base64.b64encode(source.data).decode('ascii')}"
+        )
+        return {"type": "image", "url": url, "alt_text": value.alt_text}
     if hasattr(value, "__dataclass_fields__"):
         return asdict(value)  # type: ignore[arg-type]
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
@@ -43,7 +60,7 @@ def _message(message: AssistantMessage | ToolMessage) -> dict[str, object]:
             }
         case ToolMessage():
             try:
-                output: object = json.loads(message.content)
+                output: object = json.loads(message.content) if isinstance(message.content, str) else message.content
             except json.JSONDecodeError:
                 output = message.content
             return {
