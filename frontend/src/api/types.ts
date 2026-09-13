@@ -82,6 +82,7 @@ export type ReasoningEffort = 'off' | 'low' | 'medium' | 'high'
 
 export interface RuntimeSettings {
   max_message_images: number
+  max_turn_iterations: number
 }
 
 export interface SessionAsset {

@@ -8,7 +8,6 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
-from .agent import close_zettelkasten_agent, initialize_zettelkasten_agent
 from .application import api_router
 from .infra.agent_runtime import close_agent_runtime_storage, get_agent_runtime_storage
 from .infra.database import init_db
@@ -23,13 +22,11 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
     log_path = await run_in_threadpool(configure_logging)
     try:
         await run_in_threadpool(init_db)
-        storage = await run_in_threadpool(get_agent_runtime_storage)
-        await initialize_zettelkasten_agent(storage)
+        await run_in_threadpool(get_agent_runtime_storage)
         logger.info("Zett service started; log_file=%s", log_path)
         yield
     finally:
         logger.info("Zett service stopped")
-        close_zettelkasten_agent()
         try:
             await run_in_threadpool(close_agent_runtime_storage)
         finally:

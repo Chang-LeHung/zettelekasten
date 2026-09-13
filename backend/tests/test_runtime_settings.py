@@ -102,18 +102,32 @@ def test_key_column_has_a_unique_sqlite_index(isolated_database: Engine) -> None
 
 def test_runtime_settings_http_lifecycle_uses_defaults_and_persists_updates() -> None:
     with TestClient(app) as client:
-        assert client.get("/api/settings").json() == {"max_message_images": 32}
+        assert client.get("/api/settings").json() == {
+            "max_message_images": 32,
+            "max_turn_iterations": 36,
+        }
 
-        updated = client.put("/api/settings", json={"max_message_images": 48})
+        updated = client.put(
+            "/api/settings",
+            json={"max_message_images": 48, "max_turn_iterations": 64},
+        )
         assert updated.status_code == 200
-        assert updated.json() == {"max_message_images": 48}
-        assert client.get("/api/settings").json() == {"max_message_images": 48}
+        assert updated.json() == {"max_message_images": 48, "max_turn_iterations": 64}
+        assert client.get("/api/settings").json() == {
+            "max_message_images": 48,
+            "max_turn_iterations": 64,
+        }
 
         assert client.put("/api/settings", json={"max_message_images": 0}).status_code == 422
         assert client.put("/api/settings", json={"max_message_images": 257}).status_code == 422
+        assert client.put("/api/settings", json={"max_turn_iterations": 0}).status_code == 422
+        assert client.put("/api/settings", json={"max_turn_iterations": 257}).status_code == 422
 
     with session_scope() as session:
         revisions = list(session.scalars(select(KeyValueModel).where(KeyValueModel.key == "settings.runtime")))
         assert len(revisions) == 1
         assert revisions[0].version == 1
-        assert json.loads(revisions[0].value) == {"max_message_images": 48}
+        assert json.loads(revisions[0].value) == {
+            "max_message_images": 48,
+            "max_turn_iterations": 64,
+        }

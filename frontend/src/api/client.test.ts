@@ -129,16 +129,19 @@ it('sends pasted images in their position among text segments', async () => {
 
 it('loads and replaces runtime settings through the typed client', async () => {
   const fetchMock = vi.fn()
-    .mockResolvedValueOnce(new Response(JSON.stringify({ max_message_images: 32 })))
-    .mockResolvedValueOnce(new Response(JSON.stringify({ max_message_images: 48 })))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ max_message_images: 32, max_turn_iterations: 36 })))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ max_message_images: 48, max_turn_iterations: 64 })))
   vi.stubGlobal('fetch', fetchMock)
 
-  expect(await settingsClient.get()).toEqual({ max_message_images: 32 })
-  expect(await settingsClient.update({ max_message_images: 48 })).toEqual({ max_message_images: 48 })
+  expect(await settingsClient.get()).toEqual({ max_message_images: 32, max_turn_iterations: 36 })
+  expect(await settingsClient.update({ max_message_images: 48, max_turn_iterations: 64 })).toEqual({
+    max_message_images: 48,
+    max_turn_iterations: 64,
+  })
   expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/settings', expect.any(Object))
   expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
     method: 'PUT',
-    body: JSON.stringify({ max_message_images: 48 }),
+    body: JSON.stringify({ max_message_images: 48, max_turn_iterations: 64 }),
   })
 })
 

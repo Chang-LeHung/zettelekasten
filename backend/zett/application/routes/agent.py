@@ -21,9 +21,10 @@ from zett_agent import (
     new_uuid7,
 )
 
-from ...agent import ZettelkastenEventDispatcher, encode_sse, get_zettelkasten_agent
+from ...agent import ZettelkastenAgent, ZettelkastenAgentConfig, ZettelkastenEventDispatcher, encode_sse
 from ...agent.model_factory import create_model
 from ...config import settings
+from ...infra.agent_runtime import get_agent_runtime_storage
 from ...infra.dao import provider_storage, session_storage
 from ...infra.log import get_logger
 from ..dependencies import run_sync
@@ -40,26 +41,28 @@ class ActiveRequestRegistry:
     """Route external UI events to one active request per session."""
 
     def __init__(self) -> None:
-        self._requests: dict[str, AgentRunConfig] = {}
+        self._requests: dict[str, tuple[AgentRunConfig, ZettelkastenAgent]] = {}
         self._lock = asyncio.Lock()
 
-    async def add(self, config: AgentRunConfig) -> None:
+    async def add(self, config: AgentRunConfig, agent: ZettelkastenAgent) -> None:
         async with self._lock:
             if config.session_id in self._requests:
                 raise HTTPException(status.HTTP_409_CONFLICT, "This session already has an active request")
-            self._requests[config.session_id] = config
+            self._requests[config.session_id] = (config, agent)
 
     async def remove(self, config: AgentRunConfig) -> None:
         async with self._lock:
-            if self._requests.get(config.session_id) == config:
+            active = self._requests.get(config.session_id)
+            if active is not None and active[0] == config:
                 self._requests.pop(config.session_id)
 
     async def emit(self, session_id: str, event: ExternalEvent) -> list[str] | None:
         async with self._lock:
-            config = self._requests.get(session_id)
-        if config is None:
+            active = self._requests.get(session_id)
+        if active is None:
             return None
-        return get_zettelkasten_agent().emit_external_event(event, config=config)
+        config, agent = active
+        return agent.emit_external_event(event, config=config)
 
 
 active_requests = ActiveRequestRegistry()
@@ -123,11 +126,15 @@ async def stream_message(session_id: str, payload: AnalyzeRequest) -> StreamingR
         frames.append(frame)
 
     config = AgentRunConfig(session_id=session_id, request_id=new_uuid7())
-    agent = get_zettelkasten_agent()
+    storage = await run_sync(get_agent_runtime_storage)
+    agent = await ZettelkastenAgentConfig(
+        session_id=session_id,
+        max_iterations=runtime_settings.max_turn_iterations,
+    ).create(storage)
     client = agent.client(ZettelkastenEventDispatcher(send))
     run_completed = False
     try:
-        await active_requests.add(config)
+        await active_requests.add(config, agent)
     except Exception:
         await model.aclose()
         raise

@@ -386,13 +386,21 @@ class TitleAwareModel:
 
 def test_first_successful_turn_generates_the_session_title_once(monkeypatch):
     models: list[TitleAwareModel] = []
+    request_agents = []
+    original_agent_factory = agent_routes.ZettelkastenAgentConfig.create
 
     def model_factory(_connection):
         model = TitleAwareModel()
         models.append(model)
         return model
 
+    async def agent_factory(config, storage):
+        agent = await original_agent_factory(config, storage)
+        request_agents.append(agent)
+        return agent
+
     monkeypatch.setattr(agent_routes, "create_model", model_factory)
+    monkeypatch.setattr(agent_routes.ZettelkastenAgentConfig, "create", agent_factory)
     monkeypatch.setattr("zett.application.session_titles.create_model", model_factory)
     with TestClient(app) as client:
         session_id = client.post("/api/agent/start").json()["conversation_id"]
@@ -407,6 +415,13 @@ def test_first_successful_turn_generates_the_session_title_once(monkeypatch):
         assert client.get(f"/api/agent/sessions/{session_id}/model").json() is None
         assert client.post(f"/api/agent/{session_id}/messages", json=payload).status_code == 200
         assert client.get(f"/api/agent/sessions/{session_id}").json()["title"] == "Designing a knowledge card editor"
+        assert (
+            client.put(
+                "/api/settings",
+                json={"max_message_images": 32, "max_turn_iterations": 9},
+            ).status_code
+            == 200
+        )
         assert client.post(f"/api/agent/{session_id}/messages", json=payload).status_code == 200
         assert client.get(f"/api/agent/sessions/{session_id}/model").json() == {
             "provider_id": provider_id,
@@ -427,5 +442,8 @@ def test_first_successful_turn_generates_the_session_title_once(monkeypatch):
     assert versions == [2]
 
     assert len(models) == 3
+    assert len(request_agents) == 2
+    assert request_agents[0] is not request_agents[1]
+    assert [agent.agent.max_iterations for agent in request_agents] == [36, 9]
     assert sum(model.title_requests > 0 for model in models) == 1
     assert all(model.closed for model in models)

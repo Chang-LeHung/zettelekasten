@@ -18,6 +18,12 @@ class RuntimeSettings(BaseModel):
         le=256,
         description="Maximum number of pasted images accepted in one user message",
     )
+    max_turn_iterations: int = Field(
+        default=36,
+        ge=1,
+        le=256,
+        description="Maximum number of primary model calls allowed for one turn",
+    )
 
 
 class RuntimeSettingsService:

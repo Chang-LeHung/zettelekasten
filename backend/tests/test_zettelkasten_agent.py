@@ -20,8 +20,9 @@ from zett_agent import (
     ToolMessage,
 )
 
-from zett.agent import ZettelkastenAgent, ZettelkastenEventDispatcher, event_payload
+from zett.agent import ZettelkastenAgent, ZettelkastenAgentConfig, ZettelkastenEventDispatcher, event_payload
 from zett.application.presentation import message_out
+from zett.infra.agent_runtime import get_agent_runtime_storage
 
 
 class StreamingModel:
@@ -176,6 +177,16 @@ async def test_one_agent_uses_request_owned_models_and_dispatchers() -> None:
     assert await asyncio.gather(run("a"), run("b")) == ["a", "b"]
     assert received["a"][-1] == AgentEventType.RUN_COMPLETED.value
     assert received["b"][-1] == AgentEventType.RUN_COMPLETED.value
+
+
+async def test_factory_builds_a_fresh_agent_for_every_message_request() -> None:
+    storage = get_agent_runtime_storage()
+    first = await ZettelkastenAgentConfig("session-a", max_iterations=7).create(storage)
+    second = await ZettelkastenAgentConfig("session-a", max_iterations=11).create(storage)
+
+    assert second is not first
+    assert first.agent.max_iterations == 7
+    assert second.agent.max_iterations == 11
 
 
 @pytest.mark.parametrize(

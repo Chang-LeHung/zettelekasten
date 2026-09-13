@@ -19,13 +19,11 @@ from zett_agent import (
 
 
 class ZettelkastenAgent:
-    """Own one reusable Agent while requests provide models and dispatchers.
+    """Own one conversation Agent while requests provide models and dispatchers.
 
-    The underlying Agent isolates mutable state by session ID and rejects two
-    overlapping requests for the same session. A lightweight AgentClient is
-    created per HTTP request so each response owns its own SSE dispatcher.
-    Provider adapters are request-scoped and override the optional default
-    model without mutating this shared instance.
+    A lightweight AgentClient is created per HTTP request so each response
+    owns its own SSE dispatcher. Provider adapters remain request-scoped and
+    override the optional default model without mutating this session Agent.
     """
 
     def __init__(self, agent: Agent) -> None:
@@ -43,7 +41,7 @@ class ZettelkastenAgent:
         reasoning_effort: ReasoningEffort = ReasoningEffort.MEDIUM,
         max_iterations: int = 36,
     ) -> Self:
-        """Create one initialized runtime that can serve many sessions."""
+        """Create one initialized conversation runtime."""
         client = await create_agent(
             model,
             config=config or AgentRunConfig(session_id=new_uuid7()),
@@ -56,7 +54,7 @@ class ZettelkastenAgent:
         return cls(client.agent)
 
     def client(self, dispatcher: AgentEventDispatcher) -> AgentClient:
-        """Bind a request-owned dispatcher to the shared Agent runtime."""
+        """Bind a request-owned dispatcher to this conversation runtime."""
         return AgentClient(self.agent, event_dispatcher=dispatcher)
 
     def emit_external_event(self, event: ExternalEvent, *, config: AgentRunConfig) -> list[str]:
