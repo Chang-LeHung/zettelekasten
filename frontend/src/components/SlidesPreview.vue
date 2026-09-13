@@ -276,7 +276,7 @@ onBeforeUnmount(() => {
 .slide-body :deep(li::marker) { color: inherit; }
 .slide-body :deep(li ul), .slide-body :deep(li ol) { margin-top: .22em; margin-bottom: .22em; font-size: 1em; }
 .slide-body :deep(blockquote) {
-  padding: .62em .85em .64em 1em;
+  padding: .4em 0 .4em .9em;
   border: 0;
   border-left: 2px solid #aab5ae;
   border-radius: 0;
@@ -305,6 +305,9 @@ onBeforeUnmount(() => {
 .slide-body :deep(th:last-child), .slide-body :deep(td:last-child) { border-right: 0; }
 .slide-body :deep(hr) { margin: .85rem 0; border: 0; border-top: 1px solid var(--slide-line); }
 .slide-body :deep(img) { display: block; max-width: 100%; max-height: 17em; margin: .62rem auto; border: 0; border-radius: 0; object-fit: contain; box-shadow: none; }
+.slide-body :deep(.markdown-figure) { margin: .7em 0; }
+.slide-body :deep(.markdown-figure img) { max-height: 13em; margin: 0 auto; }
+.slide-body :deep(figcaption) { margin-top: .45em; font-size: .7em; }
 .slide-body :deep(.mermaid-block) { margin: .6rem 0; border-color: #dedfdf; border-radius: .2rem; background: #fff; }
 .slide-body :deep(.mermaid-toolbar) { min-height: 1.75rem; padding: .2rem .35rem .2rem .7rem; background: #edf2ef; font-size: .55em; }
 .slide-body :deep(.mermaid-canvas) { min-height: 4rem; max-height: 15em; padding: .7rem; overflow: auto; }

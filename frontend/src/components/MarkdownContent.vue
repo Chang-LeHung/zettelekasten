@@ -39,6 +39,7 @@ import xml from 'highlight.js/lib/languages/xml'
 import yaml from 'highlight.js/lib/languages/yaml'
 import { katex } from '@mdit/plugin-katex'
 import MarkdownIt from 'markdown-it'
+import { markdownFigures } from '../utils/markdownFigures'
 import { changeDiagramZoom, clampDiagramZoom } from '../utils/diagramZoom'
 import { renderMermaid } from '../utils/mermaidRenderer'
 import 'highlight.js/styles/github.css'
@@ -142,6 +143,7 @@ renderer.use(katex, {
   throwOnError: false,
   strict: 'ignore',
 })
+renderer.use(markdownFigures)
 
 renderer.renderer.rules.link_open = (tokens, index, options, _environment, self) => {
   tokens[index].attrSet('target', '_blank')
@@ -350,7 +352,14 @@ onBeforeUnmount(() => {
 .markdown-body :deep(ul), .markdown-body :deep(ol) { padding-left: 1.45em; }
 .markdown-body :deep(li + li) { margin-top: .25em; }
 .markdown-body :deep(a) { color: #35684e; text-decoration-thickness: .08em; text-underline-offset: .16em; }
-.markdown-body :deep(blockquote) { padding: .15em 0 .15em .9em; border-left: .22em solid #9bb5a5; color: #5f6963; }
+.markdown-body :deep(blockquote) { margin: 1em 0; padding: .45em 0 .45em 1em; border-left: 2px solid #8fa79a; color: #526058; background: transparent; font-style: normal; }
+.markdown-body :deep(blockquote > :first-child) { margin-top: 0; }
+.markdown-body :deep(blockquote > :last-child) { margin-bottom: 0; }
+.markdown-body :deep(blockquote blockquote) { margin: .65em 0; border-color: #c7d2cb; }
+.markdown-body :deep(.markdown-figure) { display: block; margin: 1.4em 0; padding: 0; break-inside: avoid; text-align: center; }
+.markdown-body :deep(.markdown-figure img) { display: block; width: auto; max-width: 100%; height: auto; margin: 0 auto; border: 0; border-radius: .2rem; object-fit: contain; box-shadow: none; }
+.markdown-body :deep(figcaption) { max-width: 90%; margin: .65em auto 0; color: #68736c; font-size: .85em; line-height: 1.5; text-align: center; overflow-wrap: anywhere; }
+.markdown-body :deep(.figure-number) { color: #404c44; font-weight: 650; font-variant-numeric: tabular-nums; }
 .markdown-body :deep(code) { padding: .14em .34em; border-radius: .32em; color: #744b2e; background: #f1ece7; font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: .88em; }
 .markdown-body :deep(.code-block) { max-width: 100%; margin: .62em 0; overflow: hidden; border: 1px solid #dfe5e1; border-radius: .72rem; background: #f6f8f7; box-shadow: inset 0 1px rgba(255,255,255,.72); }
 .markdown-body :deep(.code-block-toolbar) { display: flex; align-items: center; justify-content: space-between; min-height: 2.25rem; padding: .35rem .55rem .35rem .9rem; border-bottom: 1px solid #e3e8e5; color: #78817c; background: #f0f3f1; font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: .72em; text-transform: lowercase; }

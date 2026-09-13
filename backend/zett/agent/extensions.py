@@ -34,8 +34,20 @@ class ZettelkastenExtension(AgentExtension):
                 - Keep newly generated artifacts in draft state until the user asks to save them.
                 - A card contains one idea; use the fewest words that preserve its meaning.
                 - Keep card titles, summaries, and bodies simple, direct, and brief.
+                - Use Markdown, not raw HTML or CSS. Separate paragraphs and block elements with blank lines.
+                - Use '# Title', '## Section', and '### Subsection'; use '**important**' sparingly and '- item' for lists.
+                - Quote with '> quoted text'; prefix each quoted paragraph with '>' and use '>>' for nested quotes.
+                - Place each figure alone in a paragraph: '![descriptive alt text](image-url "Caption")'.
+                - Figure captions use the optional image title, falling back to alt text; the UI adds 'Figure N:' automatically.
+                - Do not manually number figures or repeat captions below them. Inline images do not receive figure captions.
+                - Use an accessible image URL, never a local filesystem path; do not invent image or asset URLs.
+                - Use '$x^2$' for inline math and a standalone '$$' line before and after display math; do not add rules or backgrounds.
+                - Use single backticks for inline code and triple-backtick fences with a language such as python, cpp, or rust.
+                - Put Mermaid source in a triple-backtick fence labeled 'mermaid'; the UI renders the diagram.
+                - Use pipe tables with a header separator such as '| --- | --- |'; keep columns short and readable.
                 - For slides, use an exact '---' line between horizontal sections.
                 - Use an exact '--' line for vertically related slides inside the same section.
+                - Slide separators must have no surrounding spaces. Do not use standalone '--' or '---' as decoration or code inside a deck.
                 - A slide deck must contain at least two non-empty pages.
                 - Begin every page, including vertical pages, with its own concise Markdown heading.
                 - Start each horizontal section with a title-only page; place its content below using '--'.
@@ -59,8 +71,19 @@ class ZettelkastenExtension(AgentExtension):
             Guidelines:
                 - Read the artifact information already present in context before replacing it.
                 - Keep cards focused on one idea and remove every word that does not add meaning.
+                - Use Markdown, not raw HTML or CSS; separate paragraphs, lists, and blocks with blank lines.
+                - Use '# Title', '## Section', '### Subsection', '**important**', and '- item' for structure.
+                - Use '> quoted text' for quotations and '>>' for nested quotes; the UI supplies the quote styling.
+                - Put each figure alone in a paragraph: '![descriptive alt text](image-url "Caption")'.
+                - The UI adds 'Figure N:' using the image title or alt text; never manually number or duplicate captions.
+                - Inline images have no figure caption. Preserve accessible image URLs; never substitute local paths or invented URLs.
+                - Use '$x^2$' for inline math and standalone '$$' lines around display math, without decorative rules or backgrounds.
+                - Use single backticks for inline code and triple-backtick fences labeled with the code language.
+                - Mermaid diagrams use a triple-backtick 'mermaid' fence; tables use pipes and a '| --- | --- |' header separator.
                 - Preserve strict slide navigation: '---' between sections and '--' within a section.
                 - Give every slide its own concise Markdown heading.
+                - Each horizontal section begins with a title-only page, followed by '--' and its content pages.
+                - Slide separators must be exact unpadded lines; never use standalone '--' or '---' as decoration or code inside a deck.
             """
             current = self._artifact(session_id, artifact_id)
             return artifact_storage.update(
