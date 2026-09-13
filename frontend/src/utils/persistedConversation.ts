@@ -82,7 +82,11 @@ export function restorePersistedConversation(records: readonly AgentPersistedMes
       if (!activity) continue
       activity.name = record.tool_name || activity.name
       activity.state = record.tool_success === false ? 'failed' : 'succeeded'
-      activity.output = toolOutput(record.content)
+      activity.output = record.parts?.length
+        ? record.parts.map(part => part.type === 'image'
+          ? { type: 'image', url: part.content_url, alt_text: part.name }
+          : { text: part.text })
+        : toolOutput(record.content)
       activity.error_message = record.tool_success === false ? record.content : null
       activity.duration_ms = record.duration_ns / 1_000_000
       pendingTools.delete(record.tool_call_id)

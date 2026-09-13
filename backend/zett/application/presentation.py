@@ -25,10 +25,13 @@ from .schemas import (
 )
 
 
-def _message_parts(message: UserMessage) -> list[MessagePartOut]:
+def _message_parts(message: UserMessage | ToolMessage) -> list[MessagePartOut]:
     """Expose persisted text and images without losing their semantic order."""
     parts: list[MessagePartOut] = []
-    for index, part in enumerate(message.parts, start=1):
+    content_parts = message.parts if isinstance(message, UserMessage) else message.content
+    if isinstance(content_parts, str):
+        return []
+    for index, part in enumerate(content_parts, start=1):
         if isinstance(part, TextContent):
             parts.append(MessageTextPartOut(text=part.text))
             continue
@@ -73,8 +76,10 @@ def message_out(record: RawMessageRecord) -> PersistedMessageOut:
             ]
             tool_call_id = tool_success = None
         case ToolMessage():
-            content = message.content
-            parts = []
+            # Tool images are already restored from SQLite. Keep the public
+            # text field textual and expose the original ordered blocks in parts.
+            content = message.text
+            parts = _message_parts(message)
             reasoning = model = provider = None
             tool_name = message.name
             tool_calls = []

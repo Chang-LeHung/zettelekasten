@@ -30,7 +30,7 @@ class MessageTextPartOut(BaseModel):
 
 
 class MessageImagePartOut(BaseModel):
-    """One image segment in an ordered persisted user message."""
+    """One image segment in an ordered persisted user or tool message."""
 
     type: Literal["image"] = "image"
     name: str

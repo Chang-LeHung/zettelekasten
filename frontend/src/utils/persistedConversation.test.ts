@@ -42,6 +42,29 @@ function record(
 }
 
 describe('restorePersistedConversation', () => {
+  it('restores ordered image tool output in the same shape as live events', () => {
+    const restored = restorePersistedConversation([
+      record(1, 'user', { content: 'Read the image' }),
+      record(2, 'assistant', {
+        tool_calls: [{ id: 'image', name: 'read_image', arguments: {} }],
+      }),
+      record(3, 'tool', {
+        tool_call_id: 'image', tool_name: 'read_image', tool_success: true,
+        content: 'beforeafter',
+        parts: [
+          { type: 'text', text: 'before' },
+          { type: 'image', name: 'preview.png', mime_type: 'image/png', content_url: 'data:image/png;base64,aW1hZ2U=' },
+          { type: 'text', text: 'after' },
+        ],
+      }),
+    ])
+    expect(restored.messages[0]?.activities?.[0]?.output).toEqual([
+      { text: 'before' },
+      { type: 'image', url: 'data:image/png;base64,aW1hZ2U=', alt_text: 'preview.png' },
+      { text: 'after' },
+    ])
+  })
+
   it('restores thinking, tool calls, results, and final text in model order', () => {
     const restored = restorePersistedConversation([
       record(1, 'user', { content: 'Inspect the project' }),
