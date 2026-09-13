@@ -1,13 +1,19 @@
 """Configure and build one isolated Agent for each message request."""
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from zett_agent import (
+    DEFAULT_MCP_CONFIG_PATH,
+    DEFAULT_MCP_SERVER_KEYS,
     AgentRunConfig,
     AskUserExtension,
     CodingExtension,
     CompactionExtension,
+    McpExtension,
+    McpServer,
     SessionPersistenceExtension,
+    SkillExtension,
     SQLiteSessionStorage,
     TodoWriteExtension,
     ToolGuidelinesExtension,
@@ -25,10 +31,21 @@ Use Markdown for card and article bodies. Ask the user when an important ambigui
 
 @dataclass(frozen=True, slots=True)
 class ZettelkastenAgentConfig:
-    """Complete construction settings for one request-scoped Agent."""
+    """Complete construction settings for one request-scoped Agent.
+
+    Defaults are explicit: Zett discovers skills only below
+    ``~/.zett/skills``, while MCP servers are loaded from
+    ``~/.zett/mcp.json`` when that file exists. Explicit servers are merged
+    with the configured file. Set ``mcp_config_path`` to ``None`` to disable
+    file loading; ``mcp_server_keys`` controls which JSON root names are valid.
+    """
 
     session_id: str
     max_iterations: int = 36
+    skill_roots: tuple[str | Path, ...] = ("~/.zett/skills",)
+    mcp_servers: tuple[McpServer, ...] = ()
+    mcp_config_path: str | Path | None = DEFAULT_MCP_CONFIG_PATH
+    mcp_server_keys: tuple[str, ...] = DEFAULT_MCP_SERVER_KEYS
 
     def __post_init__(self) -> None:
         if not self.session_id.strip():
@@ -38,6 +55,7 @@ class ZettelkastenAgentConfig:
 
     async def create(self, storage: SQLiteSessionStorage) -> ZettelkastenAgent:
         """Build a fresh Agent whose persistence extension restores the session."""
+        mcp_config_path = self._resolved_mcp_config_path()
         return await ZettelkastenAgent.create(
             config=AgentRunConfig(session_id=self.session_id),
             system_prompt=SYSTEM_PROMPT,
@@ -49,7 +67,23 @@ class ZettelkastenAgentConfig:
                 AskUserExtension(),
                 TodoWriteExtension(),
                 CompactionExtension(),
+                SkillExtension(self.skill_roots),
+                McpExtension(
+                    servers=self.mcp_servers,
+                    config_path=mcp_config_path,
+                    server_keys=self.mcp_server_keys,
+                ),
                 ToolGuidelinesExtension(),
             ),
             max_iterations=self.max_iterations,
         )
+
+    def _resolved_mcp_config_path(self) -> str | Path | None:
+        """Treat the absent default file as optional while keeping custom paths strict."""
+        if self.mcp_config_path is None:
+            return None
+        configured = Path(self.mcp_config_path).expanduser().resolve()
+        default = DEFAULT_MCP_CONFIG_PATH.expanduser().resolve()
+        if configured == default and not configured.is_file():
+            return None
+        return self.mcp_config_path

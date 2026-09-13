@@ -7,15 +7,21 @@ from datetime import UTC, datetime
 
 import pytest
 from zett_agent import (
+    DEFAULT_MCP_CONFIG_PATH,
+    DEFAULT_MCP_SERVER_KEYS,
     AgentEvent,
     AgentEventType,
     AgentRunConfig,
     AssistantMessage,
+    McpExtension,
+    McpHttpServer,
     ModelEvent,
     ModelRequest,
     ModelResponse,
     ModelUsage,
     RawMessageRecord,
+    SkillExtension,
+    SQLiteSessionStorage,
     ToolCall,
     ToolMessage,
 )
@@ -187,6 +193,78 @@ async def test_factory_builds_a_fresh_agent_for_every_message_request() -> None:
     assert second is not first
     assert first.agent.max_iterations == 7
     assert second.agent.max_iterations == 11
+
+
+def test_factory_configuration_exposes_skill_and_mcp_defaults() -> None:
+    config = ZettelkastenAgentConfig("defaults")
+
+    assert config.skill_roots == ("~/.zett/skills",)
+    assert config.mcp_servers == ()
+    assert config.mcp_config_path == DEFAULT_MCP_CONFIG_PATH
+    assert config.mcp_server_keys == DEFAULT_MCP_SERVER_KEYS
+
+
+async def test_factory_loads_default_user_skills_and_mcp_configuration(tmp_path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    skill_path = home / ".zett" / "skills" / "zett-review" / "SKILL.md"
+    skill_path.parent.mkdir(parents=True)
+    skill_path.write_text(
+        "---\nname: zett-review\ndescription: Review Zett changes.\n---\nRun focused checks.",
+        encoding="utf-8",
+    )
+    mcp_path = home / ".zett" / "mcp.json"
+    mcp_path.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "docs": {
+                        "type": "streamable-http",
+                        "url": "https://docs.test/mcp",
+                        "headers": {"Authorization": "Bearer secret"},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+    storage = SQLiteSessionStorage(tmp_path / "agent.db")
+    try:
+        agent = await ZettelkastenAgentConfig("configured-session").create(storage)
+
+        skill = next(item for item in agent.agent.extensions if isinstance(item, SkillExtension))
+        mcp = next(item for item in agent.agent.extensions if isinstance(item, McpExtension))
+        assert [(item.name, item.path) for item in skill.skills] == [("zett-review", skill_path.resolve())]
+        assert mcp.servers == (McpHttpServer("docs", "https://docs.test/mcp", {"Authorization": "Bearer secret"}),)
+    finally:
+        storage.close()
+
+
+async def test_factory_accepts_explicit_skill_and_mcp_configuration(tmp_path) -> None:
+    skill_root = tmp_path / "project-skills"
+    skill_path = skill_root / "project-review" / "SKILL.md"
+    skill_path.parent.mkdir(parents=True)
+    skill_path.write_text(
+        "---\nname: project-review\ndescription: Review project changes.\n---\nInspect the diff.",
+        encoding="utf-8",
+    )
+    storage = SQLiteSessionStorage(tmp_path / "agent.db")
+    server = McpHttpServer("internal", "https://internal.test/mcp")
+    try:
+        agent = await ZettelkastenAgentConfig(
+            "explicit-session",
+            skill_roots=(skill_root,),
+            mcp_servers=(server,),
+            mcp_config_path=None,
+        ).create(storage)
+
+        skill = next(item for item in agent.agent.extensions if isinstance(item, SkillExtension))
+        mcp = next(item for item in agent.agent.extensions if isinstance(item, McpExtension))
+        assert [(item.name, item.path) for item in skill.skills] == [("project-review", skill_path.resolve())]
+        assert mcp.servers == (server,)
+    finally:
+        storage.close()
 
 
 @pytest.mark.parametrize(
