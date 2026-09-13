@@ -1,13 +1,20 @@
 """End-to-end tests for the categorized asynchronous FastAPI interface."""
 
+import asyncio
 import base64
 import inspect
+import threading
 from collections.abc import AsyncIterator
+from contextlib import aclosing
 
+import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from zett_agent import (
+    AgentRunConfig,
     AssistantMessage,
+    ExternalEvent,
     ImageBytesSource,
     ModelEvent,
     ModelRequest,
@@ -56,6 +63,173 @@ def test_business_route_handlers_are_async():
     routes = [route for route in app.routes if getattr(route, "path", "").startswith("/api/")]
     assert routes
     assert all(inspect.iscoroutinefunction(route.endpoint) for route in routes)
+
+
+async def test_active_request_registry_rejects_overlap_and_allows_next_request() -> None:
+    registry = agent_routes.ActiveRequestRegistry()
+    first = AgentRunConfig(session_id="shared", request_id="first")
+    second = AgentRunConfig(session_id="shared", request_id="second")
+
+    await registry.reserve(first)
+    assert await registry.pending("shared") is True
+    await registry.reserve(AgentRunConfig(session_id="independent", request_id="parallel"))
+    assert await registry.pending("independent") is True
+    with pytest.raises(HTTPException) as conflict:
+        await registry.reserve(second)
+    assert conflict.value.status_code == 409
+
+    # A stale request cannot release a reservation that it does not own.
+    await registry.remove(second)
+    with pytest.raises(HTTPException):
+        await registry.reserve(second)
+
+    await registry.remove(first)
+    assert await registry.pending("shared") is False
+    await registry.reserve(second)
+    await registry.remove(second)
+
+
+async def test_active_request_registry_routes_only_after_agent_binding() -> None:
+    registry = agent_routes.ActiveRequestRegistry()
+    config = AgentRunConfig(session_id="events", request_id="request")
+    event = ExternalEvent(name="answer", payload={"choice": "A"})
+
+    assert await registry.emit("missing", event) is None
+    await registry.reserve(config)
+    assert await registry.emit("events", event) == []
+
+    class RecordingAgent:
+        def __init__(self) -> None:
+            self.received = []
+
+        def emit_external_event(self, received_event, *, config):
+            self.received.append((received_event, config))
+            return ["ask-user"]
+
+    agent = RecordingAgent()
+    await registry.bind(config, agent)  # type: ignore[arg-type]
+
+    assert await registry.emit("events", event) == ["ask-user"]
+    assert agent.received == [(event, config)]
+
+
+async def test_active_request_registry_requires_reservation_before_binding() -> None:
+    registry = agent_routes.ActiveRequestRegistry()
+    config = AgentRunConfig(session_id="unreserved", request_id="request")
+
+    with pytest.raises(RuntimeError, match="without its active request reservation"):
+        await registry.bind(config, object())  # type: ignore[arg-type]
+
+
+async def test_closing_stream_releases_session_and_provider_for_next_turn(monkeypatch) -> None:
+    """A browser disconnect must cancel ownership instead of wedging the session."""
+    entered = threading.Event()
+
+    class BlockingModel:
+        def __init__(self) -> None:
+            self.closed = False
+
+        async def stream(self, request):
+            entered.set()
+            yield ModelEvent.text("partial")
+            await asyncio.Event().wait()
+
+        async def aclose(self) -> None:
+            self.closed = True
+
+    model = BlockingModel()
+    monkeypatch.setattr(agent_routes, "create_model", lambda _connection: model)
+    with TestClient(app) as client:
+        session_id = client.post("/api/agent/start").json()["conversation_id"]
+        provider_id = client.post("/api/ai/providers", json=_provider_payload()).json()["id"]
+        payload = agent_routes.AnalyzeRequest.model_validate(
+            {
+                "raw_content": "wait",
+                "provider_id": provider_id,
+                "reasoning_effort": "medium",
+                "messages": [],
+            }
+        )
+        response = await agent_routes.stream_message(session_id, payload)
+
+        async def consume() -> None:
+            async with aclosing(response.body_iterator) as stream:
+                async for _ in stream:
+                    pass
+
+        consumer = asyncio.create_task(consume())
+        assert await asyncio.to_thread(entered.wait, 1)
+        assert await agent_routes.active_requests.pending(session_id) is True
+
+        # Starlette uses task cancellation when the HTTP client disconnects.
+        consumer.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await consumer
+
+        assert await agent_routes.active_requests.pending(session_id) is False
+        assert model.closed is True
+
+        # The released session can immediately reserve a fresh request.
+        next_config = AgentRunConfig(session_id=session_id, request_id="next")
+        await agent_routes.active_requests.reserve(next_config)
+        await agent_routes.active_requests.remove(next_config)
+
+
+async def test_agent_setup_failure_releases_reservation_and_closes_provider(monkeypatch) -> None:
+    class ClosingModel:
+        def __init__(self) -> None:
+            self.closed = False
+
+        async def aclose(self) -> None:
+            self.closed = True
+
+    async def fail_create(_config, _storage):
+        raise RuntimeError("agent setup failed")
+
+    model = ClosingModel()
+    monkeypatch.setattr(agent_routes, "create_model", lambda _connection: model)
+    monkeypatch.setattr(agent_routes.ZettelkastenAgentConfig, "create", fail_create)
+    with TestClient(app) as client:
+        session_id = client.post("/api/agent/start").json()["conversation_id"]
+        provider_id = client.post("/api/ai/providers", json=_provider_payload()).json()["id"]
+        payload = agent_routes.AnalyzeRequest.model_validate(
+            {"raw_content": "setup", "provider_id": provider_id, "reasoning_effort": "medium"}
+        )
+
+        with pytest.raises(RuntimeError, match="agent setup failed"):
+            await agent_routes.stream_message(session_id, payload)
+
+        assert await agent_routes.active_requests.pending(session_id) is False
+        assert model.closed is True
+
+
+async def test_provider_stream_failure_emits_error_and_releases_request(monkeypatch) -> None:
+    class FailingModel:
+        def __init__(self) -> None:
+            self.closed = False
+
+        async def stream(self, request):
+            raise RuntimeError("provider stream failed")
+            yield  # pragma: no cover - preserve the async-generator protocol
+
+        async def aclose(self) -> None:
+            self.closed = True
+
+    model = FailingModel()
+    monkeypatch.setattr(agent_routes, "create_model", lambda _connection: model)
+    with TestClient(app) as client:
+        session_id = client.post("/api/agent/start").json()["conversation_id"]
+        provider_id = client.post("/api/ai/providers", json=_provider_payload()).json()["id"]
+        payload = agent_routes.AnalyzeRequest.model_validate(
+            {"raw_content": "fail", "provider_id": provider_id, "reasoning_effort": "medium"}
+        )
+        response = await agent_routes.stream_message(session_id, payload)
+
+        chunks = [chunk async for chunk in response.body_iterator]
+
+        assert any("event: error" in chunk and "provider stream failed" in chunk for chunk in chunks)
+        assert await agent_routes.active_requests.pending(session_id) is False
+        assert model.closed is True
 
 
 def test_session_asset_and_artifact_http_lifecycle():
