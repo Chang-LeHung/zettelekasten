@@ -118,19 +118,23 @@ class SlidesArtifactContent(ArtifactContentBase):
     artifact_type: Literal[ArtifactType.SLIDES] = ArtifactType.SLIDES
     subtitle: str = Field(default="", description="Optional presentation subtitle")
     content: str = Field(
-        description="Markdown slides separated by a line containing only '---'; each slide should fit one viewport"
+        description=(
+            "Markdown deck: '---' starts a horizontal section and '--' starts a vertical slide within a section; "
+            "each slide should fit one viewport"
+        )
     )
 
     @field_validator("content")
     @classmethod
     def validate_pages(cls, value: str) -> str:
-        """Require an unambiguous multi-page deck with no empty slides."""
+        """Require exact two-dimensional separators and non-empty slides."""
         lines = value.splitlines()
-        if any(line.strip() == "---" and line != "---" for line in lines):
-            raise ValueError("slide separators must be exactly '---' with no surrounding whitespace")
-        separator_indexes = [index for index, line in enumerate(lines) if line == "---"]
+        separators = {"---", "--"}
+        if any(line.strip() in separators and line not in separators for line in lines):
+            raise ValueError("slide separators must be exactly '---' or '--' with no surrounding whitespace")
+        separator_indexes = [index for index, line in enumerate(lines) if line in separators]
         if not separator_indexes:
-            raise ValueError("slide content must contain at least one line containing only '---'")
+            raise ValueError("slide content must contain at least one line containing only '---' or '--'")
         boundaries = [-1, *separator_indexes, len(lines)]
         pages = [lines[start + 1 : end] for start, end in zip(boundaries[:-1], boundaries[1:], strict=True)]
         if any(not any(line.strip() for line in page) for page in pages):

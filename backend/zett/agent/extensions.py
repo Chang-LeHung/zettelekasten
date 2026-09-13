@@ -27,15 +27,18 @@ class ZettelkastenExtension(AgentExtension):
 
             Snippet:
                 create_artifact(content={"artifact_type": "card", "title": "...", "content": "..."})
-                create_artifact(content={"artifact_type": "slides", "title": "...", "content": "# Opening\n\n---\n\n## Next idea"})
+                create_artifact(content={"artifact_type": "slides", "title": "...", "content": "# Topic\n\n--\n\n## Detail\n\n---\n\n# Next topic"})
 
             Guidelines:
                 - Create an artifact only when it is a useful output of the conversation.
                 - Keep newly generated artifacts in draft state until the user asks to save them.
                 - A card contains one idea; use the fewest words that preserve its meaning.
                 - Keep card titles, summaries, and bodies simple, direct, and brief.
-                - For slides, separate pages with a line containing exactly '---' and no surrounding whitespace.
+                - For slides, use an exact '---' line between horizontal sections.
+                - Use an exact '--' line for vertically related slides inside the same section.
                 - A slide deck must contain at least two non-empty pages.
+                - Begin every page, including vertical pages, with its own concise Markdown heading.
+                - Start each horizontal section with a title-only page; place its content below using '--'.
                 - Keep each slide concise: one idea, a short heading, and no more than six brief bullets.
             """
             return artifact_storage.create(
@@ -56,7 +59,8 @@ class ZettelkastenExtension(AgentExtension):
             Guidelines:
                 - Read the artifact information already present in context before replacing it.
                 - Keep cards focused on one idea and remove every word that does not add meaning.
-                - Preserve the strict slide separator: one line containing exactly '---' between non-empty pages.
+                - Preserve strict slide navigation: '---' between sections and '--' within a section.
+                - Give every slide its own concise Markdown heading.
             """
             current = self._artifact(session_id, artifact_id)
             return artifact_storage.update(

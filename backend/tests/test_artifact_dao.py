@@ -142,3 +142,17 @@ def test_artifact_filters_and_explicit_session_cleanup() -> None:
 def test_slides_require_strict_non_empty_page_boundaries(content: str, error: str) -> None:
     with pytest.raises(ValueError, match=error):
         SlidesArtifactContent(title="Invalid deck", content=content)
+
+
+def test_slides_support_horizontal_sections_with_vertical_pages() -> None:
+    content = "# Section one\n--\n## Detail\n---\n# Section two"
+
+    slides = SlidesArtifactContent(title="Two-dimensional deck", content=content)
+
+    assert slides.content == content
+
+
+@pytest.mark.parametrize("content", ["# First\n -- \n# Second", "# First\n--\n---\n# Third"])
+def test_slides_reject_ambiguous_or_empty_vertical_pages(content: str) -> None:
+    with pytest.raises(ValueError):
+        SlidesArtifactContent(title="Invalid vertical deck", content=content)

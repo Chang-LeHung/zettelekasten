@@ -45,6 +45,34 @@ interface AskUserState {
 }
 const libraryItems = ref<LibraryItem[]>([])
 const selectedLibraryItem = ref<LibraryItem | null>(null)
+const fullscreenSlidesItem = ref<LibraryItem | null>(null)
+const librarySlidesStage = ref<HTMLElement | null>(null)
+let slidesPreviewTrigger: HTMLElement | null = null
+
+async function openSlidesFullscreen(item: LibraryItem): Promise<void> {
+  slidesPreviewTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  fullscreenSlidesItem.value = item
+  await nextTick()
+  librarySlidesStage.value?.focus()
+  try {
+    await librarySlidesStage.value?.requestFullscreen()
+  } catch {
+    // Keep the viewport-sized preview available if native fullscreen is unavailable.
+  }
+}
+
+async function closeSlidesFullscreen(): Promise<void> {
+  if (document.fullscreenElement === librarySlidesStage.value) await document.exitFullscreen()
+  fullscreenSlidesItem.value = null
+  slidesPreviewTrigger?.focus()
+}
+
+function handleSlidesFullscreenChange(): void {
+  if (!document.fullscreenElement && fullscreenSlidesItem.value) {
+    fullscreenSlidesItem.value = null
+    slidesPreviewTrigger?.focus()
+  }
+}
 const libraryEditorItem = ref<LibraryItem | null>(null)
 const libraryEditorSaving = ref(false)
 const libraryLoading = ref(false)
@@ -670,6 +698,10 @@ function openSearch(): void {
 }
 
 function handleShortcut(event: KeyboardEvent): void {
+  if (event.key === 'Escape' && fullscreenSlidesItem.value) {
+    void closeSlidesFullscreen()
+    return
+  }
   if (event.key === 'Escape' && libraryEditorItem.value) return
   if (event.key === 'Escape' && selectedLibraryItem.value) {
     selectedLibraryItem.value = null
@@ -1048,9 +1080,11 @@ async function loadSessions(reset = false): Promise<void> {
 }
 
 function selectArtifact(artifact: AgentArtifact): void {
+  const artifactChanged = selectedArtifactId.value !== artifact.id
   selectedArtifactId.value = artifact.id
   artifactContent.value = jsonSnapshot(artifact.content)
   selectedSuggestions.value = artifact.content.suggested_tags.map((tag) => tag.path)
+  if (artifactChanged) artifactPreview.value = true
 }
 
 function applyArtifacts(nextArtifacts: AgentArtifact[], preferLatest = true): void {
@@ -1493,12 +1527,14 @@ async function initializeWorkspace(): Promise<void> {
 }
 
 onMounted(() => {
+  document.addEventListener('fullscreenchange', handleSlidesFullscreenChange)
   window.addEventListener('keydown', handleShortcut)
   agentContentResizeObserver = new ResizeObserver(() => scrollAgentThread())
   if (agentTurnStack.value) agentContentResizeObserver.observe(agentTurnStack.value)
   void initializeWorkspace()
 })
 onBeforeUnmount(() => {
+  document.removeEventListener('fullscreenchange', handleSlidesFullscreenChange)
   resolveConfirmation?.(false)
   activeStreamController.value?.abort()
   if (agentScrollFrame !== null) window.cancelAnimationFrame(agentScrollFrame)
@@ -1632,6 +1668,9 @@ onBeforeUnmount(() => {
                 <span class="card-type">{{ item.item_type === 'card' ? item.card_type : item.item_type }}</span>
                 <div class="card-topline-actions">
                   <time>{{ formatDate(item.updated_at) }}</time>
+                  <button v-if="item.item_type === 'slides'" class="card-action-button" type="button" :aria-label="`Preview ${item.title} fullscreen`" title="Fullscreen preview" @click.stop="openSlidesFullscreen(item)" @keydown.stop>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6" /></svg>
+                  </button>
                   <button class="card-action-button" type="button" :aria-label="`Edit ${item.title}`" title="Edit and preview" @click.stop="openLibraryEditor(item)" @keydown.stop>
                     <svg><use href="#icon-edit" /></svg>
                   </button>
@@ -1757,11 +1796,12 @@ onBeforeUnmount(() => {
                       <div class="turn-prompt-content">
                         <template v-if="turn.prompt.parts?.length">
                           <template v-for="(part, partIndex) in turn.prompt.parts" :key="`${turn.id}-part-${partIndex}`">
-                            <MarkdownContent
+                            <div
                               v-if="part.type === 'text' && part.text"
                               class="message-content"
-                              :content="part.text"
-                            />
+                            >
+                              <MarkdownContent :content="part.text" />
+                            </div>
                             <img
                               v-else-if="part.type === 'image'"
                               class="turn-prompt-image"
@@ -1770,7 +1810,9 @@ onBeforeUnmount(() => {
                             />
                           </template>
                         </template>
-                        <MarkdownContent v-else-if="turn.prompt.content" class="message-content" :content="turn.prompt.content" />
+                        <div v-else-if="turn.prompt.content" class="message-content">
+                          <MarkdownContent :content="turn.prompt.content" />
+                        </div>
                       </div>
                     </section>
 
@@ -2009,6 +2051,12 @@ onBeforeUnmount(() => {
         </section>
       </template>
 
+      <Teleport to="body">
+        <section v-if="fullscreenSlidesItem" ref="librarySlidesStage" class="library-slides-fullscreen" role="dialog" aria-modal="true" :aria-label="fullscreenSlidesItem.title" tabindex="-1">
+          <button class="library-slides-close" type="button" aria-label="Close fullscreen preview" @click="closeSlidesFullscreen">×</button>
+          <SlidesPreview :title="fullscreenSlidesItem.title" :content="fullscreenSlidesItem.content" :show-fullscreen-button="false" auto-focus />
+        </section>
+      </Teleport>
       <Transition name="sheet">
         <div v-if="selectedLibraryItem" class="detail-backdrop" @click.self="selectedLibraryItem = null">
           <aside class="detail-sheet" role="dialog" aria-modal="true" :aria-label="selectedLibraryItem.title">
@@ -2263,13 +2311,14 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .asset-drop-zone small { color: #989e9a; font-size: .48rem; }
 .agent-thread { min-height: 0; padding: 1.2rem; overflow-y: auto; overscroll-behavior: contain; scroll-behavior: auto; scrollbar-width: thin; scrollbar-gutter: stable; overflow-anchor: none; }
 .agent-thread.empty { display: grid; place-items: center; }
-.turn-stack { width: min(100%, 46rem); margin: 0 auto; }
+.turn-stack { --conversation-font-size: 1rem; width: min(100%, 46rem); margin: 0 auto; }
 .conversation-turn { display: grid; gap: .5rem; margin-bottom: .72rem; }
 .turn-content { display: grid; gap: .68rem; padding: .12rem 0 .68rem; }
 .turn-prompt { display: flex; justify-content: flex-end; padding-left: 18%; }
-.turn-prompt-content { width: fit-content; max-width: 100%; overflow: hidden; border-radius: 1rem 1rem .3rem 1rem; color: #34483d; background: #eef1ef; }
-.turn-prompt .message-content { width: auto; max-width: 100%; padding: .68rem .82rem; border: 0; border-radius: 0; color: inherit; background: transparent; box-shadow: none; }
-.turn-prompt-image { display: block; width: min(100%, 22rem); max-height: 18rem; margin: .32rem; border-radius: .75rem; object-fit: contain; background: #e2e7e4; }
+/* Keep bubble spacing on its DOM container: MarkdownContent has multiple roots. */
+.turn-prompt-content { box-sizing: border-box; display: grid; gap: .5rem; width: fit-content; min-width: 0; max-width: 100%; padding: .68rem 1rem; overflow: hidden; border-radius: 1rem 1rem .3rem 1rem; color: #34483d; background: #eef1ef; }
+.turn-prompt .message-content { width: auto; min-width: 0; max-width: 100%; padding: 0; border: 0; border-radius: 0; color: inherit; background: transparent; box-shadow: none; }
+.turn-prompt-image { display: block; width: min(100%, 22rem); max-height: 18rem; margin: 0; border-radius: .75rem; object-fit: contain; background: #e2e7e4; }
 .turn-execution { margin-right: 7%; }
 .turn-execution > summary { min-height: 3.1rem; display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: .62rem; padding: .55rem .1rem; border-bottom: 1px solid #e7ebe8; cursor: pointer; list-style: none; user-select: none; }
 .turn-execution > summary::-webkit-details-marker { display: none; }
@@ -2287,6 +2336,7 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .turn-empty-detail { margin: 0; color: #979e99; font-size: .62rem; }
 .turn-response { min-width: 0; padding-right: 7%; }
 .agent-response-content { min-width: 0; padding-top: .1rem; }
+.turn-prompt .message-content, .agent-response-content { font-size: var(--conversation-font-size); line-height: 1.65; }
 .agent-response-content .final-response { margin: 0; padding: 0; border: 0; border-radius: 0; color: #303632; background: transparent; box-shadow: none; }
 .turn-task-list { margin: .1rem 0 .55rem; padding: .25rem 0 .45rem; border-bottom: 1px solid #e8ebe9; }
 .turn-task-list > div { display: flex; align-items: center; justify-content: space-between; gap: .5rem; color: #53645a; }
@@ -2559,6 +2609,10 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .toast-enter-from, .toast-leave-to { opacity: 0; transform: translate(-50%, -10px) scale(.96); }
 .material-enter-active, .material-leave-active { transition: opacity 220ms ease, transform 380ms cubic-bezier(.2,.8,.2,1), filter 260ms ease; }
 .material-enter-from, .material-leave-to { opacity: 0; transform: translateY(-10px) scale(.985); filter: blur(8px); }
+
+.library-slides-fullscreen { position: fixed; inset: 0; z-index: 1200; display: grid; width: 100vw; height: 100dvh; background: white; }
+.library-slides-fullscreen :deep(.slides-stage) { width: 100%; height: 100%; aspect-ratio: auto; border: 0; border-radius: 0; }
+.library-slides-close { position: absolute; top: .6rem; right: .6rem; z-index: 30; width: 2rem; height: 2rem; border: 1px solid #d9e2dc; border-radius: .4rem; background: white; color: #426b53; font-size: 1.5rem; cursor: pointer; }
 
 /* Typography scale */
 .brand strong { font-size: 1rem; }
