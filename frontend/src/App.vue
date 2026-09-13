@@ -1373,6 +1373,7 @@ function newProvider(): void {
 }
 
 function selectProviderKind(): void {
+  if (ai.value.provider === 'responses_compatible') ai.value.response = true
   ai.value.base_url = defaultProviderBaseUrl(ai.value.provider, ai.value.response)
 }
 
@@ -1892,12 +1893,13 @@ onBeforeUnmount(() => {
           <form class="settings-card" @submit.prevent="saveAI">
             <div class="form-grid">
               <label class="field"><span>Connection name</span><input v-model="ai.name" placeholder="e.g. Fast OpenAI" /><small>Shown in the conversation provider picker.</small></label>
-              <label class="field"><span>Provider</span><select v-model="ai.provider" @change="selectProviderKind"><option value="openai_compatible">OpenAI compatible</option><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="anthropic">Anthropic</option><option value="google">Google Gemini</option><option value="ollama">Ollama</option></select><small>The API format used for model requests.</small></label>
+              <label class="field"><span>Provider</span><select v-model="ai.provider" @change="selectProviderKind"><option value="openai_compatible">OpenAI compatible</option><option value="responses_compatible">Responses compatible</option><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="anthropic">Anthropic</option><option value="google">Google Gemini</option><option value="ollama">Ollama</option></select><small>The API format used for model requests.</small></label>
               <label class="field"><span>Model</span><input v-model="ai.model" placeholder="e.g. gpt-4.1-mini" /><small>Use the exact model identifier from your provider.</small></label>
-              <label class="field full"><span>Base URL <em>{{ ai.provider === 'openai_compatible' ? 'Custom' : 'Auto-filled' }}</em></span><input v-model="ai.base_url" placeholder="https://api.example.com/v1" /><small>{{ providerBaseUrlHelp(ai.provider) }}</small></label>
+              <label class="field full"><span>Base URL <em>{{ ['openai_compatible', 'responses_compatible'].includes(ai.provider) ? 'Custom' : 'Auto-filled' }}</em></span><input v-model="ai.base_url" :placeholder="ai.provider === 'responses_compatible' ? 'https://api.example.com' : 'https://api.example.com/v1'" /><small>{{ providerBaseUrlHelp(ai.provider) }}</small></label>
               <label class="field full"><span>API key</span><input v-model="ai.api_key" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved key" /><small>Your key is encrypted locally and never returned by the API.</small></label>
               <label class="field temperature-field"><span>Temperature <output>{{ ai.temperature.toFixed(1) }}</output></span><input v-model.number="ai.temperature" type="range" min="0" max="2" step="0.1" /></label>
-              <label v-if="['openai', 'openai_compatible', 'deepseek'].includes(ai.provider)" class="field"><span>API mode</span><span class="switch"><input v-model="ai.response" type="checkbox" @change="selectResponseApi" /><span /><small>{{ ai.response ? 'Responses API' : 'Chat Completions' }}</small></span><small>Responses mode enables provider-hosted tools such as web search.</small></label>
+              <label v-if="ai.provider === 'responses_compatible'" class="field"><span>API mode</span><strong>Responses API</strong><small>This compatible connection always uses the Responses protocol.</small></label>
+              <label v-else-if="['openai', 'openai_compatible', 'deepseek'].includes(ai.provider)" class="field"><span>API mode</span><span class="switch"><input v-model="ai.response" type="checkbox" @change="selectResponseApi" /><span /><small>{{ ai.response ? 'Responses API' : 'Chat Completions' }}</small></span><small>Responses mode enables provider-hosted tools such as web search.</small></label>
             </div>
             <div class="settings-actions"><button v-if="editingProviderId !== null" class="danger-button" type="button" @click="removeProvider">Delete provider</button><span v-else>Credentials are encrypted in your local database.</span><div><label class="switch"><input v-model="ai.enabled" type="checkbox" /><span /><small>{{ ai.enabled ? 'Enabled' : 'Disabled' }}</small></label><button class="primary-action" :disabled="saving || !ai.name || !ai.model" type="submit">{{ saving ? 'Saving…' : editingProviderId === null ? 'Add provider' : 'Save provider' }}</button></div></div>
           </form>

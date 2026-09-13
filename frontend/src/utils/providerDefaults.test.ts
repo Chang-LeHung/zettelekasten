@@ -14,8 +14,10 @@ describe('provider defaults', () => {
 
   it('leaves compatible and unknown providers for manual configuration', () => {
     expect(defaultProviderBaseUrl('openai_compatible')).toBe('')
+    expect(defaultProviderBaseUrl('responses_compatible')).toBe('')
     expect(defaultProviderBaseUrl('custom')).toBe('')
-    expect(providerBaseUrlHelp('openai_compatible')).toContain('Enter the endpoint')
+    expect(providerBaseUrlHelp('openai_compatible')).toContain('Chat Completions endpoint')
+    expect(providerBaseUrlHelp('responses_compatible')).toContain('Responses API root')
   })
 
   it('uses the unversioned DeepSeek root for the Responses API', () => {

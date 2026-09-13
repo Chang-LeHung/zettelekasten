@@ -200,6 +200,7 @@ class ProviderType(StrEnum):
     GOOGLE = "google"
     OLLAMA = "ollama"
     OPENAI_COMPATIBLE = "openai_compatible"
+    RESPONSES_COMPATIBLE = "responses_compatible"
 
 
 class ProviderWrite(BaseModel):

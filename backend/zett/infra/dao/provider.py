@@ -27,6 +27,7 @@ class ProviderTypeCode(IntEnum):
     GOOGLE = 4
     OLLAMA = 5
     OPENAI_COMPATIBLE = 6
+    RESPONSES_COMPATIBLE = 7
 
 
 TYPE_TO_CODE = {
@@ -36,6 +37,7 @@ TYPE_TO_CODE = {
     ProviderType.GOOGLE: ProviderTypeCode.GOOGLE,
     ProviderType.OLLAMA: ProviderTypeCode.OLLAMA,
     ProviderType.OPENAI_COMPATIBLE: ProviderTypeCode.OPENAI_COMPATIBLE,
+    ProviderType.RESPONSES_COMPATIBLE: ProviderTypeCode.RESPONSES_COMPATIBLE,
 }
 CODE_TO_TYPE = {int(code): provider for provider, code in TYPE_TO_CODE.items()}
 

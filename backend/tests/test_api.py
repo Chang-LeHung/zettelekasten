@@ -161,6 +161,24 @@ def test_provider_http_rejects_response_mode_for_native_non_responses_adapter():
     assert result.status_code == 422
 
 
+def test_provider_http_normalizes_responses_compatible_mode():
+    with TestClient(app) as client:
+        created = client.post(
+            "/api/ai/providers",
+            json=_provider_payload(provider="responses-compatible", response=False),
+        )
+        assert created.status_code == 201
+        assert created.json()["provider"] == "responses_compatible"
+        assert created.json()["response"] is True
+        assert client.delete(f"/api/ai/providers/{created.json()['id']}").json() == {"ok": True}
+
+        missing_url = client.post(
+            "/api/ai/providers",
+            json=_provider_payload(provider="responses_compatible", base_url=""),
+        )
+        assert missing_url.status_code == 422
+
+
 class FakeModel:
     """Deterministic provider used to exercise the real Agent and SSE stack."""
 

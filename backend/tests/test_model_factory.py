@@ -37,3 +37,21 @@ async def test_model_factory_defaults_to_provider_chat_api() -> None:
         assert model.response is False
     finally:
         await model.aclose()
+
+
+async def test_model_factory_uses_responses_for_compatible_provider() -> None:
+    connection = ProviderConnection(
+        id="provider-1",
+        provider=ProviderType.RESPONSES_COMPATIBLE,
+        model="custom-model",
+        base_url="https://responses.example/v1",
+        api_key=SecretStr("secret"),
+        metadata={"response": False},
+    )
+
+    model = create_model(connection)
+    try:
+        assert model.response is True
+        assert str(model._client.base_url) == "https://responses.example/v1/"
+    finally:
+        await model.aclose()

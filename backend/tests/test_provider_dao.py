@@ -106,3 +106,16 @@ def test_provider_write_hides_api_key_from_repr_and_json():
         "enabled": True,
         "metadata": {"reasoning": True},
     }
+
+
+def test_responses_compatible_provider_round_trips_through_integer_code():
+    created = provider_storage.create(
+        provider(provider="responses_compatible", base_url="https://responses.example/v1")
+    )
+
+    assert created.provider == "responses_compatible"
+    with session_scope() as session:
+        row = session.get(ProviderModel, created.id)
+        assert row is not None
+        assert row.provider == 7
+    assert provider_storage.resolve_connection(created.id).provider == "responses_compatible"

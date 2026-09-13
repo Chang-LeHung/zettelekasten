@@ -31,6 +31,16 @@ def create_model(
                 temperature=temperature,
                 response=response,
             )
+        case ProviderType.RESPONSES_COMPATIBLE:
+            if not connection.base_url:
+                raise ValueError("Responses-compatible providers require a base URL")
+            return OpenAIProvider(
+                model=connection.model,
+                api_key=api_key,
+                base_url=connection.base_url,
+                temperature=temperature,
+                response=True,
+            )
         case ProviderType.DEEPSEEK:
             return DeepSeekProvider(
                 model=connection.model,

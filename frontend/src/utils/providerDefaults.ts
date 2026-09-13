@@ -5,6 +5,7 @@ const providerBaseUrls: Readonly<Record<string, string>> = {
   ollama: 'http://localhost:11434',
   openai: 'https://api.openai.com/v1',
   openai_compatible: '',
+  responses_compatible: '',
 }
 
 /** Return the conventional API endpoint for a provider, or an empty value when it cannot be inferred. */
@@ -16,7 +17,10 @@ export function defaultProviderBaseUrl(provider: string, response = false): stri
 /** Explain whether the selected endpoint is inferred or must be supplied by the user. */
 export function providerBaseUrlHelp(provider: string): string {
   if (provider === 'openai_compatible') {
-    return 'Enter the endpoint exposed by your compatible service.'
+    return 'Enter the Chat Completions endpoint exposed by your compatible service.'
+  }
+  if (provider === 'responses_compatible') {
+    return 'Enter the Responses API root exposed by your compatible service.'
   }
   if (provider === 'ollama') {
     return 'Defaults to local Ollama; change it when the server runs elsewhere.'

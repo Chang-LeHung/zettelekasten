@@ -146,7 +146,12 @@ class ProviderIn(BaseModel):
     @classmethod
     def normalize_provider(cls, value: object) -> object:
         """Accept UI labels while persisting canonical provider enum values."""
-        aliases = {"openai-compatible": "openai_compatible", "gemini": "google"}
+        aliases = {
+            "openai-compatible": "openai_compatible",
+            "response-compatible": "responses_compatible",
+            "responses-compatible": "responses_compatible",
+            "gemini": "google",
+        }
         return aliases.get(str(value), value)
 
     @field_validator("base_url", "api_key", mode="before")
@@ -157,7 +162,16 @@ class ProviderIn(BaseModel):
     @model_validator(mode="after")
     def responses_api_requires_compatible_provider(self) -> ProviderIn:
         """Reject a Responses mode that the selected native adapter cannot use."""
-        supported = {ProviderType.OPENAI, ProviderType.OPENAI_COMPATIBLE, ProviderType.DEEPSEEK}
+        supported = {
+            ProviderType.OPENAI,
+            ProviderType.OPENAI_COMPATIBLE,
+            ProviderType.RESPONSES_COMPATIBLE,
+            ProviderType.DEEPSEEK,
+        }
+        if self.provider == ProviderType.RESPONSES_COMPATIBLE:
+            if not self.base_url:
+                raise ValueError("Responses-compatible providers require a base URL")
+            self.response = True
         if self.response and self.provider not in supported:
             raise ValueError(f"Responses API is not supported by {self.provider.value}")
         return self

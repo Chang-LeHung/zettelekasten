@@ -309,9 +309,18 @@ export interface AgentSession {
   assets: SessionAsset[]
 }
 
+export type AIProviderKind =
+  | 'openai_compatible'
+  | 'responses_compatible'
+  | 'openai'
+  | 'deepseek'
+  | 'anthropic'
+  | 'google'
+  | 'ollama'
+
 export interface AIProviderInput {
   name: string
-  provider: string
+  provider: AIProviderKind
   model: string
   base_url: string
   api_key: string
