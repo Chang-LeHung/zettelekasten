@@ -1,5 +1,6 @@
 """Configure and build one isolated Agent for each message request."""
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -48,6 +49,7 @@ class ZettelkastenAgentConfig:
     max_iterations: int = 36
     compaction_max_tokens: int = 128_000
     compaction_keep_recent_tokens: int = 32_000
+    context_composition_recorder: Callable[[str, dict[str, float]], Awaitable[None]] | None = None
     skill_roots: tuple[str | Path, ...] = ("~/.zett/skills",)
     mcp_servers: tuple[McpServer, ...] = ()
     mcp_config_path: str | Path | None = DEFAULT_MCP_CONFIG_PATH
@@ -89,7 +91,7 @@ class ZettelkastenAgentConfig:
                     server_keys=self.mcp_server_keys,
                 ),
                 ToolGuidelinesExtension(),
-                ContextCompositionExtension(),
+                ContextCompositionExtension(self.context_composition_recorder),
             ),
             max_iterations=self.max_iterations,
         )

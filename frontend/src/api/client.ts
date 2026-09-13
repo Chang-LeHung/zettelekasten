@@ -1,6 +1,7 @@
 import type {
   AnalysisMessage,
   AgentArtifact,
+  AgentContextComposition,
   AgentModelUsage,
   AgentServerToolActivity,
   AgentStreamCallbacks,
@@ -295,6 +296,10 @@ export const aiClient = {
 
   getAgentSessionModel(conversationId: string): Promise<SessionModelPreference | null> {
     return request<SessionModelPreference | null>(`/agent/sessions/${conversationId}/model`)
+  },
+
+  getAgentSessionContextComposition(conversationId: string): Promise<AgentContextComposition> {
+    return request<AgentContextComposition>(`/agent/sessions/${conversationId}/context-composition`)
   },
 
   updateAgentSessionTitle(conversationId: string, title: string): Promise<AgentSession> {

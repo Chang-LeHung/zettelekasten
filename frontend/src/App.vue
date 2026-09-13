@@ -806,6 +806,7 @@ async function analyze(): Promise<void> {
     commitStreamedResponse([], {
       fallbackContent: result ? 'The artifact is ready.' : 'How would you like to continue?',
     })
+    await restoreSessionContextComposition(activeConversationId)
     await refreshArtifacts(true)
     await loadSessions(true)
     scheduleSessionTitleRefresh()
@@ -859,6 +860,7 @@ async function refine(): Promise<void> {
     commitStreamedResponse(history, {
       fallbackContent: result ? 'The artifact is ready.' : 'How would you like to continue?',
     })
+    await restoreSessionContextComposition(activeConversationId)
     await refreshArtifacts(true)
     await loadSessions(true)
   } catch (error) {
@@ -906,7 +908,7 @@ async function ensureConversation(): Promise<string> {
     try {
       const persisted = await aiClient.getAgentSession(persistedId)
       applySession(persisted)
-      await restoreSessionModel(persisted.id)
+      await restoreSessionRuntime(persisted.id)
       return persisted.id
     } catch {
       window.localStorage.removeItem(activeSessionKey)
@@ -950,13 +952,29 @@ async function restoreSessionModel(sessionId: string): Promise<void> {
   }
 }
 
+async function restoreSessionContextComposition(sessionId: string): Promise<void> {
+  try {
+    const composition = await aiClient.getAgentSessionContextComposition(sessionId)
+    if (conversationId.value === sessionId) contextComposition.value = composition
+  } catch {
+    if (conversationId.value === sessionId) contextComposition.value = null
+  }
+}
+
+async function restoreSessionRuntime(sessionId: string): Promise<void> {
+  await Promise.all([
+    restoreSessionModel(sessionId),
+    restoreSessionContextComposition(sessionId),
+  ])
+}
+
 async function openSession(sessionId: string): Promise<void> {
   if (loading.value || sessionId === conversationId.value) return
   sessionsLoading.value = true
   try {
     const session = await aiClient.getAgentSession(sessionId)
     applySession(session)
-    await restoreSessionModel(session.id)
+    await restoreSessionRuntime(session.id)
     view.value = 'new'
   } catch (error) {
     showNotice(errorMessage(error), 'error')
@@ -1466,7 +1484,7 @@ async function initializeWorkspace(): Promise<void> {
     try {
       const session = await aiClient.getAgentSession(persistedId)
       applySession(session)
-      await restoreSessionModel(session.id)
+      await restoreSessionRuntime(session.id)
     } catch {
       window.localStorage.removeItem(activeSessionKey)
     }
@@ -2246,8 +2264,8 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .agent-thread { min-height: 0; padding: 1.2rem; overflow-y: auto; overscroll-behavior: contain; scroll-behavior: auto; scrollbar-width: thin; scrollbar-gutter: stable; overflow-anchor: none; }
 .agent-thread.empty { display: grid; place-items: center; }
 .turn-stack { width: min(100%, 46rem); margin: 0 auto; }
-.conversation-turn { display: grid; gap: .78rem; margin-bottom: 1.3rem; }
-.turn-content { display: grid; gap: .95rem; padding: .25rem 0 1.25rem; }
+.conversation-turn { display: grid; gap: .5rem; margin-bottom: .72rem; }
+.turn-content { display: grid; gap: .68rem; padding: .12rem 0 .68rem; }
 .turn-prompt { display: flex; justify-content: flex-end; padding-left: 18%; }
 .turn-prompt-content { width: fit-content; max-width: 100%; overflow: hidden; border-radius: 1rem 1rem .3rem 1rem; color: #34483d; background: #eef1ef; }
 .turn-prompt .message-content { width: auto; max-width: 100%; padding: .68rem .82rem; border: 0; border-radius: 0; color: inherit; background: transparent; box-shadow: none; }

@@ -225,3 +225,21 @@ it('loads the model most recently used by one session', async () => {
   expect(await aiClient.getAgentSessionModel('session-7')).toEqual(preference)
   expect(fetchMock).toHaveBeenCalledWith('/api/agent/sessions/session-7/model', expect.any(Object))
 })
+
+it('loads the latest context composition for a historical session', async () => {
+  const composition = {
+    system_prompt: 0.1,
+    tool_prompt: 0.2,
+    tool_output: 0.3,
+    user: 0.15,
+    assistant: 0.25,
+  }
+  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(composition)))
+  vi.stubGlobal('fetch', fetchMock)
+
+  expect(await aiClient.getAgentSessionContextComposition('session-7')).toEqual(composition)
+  expect(fetchMock).toHaveBeenCalledWith(
+    '/api/agent/sessions/session-7/context-composition',
+    expect.any(Object),
+  )
+})

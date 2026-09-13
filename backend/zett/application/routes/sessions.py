@@ -4,12 +4,15 @@ import asyncio
 
 from fastapi import APIRouter, HTTPException, Query, status
 
+from ...agent.config import SYSTEM_PROMPT
+from ...infra.agent_runtime import get_agent_runtime_storage
 from ...infra.dao import artifact_storage, session_asset_storage, session_storage
 from ...models import ArtifactListOptions, SessionAssetListOptions, SessionListOptions
 from ...schemas import AgentSessionCreate
 from ..dependencies import run_sync
 from ..presentation import message_out, session_out
 from ..schemas import AgentStartOut, DeleteResponse, PersistedMessageOut, SessionOut
+from ..session_context import SessionContextComposition, session_context_composition_service
 from ..session_preferences import SessionModelPreference, session_model_preference_service
 
 router = APIRouter(prefix="/agent", tags=["sessions"])
@@ -62,6 +65,15 @@ async def get_session_model(session_id: str) -> SessionModelPreference | None:
     return await run_sync(session_model_preference_service.get, session_id)
 
 
+@router.get("/sessions/{session_id}/context-composition", response_model=SessionContextComposition)
+async def get_session_context_composition(session_id: str) -> SessionContextComposition:
+    """Return the last live context ratios, estimating sessions created before the feature."""
+    if await run_sync(session_storage.get, session_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+    storage = await run_sync(get_agent_runtime_storage)
+    return await session_context_composition_service.get_or_estimate(session_id, storage, SYSTEM_PROMPT)
+
+
 @router.get("/sessions/{session_id}/messages", response_model=list[PersistedMessageOut])
 async def list_session_messages(
     session_id: str,
@@ -90,5 +102,8 @@ async def delete_session(session_id: str) -> DeleteResponse:
     """Explicitly delete a session and its owned assets and artifacts."""
     deleted = await run_sync(session_storage.delete, session_id)
     if deleted:
-        await run_sync(session_model_preference_service.delete, session_id)
+        await asyncio.gather(
+            run_sync(session_model_preference_service.delete, session_id),
+            run_sync(session_context_composition_service.delete, session_id),
+        )
     return DeleteResponse(ok=deleted)

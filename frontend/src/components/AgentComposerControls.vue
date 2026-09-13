@@ -152,7 +152,6 @@ onBeforeUnmount(() => {
       <div title="Output tokens per second of model generation"><dt>Speed</dt><dd>{{ usage.tokens_per_second === null ? '—' : `${usage.tokens_per_second.toFixed(1)} tok/s` }}</dd></div>
     </dl>
     <ContextCompositionRing
-      v-if="contextComposition"
       :composition="contextComposition"
       :current-tokens="currentUsage?.input_tokens ?? null"
       :max-tokens="compactionMaxTokens"

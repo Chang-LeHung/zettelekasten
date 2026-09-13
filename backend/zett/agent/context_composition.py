@@ -1,7 +1,7 @@
 """Estimate the semantic composition of the next model request."""
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 
 import tiktoken
 from zett_agent import (
@@ -21,6 +21,7 @@ from zett_agent import (
 CONTEXT_COMPOSITION_EVENT = "context_composition"
 _ENCODING = tiktoken.get_encoding("o200k_base")
 _CATEGORIES = ("system_prompt", "tool_prompt", "tool_output", "user", "assistant")
+type ContextCompositionRecorder = Callable[[str, dict[str, float]], Awaitable[None]]
 
 
 def _token_count(value: object) -> int:
@@ -89,14 +90,19 @@ def context_composition(request: ModelRequest) -> dict[str, float]:
 class ContextCompositionExtension(AgentExtension):
     """Publish context ratios before a model call and after its response."""
 
-    @staticmethod
-    def _event(context: AgentRunContext, request: ModelRequest) -> AgentEvent:
+    def __init__(self, recorder: ContextCompositionRecorder | None = None) -> None:
+        self._recorder = recorder
+
+    async def _event(self, context: AgentRunContext, request: ModelRequest) -> AgentEvent:
         """Create one browser-safe ratio event for the supplied context view."""
+        ratios = context_composition(request)
+        if self._recorder is not None:
+            await self._recorder(context.config.session_id, ratios)
         return AgentEvent(
             AgentEventType.CUSTOM,
             context.config.session_id,
             name=CONTEXT_COMPOSITION_EVENT,
-            payload=context_composition(request),
+            payload=ratios,
         )
 
     async def before_model_events(
@@ -105,7 +111,7 @@ class ContextCompositionExtension(AgentExtension):
         request: ModelRequest,
     ) -> AsyncIterator[AgentEvent]:
         """Expose proportions without leaking prompts, tool output, or token estimates."""
-        yield self._event(context, request)
+        yield await self._event(context, request)
 
     async def after_model_events(
         self,
@@ -125,4 +131,4 @@ class ContextCompositionExtension(AgentExtension):
             tools=tuple(tool.definition for tool in context.tools.values()),
             server_tools=tuple(context.server_tools.values()),
         )
-        yield self._event(context, request)
+        yield await self._event(context, request)

@@ -33,6 +33,7 @@ from ...infra.log import get_logger
 from ...schemas import ProviderConnection
 from ..dependencies import run_sync
 from ..schemas import AnalyzeRequest, ExternalEventIn, ExternalEventOut, MessageImagePartIn, MessageTextPartIn
+from ..session_context import session_context_composition_service
 from ..session_preferences import session_model_preference_service
 from ..session_titles import generate_initial_session_title
 from ..settings import runtime_settings_service
@@ -117,6 +118,14 @@ class _PreparedAgentRequest:
 active_requests = ActiveRequestRegistry()
 
 
+async def _remember_context_composition(session_id: str, ratios: dict[str, float]) -> None:
+    """Persist an auxiliary UI metric without failing the active Agent request."""
+    try:
+        await run_sync(session_context_composition_service.remember, session_id, ratios)
+    except Exception:
+        logger.exception("Could not persist context composition; session_id=%s", session_id)
+
+
 def _user_message(payload: AnalyzeRequest, *, max_images: int) -> UserMessage:
     """Decode bounded browser images into one provider-neutral multimodal turn."""
     parts: list[TextContent | ImageContent] = []
@@ -182,6 +191,7 @@ async def _prepare_agent_request(session_id: str, payload: AnalyzeRequest) -> _P
             max_iterations=runtime_settings.max_turn_iterations,
             compaction_max_tokens=runtime_settings.compaction_max_tokens,
             compaction_keep_recent_tokens=runtime_settings.compaction_keep_recent_tokens,
+            context_composition_recorder=_remember_context_composition,
         ).create(storage)
         await active_requests.bind(config, agent)
         # Remember only a fully prepared request. Validation, Model creation,
