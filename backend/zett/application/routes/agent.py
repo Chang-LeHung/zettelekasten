@@ -175,6 +175,8 @@ async def _prepare_agent_request(session_id: str, payload: AnalyzeRequest) -> _P
             frames.append(frame)
 
         storage = await run_sync(get_agent_runtime_storage)
+        # Reserve the session before binding the Agent, allowing each new Agent
+        # instance to apply the latest configuration immediately.
         agent = await ZettelkastenAgentConfig(
             session_id=session_id,
             max_iterations=runtime_settings.max_turn_iterations,
