@@ -17,10 +17,12 @@ import { appendStreamedAssistantMessage } from './utils/streamedAssistant'
 import { defaultProviderBaseUrl, providerBaseUrlHelp } from './utils/providerDefaults'
 import { todoFromTool } from './utils/toolPresentation'
 import { hasRunningTool, upsertToolActivity } from './utils/toolActivities'
+import { splitSlides } from './utils/slides'
 
 const MarkdownContent = defineAsyncComponent(() => import('./components/MarkdownContent.vue'))
 const LibraryEditor = defineAsyncComponent(() => import('./components/LibraryEditor.vue'))
 const PdfThumbnail = defineAsyncComponent(() => import('./components/PdfThumbnail.vue'))
+const SlidesPreview = defineAsyncComponent(() => import('./components/SlidesPreview.vue'))
 
 type View = 'library' | 'search' | 'new' | 'settings'
 type NoticeKind = 'success' | 'error'
@@ -172,6 +174,15 @@ const selectedImageUrl = computed(() => {
   if (content.source_url) return content.source_url
   return assets.value.find((asset) => asset.id === content.asset_id)?.content_url || null
 })
+
+function artifactTypeLabel(type: 'card' | 'article' | 'image' | 'slides'): string {
+  return ({ card: 'Card', article: 'Article', image: 'Image', slides: 'Slides' })[type]
+}
+
+function libraryExcerpt(item: LibraryItem): string {
+  if (item.summary) return item.summary
+  return item.item_type === 'slides' ? splitSlides(item.content)[0] : item.content
+}
 const visibleSessions = computed(() => sessions.value.filter((session) => (
   session.message_count > 0
   || (session.id === conversationId.value && (artifacts.value.length > 0 || assets.value.length > 0))
@@ -692,7 +703,7 @@ async function saveLibraryEditor(payload: LibraryItemUpdate): Promise<void> {
     if (selectedLibraryItem.value?.item_type === updated.item_type && selectedLibraryItem.value.id === updated.id) {
       selectedLibraryItem.value = updated
     }
-    showNotice(`${updated.item_type === 'article' ? 'Article' : 'Card'} saved`)
+    showNotice(`${artifactTypeLabel(updated.item_type)} saved`)
   } catch (error) {
     showNotice(errorMessage(error), 'error')
   } finally {
@@ -1309,7 +1320,7 @@ async function saveSelectedArtifact(): Promise<void> {
     showNotice(
       artifactContent.value.artifact_type === 'image'
         ? 'Image changes saved'
-        : `${artifactContent.value.artifact_type === 'article' ? 'Article' : 'Card'} saved to your library`,
+        : `${artifactTypeLabel(artifactContent.value.artifact_type)} saved to your library`,
     )
   } catch (error) {
     showNotice(errorMessage(error), 'error')
@@ -1564,7 +1575,7 @@ onBeforeUnmount(() => {
         <header class="topbar">
           <form class="search-field" role="search" @submit.prevent="search">
             <svg><use href="#icon-search" /></svg>
-            <input ref="searchInput" v-model="query" aria-label="Search library" placeholder="Search cards, articles, and sources" />
+            <input ref="searchInput" v-model="query" aria-label="Search library" placeholder="Search cards, articles, slides, and sources" />
             <button v-if="query" type="button" aria-label="Clear search" @click="query = ''; search()">×</button>
             <kbd v-else>⌘ K</kbd>
           </form>
@@ -1583,7 +1594,7 @@ onBeforeUnmount(() => {
           <div v-else-if="libraryItems.length" class="card-grid">
             <article v-for="item in libraryItems" :key="`${item.item_type}-${item.id}`" class="card" :class="`library-${item.item_type}`" role="button" tabindex="0" :aria-label="`Open ${item.title}`" @click="openLibraryItem(item)" @keydown.enter="openLibraryItem(item)" @keydown.space.prevent="openLibraryItem(item)">
               <div class="card-topline">
-                <span class="card-type">{{ item.item_type === 'article' ? 'article' : item.card_type }}</span>
+                <span class="card-type">{{ item.item_type === 'card' ? item.card_type : item.item_type }}</span>
                 <div class="card-topline-actions">
                   <time>{{ formatDate(item.updated_at) }}</time>
                   <button class="card-action-button" type="button" :aria-label="`Edit ${item.title}`" title="Edit and preview" @click.stop="openLibraryEditor(item)" @keydown.stop>
@@ -1598,8 +1609,8 @@ onBeforeUnmount(() => {
                 </div>
               </div>
               <h2>{{ item.title }}</h2>
-              <p v-if="item.item_type === 'article' && item.subtitle" class="library-article-subtitle">{{ item.subtitle }}</p>
-              <MarkdownContent class="card-excerpt" :content="item.summary || item.content" />
+              <p v-if="item.item_type !== 'card' && item.subtitle" class="library-article-subtitle">{{ item.subtitle }}</p>
+              <MarkdownContent class="card-excerpt" :content="libraryExcerpt(item)" />
               <div class="card-footer">
                 <div class="card-tags"><span v-for="path in item.tags.slice(0, 3)" :key="path">{{ path }}</span></div>
                 <svg><use href="#icon-arrow" /></svg>
@@ -1609,7 +1620,7 @@ onBeforeUnmount(() => {
           <div v-else class="empty-state">
             <span class="empty-icon"><svg><use :href="view === 'search' ? '#icon-search' : '#icon-cards'" /></svg></span>
             <h2>{{ view === 'search' ? 'Nothing found' : 'Your library is ready' }}</h2>
-            <p>{{ view === 'search' ? 'Try a different phrase or browse your collections.' : 'Capture a thought and let AI shape it into a useful card or article.' }}</p>
+            <p>{{ view === 'search' ? 'Try a different phrase or browse your collections.' : 'Capture a thought and let AI shape it into a useful card, article, or slide deck.' }}</p>
             <button class="primary-action" type="button" @click="view === 'search' ? navigate('library') : navigate('new')">
               {{ view === 'search' ? 'Browse library' : 'Create your first card' }}
             </button>
@@ -1846,14 +1857,14 @@ onBeforeUnmount(() => {
               </header>
               <div v-if="artifacts.length" class="artifact-list" aria-label="Conversation artifacts">
                 <button v-for="artifact in artifacts" :key="artifact.id" :class="{ active: artifact.id === selectedArtifactId }" type="button" @click="selectArtifact(artifact)">
-                  <span class="artifact-kind-icon">{{ artifact.artifact_type === 'card' ? '◇' : artifact.artifact_type === 'article' ? '¶' : '▧' }}</span>
+                  <span class="artifact-kind-icon">{{ artifact.artifact_type === 'card' ? '◇' : artifact.artifact_type === 'article' ? '¶' : artifact.artifact_type === 'slides' ? '▤' : '▧' }}</span>
                   <span><strong>{{ artifact.content.title }}</strong><small>{{ artifact.artifact_type }} · v{{ artifact.version }} · {{ artifact.status }}</small></span>
                 </button>
               </div>
               <div v-if="!artifactContent" class="artifact-placeholder">
                 <span><svg><use href="#icon-cards" /></svg></span>
                 <h2>No artifacts yet</h2>
-                <p>Keep talking with Zett Agent. Cards, articles, and images will appear here when the conversation produces them.</p>
+                <p>Keep talking with Zett Agent. Cards, articles, slides, and images will appear here when the conversation produces them.</p>
               </div>
               <div v-else class="artifact-panel artifact-editor">
                 <div class="artifact-editor-accent" />
@@ -1872,14 +1883,16 @@ onBeforeUnmount(() => {
                   </div>
                   <template v-if="!artifactPreview">
                     <label class="card-title-control"><span>Title</span><textarea v-model="artifactContent.title" rows="2" /></label>
-                    <label v-if="artifactContent.artifact_type === 'article'" class="card-summary-control"><span>Subtitle</span><textarea v-model="artifactContent.subtitle" rows="2" placeholder="Optional article subtitle" /></label>
+                    <label v-if="artifactContent.artifact_type === 'article' || artifactContent.artifact_type === 'slides'" class="card-summary-control"><span>Subtitle</span><textarea v-model="artifactContent.subtitle" rows="2" placeholder="Optional subtitle" /></label>
                     <label class="card-summary-control"><span>{{ artifactContent.artifact_type === 'image' ? 'Caption' : 'Summary' }}</span><textarea v-model="artifactContent.summary" rows="3" /></label>
                     <label v-if="artifactContent.artifact_type === 'image'" class="card-content-control"><span>Image prompt</span><textarea v-model="artifactContent.prompt" placeholder="Creative direction or generation prompt" /></label>
                     <label v-if="artifactContent.artifact_type === 'image'" class="card-summary-control"><span>Alt text</span><textarea v-model="artifactContent.alt_text" rows="3" /></label>
                     <label v-if="artifactContent.artifact_type === 'image'" class="card-summary-control"><span>Source URL</span><textarea v-model="artifactContent.source_url" rows="2" placeholder="https://…" /></label>
-                    <label v-else class="card-content-control"><span>{{ artifactContent.artifact_type === 'article' ? 'Article' : 'Knowledge' }} · Markdown</span><textarea v-model="artifactContent.content" /></label>
+                    <label v-else class="card-content-control"><span>{{ artifactContent.artifact_type === 'article' ? 'Article' : artifactContent.artifact_type === 'slides' ? 'Slides' : 'Knowledge' }} · Markdown</span><textarea v-model="artifactContent.content" /></label>
                   </template>
                   <article v-else class="artifact-preview" :class="`artifact-preview-${artifactContent.artifact_type}`">
+                    <SlidesPreview v-if="artifactContent.artifact_type === 'slides'" compact :title="artifactContent.title" :content="artifactContent.content" />
+                    <template v-else>
                     <span class="artifact-preview-label">{{ artifactContent.artifact_type }}</span>
                     <h1>{{ artifactContent.title }}</h1>
                     <p v-if="artifactContent.artifact_type === 'article' && artifactContent.subtitle" class="article-subtitle">{{ artifactContent.subtitle }}</p>
@@ -1888,10 +1901,11 @@ onBeforeUnmount(() => {
                     <MarkdownContent v-if="artifactContent.summary" class="preview-summary" :content="artifactContent.summary" />
                     <div v-if="artifactContent.artifact_type !== 'image'" class="preview-divider" />
                     <MarkdownContent v-if="artifactContent.artifact_type !== 'image'" class="preview-content" :content="artifactContent.content" />
+                    </template>
                   </article>
                   <div v-if="artifactContent.suggested_tags.length" class="suggestions card-tags-editor"><span>Classification</span><div class="suggestion-list"><label v-for="tag in artifactContent.suggested_tags" :key="tag.path" :class="{ selected: selectedSuggestions.includes(tag.path) }"><input v-model="selectedSuggestions" type="checkbox" :value="tag.path" /><span>{{ tag.path }}</span><small>{{ Math.round(tag.confidence * 100) }}%</small></label></div></div>
                 </div>
-                <footer class="panel-actions artifact-editor-actions"><button class="danger-button" type="button" @click="deleteSelectedArtifact">Delete</button><button class="primary-action" :disabled="saving || !artifactContent.title.trim()" type="button" @click="saveSelectedArtifact">{{ saving ? 'Saving…' : artifactContent.artifact_type === 'card' ? selectedArtifact?.status === 'saved' ? 'Update library card' : 'Save to library' : artifactContent.artifact_type === 'article' ? selectedArtifact?.status === 'saved' ? 'Update library article' : 'Save to library' : 'Save changes' }}<svg><use href="#icon-arrow" /></svg></button></footer>
+                <footer class="panel-actions artifact-editor-actions"><button class="danger-button" type="button" @click="deleteSelectedArtifact">Delete</button><button class="primary-action" :disabled="saving || !artifactContent.title.trim()" type="button" @click="saveSelectedArtifact">{{ saving ? 'Saving…' : artifactContent.artifact_type === 'image' ? 'Save changes' : selectedArtifact?.status === 'saved' ? `Update library ${artifactTypeLabel(artifactContent.artifact_type).toLowerCase()}` : 'Save to library' }}<svg><use href="#icon-arrow" /></svg></button></footer>
               </div>
             </aside>
           </div>
@@ -1951,7 +1965,7 @@ onBeforeUnmount(() => {
         <div v-if="selectedLibraryItem" class="detail-backdrop" @click.self="selectedLibraryItem = null">
           <aside class="detail-sheet" role="dialog" aria-modal="true" :aria-label="selectedLibraryItem.title">
             <header class="detail-header">
-              <div><span class="card-type">{{ selectedLibraryItem.item_type === 'article' ? 'article' : selectedLibraryItem.card_type }}</span></div>
+              <div><span class="card-type">{{ selectedLibraryItem.item_type === 'card' ? selectedLibraryItem.card_type : selectedLibraryItem.item_type }}</span></div>
               <div class="detail-header-actions">
                 <button class="detail-header-button" type="button" @click="copyLibraryItemId(selectedLibraryItem)"><svg><use href="#icon-copy" /></svg>Copy ID</button>
                 <button class="detail-header-button" type="button" @click="openLibraryEditor(selectedLibraryItem)"><svg><use href="#icon-edit" /></svg>Edit</button>
@@ -1961,11 +1975,11 @@ onBeforeUnmount(() => {
             </header>
             <div class="detail-content">
               <h1>{{ selectedLibraryItem.title }}</h1>
-              <p v-if="selectedLibraryItem.item_type === 'article' && selectedLibraryItem.subtitle" class="detail-subtitle">{{ selectedLibraryItem.subtitle }}</p>
+              <p v-if="selectedLibraryItem.item_type !== 'card' && selectedLibraryItem.subtitle" class="detail-subtitle">{{ selectedLibraryItem.subtitle }}</p>
               <MarkdownContent v-if="selectedLibraryItem.summary" class="detail-summary" :content="selectedLibraryItem.summary" />
               <div v-if="selectedLibraryItem.tags.length" class="detail-tags"><span v-for="path in selectedLibraryItem.tags" :key="path">{{ path }}</span></div>
 
-              <section class="detail-section"><h2>{{ selectedLibraryItem.item_type === 'article' ? 'Article' : 'Content' }}</h2><MarkdownContent class="detail-body" :content="selectedLibraryItem.content" /></section>
+              <section class="detail-section"><h2>{{ selectedLibraryItem.item_type === 'article' ? 'Article' : selectedLibraryItem.item_type === 'slides' ? 'Slide deck' : 'Content' }}</h2><SlidesPreview v-if="selectedLibraryItem.item_type === 'slides'" :title="selectedLibraryItem.title" :content="selectedLibraryItem.content" /><MarkdownContent v-else class="detail-body" :content="selectedLibraryItem.content" /></section>
               <section v-if="selectedLibraryItem.raw_content" class="detail-section raw-section"><h2>Original input</h2><div class="detail-body">{{ selectedLibraryItem.raw_content }}</div></section>
 
               <dl class="detail-metadata">
@@ -2112,6 +2126,7 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .card time { color: var(--tertiary); font-size: .65rem; }
 .card h2 { margin: 1.25rem 0 .55rem; font-size: 1.08rem; line-height: 1.25; letter-spacing: -.017em; }
 .library-article .card-type { color: #665139; background: #f4ede3; }
+.library-slides .card-type { color: #385d49; background: #e7f0ea; }
 .library-article-subtitle { margin: -.25rem 0 .55rem; overflow: hidden; color: #858078; font-size: .68rem; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
 .card > .card-excerpt { max-height: 5.1rem; margin: 0; overflow: hidden; color: var(--secondary); font-size: .78rem; line-height: 1.58; }
 .card-footer { display: flex; align-items: end; justify-content: space-between; gap: .5rem; margin-top: auto; padding-top: 1rem; }

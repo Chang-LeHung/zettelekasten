@@ -40,7 +40,7 @@ export interface CardListOptions {
   tagId?: number | null
 }
 
-export type LibraryItemType = 'card' | 'article'
+export type LibraryItemType = 'card' | 'article' | 'slides'
 
 export interface LibraryItem {
   id: string
@@ -75,7 +75,7 @@ export interface SuggestedTag {
 }
 
 export type CardType = 'note' | 'idea' | 'quote' | 'todo' | 'reference'
-export type ArtifactType = 'card' | 'article' | 'image'
+export type ArtifactType = 'card' | 'article' | 'image' | 'slides'
 export type ArtifactStatus = 'draft' | 'saved'
 export type SessionAssetType = 'text' | 'image' | 'link' | 'file'
 export type ReasoningEffort = 'off' | 'low' | 'medium' | 'high'
@@ -250,7 +250,13 @@ export interface ImageArtifactContent extends ArtifactContentBase {
   asset_id: string | null
 }
 
-export type ArtifactContent = CardArtifactContent | ArticleArtifactContent | ImageArtifactContent
+export interface SlidesArtifactContent extends ArtifactContentBase {
+  artifact_type: 'slides'
+  subtitle: string
+  content: string
+}
+
+export type ArtifactContent = CardArtifactContent | ArticleArtifactContent | ImageArtifactContent | SlidesArtifactContent
 
 export interface AgentArtifact {
   id: string

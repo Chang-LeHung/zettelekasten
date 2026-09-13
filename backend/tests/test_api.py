@@ -59,6 +59,18 @@ def _card_content(title: str = "Card") -> dict[str, object]:
     }
 
 
+def _slides_content(title: str = "Deck") -> dict[str, object]:
+    return {
+        "artifact_type": "slides",
+        "title": title,
+        "subtitle": "A concise presentation",
+        "summary": "Two focused slides",
+        "suggested_tags": [],
+        "keywords": ["slides"],
+        "content": "# Opening\n\nA clear premise.\n\n---\n\n## Next step\n\n- One action",
+    }
+
+
 def test_business_route_handlers_are_async():
     routes = [route for route in app.routes if getattr(route, "path", "").startswith("/api/")]
     assert routes
@@ -139,6 +151,12 @@ async def test_closing_stream_releases_session_and_provider_for_next_turn(monkey
 
     model = BlockingModel()
     monkeypatch.setattr(agent_routes, "create_model", lambda _connection: model)
+    agent_config = agent_routes.ZettelkastenAgentConfig
+    monkeypatch.setattr(
+        agent_routes,
+        "ZettelkastenAgentConfig",
+        lambda **options: agent_config(**options, skill_roots=(), mcp_config_path=None),
+    )
     with TestClient(app) as client:
         session_id = client.post("/api/agent/start").json()["conversation_id"]
         provider_id = client.post("/api/ai/providers", json=_provider_payload()).json()["id"]
@@ -293,10 +311,20 @@ def test_session_asset_and_artifact_http_lifecycle():
         assert updated.json()["version"] == 2
         saved = client.post(f"/api/agent/{session_id}/artifacts/{artifact_id}/save")
         assert saved.json()["status"] == "saved"
-        assert [item["id"] for item in client.get("/api/artifacts?statuses=saved").json()] == [artifact_id]
+        slides = client.post(
+            f"/api/agent/{session_id}/artifacts",
+            json={"content": _slides_content(), "raw_content": "make slides"},
+        )
+        assert slides.status_code == 201
+        slides_id = slides.json()["id"]
+        assert slides.json()["content"]["artifact_type"] == "slides"
+        assert client.post(f"/api/agent/{session_id}/artifacts/{slides_id}/save").status_code == 200
+        saved_artifacts = client.get("/api/artifacts?statuses=saved").json()
+        assert {item["id"] for item in saved_artifacts} == {artifact_id, slides_id}
+        assert [item["id"] for item in client.get("/api/artifacts?artifact_types=slides").json()] == [slides_id]
 
         detail = client.get(f"/api/agent/sessions/{session_id}").json()
-        assert [item["id"] for item in detail["artifacts"]] == [artifact_id]
+        assert [item["id"] for item in detail["artifacts"]] == [artifact_id, slides_id]
         assert {item["id"] for item in detail["assets"]} == {
             text.json()["id"],
             asset_id,
@@ -304,7 +332,20 @@ def test_session_asset_and_artifact_http_lifecycle():
             uploaded_pdf.json()["id"],
         }
         assert client.delete(f"/api/agent/{session_id}/artifacts/{artifact_id}").json() == {"ok": True}
+        assert client.delete(f"/api/agent/{session_id}/artifacts/{slides_id}").json() == {"ok": True}
         assert client.delete(f"/api/agent/{session_id}/assets/{asset_id}").json() == {"ok": True}
+
+
+def test_artifact_api_rejects_ambiguous_slide_boundaries() -> None:
+    with TestClient(app) as client:
+        session_id = client.post("/api/agent/start").json()["conversation_id"]
+        content = _slides_content()
+        content["content"] = "# First\n --- \n# Second"
+
+        response = client.post(f"/api/agent/{session_id}/artifacts", json={"content": content})
+
+        assert response.status_code == 422
+        assert "slide separators must be exactly" in response.text
 
 
 def test_provider_http_lifecycle_preserves_blank_update_key():

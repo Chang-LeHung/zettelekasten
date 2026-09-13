@@ -19,7 +19,7 @@ class ZettelkastenExtension(AgentExtension):
 
         @tool
         def create_artifact(content: ArtifactContent, raw_content: str | None = None) -> AgentArtifact:
-            """Create a draft card, article, or image artifact in this conversation.
+            """Create a draft card, article, image, or slide deck in this conversation.
 
             Args:
                 content: Complete type-specific artifact content.
@@ -27,10 +27,16 @@ class ZettelkastenExtension(AgentExtension):
 
             Snippet:
                 create_artifact(content={"artifact_type": "card", "title": "...", "content": "..."})
+                create_artifact(content={"artifact_type": "slides", "title": "...", "content": "# Opening\n\n---\n\n## Next idea"})
 
             Guidelines:
                 - Create an artifact only when it is a useful output of the conversation.
                 - Keep newly generated artifacts in draft state until the user asks to save them.
+                - A card contains one idea; use the fewest words that preserve its meaning.
+                - Keep card titles, summaries, and bodies simple, direct, and brief.
+                - For slides, separate pages with a line containing exactly '---' and no surrounding whitespace.
+                - A slide deck must contain at least two non-empty pages.
+                - Keep each slide concise: one idea, a short heading, and no more than six brief bullets.
             """
             return artifact_storage.create(
                 AgentArtifactWrite(session_id=session_id, content=content, raw_content=raw_content)
@@ -49,6 +55,8 @@ class ZettelkastenExtension(AgentExtension):
 
             Guidelines:
                 - Read the artifact information already present in context before replacing it.
+                - Keep cards focused on one idea and remove every word that does not add meaning.
+                - Preserve the strict slide separator: one line containing exactly '---' between non-empty pages.
             """
             current = self._artifact(session_id, artifact_id)
             return artifact_storage.update(

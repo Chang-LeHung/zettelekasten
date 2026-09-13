@@ -4,6 +4,7 @@ import type { LibraryItem, LibraryItemUpdate } from '../api/types'
 import { isEditorSaveShortcut } from '../utils/editorShortcuts'
 import { linkedScrollTop } from '../utils/linkedScroll'
 import MarkdownContent from './MarkdownContent.vue'
+import SlidesPreview from './SlidesPreview.vue'
 
 const props = defineProps<{
   item: LibraryItem
@@ -52,6 +53,7 @@ function syncSourceScroll(): void {
   const preview = previewDocument.value
   if (!source) return
   if (lineGutter.value) lineGutter.value.scrollTop = source.scrollTop
+  if (props.item.item_type === 'slides') return
   if (!preview || scrollOwner === 'preview') return
   scrollOwner = 'source'
   preview.scrollTop = linkedScrollTop(source, preview)
@@ -61,6 +63,7 @@ function syncSourceScroll(): void {
 function syncPreviewScroll(): void {
   const source = sourceEditor.value
   const preview = previewDocument.value
+  if (props.item.item_type === 'slides') return
   if (!source || !preview || scrollOwner === 'source') return
   scrollOwner = 'preview'
   source.scrollTop = linkedScrollTop(preview, source)
@@ -120,7 +123,7 @@ onBeforeUnmount(() => {
           <span aria-hidden="true">‹</span> Back
         </button>
         <div class="resource-heading">
-          <span class="resource-icon" aria-hidden="true">{{ item.item_type === 'article' ? 'A' : 'C' }}</span>
+          <span class="resource-icon" aria-hidden="true">{{ item.item_type === 'article' ? 'A' : item.item_type === 'slides' ? 'S' : 'C' }}</span>
           <strong>{{ draft.title || 'Untitled' }}</strong>
           <span class="resource-type">{{ item.item_type }}</span>
         </div>
@@ -138,7 +141,7 @@ onBeforeUnmount(() => {
           <header class="pane-heading"><span>Source (Markdown)</span><small>{{ lineNumbers.length }} lines</small></header>
           <div class="metadata-fields">
             <label><span>Title</span><input v-model="draft.title" maxlength="300" /></label>
-            <label v-if="item.item_type === 'article'"><span>Subtitle</span><input v-model="draft.subtitle" maxlength="500" /></label>
+            <label v-if="item.item_type === 'article' || item.item_type === 'slides'"><span>Subtitle</span><input v-model="draft.subtitle" maxlength="500" /></label>
             <label><span>Summary</span><textarea v-model="draft.summary" rows="3" /></label>
           </div>
           <div class="source-workspace">
@@ -157,8 +160,11 @@ onBeforeUnmount(() => {
         </section>
 
         <section class="preview-pane" aria-label="Live Markdown preview">
-          <header class="pane-heading"><span>Live preview</span><small><i />Live · scroll linked</small></header>
-          <article ref="previewDocument" class="preview-document" @scroll.passive="syncPreviewScroll">
+          <header class="pane-heading"><span>{{ item.item_type === 'slides' ? 'Live deck' : 'Live preview' }}</span><small><i />{{ item.item_type === 'slides' ? 'Live · use arrows' : 'Live · scroll linked' }}</small></header>
+          <article v-if="item.item_type === 'slides'" ref="previewDocument" class="preview-document slides-preview-document">
+            <SlidesPreview :title="draft.title" :content="draft.content" />
+          </article>
+          <article v-else ref="previewDocument" class="preview-document" @scroll.passive="syncPreviewScroll">
             <span class="preview-type">{{ item.item_type }}</span>
             <h1>{{ draft.title || 'Untitled' }}</h1>
             <p v-if="draft.subtitle" class="preview-subtitle">{{ draft.subtitle }}</p>
@@ -203,6 +209,7 @@ onBeforeUnmount(() => {
 .line-gutter span { display: block; }
 .source-workspace textarea { min-width: 0; min-height: 0; width: 100%; height: 100%; padding: 1.1rem 1.25rem 3rem; resize: none; border: 0; outline: 0; color: #252c28; background: transparent; font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: .82rem; line-height: 1.72; tab-size: 2; white-space: pre; overflow: auto; }
 .preview-document { min-height: 0; overflow: auto; padding: 2.4rem clamp(2rem, 5vw, 5rem) 5rem; }
+.slides-preview-document { display: grid; align-items: center; padding: clamp(1rem, 3vw, 2.5rem); background: #f4f7f5; }
 .preview-document h1 { max-width: 54rem; margin: .85rem 0 .7rem; font-size: clamp(2rem, 3.1vw, 3.2rem); line-height: 1.12; letter-spacing: -.04em; }
 .preview-subtitle { margin: 0 0 1rem; color: #777f7a; font-size: 1rem; line-height: 1.55; }
 .preview-summary { max-width: 52rem; color: #59635d; font-size: .94rem; line-height: 1.72; }

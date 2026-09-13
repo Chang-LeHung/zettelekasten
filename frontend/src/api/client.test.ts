@@ -1,7 +1,52 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { aiClient, settingsClient } from './client'
+import { aiClient, libraryClient, settingsClient } from './client'
 
 afterEach(() => vi.unstubAllGlobals())
+
+it('loads slide decks into the library and keeps their content type when editing', async () => {
+  const artifact = {
+    id: 'slides-1',
+    session_id: 'session-1',
+    artifact_type: 'slides',
+    status: 'saved',
+    content: {
+      artifact_type: 'slides',
+      title: 'Zett in ten minutes',
+      subtitle: 'A compact tour',
+      summary: 'Presentation summary',
+      suggested_tags: [],
+      keywords: ['zett'],
+      content: '# Opening\n\n---\n\n## Finish',
+    },
+    raw_content: null,
+    version: 1,
+    metadata: {},
+    created_at: '2026-09-13T00:00:00Z',
+    updated_at: '2026-09-13T00:00:00Z',
+  }
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify([artifact])))
+    .mockResolvedValueOnce(new Response(JSON.stringify({
+      ...artifact,
+      version: 2,
+      content: { ...artifact.content, title: 'Updated deck' },
+    })))
+  vi.stubGlobal('fetch', fetchMock)
+
+  const [item] = await libraryClient.list()
+  expect(item).toMatchObject({ item_type: 'slides', subtitle: 'A compact tour' })
+  expect(String(fetchMock.mock.calls[0]?.[0])).toContain('artifact_types=slides')
+
+  const updated = await libraryClient.update('slides', item.id, {
+    title: 'Updated deck',
+    subtitle: 'A compact tour',
+    summary: 'Presentation summary',
+    content: artifact.content.content,
+  })
+  expect(updated.item_type).toBe('slides')
+  const body = JSON.parse(String((fetchMock.mock.calls[1]?.[1] as RequestInit).body))
+  expect(body.content).toMatchObject({ artifact_type: 'slides', title: 'Updated deck' })
+})
 
 it('awaits ordinary tool callbacks before delivering later text', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(

@@ -114,6 +114,7 @@ export const libraryClient = {
     if (options.query) params.set('q', options.query)
     params.append('artifact_types', 'card')
     params.append('artifact_types', 'article')
+    params.append('artifact_types', 'slides')
     params.append('statuses', 'saved')
     const suffix = params.size ? `?${params}` : ''
     const artifacts = await request<AgentArtifact[]>(`/artifacts${suffix}`)
@@ -135,9 +136,9 @@ export const libraryClient = {
       existing: true,
       confidence: 1,
     }))
-    const content: ArtifactContent = itemType === 'article'
+    const content: ArtifactContent = itemType === 'article' || itemType === 'slides'
       ? {
-          artifact_type: 'article',
+          artifact_type: itemType,
           title: payload.title,
           subtitle: payload.subtitle || '',
           summary: payload.summary || '',
@@ -428,7 +429,7 @@ function artifactToLibraryItem(artifact: AgentArtifact): LibraryItem {
     id: artifact.id,
     item_type: content.artifact_type,
     title: content.title,
-    subtitle: content.artifact_type === 'article' ? content.subtitle : null,
+    subtitle: content.artifact_type === 'article' || content.artifact_type === 'slides' ? content.subtitle : null,
     summary: content.summary || null,
     content: content.content,
     raw_content: artifact.raw_content,

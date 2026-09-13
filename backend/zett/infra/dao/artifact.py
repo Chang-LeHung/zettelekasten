@@ -19,6 +19,7 @@ class ArtifactTypeCode(IntEnum):
     CARD = 1
     ARTICLE = 2
     IMAGE = 3
+    SLIDES = 4
 
 
 class ArtifactStatusCode(IntEnum):
@@ -30,6 +31,7 @@ TYPE_TO_CODE = {
     ArtifactType.CARD: ArtifactTypeCode.CARD,
     ArtifactType.ARTICLE: ArtifactTypeCode.ARTICLE,
     ArtifactType.IMAGE: ArtifactTypeCode.IMAGE,
+    ArtifactType.SLIDES: ArtifactTypeCode.SLIDES,
 }
 CODE_TO_TYPE = {int(code): value for value, code in TYPE_TO_CODE.items()}
 STATUS_TO_CODE = {

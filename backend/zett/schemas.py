@@ -60,6 +60,7 @@ class ArtifactType(StrEnum):
     CARD = "card"
     ARTICLE = "article"
     IMAGE = "image"
+    SLIDES = "slides"
 
 
 class ArtifactStatus(StrEnum):
@@ -82,8 +83,10 @@ class CardArtifactContent(ArtifactContentBase):
     """Editable content for a knowledge-card artifact."""
 
     artifact_type: Literal[ArtifactType.CARD] = ArtifactType.CARD
+    title: str = Field(description="Short card title using only the words needed to identify its idea")
+    summary: str = Field(default="", description="One brief sentence stating the card's essential meaning")
     card_type: CardType = Field(default=CardType.NOTE, description="Normalized knowledge card category")
-    content: str = Field(description="Card body in Markdown")
+    content: str = Field(description="Concise Markdown expressing one idea in the fewest words that preserve meaning")
 
     @field_validator("card_type", mode="before")
     @classmethod
@@ -109,8 +112,34 @@ class ImageArtifactContent(ArtifactContentBase):
     asset_id: str | None = Field(default=None, description="Session asset ID when the image is stored locally")
 
 
+class SlidesArtifactContent(ArtifactContentBase):
+    """Editable Markdown source for a concise Reveal.js presentation."""
+
+    artifact_type: Literal[ArtifactType.SLIDES] = ArtifactType.SLIDES
+    subtitle: str = Field(default="", description="Optional presentation subtitle")
+    content: str = Field(
+        description="Markdown slides separated by a line containing only '---'; each slide should fit one viewport"
+    )
+
+    @field_validator("content")
+    @classmethod
+    def validate_pages(cls, value: str) -> str:
+        """Require an unambiguous multi-page deck with no empty slides."""
+        lines = value.splitlines()
+        if any(line.strip() == "---" and line != "---" for line in lines):
+            raise ValueError("slide separators must be exactly '---' with no surrounding whitespace")
+        separator_indexes = [index for index, line in enumerate(lines) if line == "---"]
+        if not separator_indexes:
+            raise ValueError("slide content must contain at least one line containing only '---'")
+        boundaries = [-1, *separator_indexes, len(lines)]
+        pages = [lines[start + 1 : end] for start, end in zip(boundaries[:-1], boundaries[1:], strict=True)]
+        if any(not any(line.strip() for line in page) for page in pages):
+            raise ValueError("slide content cannot contain an empty page")
+        return value
+
+
 ArtifactContent = Annotated[
-    CardArtifactContent | ArticleArtifactContent | ImageArtifactContent,
+    CardArtifactContent | ArticleArtifactContent | ImageArtifactContent | SlidesArtifactContent,
     Field(discriminator="artifact_type"),
 ]
 

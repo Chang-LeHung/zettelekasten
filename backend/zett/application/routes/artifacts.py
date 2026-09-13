@@ -1,4 +1,4 @@
-"""Asynchronous endpoints for card, article, and image artifacts."""
+"""Asynchronous endpoints for card, article, image, and slide artifacts."""
 
 from fastapi import APIRouter, HTTPException, Query, status
 
