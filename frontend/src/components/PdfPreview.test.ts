@@ -101,6 +101,67 @@ it('opens a large in-page dialog and preserves the preview when closed with Esca
   expect(document.activeElement).toBe(expand)
 })
 
+it('opens directly in expanded mode and notifies its launcher when closed', async () => {
+  const closed = vi.fn()
+  const host = document.createElement('div')
+  document.body.append(host)
+  const app = createApp({
+    render: () => h(PdfPreview, {
+      asset: { id: 'pdf', session_id: 'session' },
+      artifact: true,
+      initialMode: 'expanded',
+      onClose: closed,
+    }),
+  })
+  app.mount(host)
+  cleanups.push(() => { app.unmount(); host.remove() })
+  await nextTick()
+  await nextTick()
+
+  const dialog = document.body.querySelector<HTMLElement>('[aria-label="Expanded PDF preview"]')!
+  expect(dialog).not.toBeNull()
+  dialog.querySelector<HTMLButtonElement>('[aria-label="Close expanded PDF preview"]')!.click()
+  await nextTick()
+  expect(closed).toHaveBeenCalledOnce()
+})
+
+it('loads an artifact and enters presentation mode directly', async () => {
+  vi.mocked(aiClient.getArtifactPdfContent).mockResolvedValue(new ArrayBuffer(8))
+  vi.mocked(getDocument).mockReturnValue({
+    promise: Promise.resolve({
+      numPages: 2,
+      getPage: vi.fn().mockResolvedValue({ getViewport: () => ({ width: 600, height: 800 }) }),
+      getOutline: vi.fn().mockResolvedValue([]),
+    }),
+    destroy: vi.fn().mockResolvedValue(undefined),
+  } as never)
+  const closed = vi.fn()
+  const host = document.createElement('div')
+  document.body.append(host)
+  const app = createApp({
+    render: () => h(PdfPreview, {
+      asset: { id: 'pdf', session_id: 'session' },
+      artifact: true,
+      initialMode: 'presentation',
+      onClose: closed,
+    }),
+  })
+  app.mount(host)
+  cleanups.push(() => { app.unmount(); host.remove() })
+  await nextTick()
+  await Promise.resolve()
+  await Promise.resolve()
+  await nextTick()
+  await nextTick()
+  await nextTick()
+
+  const presentation = document.body.querySelector<HTMLElement>('.pdf-presentation')!
+  expect(presentation).not.toBeNull()
+  presentation.querySelector<HTMLButtonElement>('[aria-label="Exit PDF presentation"]')!.click()
+  await nextTick()
+  expect(closed).toHaveBeenCalledOnce()
+})
+
 it('defaults both outlines to hidden and keeps their visibility independent', async () => {
   const { root } = await mountPreview()
   const toggle = () => root.querySelector<HTMLButtonElement>('[aria-label="Toggle document outline"]')!.click()

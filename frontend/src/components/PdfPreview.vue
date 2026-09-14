@@ -27,7 +27,15 @@ interface OutlineEntry {
   depth: number
 }
 
-const props = defineProps<{ asset: Pick<SessionAsset, 'id' | 'session_id'> & { version?: number }; artifact?: boolean }>()
+const props = withDefaults(defineProps<{
+  asset: Pick<SessionAsset, 'id' | 'session_id'> & { version?: number }
+  artifact?: boolean
+  initialMode?: 'inline' | 'expanded' | 'presentation'
+}>(), {
+  artifact: false,
+  initialMode: 'inline',
+})
+const emit = defineEmits<{ close: [] }>()
 const stage = ref<HTMLElement | null>(null)
 const documentProxy = shallowRef<PDFDocumentProxy | null>(null)
 const loading = ref(true)
@@ -92,6 +100,7 @@ function closeExpanded(): void {
   expanded.value = false
   document.body.style.overflow = previousOverflow
   void nextTick(() => previousFocus?.focus())
+  if (props.initialMode !== 'inline') emit('close')
 }
 
 async function startPresentation(): Promise<void> {
@@ -121,6 +130,7 @@ function stopPresentation(exitNativeFullscreen = true): void {
   }
   document.body.style.overflow = expanded.value ? 'hidden' : presentationPreviousOverflow
   void nextTick(() => presentationPreviousFocus?.focus())
+  if (props.initialMode === 'presentation') emit('close')
 }
 
 function changePresentationPage(offset: number): void {
@@ -289,6 +299,7 @@ async function loadDocument(): Promise<void> {
     outline.value = flattenOutline((documentOutline || []) as OutlineItem[])
     await nextTick()
     updateCurrentPage()
+    if (props.initialMode === 'presentation') await startPresentation()
   } catch (error) {
     if (version !== loadVersion || (error instanceof DOMException && error.name === 'AbortError')) return
     errorMessage.value = error instanceof Error ? error.message : 'Unable to preview this PDF.'
@@ -400,6 +411,7 @@ onMounted(() => {
   window.addEventListener('resize', updatePresentationViewport)
   window.addEventListener('keydown', handlePresentationKey, true)
   document.addEventListener('fullscreenchange', handleFullscreenChange)
+  if (props.initialMode !== 'inline') void toggleExpanded()
 })
 onBeforeUnmount(() => {
   stopPresentation()

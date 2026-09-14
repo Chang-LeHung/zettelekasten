@@ -49,6 +49,7 @@ interface AskUserState {
 const libraryItems = ref<LibraryItem[]>([])
 const selectedLibraryItem = ref<LibraryItem | null>(null)
 const fullscreenSlidesItem = ref<LibraryItem | null>(null)
+const libraryPdfLaunch = ref<{ item: LibraryItem; mode: 'expanded' | 'presentation' } | null>(null)
 const librarySlidesStage = ref<HTMLElement | null>(null)
 let slidesPreviewTrigger: HTMLElement | null = null
 
@@ -68,6 +69,10 @@ async function closeSlidesFullscreen(): Promise<void> {
   if (document.fullscreenElement === librarySlidesStage.value) await document.exitFullscreen()
   fullscreenSlidesItem.value = null
   slidesPreviewTrigger?.focus()
+}
+
+function openLibraryPdf(item: LibraryItem, mode: 'expanded' | 'presentation'): void {
+  libraryPdfLaunch.value = { item, mode }
 }
 
 function handleSlidesFullscreenChange(): void {
@@ -1690,6 +1695,12 @@ onBeforeUnmount(() => {
                   <button v-if="item.item_type === 'slides'" class="card-action-button" type="button" :aria-label="`Preview ${item.title} fullscreen`" title="Fullscreen preview" @click.stop="openSlidesFullscreen(item)" @keydown.stop>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6" /></svg>
                   </button>
+                  <button v-if="item.item_type === 'latex_pdf'" class="card-action-button" type="button" :aria-label="`Preview ${item.title}`" title="Preview PDF" @click.stop="openLibraryPdf(item, 'expanded')" @keydown.stop>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6" /></svg>
+                  </button>
+                  <button v-if="item.item_type === 'latex_pdf'" class="card-action-button" type="button" :aria-label="`Present ${item.title}`" title="Present PDF" @click.stop="openLibraryPdf(item, 'presentation')" @keydown.stop>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M12 17v4m-4 0h8M10 8l5 2.5-5 2.5Z" /></svg>
+                  </button>
                   <button v-if="item.item_type !== 'latex_pdf'" class="card-action-button" type="button" :aria-label="`Edit ${item.title}`" title="Edit and preview" @click.stop="openLibraryEditor(item)" @keydown.stop>
                     <svg><use href="#icon-edit" /></svg>
                   </button>
@@ -2094,6 +2105,14 @@ onBeforeUnmount(() => {
           <SlidesPreview :title="fullscreenSlidesItem.title" :content="fullscreenSlidesItem.content" :show-fullscreen-button="false" auto-focus />
         </section>
       </Teleport>
+      <div v-if="libraryPdfLaunch" class="library-pdf-launch">
+        <PdfPreview
+          :asset="libraryClient.documentReference(libraryPdfLaunch.item.id)"
+          artifact
+          :initial-mode="libraryPdfLaunch.mode"
+          @close="libraryPdfLaunch = null"
+        />
+      </div>
       <Transition name="sheet">
         <div v-if="selectedLibraryItem" class="detail-backdrop" @click.self="selectedLibraryItem = null">
           <aside class="detail-sheet" role="dialog" aria-modal="true" :aria-label="selectedLibraryItem.title">
@@ -2653,6 +2672,7 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .library-slides-fullscreen { position: fixed; inset: 0; z-index: 1200; display: grid; width: 100vw; height: 100dvh; background: white; }
 .library-slides-fullscreen :deep(.slides-stage) { width: 100%; height: 100%; aspect-ratio: auto; border: 0; border-radius: 0; }
 .library-slides-close { position: absolute; top: .6rem; right: .6rem; z-index: 30; width: 2rem; height: 2rem; border: 1px solid #d9e2dc; border-radius: .4rem; background: white; color: #426b53; font-size: 1.5rem; cursor: pointer; }
+.library-pdf-launch { position: fixed; width: 1px; height: 1px; overflow: hidden; }
 
 /* Typography scale */
 .brand strong { font-size: 1rem; }
