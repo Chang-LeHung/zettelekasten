@@ -1702,11 +1702,14 @@ onBeforeUnmount(() => {
                 </div>
               </div>
               <h2 :title="item.title">{{ item.title }}</h2>
+              <div v-if="item.item_type === 'latex_pdf'" class="library-pdf-thumbnail">
+                <PdfThumbnail :asset="libraryClient.documentReference(item.id)" artifact fit="contain" />
+              </div>
               <div v-if="item.item_type === 'slides'" class="library-deck-summary">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M12 17v4m-4 0h8M8 9h8m-8 4h5" /></svg>
                 <span>Presentation · {{ presentationSections(item.content).flat().length }} slides</span>
               </div>
-              <p class="card-excerpt">{{ libraryExcerpt(item) }}</p>
+              <p v-if="item.item_type !== 'latex_pdf'" class="card-excerpt">{{ libraryExcerpt(item) }}</p>
               <div class="card-footer">
                 <div class="card-footer-info">
                   <div v-if="item.tags.length" class="card-tags"><span v-for="path in item.tags.slice(0, 2)" :key="path" :title="path">{{ path }}</span></div>
@@ -2256,6 +2259,8 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .card h2 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; flex-shrink: 0; max-height: 2.8em; margin: 1rem 0 .65rem; overflow: hidden; overflow-wrap: anywhere; font-size: 1.05rem; line-height: 1.4; letter-spacing: -.017em; }
 .library-article .card-type { color: #665139; background: #f4ede3; }
 .library-slides .card-type { color: #385d49; background: #e7f0ea; }
+.library-latex_pdf h2 { margin-bottom: .5rem; }
+.library-pdf-thumbnail { flex: 1 1 0; min-width: 0; min-height: 0; margin: 0 0 .25rem; overflow: hidden; border: 1px solid rgba(42,55,47,.09); border-radius: .55rem; background: #e7eae8; }
 .library-deck-summary { display: flex; align-items: center; gap: .45rem; flex-shrink: 0; margin-bottom: .65rem; color: #607c6c; font-size: .68rem; }
 .library-deck-summary svg { width: 1.1rem; height: 1.1rem; flex-shrink: 0; }
 .card > .card-excerpt { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; flex-shrink: 0; max-height: 4.8em; margin: 0; overflow: hidden; overflow-wrap: anywhere; color: var(--secondary); font-size: .78rem; line-height: 1.6; }

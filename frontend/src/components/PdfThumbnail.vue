@@ -13,9 +13,14 @@ import { pdfDocumentOptions } from '../utils/pdfDocument'
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
-const props = defineProps<{
-  asset: SessionAsset
-}>()
+const props = withDefaults(defineProps<{
+  asset: Pick<SessionAsset, 'id' | 'session_id'>
+  artifact?: boolean
+  fit?: 'cover' | 'contain'
+}>(), {
+  artifact: false,
+  fit: 'cover',
+})
 
 const root = ref<HTMLElement | null>(null)
 const canvas = ref<HTMLCanvasElement | null>(null)
@@ -40,12 +45,17 @@ async function renderFirstPage(): Promise<void> {
   try {
     await dispose()
     abortController = new AbortController()
-    const bytes = await aiClient.getSessionAssetContent(
+    const readContent = props.artifact ? aiClient.getArtifactPdfContent : aiClient.getSessionAssetContent
+    const bytes = await readContent(
       props.asset.session_id,
       props.asset.id,
       abortController.signal,
     )
     if (version !== loadVersion) return
+    if (bytes === null || bytes.byteLength === 0) {
+      failed.value = true
+      return
+    }
     const currentLoadingTask = getDocument(pdfDocumentOptions(bytes))
     loadingTask = currentLoadingTask
     const document = await currentLoadingTask.promise
@@ -54,14 +64,21 @@ async function renderFirstPage(): Promise<void> {
     if (version !== loadVersion || !root.value || !canvas.value) return
 
     const baseViewport = page.getViewport({ scale: 1 })
-    const displayWidth = root.value.clientWidth || 58
-    const displayScale = displayWidth / baseViewport.width
+    const availableWidth = root.value.clientWidth || 58
+    const availableHeight = root.value.clientHeight || 58
+    const scaleForWidth = availableWidth / baseViewport.width
+    const scaleForHeight = availableHeight / baseViewport.height
+    const displayScale = props.fit === 'contain'
+      ? Math.min(scaleForWidth, scaleForHeight)
+      : Math.max(scaleForWidth, scaleForHeight)
+    const displayWidth = Math.max(1, Math.floor(baseViewport.width * displayScale))
+    const displayHeight = Math.max(1, Math.floor(baseViewport.height * displayScale))
     const pixelRatio = Math.max(1, window.devicePixelRatio || 1)
     const viewport = page.getViewport({ scale: displayScale * pixelRatio })
     canvas.value.width = Math.ceil(viewport.width)
     canvas.value.height = Math.ceil(viewport.height)
     canvas.value.style.width = `${displayWidth}px`
-    canvas.value.style.height = `${Math.ceil((baseViewport.height * displayWidth) / baseViewport.width)}px`
+    canvas.value.style.height = `${displayHeight}px`
     const currentRenderTask = page.render({ canvas: canvas.value, viewport })
     renderTask = currentRenderTask
     await currentRenderTask.promise
@@ -72,7 +89,7 @@ async function renderFirstPage(): Promise<void> {
   }
 }
 
-watch(() => [props.asset.session_id, props.asset.id], () => void renderFirstPage(), { immediate: true })
+watch(() => [props.asset.session_id, props.asset.id, props.artifact, props.fit], () => void renderFirstPage(), { immediate: true })
 onBeforeUnmount(() => {
   loadVersion += 1
   void dispose().catch(() => undefined)
@@ -87,8 +104,8 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.pdf-thumbnail { display: grid; place-items: center; width: 100%; height: 100%; overflow: hidden; background: #dfe4e1; }
-canvas { display: block; min-width: 100%; min-height: 100%; object-fit: cover; object-position: top center; background: #fff; }
+.pdf-thumbnail { display: grid; place-items: center; width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; background: #dfe4e1; }
+canvas { display: block; max-width: 100%; max-height: 100%; background: #fff; }
 .failed { color: #fff; background: linear-gradient(145deg, #b95b55, #93423f); }
 strong { font-size: .58rem; letter-spacing: .04em; }
 </style>
