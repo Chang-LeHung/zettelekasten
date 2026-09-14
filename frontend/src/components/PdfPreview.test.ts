@@ -125,3 +125,28 @@ it('defaults both outlines to hidden and keeps their visibility independent', as
   close()
   await nextTick()
 })
+
+it('remembers independent zoom levels for inline and expanded previews', async () => {
+  const { root } = await mountPreview()
+  await nextTick()
+  await nextTick()
+  const click = async (label: string) => {
+    root.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!.click()
+    await nextTick()
+  }
+  const zoom = () => root.querySelector('[aria-label="Reset zoom"]')!.textContent
+  await click('Zoom in')
+  expect(zoom()).toBe('125%')
+  await click('Expand PDF preview')
+  expect(zoom()).toBe('100%')
+  await click('Zoom in')
+  await click('Zoom in')
+  expect(zoom()).toBe('150%')
+  await click('Close expanded PDF preview')
+  expect(zoom()).toBe('125%')
+  await click('Reset zoom')
+  await click('Expand PDF preview')
+  expect(zoom()).toBe('150%')
+  await click('Close expanded PDF preview')
+  expect(zoom()).toBe('100%')
+})

@@ -35,11 +35,19 @@ const awaitingCompilation = ref(false)
 const errorMessage = ref('')
 const currentPage = ref(1)
 const pageCount = ref(0)
-const scale = ref(1)
+const inlineScale = ref(1)
+const expandedScale = ref(1)
 const basePageWidth = ref(612)
 const basePageHeight = ref(792)
 const outline = ref<OutlineEntry[]>([])
 const expanded = ref(false)
+const scale = computed({
+  get: () => expanded.value ? expandedScale.value : inlineScale.value,
+  set: (value: number) => {
+    if (expanded.value) expandedScale.value = value
+    else inlineScale.value = value
+  },
+})
 const inlineOutlineOpen = ref(false)
 const expandedOutlineOpen = ref(false)
 const outlineOpen = computed({
@@ -58,6 +66,7 @@ async function toggleExpanded(): Promise<void> {
     return
   }
   previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  cancelPendingZoom()
   previousOverflow = document.body.style.overflow
   document.body.style.overflow = 'hidden'
   expanded.value = true
@@ -67,6 +76,7 @@ async function toggleExpanded(): Promise<void> {
 
 function closeExpanded(): void {
   if (!expanded.value) return
+  cancelPendingZoom()
   expanded.value = false
   document.body.style.overflow = previousOverflow
   void nextTick(() => previousFocus?.focus())
@@ -134,6 +144,12 @@ let loadVersion = 0
 let scrollFrame: number | null = null
 let zoomFrame: number | null = null
 let pendingZoomDelta = 0
+function cancelPendingZoom(): void {
+  // A queued pinch belongs to its current view, never the view entered next.
+  if (zoomFrame !== null) window.cancelAnimationFrame(zoomFrame)
+  zoomFrame = null
+  pendingZoomDelta = 0
+}
 let zoomPointer = { x: 0, y: 0 }
 
 function flattenOutline(items: OutlineItem[], depth = 0, path = 'root'): OutlineEntry[] {
