@@ -3,6 +3,38 @@ import { aiClient, libraryClient, settingsClient } from './client'
 
 afterEach(() => vi.unstubAllGlobals())
 
+it('treats an uncompiled artifact PDF as pending, while preserving real request errors', async () => {
+  vi.stubGlobal('fetch', vi.fn()
+    .mockResolvedValueOnce(new Response(null, { status: 204 }))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ detail: 'Artifact PDF not found' }), { status: 404 })))
+  expect(await aiClient.getArtifactPdfContent('session', 'draft')).toBeNull()
+  await expect(aiClient.getArtifactPdfContent('session', 'unknown')).rejects.toThrow('Artifact PDF not found')
+})
+
+it('loads minimal LaTeX references without expecting Markdown metadata', async () => {
+  const artifact = {
+    id: 'latex-1', session_id: 'session-1', artifact_type: 'latex_pdf', status: 'saved',
+    content: { artifact_type: 'latex_pdf', project_path: '/projects/paper', pdf_name: 'paper.pdf' },
+    raw_content: null, version: 1, metadata: {}, created_at: '', updated_at: '',
+  }
+  const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify([artifact])))
+    .mockResolvedValueOnce(new Response('%PDF-1.4'))
+  vi.stubGlobal('fetch', fetchMock)
+  const [item] = await libraryClient.list()
+  expect(item).toMatchObject({ item_type: 'latex_pdf', title: 'paper', content: '', tags: [] })
+  expect(String(fetchMock.mock.calls[0]?.[0])).toContain('artifact_types=latex_pdf')
+  expect(libraryClient.documentReference(item.id)).toEqual({ id: 'latex-1', session_id: 'session-1' })
+  const controller = new AbortController()
+  const bytes = await aiClient.getArtifactPdfContent('session-1', item.id, controller.signal)
+  expect(new TextDecoder().decode(bytes!)).toBe('%PDF-1.4')
+  expect(String(fetchMock.mock.calls[1]?.[0])).toContain('/agent/session-1/artifacts/latex-1/content')
+  expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ signal: controller.signal })
+  await expect(libraryClient.update('latex_pdf', item.id, {
+    title: 'Changed', subtitle: null, summary: null, content: 'Not LaTeX',
+  })).rejects.toThrow('Edit the LaTeX project files')
+  expect(fetchMock).toHaveBeenCalledTimes(2)
+})
+
 it('renames an asset through a metadata-only request', async () => {
   const updated = { id: 'asset-1', name: 'Logo', content_url: '/unchanged/content' }
   const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(updated)))

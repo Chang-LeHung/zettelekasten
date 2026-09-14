@@ -9,6 +9,7 @@ import {
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { aiClient } from '../api/client'
 import type { SessionAsset } from '../api/types'
+import { pdfDocumentOptions } from '../utils/pdfDocument'
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
@@ -45,7 +46,7 @@ async function renderFirstPage(): Promise<void> {
       abortController.signal,
     )
     if (version !== loadVersion) return
-    const currentLoadingTask = getDocument({ data: new Uint8Array(bytes) })
+    const currentLoadingTask = getDocument(pdfDocumentOptions(bytes))
     loadingTask = currentLoadingTask
     const document = await currentLoadingTask.promise
     const page = await document.getPage(1)

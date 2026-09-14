@@ -1,14 +1,37 @@
 """Asynchronous endpoints for card, article, image, and slide artifacts."""
 
 from fastapi import APIRouter, HTTPException, Query, status
+from fastapi.responses import FileResponse, Response
 
 from ...infra.dao import artifact_storage, session_storage
 from ...models import ArtifactListOptions
 from ...schemas import AgentArtifact, AgentArtifactWrite, ArtifactStatus, ArtifactType
 from ..dependencies import run_sync
+from ..latex_artifacts import get_latex_pdf
 from ..schemas import ArtifactCreateIn, ArtifactUpdateIn, DeleteResponse
 
 router = APIRouter(tags=["artifacts"])
+
+
+@router.get("/agent/{session_id}/artifacts/{artifact_id}/content", response_class=FileResponse)
+async def get_artifact_pdf(session_id: str, artifact_id: str) -> Response:
+    """Resolve a session-owned compiled PDF for inline preview."""
+    try:
+        path = await run_sync(get_latex_pdf, session_id, artifact_id)
+    except (FileNotFoundError, ValueError) as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Artifact PDF not found") from error
+    if path is None:
+        return Response(status_code=status.HTTP_204_NO_CONTENT, headers={"Cache-Control": "no-store"})
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        filename=path.name,
+        content_disposition_type="inline",
+        headers={
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "sandbox; default-src 'none'",
+        },
+    )
 
 
 @router.get("/artifacts", response_model=list[AgentArtifact])
@@ -47,16 +70,17 @@ async def create_artifact(session_id: str, payload: ArtifactCreateIn) -> AgentAr
     """Create one typed artifact owned by the URL session."""
     if await run_sync(session_storage.get, session_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
-    return await run_sync(
-        artifact_storage.create,
-        AgentArtifactWrite(
-            session_id=session_id,
-            content=payload.content,
-            raw_content=payload.raw_content,
-            status=payload.status,
-            metadata=payload.metadata,
-        ),
+    entity = AgentArtifactWrite(
+        session_id=session_id,
+        content=payload.content,
+        raw_content=payload.raw_content,
+        status=payload.status,
+        metadata=payload.metadata,
     )
+    try:
+        return await run_sync(artifact_storage.create, entity)
+    except (ValueError, FileNotFoundError) as error:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
 
 
 @router.get("/agent/{session_id}/artifacts/{artifact_id}", response_model=AgentArtifact)
@@ -80,7 +104,10 @@ async def update_artifact(session_id: str, artifact_id: str, payload: ArtifactUp
         status=current.status,
         metadata=current.metadata,
     )
-    return await run_sync(artifact_storage.update, artifact_id, entity)
+    try:
+        return await run_sync(artifact_storage.update, artifact_id, entity)
+    except (ValueError, FileNotFoundError) as error:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
 
 
 @router.post("/agent/{session_id}/artifacts/{artifact_id}/save", response_model=AgentArtifact)
@@ -96,7 +123,10 @@ async def save_artifact(session_id: str, artifact_id: str) -> AgentArtifact:
         status=ArtifactStatus.SAVED,
         metadata=current.metadata,
     )
-    return await run_sync(artifact_storage.update, artifact_id, entity)
+    try:
+        return await run_sync(artifact_storage.update, artifact_id, entity)
+    except (ValueError, FileNotFoundError) as error:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
 
 
 @router.delete("/agent/{session_id}/artifacts/{artifact_id}", response_model=DeleteResponse)

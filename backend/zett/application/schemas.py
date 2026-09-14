@@ -5,7 +5,14 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from ..schemas import AgentArtifact, ArtifactContent, ArtifactStatus, ProviderType, SessionAssetOut
+from ..schemas import (
+    AgentArtifact,
+    ArtifactContent,
+    ArtifactCreateContent,
+    ArtifactStatus,
+    ProviderType,
+    SessionAssetOut,
+)
 
 
 class DeleteResponse(BaseModel):
@@ -101,7 +108,7 @@ class AgentStartOut(BaseModel):
 class ArtifactCreateIn(BaseModel):
     """New draft or saved artifact scoped by the URL session."""
 
-    content: ArtifactContent
+    content: ArtifactCreateContent
     raw_content: str | None = None
     status: ArtifactStatus = ArtifactStatus.DRAFT
     metadata: dict[str, Any] = Field(default_factory=dict)

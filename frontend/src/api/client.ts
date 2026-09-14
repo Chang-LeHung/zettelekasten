@@ -110,12 +110,18 @@ async function requestBinary(path: string, signal?: AbortSignal): Promise<ArrayB
 }
 
 export const libraryClient = {
+  documentReference(itemId: string): Pick<AgentArtifact, 'id' | 'session_id'> {
+    const { id, session_id } = requireIndexedArtifact(itemId)
+    return { id, session_id }
+  },
+
   async list(options: CardListOptions = {}): Promise<LibraryItem[]> {
     const params = new URLSearchParams()
     if (options.query) params.set('q', options.query)
     params.append('artifact_types', 'card')
     params.append('artifact_types', 'article')
     params.append('artifact_types', 'slides')
+    params.append('artifact_types', 'latex_pdf')
     params.append('statuses', 'saved')
     const suffix = params.size ? `?${params}` : ''
     const artifacts = await request<AgentArtifact[]>(`/artifacts${suffix}`)
@@ -132,6 +138,9 @@ export const libraryClient = {
 
   async update(itemType: LibraryItemType, itemId: string, payload: LibraryItemUpdate): Promise<LibraryItem> {
     const artifact = requireIndexedArtifact(itemId)
+    if (artifact.content.artifact_type === 'latex_pdf' || itemType === 'latex_pdf') {
+      throw new Error('Edit the LaTeX project files, not Markdown.')
+    }
     const suggestedTags = (payload.tags ?? artifact.content.suggested_tags.map((tag) => tag.path)).map((path) => ({
       path,
       existing: true,
@@ -190,6 +199,10 @@ export const tagClient = {
 }
 
 export const aiClient = {
+  async getArtifactPdfContent(sessionId: string, artifactId: string, signal?: AbortSignal): Promise<ArrayBuffer | null> {
+    const bytes = await requestBinary(`/agent/${sessionId}/artifacts/${artifactId}/content`, signal)
+    return bytes.byteLength ? bytes : null
+  },
   async analyzeStream(
     conversationId: string,
     rawContent: string,
@@ -440,14 +453,14 @@ function artifactToLibraryItem(artifact: AgentArtifact): LibraryItem {
   return {
     id: artifact.id,
     item_type: content.artifact_type,
-    title: content.title,
+    title: content.artifact_type === 'latex_pdf' ? content.pdf_name.replace(/\.pdf$/, '') : content.title,
     subtitle: content.artifact_type === 'article' || content.artifact_type === 'slides' ? content.subtitle : null,
-    summary: content.summary || null,
-    content: content.content,
+    summary: content.artifact_type === 'latex_pdf' ? 'LaTeX · PDF document' : content.summary || null,
+    content: content.artifact_type === 'latex_pdf' ? '' : content.content,
     raw_content: artifact.raw_content,
     card_type: content.artifact_type === 'card' ? content.card_type : null,
     status: artifact.status,
-    tags: content.suggested_tags.map((tag) => tag.path),
+    tags: content.artifact_type === 'latex_pdf' ? [] : content.suggested_tags.map((tag) => tag.path),
     metadata: artifact.metadata,
     created_at: artifact.created_at,
     updated_at: artifact.updated_at,

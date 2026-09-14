@@ -26,6 +26,7 @@ const MarkdownContent = defineAsyncComponent(() => import('./components/Markdown
 const LibraryEditor = defineAsyncComponent(() => import('./components/LibraryEditor.vue'))
 const PdfThumbnail = defineAsyncComponent(() => import('./components/PdfThumbnail.vue'))
 const SlidesPreview = defineAsyncComponent(() => import('./components/SlidesPreview.vue'))
+const PdfPreview = defineAsyncComponent(() => import('./components/PdfPreview.vue'))
 
 type View = 'library' | 'search' | 'new' | 'settings'
 type NoticeKind = 'success' | 'error'
@@ -213,8 +214,12 @@ const selectedImageUrl = computed(() => {
   return assets.value.find((asset) => asset.id === content.asset_id)?.content_url || null
 })
 
-function artifactTypeLabel(type: 'card' | 'article' | 'image' | 'slides'): string {
-  return ({ card: 'Card', article: 'Article', image: 'Image', slides: 'Slides' })[type]
+function artifactTypeLabel(type: ArtifactContent['artifact_type']): string {
+  return ({ card: 'Card', article: 'Article', image: 'Image', slides: 'Slides', latex_pdf: 'LaTeX PDF' })[type]
+}
+
+function artifactTitle(content: ArtifactContent): string {
+  return content.artifact_type === 'latex_pdf' ? content.pdf_name.replace(/\.pdf$/, '') : content.title
 }
 
 function libraryExcerpt(item: LibraryItem): string {
@@ -720,6 +725,7 @@ function openLibraryItem(item: LibraryItem): void {
 }
 
 function openLibraryEditor(item: LibraryItem): void {
+  if (item.item_type === 'latex_pdf') return
   selectedLibraryItem.value = null
   libraryEditorItem.value = item
 }
@@ -1085,7 +1091,7 @@ function selectArtifact(artifact: AgentArtifact): void {
   const artifactChanged = selectedArtifactId.value !== artifact.id
   selectedArtifactId.value = artifact.id
   artifactContent.value = jsonSnapshot(artifact.content)
-  selectedSuggestions.value = artifact.content.suggested_tags.map((tag) => tag.path)
+  selectedSuggestions.value = artifact.content.artifact_type === 'latex_pdf' ? [] : artifact.content.suggested_tags.map((tag) => tag.path)
   if (artifactChanged) artifactPreview.value = true
 }
 
@@ -1390,7 +1396,9 @@ async function saveSelectedArtifact(): Promise<void> {
   if (!artifactContent.value || !conversationId.value || !selectedArtifactId.value) return
   saving.value = true
   try {
-    artifactContent.value.suggested_tags = artifactContent.value.suggested_tags.filter((tag) => selectedSuggestions.value.includes(tag.path))
+    if (artifactContent.value.artifact_type !== 'latex_pdf') {
+      artifactContent.value.suggested_tags = artifactContent.value.suggested_tags.filter((tag) => selectedSuggestions.value.includes(tag.path))
+    }
     await syncSelectedArtifact()
     const saved = await aiClient.saveAgentArtifact(conversationId.value, selectedArtifactId.value)
     const index = artifacts.value.findIndex((artifact) => artifact.id === saved.id)
@@ -1410,7 +1418,9 @@ async function saveSelectedArtifact(): Promise<void> {
 
 async function deleteSelectedArtifact(): Promise<void> {
   if (!conversationId.value || !selectedArtifactId.value) return
-  const artifactTitle = artifactContent.value?.title || 'Untitled artifact'
+  const artifactTitle = artifactContent.value?.artifact_type === 'latex_pdf'
+    ? artifactContent.value.pdf_name
+    : artifactContent.value?.title || 'Untitled artifact'
   const confirmed = await requestConfirmation(
     'Delete this artifact?',
     `“${artifactTitle}” will be permanently removed from this conversation. A linked library resource will also be deleted.`,
@@ -1680,7 +1690,7 @@ onBeforeUnmount(() => {
                   <button v-if="item.item_type === 'slides'" class="card-action-button" type="button" :aria-label="`Preview ${item.title} fullscreen`" title="Fullscreen preview" @click.stop="openSlidesFullscreen(item)" @keydown.stop>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6" /></svg>
                   </button>
-                  <button class="card-action-button" type="button" :aria-label="`Edit ${item.title}`" title="Edit and preview" @click.stop="openLibraryEditor(item)" @keydown.stop>
+                  <button v-if="item.item_type !== 'latex_pdf'" class="card-action-button" type="button" :aria-label="`Edit ${item.title}`" title="Edit and preview" @click.stop="openLibraryEditor(item)" @keydown.stop>
                     <svg><use href="#icon-edit" /></svg>
                   </button>
                   <button class="card-action-button" type="button" :aria-label="`Copy ID for ${item.title}`" title="Copy resource ID" @click.stop="copyLibraryItemId(item)" @keydown.stop>
@@ -1954,7 +1964,7 @@ onBeforeUnmount(() => {
               <div v-if="artifacts.length" class="artifact-list" aria-label="Conversation artifacts">
                 <button v-for="artifact in artifacts" :key="artifact.id" :class="{ active: artifact.id === selectedArtifactId }" type="button" @click="selectArtifact(artifact)">
                   <span class="artifact-kind-icon">{{ artifact.artifact_type === 'card' ? '◇' : artifact.artifact_type === 'article' ? '¶' : artifact.artifact_type === 'slides' ? '▤' : '▧' }}</span>
-                  <span><strong>{{ artifact.content.title }}</strong><small>{{ artifact.artifact_type }} · v{{ artifact.version }} · {{ artifact.status }}</small></span>
+                  <span><strong>{{ artifactTitle(artifact.content) }}</strong><small>{{ artifact.artifact_type }} · v{{ artifact.version }} · {{ artifact.status }}</small></span>
                 </button>
               </div>
               <div v-if="!artifactContent" class="artifact-placeholder">
@@ -1977,7 +1987,15 @@ onBeforeUnmount(() => {
                       </div>
                     </div>
                   </div>
-                  <template v-if="!artifactPreview">
+                  <template v-if="artifactContent.artifact_type === 'latex_pdf'">
+                    <template v-if="!artifactPreview">
+                      <label class="card-summary-control"><span>Project directory</span><textarea v-model="artifactContent.project_path" rows="3" /></label>
+                      <label class="card-title-control"><span>PDF filename</span><textarea v-model="artifactContent.pdf_name" rows="1" /></label>
+                      <p>Source files stay in the project directory. Compile the PDF before saving this reference.</p>
+                    </template>
+                    <PdfPreview v-else-if="selectedArtifact" :asset="selectedArtifact" artifact />
+                  </template>
+                  <template v-else-if="!artifactPreview">
                     <label class="card-title-control"><span>Title</span><textarea v-model="artifactContent.title" rows="2" /></label>
                     <label v-if="artifactContent.artifact_type === 'article' || artifactContent.artifact_type === 'slides'" class="card-summary-control"><span>Subtitle</span><textarea v-model="artifactContent.subtitle" rows="2" placeholder="Optional subtitle" /></label>
                     <label class="card-summary-control"><span>{{ artifactContent.artifact_type === 'image' ? 'Caption' : 'Summary' }}</span><textarea v-model="artifactContent.summary" rows="3" /></label>
@@ -1999,9 +2017,9 @@ onBeforeUnmount(() => {
                     <MarkdownContent v-if="artifactContent.artifact_type !== 'image'" class="preview-content" :content="artifactContent.content" />
                     </template>
                   </article>
-                  <div v-if="artifactContent.suggested_tags.length" class="suggestions card-tags-editor"><span>Classification</span><div class="suggestion-list"><label v-for="tag in artifactContent.suggested_tags" :key="tag.path" :class="{ selected: selectedSuggestions.includes(tag.path) }"><input v-model="selectedSuggestions" type="checkbox" :value="tag.path" /><span>{{ tag.path }}</span><small>{{ Math.round(tag.confidence * 100) }}%</small></label></div></div>
+                  <div v-if="artifactContent.artifact_type !== 'latex_pdf' && artifactContent.suggested_tags.length" class="suggestions card-tags-editor"><span>Classification</span><div class="suggestion-list"><label v-for="tag in artifactContent.suggested_tags" :key="tag.path" :class="{ selected: selectedSuggestions.includes(tag.path) }"><input v-model="selectedSuggestions" type="checkbox" :value="tag.path" /><span>{{ tag.path }}</span><small>{{ Math.round(tag.confidence * 100) }}%</small></label></div></div>
                 </div>
-                <footer class="panel-actions artifact-editor-actions"><button class="danger-button" type="button" @click="deleteSelectedArtifact">Delete</button><button class="primary-action" :disabled="saving || !artifactContent.title.trim()" type="button" @click="saveSelectedArtifact">{{ saving ? 'Saving…' : artifactContent.artifact_type === 'image' ? 'Save changes' : selectedArtifact?.status === 'saved' ? `Update library ${artifactTypeLabel(artifactContent.artifact_type).toLowerCase()}` : 'Save to library' }}<svg><use href="#icon-arrow" /></svg></button></footer>
+                <footer class="panel-actions artifact-editor-actions"><button class="danger-button" type="button" @click="deleteSelectedArtifact">Delete</button><button class="primary-action" :disabled="saving || !artifactTitle(artifactContent).trim()" type="button" @click="saveSelectedArtifact">{{ saving ? 'Saving…' : artifactContent.artifact_type === 'image' ? 'Save changes' : selectedArtifact?.status === 'saved' ? `Update library ${artifactTypeLabel(artifactContent.artifact_type).toLowerCase()}` : 'Save to library' }}<svg><use href="#icon-arrow" /></svg></button></footer>
               </div>
             </aside>
           </div>
@@ -2080,7 +2098,7 @@ onBeforeUnmount(() => {
               <div><span class="card-type">{{ selectedLibraryItem.item_type === 'card' ? selectedLibraryItem.card_type : selectedLibraryItem.item_type }}</span></div>
               <div class="detail-header-actions">
                 <button class="detail-header-button" type="button" @click="copyLibraryItemId(selectedLibraryItem)"><svg><use href="#icon-copy" /></svg>Copy ID</button>
-                <button class="detail-header-button" type="button" @click="openLibraryEditor(selectedLibraryItem)"><svg><use href="#icon-edit" /></svg>Edit</button>
+                <button v-if="selectedLibraryItem.item_type !== 'latex_pdf'" class="detail-header-button" type="button" @click="openLibraryEditor(selectedLibraryItem)"><svg><use href="#icon-edit" /></svg>Edit</button>
                 <button class="detail-delete-button" :disabled="deletingLibraryItemId !== null" type="button" @click="deleteSelectedLibraryItem"><svg><use href="#icon-trash" /></svg>Delete</button>
                 <button class="close-button" type="button" aria-label="Close resource details" @click="selectedLibraryItem = null">×</button>
               </div>
@@ -2091,7 +2109,7 @@ onBeforeUnmount(() => {
               <MarkdownContent v-if="selectedLibraryItem.summary" class="detail-summary" :content="selectedLibraryItem.summary" />
               <div v-if="selectedLibraryItem.tags.length" class="detail-tags"><span v-for="path in selectedLibraryItem.tags" :key="path">{{ path }}</span></div>
 
-              <section class="detail-section"><h2>{{ selectedLibraryItem.item_type === 'article' ? 'Article' : selectedLibraryItem.item_type === 'slides' ? 'Slide deck' : 'Content' }}</h2><SlidesPreview v-if="selectedLibraryItem.item_type === 'slides'" :title="selectedLibraryItem.title" :content="selectedLibraryItem.content" /><MarkdownContent v-else class="detail-body" :content="selectedLibraryItem.content" /></section>
+              <section class="detail-section"><h2>{{ selectedLibraryItem.item_type === 'article' ? 'Article' : selectedLibraryItem.item_type === 'slides' ? 'Slide deck' : 'Content' }}</h2><PdfPreview v-if="selectedLibraryItem.item_type === 'latex_pdf'" :asset="libraryClient.documentReference(selectedLibraryItem.id)" artifact /><SlidesPreview v-else-if="selectedLibraryItem.item_type === 'slides'" :title="selectedLibraryItem.title" :content="selectedLibraryItem.content" /><MarkdownContent v-else class="detail-body" :content="selectedLibraryItem.content" /></section>
               <section v-if="selectedLibraryItem.raw_content" class="detail-section raw-section"><h2>Original input</h2><div class="detail-body">{{ selectedLibraryItem.raw_content }}</div></section>
 
               <dl class="detail-metadata">

@@ -7,7 +7,7 @@ from zett_agent import AgentExtension, AgentRunContext, SystemMessage, tool
 
 from ..infra.dao import artifact_storage
 from ..models import ArtifactListOptions
-from ..schemas import AgentArtifact, AgentArtifactWrite, ArtifactContent, ArtifactStatus
+from ..schemas import AgentArtifact, AgentArtifactWrite, ArtifactContent, ArtifactCreateContent, ArtifactStatus
 
 
 class ZettelkastenExtension(AgentExtension):
@@ -18,8 +18,8 @@ class ZettelkastenExtension(AgentExtension):
         session_id = context.config.session_id
 
         @tool
-        def create_artifact(content: ArtifactContent, raw_content: str | None = None) -> AgentArtifact:
-            """Create a draft card, article, image, or slide deck in this conversation.
+        def create_artifact(content: ArtifactCreateContent, raw_content: str | None = None) -> AgentArtifact:
+            """Create a draft card, article, image, slide deck, or LaTeX PDF in this conversation.
 
             Args:
                 content: Complete type-specific artifact content.
@@ -27,11 +27,16 @@ class ZettelkastenExtension(AgentExtension):
 
             Snippet:
                 create_artifact(content={"artifact_type": "card", "title": "...", "content": "..."})
+                create_artifact(content={"artifact_type": "latex_pdf", "pdf_name": "paper.pdf"})
                 create_artifact(content={"artifact_type": "slides", "title": "...", "content": "# Topic\n\n--\n\n## Detail\n\n---\n\n# Next topic"})
                 create_artifact(content={"artifact_type": "slides", "title": "Processes", "content": "<!-- slide:cover -->\\n# Processes\\n\\n## From programs to execution\\n\\nAuthor name\\n\\n[Website](https://example.com)\\n\\n---\\n# Overview\\n\\n--\\n## Process state\\n\\n- One idea"})
 
             Guidelines:
                 - Create an artifact only when it is a useful output of the conversation.
+                - To start a LaTeX project, call create_artifact(content={"artifact_type": "latex_pdf", "pdf_name": "paper.pdf"}). Do not supply project_path, title, summary, or source text.
+                - Creation allocates a project directory and returns content.project_path. Treat that returned path as authoritative: never guess it, hard-code a root, or reconstruct it from the session ID or PDF name.
+                - After creation, use filesystem/shell tools to write all project sources and dependencies inside the returned project_path. Compile there and produce the returned pdf_name directly inside that directory.
+                - Creation, metadata updates, and saving do not require an existing PDF and do not compile automatically. Preserve the returned project_path when updating. Preview becomes available after compilation; deleting the artifact record preserves the project files.
                 - Keep newly generated artifacts in draft state until the user asks to save them.
                 - A card contains one idea; use the fewest words that preserve its meaning.
                 - Keep card titles, summaries, and bodies simple, direct, and brief.

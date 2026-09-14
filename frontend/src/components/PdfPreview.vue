@@ -10,6 +10,7 @@ import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { aiClient } from '../api/client'
 import type { SessionAsset } from '../api/types'
 import PdfPage from './PdfPage.vue'
+import { pdfDocumentOptions } from '../utils/pdfDocument'
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
@@ -26,10 +27,11 @@ interface OutlineEntry {
   depth: number
 }
 
-const props = defineProps<{ asset: SessionAsset }>()
+const props = defineProps<{ asset: Pick<SessionAsset, 'id' | 'session_id'> & { version?: number }; artifact?: boolean }>()
 const stage = ref<HTMLElement | null>(null)
 const documentProxy = shallowRef<PDFDocumentProxy | null>(null)
 const loading = ref(true)
+const awaitingCompilation = ref(false)
 const errorMessage = ref('')
 const currentPage = ref(1)
 const pageCount = ref(0)
@@ -38,6 +40,43 @@ const basePageWidth = ref(612)
 const basePageHeight = ref(792)
 const outline = ref<OutlineEntry[]>([])
 const outlineOpen = ref(true)
+const previewRoot = ref<HTMLElement | null>(null)
+const outlineWidth = ref(240)
+const resizingOutline = ref(false)
+let resizePointer: number | null = null
+let resizeStartX = 0
+let resizeStartWidth = 240
+
+function setOutlineWidth(width: number): void {
+  const available = previewRoot.value?.getBoundingClientRect().width || 800
+  outlineWidth.value = Math.max(Math.min(120, available * 0.45), Math.min(width, 480, available * 0.6))
+}
+
+function startOutlineResize(event: PointerEvent): void {
+  if (event.button !== 0) return
+  resizePointer = event.pointerId
+  resizeStartX = event.clientX
+  resizeStartWidth = previewRoot.value?.querySelector('.pdf-outline')?.getBoundingClientRect().width || outlineWidth.value
+  resizingOutline.value = true
+  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+  event.preventDefault()
+}
+
+function resizeOutline(event: PointerEvent): void {
+  if (resizePointer !== event.pointerId) return
+  setOutlineWidth(resizeStartWidth + event.clientX - resizeStartX)
+}
+
+function stopOutlineResize(): void {
+  resizePointer = null
+  resizingOutline.value = false
+}
+
+function resizeOutlineWithKeyboard(event: KeyboardEvent): void {
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+  event.preventDefault()
+  setOutlineWidth(event.key === 'Home' ? 120 : event.key === 'End' ? 480 : outlineWidth.value + (event.key === 'ArrowLeft' ? -20 : 20))
+}
 let loadingTask: PDFDocumentLoadingTask | null = null
 let abortController: AbortController | null = null
 let loadVersion = 0
@@ -67,6 +106,7 @@ async function disposeDocument(): Promise<void> {
 async function loadDocument(): Promise<void> {
   const version = ++loadVersion
   loading.value = true
+  awaitingCompilation.value = false
   errorMessage.value = ''
   currentPage.value = 1
   pageCount.value = 0
@@ -74,13 +114,18 @@ async function loadDocument(): Promise<void> {
   try {
     await disposeDocument()
     abortController = new AbortController()
-    const bytes = await aiClient.getSessionAssetContent(
+    const readContent = props.artifact ? aiClient.getArtifactPdfContent : aiClient.getSessionAssetContent
+    const bytes = await readContent(
       props.asset.session_id,
       props.asset.id,
       abortController.signal,
     )
     if (version !== loadVersion) return
-    const currentLoadingTask = getDocument({ data: new Uint8Array(bytes) })
+    if (bytes === null) {
+      awaitingCompilation.value = true
+      return
+    }
+    const currentLoadingTask = getDocument(pdfDocumentOptions(bytes))
     loadingTask = currentLoadingTask
     const loadedDocument = await currentLoadingTask.promise
     if (version !== loadVersion) {
@@ -208,7 +253,7 @@ function resetScale(): void {
   void nextTick(() => scrollToPage(anchoredPage, 'auto'))
 }
 
-watch(() => [props.asset.session_id, props.asset.id], () => void loadDocument(), { immediate: true })
+watch(() => [props.asset.session_id, props.asset.id, props.asset.version, props.artifact], () => void loadDocument(), { immediate: true })
 onBeforeUnmount(() => {
   loadVersion += 1
   if (scrollFrame !== null) window.cancelAnimationFrame(scrollFrame)
@@ -218,7 +263,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="pdf-preview" :class="{ 'outline-open': outlineOpen }">
+  <div ref="previewRoot" class="pdf-preview" :class="{ 'outline-open': outlineOpen, 'artifact-pdf': artifact, 'resizing-outline': resizingOutline }" :style="{ '--outline-width': `${outlineWidth}px` }">
     <div class="pdf-toolbar" aria-label="PDF controls">
       <button class="outline-toggle" type="button" :aria-expanded="outlineOpen" aria-label="Toggle document outline" @click="outlineOpen = !outlineOpen">☰</button>
       <div>
@@ -234,7 +279,7 @@ onBeforeUnmount(() => {
     </div>
 
     <aside v-if="outlineOpen" class="pdf-outline" aria-label="Document outline">
-      <header><strong>Contents</strong><small>{{ outline.length ? `${outline.length} sections` : 'No outline' }}</small></header>
+      <header><div><strong>Contents</strong><small>{{ outline.length ? `${outline.length} sections` : 'No outline' }}</small></div><button type="button" aria-label="Collapse document outline" title="Collapse outline" @click="outlineOpen = false">‹</button></header>
       <nav v-if="outline.length">
         <button
           v-for="entry in outline"
@@ -246,6 +291,8 @@ onBeforeUnmount(() => {
       </nav>
       <p v-else>This PDF does not include a document outline.</p>
     </aside>
+
+    <div v-if="outlineOpen" class="pdf-outline-resizer" role="separator" tabindex="0" aria-label="Resize document outline" aria-orientation="vertical" :aria-valuenow="Math.round(outlineWidth)" @pointerdown="startOutlineResize" @pointermove="resizeOutline" @pointerup="stopOutlineResize" @pointercancel="stopOutlineResize" @lostpointercapture="stopOutlineResize" @keydown="resizeOutlineWithKeyboard" />
 
     <div ref="stage" class="pdf-pages" @scroll.passive="handleScroll" @wheel="handleWheel">
       <div v-if="documentProxy && !errorMessage" class="pdf-page-stack">
@@ -260,6 +307,11 @@ onBeforeUnmount(() => {
         />
       </div>
       <div v-if="loading" class="pdf-state"><span class="spinner" />Loading PDF…</div>
+      <div v-else-if="awaitingCompilation" class="pdf-state" role="status">
+        <strong>PDF not generated yet</strong>
+        <span>The project is ready. Its PDF will be available after compilation.</span>
+        <button type="button" @click="loadDocument">Refresh preview</button>
+      </div>
       <div v-else-if="errorMessage" class="pdf-state error" role="alert">
         <strong>Preview unavailable</strong>
         <span>{{ errorMessage }}</span>
@@ -271,7 +323,11 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .pdf-preview { display: grid; grid-template: auto minmax(0, 1fr) / minmax(0, 1fr); width: 100%; height: 100%; min-height: 0; color: #3e4741; }
-.pdf-preview.outline-open { grid-template-columns: 15rem minmax(0, 1fr); }
+.pdf-preview.outline-open { grid-template-columns: min(var(--outline-width), 60%) 6px minmax(0, 1fr); }
+.pdf-outline-resizer { cursor: col-resize; touch-action: none; background: #eef1ef; }
+.pdf-outline-resizer:hover, .pdf-outline-resizer:focus-visible, .resizing-outline .pdf-outline-resizer { background: #9cb3a4; outline: none; }
+.pdf-preview.resizing-outline { user-select: none; cursor: col-resize; }
+.pdf-preview.artifact-pdf { height: 65vh; min-height: 24rem; }
 .pdf-toolbar { position: relative; z-index: 2; grid-column: 1 / -1; display: flex; align-items: center; justify-content: center; gap: 1.5rem; min-height: 2.85rem; padding: .4rem .75rem; border-bottom: 1px solid rgba(55,70,61,.12); background: rgba(250,251,250,.96); box-shadow: 0 2px 10px rgba(33,42,36,.04); }
 .pdf-toolbar > div { display: flex; align-items: center; gap: .34rem; }
 .pdf-toolbar span { min-width: 3.8rem; color: #747d77; font-size: .7rem; font-variant-numeric: tabular-nums; text-align: center; }
@@ -281,8 +337,10 @@ onBeforeUnmount(() => {
 .pdf-toolbar button:disabled { opacity: .3; cursor: default; }
 .pdf-toolbar .outline-toggle { position: absolute; left: .75rem; font-size: .9rem; }
 .pdf-toolbar .scale-value { width: 3.8rem; color: #747d77; font-size: .7rem; font-variant-numeric: tabular-nums; }
-.pdf-outline { min-height: 0; overflow: auto; border-right: 1px solid rgba(55,70,61,.1); background: #f6f8f7; }
-.pdf-outline header { display: block; min-height: auto; padding: 1rem .9rem .75rem; border-bottom: 1px solid rgba(55,70,61,.08); background: transparent; }
+.pdf-outline { min-width: 0; min-height: 0; overflow: auto; background: #f6f8f7; }
+.pdf-outline header { display: flex; align-items: center; justify-content: space-between; min-height: auto; padding: 1rem .9rem .75rem; border-bottom: 1px solid rgba(55,70,61,.08); background: transparent; }
+.pdf-outline header button { padding: .25rem .5rem; border-radius: .4rem; font-size: 1.25rem; }
+.pdf-outline header button:hover { background: #e7eee9; }
 .pdf-outline header strong, .pdf-outline header small { display: block; }
 .pdf-outline header strong { color: #3d4941; font-size: .74rem; }
 .pdf-outline header small { margin-top: .18rem; color: #8a928d; font-size: .6rem; }
@@ -299,7 +357,6 @@ onBeforeUnmount(() => {
 .spinner { width: .9rem; height: .9rem; border: 2px solid #cbd5cf; border-top-color: #527460; border-radius: 50%; animation: spin .75s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (max-width: 760px) {
-  .pdf-preview.outline-open { grid-template-columns: min(45%, 13rem) minmax(0, 1fr); }
   .pdf-toolbar { justify-content: flex-end; gap: .35rem; }
   .pdf-pages { padding: .75rem; }
 }

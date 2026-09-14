@@ -61,6 +61,7 @@ class ArtifactType(StrEnum):
     ARTICLE = "article"
     IMAGE = "image"
     SLIDES = "slides"
+    LATEX_PDF = "latex_pdf"
 
 
 class ArtifactStatus(StrEnum):
@@ -142,8 +143,56 @@ class SlidesArtifactContent(ArtifactContentBase):
         return value
 
 
+class LatexPdfArtifactCreate(BaseModel):
+    """Request a server-managed project directory before writing its source files."""
+
+    model_config = ConfigDict(extra="forbid")
+    artifact_type: Literal[ArtifactType.LATEX_PDF] = ArtifactType.LATEX_PDF
+    pdf_name: str = Field(min_length=5, max_length=255, description="Compiled PDF basename, including .pdf")
+
+    @field_validator("pdf_name")
+    @classmethod
+    def validate_pdf_name(cls, value: str) -> str:
+        if (
+            not value.endswith(".pdf")
+            or value in {".pdf", "..pdf"}
+            or any(character in "/\\" or ord(character) < 32 or ord(character) == 127 for character in value)
+        ):
+            raise ValueError("pdf_name must be a plain filename ending in .pdf")
+        if not value[:-4].strip() or value[:-4] in {".", ".."} or value != value.strip():
+            raise ValueError("pdf_name must have a non-empty name without surrounding whitespace")
+        return value
+
+    @property
+    def title(self) -> str:
+        """Derive the searchable title without storing duplicate content metadata."""
+        return self.pdf_name[:-4]
+
+
+class LatexPdfArtifactContent(LatexPdfArtifactCreate):
+    """Persisted project reference with a server-assigned directory."""
+
+    project_path: str = Field(
+        min_length=1, description="Server-assigned directory for all project source files and the PDF"
+    )
+
+
+ArtifactCreateContent = Annotated[
+    CardArtifactContent
+    | ArticleArtifactContent
+    | ImageArtifactContent
+    | SlidesArtifactContent
+    | LatexPdfArtifactCreate,
+    Field(discriminator="artifact_type"),
+]
+
+
 ArtifactContent = Annotated[
-    CardArtifactContent | ArticleArtifactContent | ImageArtifactContent | SlidesArtifactContent,
+    CardArtifactContent
+    | ArticleArtifactContent
+    | ImageArtifactContent
+    | SlidesArtifactContent
+    | LatexPdfArtifactContent,
     Field(discriminator="artifact_type"),
 ]
 
@@ -152,7 +201,7 @@ class AgentArtifactWrite(BaseModel):
     """Complete write model accepted by the session artifact storage boundary."""
 
     session_id: str = Field(description="Owning agent session UUID")
-    content: ArtifactContent = Field(description="Type-specific editable artifact content")
+    content: ArtifactContent | LatexPdfArtifactCreate = Field(description="Type-specific editable artifact content")
     raw_content: str | None = Field(default=None, description="Original input associated with this artifact")
     status: ArtifactStatus = Field(default=ArtifactStatus.DRAFT, description="Current artifact lifecycle state")
     metadata: dict[str, object] = Field(default_factory=dict, description="Extensible artifact metadata")

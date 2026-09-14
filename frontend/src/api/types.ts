@@ -40,7 +40,7 @@ export interface CardListOptions {
   tagId?: number | null
 }
 
-export type LibraryItemType = 'card' | 'article' | 'slides'
+export type LibraryItemType = 'card' | 'article' | 'slides' | 'latex_pdf'
 
 export interface LibraryItem {
   id: string
@@ -75,7 +75,7 @@ export interface SuggestedTag {
 }
 
 export type CardType = 'note' | 'idea' | 'quote' | 'todo' | 'reference'
-export type ArtifactType = 'card' | 'article' | 'image' | 'slides'
+export type ArtifactType = 'card' | 'article' | 'image' | 'slides' | 'latex_pdf'
 export type ArtifactStatus = 'draft' | 'saved'
 export type SessionAssetType = 'text' | 'image' | 'link' | 'file'
 export type ReasoningEffort = 'off' | 'low' | 'medium' | 'high'
@@ -266,7 +266,13 @@ export interface SlidesArtifactContent extends ArtifactContentBase {
   content: string
 }
 
-export type ArtifactContent = CardArtifactContent | ArticleArtifactContent | ImageArtifactContent | SlidesArtifactContent
+export interface LatexPdfArtifactContent {
+  artifact_type: 'latex_pdf'
+  project_path: string
+  pdf_name: string
+}
+
+export type ArtifactContent = CardArtifactContent | ArticleArtifactContent | ImageArtifactContent | SlidesArtifactContent | LatexPdfArtifactContent
 
 export interface AgentArtifact {
   id: string

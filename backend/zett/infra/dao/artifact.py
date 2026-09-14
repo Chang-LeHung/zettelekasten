@@ -9,8 +9,17 @@ from sqlalchemy import select
 from zett_agent import new_uuid7
 
 from ...models import ArtifactListOptions
-from ...schemas import AgentArtifact, AgentArtifactWrite, ArtifactContent, ArtifactStatus, ArtifactType
+from ...schemas import (
+    AgentArtifact,
+    AgentArtifactWrite,
+    ArtifactContent,
+    ArtifactStatus,
+    ArtifactType,
+    LatexPdfArtifactContent,
+    LatexPdfArtifactCreate,
+)
 from ..database import session_scope
+from ..latex_projects import create_latex_project, validate_latex_project_path
 from ..models import SessionArtifactModel
 from ..storage import Storage
 
@@ -20,6 +29,7 @@ class ArtifactTypeCode(IntEnum):
     ARTICLE = 2
     IMAGE = 3
     SLIDES = 4
+    LATEX_PDF = 5
 
 
 class ArtifactStatusCode(IntEnum):
@@ -32,6 +42,7 @@ TYPE_TO_CODE = {
     ArtifactType.ARTICLE: ArtifactTypeCode.ARTICLE,
     ArtifactType.IMAGE: ArtifactTypeCode.IMAGE,
     ArtifactType.SLIDES: ArtifactTypeCode.SLIDES,
+    ArtifactType.LATEX_PDF: ArtifactTypeCode.LATEX_PDF,
 }
 CODE_TO_TYPE = {int(code): value for value, code in TYPE_TO_CODE.items()}
 STATUS_TO_CODE = {
@@ -75,6 +86,9 @@ class ArtifactStorage(Storage[AgentArtifactWrite, AgentArtifact, str, ArtifactLi
 
         if get_agent_runtime_storage().get_session(entity.session_id) is None:
             raise KeyError(f"Agent session not found: {entity.session_id}")
+        content = entity.content
+        if isinstance(content, LatexPdfArtifactCreate):
+            content = create_latex_project(entity.session_id, content)
         with session_scope() as session:
             model = SessionArtifactModel(
                 id=new_uuid7(),
@@ -82,7 +96,7 @@ class ArtifactStorage(Storage[AgentArtifactWrite, AgentArtifact, str, ArtifactLi
                 artifact_type=int(TYPE_TO_CODE[entity.content.artifact_type]),
                 status=int(STATUS_TO_CODE[entity.status]),
                 title=entity.content.title,
-                content_json=entity.content.model_dump_json(),
+                content_json=content.model_dump_json(),
                 raw_content=entity.raw_content,
                 version=1,
                 metadata_value=json.dumps(entity.metadata, ensure_ascii=False),
@@ -104,6 +118,13 @@ class ArtifactStorage(Storage[AgentArtifactWrite, AgentArtifact, str, ArtifactLi
         return artifact if artifact is not None and artifact.session_id == session_id else None
 
     def update(self, entity_id: str, entity: AgentArtifactWrite) -> AgentArtifact:
+        if isinstance(entity.content, LatexPdfArtifactCreate) and not isinstance(
+            entity.content, LatexPdfArtifactContent
+        ):
+            raise ValueError("Updates must include the server-assigned project_path")
+        if isinstance(entity.content, LatexPdfArtifactContent):
+            # A draft or saved reference can precede compilation; only validate its location.
+            validate_latex_project_path(entity.session_id, entity.content)
         with session_scope() as session:
             model = session.get(SessionArtifactModel, entity_id)
             if model is None or model.session_id != entity.session_id:
