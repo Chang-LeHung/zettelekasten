@@ -44,6 +44,7 @@ export type LibraryItemType = 'card' | 'article' | 'slides' | 'latex_pdf'
 
 export interface LibraryItem {
   id: string
+  session_id: string
   item_type: LibraryItemType
   title: string
   subtitle: string | null

@@ -452,6 +452,7 @@ function artifactToLibraryItem(artifact: AgentArtifact): LibraryItem {
   if (content.artifact_type === 'image') throw new Error('Image artifacts are not library documents')
   return {
     id: artifact.id,
+    session_id: artifact.session_id,
     item_type: content.artifact_type,
     title: content.artifact_type === 'latex_pdf' ? content.pdf_name.replace(/\.pdf$/, '') : content.title,
     subtitle: content.artifact_type === 'article' || content.artifact_type === 'slides' ? content.subtitle : null,

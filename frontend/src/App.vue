@@ -1014,7 +1014,14 @@ async function restoreSessionRuntime(sessionId: string): Promise<void> {
 }
 
 async function openSession(sessionId: string): Promise<void> {
-  if (loading.value || sessionId === conversationId.value) return
+  if (sessionId === conversationId.value) {
+    selectedLibraryItem.value = null
+    navigate('new')
+    await nextTick()
+    scrollAgentThread(true)
+    return
+  }
+  if (loading.value) return
   sessionsLoading.value = true
   try {
     const session = await aiClient.getAgentSession(sessionId)
@@ -1026,6 +1033,12 @@ async function openSession(sessionId: string): Promise<void> {
   } finally {
     sessionsLoading.value = false
   }
+}
+
+async function openArtifactSession(item: LibraryItem): Promise<void> {
+  selectedLibraryItem.value = null
+  libraryPdfLaunch.value = null
+  await openSession(item.session_id)
 }
 
 function startSessionTitleEdit(session: AgentSession): void {
@@ -1589,6 +1602,7 @@ onBeforeUnmount(() => {
       <symbol id="icon-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5"/></symbol>
       <symbol id="icon-edit" viewBox="0 0 24 24"><path d="m4 20 4.2-1 10.7-10.7a2.1 2.1 0 0 0-3-3L5.2 16zM14.7 6.5l3 3"/></symbol>
       <symbol id="icon-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+      <symbol id="icon-conversation" viewBox="0 0 24 24"><path d="M5 5.5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H10l-5 3v-3H5a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2Z"/><path d="M8 10h8M8 13h5"/></symbol>
     </svg>
 
     <aside class="sidebar">
@@ -1692,6 +1706,9 @@ onBeforeUnmount(() => {
               <div class="card-topline">
                 <span class="card-type">{{ item.item_type === 'card' ? item.card_type : item.item_type }}</span>
                 <div class="card-topline-actions">
+                  <button class="card-action-button" type="button" :aria-label="`Open conversation for ${item.title}`" title="Open source conversation" @click.stop="openArtifactSession(item)" @keydown.stop>
+                    <svg><use href="#icon-conversation" /></svg>
+                  </button>
                   <button v-if="item.item_type === 'slides'" class="card-action-button" type="button" :aria-label="`Preview ${item.title} fullscreen`" title="Fullscreen preview" @click.stop="openSlidesFullscreen(item)" @keydown.stop>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6" /></svg>
                   </button>
@@ -2119,6 +2136,7 @@ onBeforeUnmount(() => {
             <header class="detail-header">
               <div><span class="card-type">{{ selectedLibraryItem.item_type === 'card' ? selectedLibraryItem.card_type : selectedLibraryItem.item_type }}</span></div>
               <div class="detail-header-actions">
+                <button class="detail-header-button" type="button" @click="openArtifactSession(selectedLibraryItem)"><svg><use href="#icon-conversation" /></svg>Conversation</button>
                 <button class="detail-header-button" type="button" @click="copyLibraryItemId(selectedLibraryItem)"><svg><use href="#icon-copy" /></svg>Copy ID</button>
                 <button v-if="selectedLibraryItem.item_type !== 'latex_pdf'" class="detail-header-button" type="button" @click="openLibraryEditor(selectedLibraryItem)"><svg><use href="#icon-edit" /></svg>Edit</button>
                 <button class="detail-delete-button" :disabled="deletingLibraryItemId !== null" type="button" @click="deleteSelectedLibraryItem"><svg><use href="#icon-trash" /></svg>Delete</button>

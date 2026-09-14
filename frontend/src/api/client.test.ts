@@ -21,7 +21,7 @@ it('loads minimal LaTeX references without expecting Markdown metadata', async (
     .mockResolvedValueOnce(new Response('%PDF-1.4'))
   vi.stubGlobal('fetch', fetchMock)
   const [item] = await libraryClient.list()
-  expect(item).toMatchObject({ item_type: 'latex_pdf', title: 'paper', content: '', tags: [] })
+  expect(item).toMatchObject({ session_id: 'session-1', item_type: 'latex_pdf', title: 'paper', content: '', tags: [] })
   expect(String(fetchMock.mock.calls[0]?.[0])).toContain('artifact_types=latex_pdf')
   expect(libraryClient.documentReference(item.id)).toEqual({ id: 'latex-1', session_id: 'session-1' })
   const controller = new AbortController()
