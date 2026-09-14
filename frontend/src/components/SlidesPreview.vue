@@ -217,7 +217,7 @@ onBeforeUnmount(() => {
 .deck-fullscreen:focus-visible { outline: 2px solid #426b53; outline-offset: 2px; }
 .fullscreen-error { position: absolute; top: 3rem; right: .6rem; z-index: 21; padding: .5rem; background: white; color: #774541; font-size: .75rem; }
 .slides-stage:fullscreen .deck-navigation { transform: none; right: 1rem; bottom: 1rem; }
-.zett-deck { width: 100%; height: 100%; color: var(--slide-ink); font-family: Inter, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; }
+.zett-deck { width: 100%; height: 100%; color: var(--slide-ink); font-family: inherit; }
 .zett-deck:focus, .zett-deck:focus-visible { outline: none; }
 .zett-slide {
   box-sizing: border-box;
@@ -292,11 +292,9 @@ onBeforeUnmount(() => {
 
 /* Inline code stays quiet; fenced code becomes a readable presentation panel. */
 .slide-body :deep(code) { padding: 0 .12em; border-radius: 0; color: inherit; background: transparent; font-family: "SFMono-Regular", "SF Mono", Consolas, monospace; font-size: .86em; }
-.slide-body :deep(.code-block) { margin: .62rem 0; overflow: hidden; border: 1px solid #dedfdf; border-radius: .2rem; background: #fafafa; box-shadow: none; }
-.slide-body :deep(.code-block-toolbar) { min-height: 1.7rem; padding: .2rem .35rem .2rem .72rem; border-bottom: 1px solid #dce3df; color: #718078; background: #e9eeeb; font-size: .55em; }
+.slide-body :deep(.code-block) { max-height: 16em; margin: .62rem .65rem; padding: .72rem .85rem; overflow: auto; border: 1px solid transparent; border-radius: 1rem; background: #eeeeee; box-shadow: 0 4px 16px rgb(0 0 0 / 10%), 0 1px 4px rgb(0 0 0 / 4%); font-size: .68em; }
 .slide-body :deep(.code-copy-button) { min-width: 2.8rem; padding: .2rem .42rem; }
-.slide-body :deep(.code-block pre) { max-height: 16em; margin: 0; padding: .72rem .85rem; overflow: auto; border: 0; border-radius: 0; background: #f8faf9; box-shadow: none; font-size: .68em; }
-.slide-body :deep(.code-block pre code) { padding: 0; color: #26312b; background: transparent; font-size: 1em; line-height: 1.48; }
+.slide-body :deep(.code-block code) { padding: 0; color: #26312b; background: transparent; font-size: 1em; line-height: 1.48; }
 
 /* Display math reads as a first-class statement rather than inline prose. */
 .slide-body :deep(.katex-display) { max-width: 100%; margin: .65rem 0; padding: .35rem 0; overflow-x: auto; overflow-y: hidden; border: 0; color: #263d30; background: transparent; font-size: 1.02em; text-align: center; }

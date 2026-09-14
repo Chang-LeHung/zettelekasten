@@ -18,7 +18,8 @@ import { appendStreamedAssistantMessage } from './utils/streamedAssistant'
 import { defaultProviderBaseUrl, providerBaseUrlHelp } from './utils/providerDefaults'
 import { todoFromTool } from './utils/toolPresentation'
 import { hasRunningTool, upsertToolActivity } from './utils/toolActivities'
-import { splitSlides } from './utils/slides'
+import { presentationSections } from './utils/slides'
+import { libraryExcerptText } from './utils/libraryExcerpt'
 import { asContextComposition } from './utils/contextComposition'
 
 const MarkdownContent = defineAsyncComponent(() => import('./components/MarkdownContent.vue'))
@@ -217,8 +218,8 @@ function artifactTypeLabel(type: 'card' | 'article' | 'image' | 'slides'): strin
 }
 
 function libraryExcerpt(item: LibraryItem): string {
-  if (item.summary) return item.summary
-  return item.item_type === 'slides' ? splitSlides(item.content)[0] : item.content
+  const source = item.summary || (item.item_type === 'slides' ? item.subtitle : '') || item.content
+  return libraryExcerptText(source) || 'Open to explore this item.'
 }
 const visibleSessions = computed(() => sessions.value.filter((session) => (
   session.message_count > 0
@@ -1676,7 +1677,6 @@ onBeforeUnmount(() => {
               <div class="card-topline">
                 <span class="card-type">{{ item.item_type === 'card' ? item.card_type : item.item_type }}</span>
                 <div class="card-topline-actions">
-                  <time>{{ formatDate(item.updated_at) }}</time>
                   <button v-if="item.item_type === 'slides'" class="card-action-button" type="button" :aria-label="`Preview ${item.title} fullscreen`" title="Fullscreen preview" @click.stop="openSlidesFullscreen(item)" @keydown.stop>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6" /></svg>
                   </button>
@@ -1691,11 +1691,17 @@ onBeforeUnmount(() => {
                   </button>
                 </div>
               </div>
-              <h2>{{ item.title }}</h2>
-              <p v-if="item.item_type !== 'card' && item.subtitle" class="library-article-subtitle">{{ item.subtitle }}</p>
-              <MarkdownContent class="card-excerpt" :content="libraryExcerpt(item)" />
+              <h2 :title="item.title">{{ item.title }}</h2>
+              <div v-if="item.item_type === 'slides'" class="library-deck-summary">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M12 17v4m-4 0h8M8 9h8m-8 4h5" /></svg>
+                <span>Presentation · {{ presentationSections(item.content).flat().length }} slides</span>
+              </div>
+              <p class="card-excerpt">{{ libraryExcerpt(item) }}</p>
               <div class="card-footer">
-                <div class="card-tags"><span v-for="path in item.tags.slice(0, 3)" :key="path">{{ path }}</span></div>
+                <div class="card-footer-info">
+                  <div v-if="item.tags.length" class="card-tags"><span v-for="path in item.tags.slice(0, 2)" :key="path" :title="path">{{ path }}</span></div>
+                  <time>{{ formatDate(item.updated_at) }}</time>
+                </div>
                 <svg><use href="#icon-arrow" /></svg>
               </div>
             </article>
@@ -2216,13 +2222,12 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .page-heading h1 { margin: .35rem 0 .3rem; font-size: clamp(1.85rem, 3vw, 2.45rem); line-height: 1.06; letter-spacing: -.032em; }
 .page-heading p:last-child, .settings-intro p, .editor-intro p { margin: 0; color: var(--secondary); font-size: .82rem; line-height: 1.55; }
 .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr)); gap: 1rem; }
-.card { min-height: 15.8rem; display: flex; flex-direction: column; padding: 1.25rem 1.25rem 1rem; overflow: hidden; border: 1px solid rgba(29,29,31,.075); border-radius: 1rem; background: var(--surface); box-shadow: 0 1px 2px rgba(0,0,0,.025); backdrop-filter: blur(14px); transition: transform 260ms cubic-bezier(.2,.8,.2,1), box-shadow 260ms cubic-bezier(.2,.8,.2,1), background 180ms ease; }
+.card { min-width: 0; height: 18rem; box-sizing: border-box; display: flex; flex-direction: column; padding: 1.1rem 1.2rem; overflow: hidden; border: 1px solid rgba(29,29,31,.075); border-radius: 1rem; background: var(--surface); box-shadow: 0 1px 2px rgba(0,0,0,.025); backdrop-filter: blur(14px); transition: transform 260ms cubic-bezier(.2,.8,.2,1), box-shadow 260ms cubic-bezier(.2,.8,.2,1), background 180ms ease; }
 .card[role="button"] { cursor: pointer; }
 .card:hover { transform: translateY(-3px); background: rgba(255,255,255,.96); box-shadow: var(--shadow); }
 .card:active { transform: scale(.985); transition-duration: 100ms; }
 .card-topline { display: flex; align-items: center; justify-content: space-between; }
 .card-topline-actions { display: flex; align-items: center; gap: .16rem; }
-.card-topline-actions time { margin-right: .25rem; }
 .card-action-button { display: grid; place-items: center; width: 1.75rem; height: 1.75rem; padding: 0; border: 0; border-radius: .5rem; color: #8b918d; background: transparent; cursor: pointer; transition: color 160ms ease, background 160ms ease, transform 160ms ease; }
 .card-action-button:hover, .card-action-button:focus-visible { color: #365845; background: #e9f0ec; outline: none; transform: scale(1.04); }
 .card-action-button.danger:hover, .card-action-button.danger:focus-visible { color: #a33e3e; background: #f8eded; }
@@ -2230,13 +2235,15 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .card-action-button svg { width: .86rem; height: .86rem; }
 .card-type { padding: .25rem .5rem; border-radius: 2rem; color: var(--accent-dark); background: var(--accent-soft); font-size: .62rem; font-weight: 680; letter-spacing: .04em; text-transform: uppercase; }
 .card time { color: var(--tertiary); font-size: .65rem; }
-.card h2 { margin: 1.25rem 0 .55rem; font-size: 1.08rem; line-height: 1.25; letter-spacing: -.017em; }
+.card h2 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; flex-shrink: 0; max-height: 2.8em; margin: 1rem 0 .65rem; overflow: hidden; overflow-wrap: anywhere; font-size: 1.05rem; line-height: 1.4; letter-spacing: -.017em; }
 .library-article .card-type { color: #665139; background: #f4ede3; }
 .library-slides .card-type { color: #385d49; background: #e7f0ea; }
-.library-article-subtitle { margin: -.25rem 0 .55rem; overflow: hidden; color: #858078; font-size: .68rem; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
-.card > .card-excerpt { max-height: 5.1rem; margin: 0; overflow: hidden; color: var(--secondary); font-size: .78rem; line-height: 1.58; }
+.library-deck-summary { display: flex; align-items: center; gap: .45rem; flex-shrink: 0; margin-bottom: .65rem; color: #607c6c; font-size: .68rem; }
+.library-deck-summary svg { width: 1.1rem; height: 1.1rem; flex-shrink: 0; }
+.card > .card-excerpt { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; flex-shrink: 0; max-height: 4.8em; margin: 0; overflow: hidden; overflow-wrap: anywhere; color: var(--secondary); font-size: .78rem; line-height: 1.6; }
+.card-footer-info { display: grid; min-width: 0; gap: .6rem; }
 .card-footer { display: flex; align-items: end; justify-content: space-between; gap: .5rem; margin-top: auto; padding-top: 1rem; }
-.card-tags { display: flex; flex-wrap: wrap; gap: .3rem; }
+.card-tags { display: flex; min-width: 0; overflow: hidden; gap: .3rem; }
 .card-tags span { max-width: 8rem; padding: .23rem .45rem; overflow: hidden; border-radius: .35rem; color: #737378; background: #f0f0f2; font-size: .62rem; text-overflow: ellipsis; white-space: nowrap; }
 .card-footer > svg { width: .95rem; height: .95rem; flex: 0 0 auto; color: #a0a0a5; transition: transform 180ms ease; }
 .card:hover .card-footer > svg { transform: translateX(3px); color: var(--accent); }

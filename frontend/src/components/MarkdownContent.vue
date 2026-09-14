@@ -166,9 +166,8 @@ renderer.renderer.rules.fence = (tokens, index) => {
     ? hljs.highlight(token.content, { language: resolvedLanguage, ignoreIllegals: true }).value
     : renderer.utils.escapeHtml(token.content)
   const languageClass = resolvedLanguage ? ` class="language-${resolvedLanguage}"` : ''
-  const languageLabel = renderer.utils.escapeHtml(language || 'code')
 
-  return `<div class="code-block"><div class="code-block-toolbar"><span>${languageLabel}</span><button type="button" class="code-copy-button" data-code-copy aria-label="Copy code">Copy</button></div><pre><code${languageClass}>${highlighted}</code></pre></div>`
+  return `<pre class="code-block"><code${languageClass}>${highlighted}</code></pre>`
 }
 
 async function handleMarkdownClick(event: MouseEvent): Promise<void> {
@@ -184,10 +183,8 @@ async function handleMarkdownClick(event: MouseEvent): Promise<void> {
     return
   }
 
-  const button = target.closest<HTMLButtonElement>('[data-code-copy], [data-mermaid-copy]')
-  const code = button?.hasAttribute('data-mermaid-copy')
-    ? button.closest('.mermaid-block')?.querySelector('.mermaid-source')?.textContent
-    : button?.closest('.code-block')?.querySelector('code')?.textContent
+  const button = target.closest<HTMLButtonElement>('[data-mermaid-copy]')
+  const code = button?.closest('.mermaid-block')?.querySelector('.mermaid-source')?.textContent
   if (!button || code === null || code === undefined) return
 
   try {
@@ -356,25 +353,25 @@ onBeforeUnmount(() => {
 .markdown-body :deep(a:hover) { color: #214b35; text-decoration: none; }
 .markdown-body :deep(a:focus-visible) { outline: 2px solid currentColor; outline-offset: 3px; border-radius: 2px; }
 .markdown-body :deep(blockquote) {
-  margin: 1em 0;
+  margin: 1em .65rem;
   padding: .9em 1.2em;
   border: 0;
   border-radius: .65em;
   color: inherit;
   background: #f4faf8;
-  box-shadow: 0 2px 12px rgb(36 57 47 / 9%);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 10%), 0 1px 4px rgb(0 0 0 / 4%);
   font-style: normal;
 }
 .markdown-body :deep(blockquote > :first-child) { margin-top: 0; }
 .markdown-body :deep(blockquote > :last-child) { margin-bottom: 0; }
-.markdown-body :deep(blockquote blockquote) { margin: .65em 0; background: #eaf3ee; box-shadow: none; }
+.markdown-body :deep(blockquote blockquote) { margin: .65em 0; background: #eaf3ee; box-shadow: 0 2px 8px rgb(0 0 0 / 6%); }
 .markdown-body :deep(.markdown-figure) { display: block; margin: 1.4em 0; padding: 0; break-inside: avoid; text-align: center; }
 .markdown-body :deep(.markdown-figure img) { display: block; width: auto; max-width: 100%; height: auto; margin: 0 auto; border: 0; border-radius: .2rem; object-fit: contain; box-shadow: none; }
 .markdown-body :deep(figcaption) { max-width: 90%; margin: .65em auto 0; color: #68736c; font-size: .85em; line-height: 1.5; text-align: center; overflow-wrap: anywhere; }
 .markdown-body :deep(.figure-number) { color: #404c44; font-weight: 650; font-variant-numeric: tabular-nums; }
 .markdown-body :deep(code) { padding: .14em .34em; border-radius: .32em; color: #744b2e; background: #f1ece7; font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: .88em; }
-.markdown-body :deep(.code-block) { max-width: 100%; margin: .62em 0; overflow: hidden; border: 1px solid #dfe5e1; border-radius: .72rem; background: #f6f8f7; box-shadow: inset 0 1px rgba(255,255,255,.72); }
-.markdown-body :deep(.code-block-toolbar) { display: flex; align-items: center; justify-content: space-between; min-height: 2.25rem; padding: .35rem .55rem .35rem .9rem; border-bottom: 1px solid #e3e8e5; color: #78817c; background: #f0f3f1; font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: .72em; text-transform: lowercase; }
+.markdown-body :deep(.code-block) { max-width: 100%; margin: .62em .65rem; padding: .9rem 1rem; overflow: auto; border: 1px solid transparent; border-radius: 1rem; background: #eeeeee; box-shadow: 0 4px 16px rgb(0 0 0 / 10%), 0 1px 4px rgb(0 0 0 / 4%); }
+.markdown-body:has(> pre, > blockquote) { padding-block: .65rem; }
 .markdown-body :deep(.code-copy-button) { min-width: 3.4rem; padding: .32rem .58rem; border: 1px solid transparent; border-radius: .42rem; color: #4f5c55; background: transparent; font: inherit; text-transform: none; cursor: pointer; transition: color .16s ease, background .16s ease, border-color .16s ease; }
 .markdown-body :deep(.code-copy-button:hover) { border-color: #d4ddd7; color: #294d3b; background: #fff; }
 .markdown-body :deep(.code-copy-button:focus-visible) { outline: 2px solid #719681; outline-offset: 1px; }
@@ -389,8 +386,7 @@ onBeforeUnmount(() => {
 .markdown-body :deep(.mermaid-canvas.is-error) { display: block; color: #875348; }
 .markdown-body :deep(.mermaid-error-message) { margin: 0 0 .55rem; font-size: .86em; }
 .markdown-body :deep(.mermaid-canvas.is-error pre) { margin: 0; }
-.markdown-body :deep(.code-block pre) { margin: 0; border: 0; border-radius: 0; box-shadow: none; }
-.markdown-body :deep(pre) { max-width: 100%; padding: .9rem 1rem; overflow: auto; border: 1px solid #dfe5e1; border-radius: .72rem; background: #f6f8f7; box-shadow: inset 0 1px rgba(255,255,255,.72); }
+.markdown-body :deep(pre) { max-width: 100%; margin-inline: .65rem; padding: .9rem 1rem; overflow: auto; border: 1px solid transparent; border-radius: 1rem; background: #eeeeee; box-shadow: 0 4px 16px rgb(0 0 0 / 10%), 0 1px 4px rgb(0 0 0 / 4%); }
 .markdown-body :deep(pre code) { padding: 0; color: #242b27; background: transparent; font-size: .84em; line-height: 1.62; }
 .markdown-body :deep(table) { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
 .markdown-body :deep(th), .markdown-body :deep(td) { padding: .45em .65em; border: 1px solid #dfe4e0; text-align: left; }
