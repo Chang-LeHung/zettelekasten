@@ -486,7 +486,7 @@ onBeforeUnmount(() => {
   <Teleport to="body">
     <div v-if="presenting && documentProxy" ref="presentationRoot" class="pdf-presentation" role="dialog" aria-modal="true" aria-label="PDF presentation" tabindex="-1" @wheel="handlePresentationWheel">
       <div class="presentation-page">
-        <PdfPage :key="presentationPage" :document="documentProxy" :page-number="presentationPage" :scale="presentationScale" :base-width="basePageWidth" :base-height="basePageHeight" />
+        <PdfPage :document="documentProxy" :page-number="presentationPage" :scale="presentationScale" :base-width="basePageWidth" :base-height="basePageHeight" />
       </div>
       <button class="presentation-close" type="button" aria-label="Exit PDF presentation" title="Exit presentation (Esc)" @click="stopPresentation()">×</button>
       <button class="presentation-previous" type="button" :disabled="presentationPage <= 1" aria-label="Previous presentation page" @click="changePresentationPage(-1)">‹</button>

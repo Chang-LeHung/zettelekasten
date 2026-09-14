@@ -26,26 +26,31 @@ let observer: IntersectionObserver | null = null
 let renderTask: RenderTask | null = null
 let textLayerTask: TextLayer | null = null
 let loadedPage: PDFPageProxy | null = null
+let loadedPageNumber: number | null = null
 let renderVersion = 0
 let scaleRenderTimer: number | null = null
 
 async function render(): Promise<void> {
   if (!active.value) return
   const version = ++renderVersion
+  const pageNumber = props.pageNumber
+  const scale = props.scale
   renderTask?.cancel()
   renderTask = null
   failed.value = false
   try {
-    const page = loadedPage ?? await props.document.getPage(props.pageNumber)
+    const page = loadedPageNumber === pageNumber && loadedPage
+      ? loadedPage
+      : await props.document.getPage(pageNumber)
+    if (version !== renderVersion) return
     loadedPage = page
+    loadedPageNumber = pageNumber
     const intrinsicViewport = page.getViewport({ scale: 1 })
-    intrinsicWidth.value = intrinsicViewport.width
-    intrinsicHeight.value = intrinsicViewport.height
     await nextTick()
     if (version !== renderVersion || !canvas.value || !textLayer.value) return
     const pixelRatio = Math.max(1, window.devicePixelRatio || 1)
-    const displayViewport = page.getViewport({ scale: props.scale })
-    const renderViewport = page.getViewport({ scale: props.scale * pixelRatio })
+    const displayViewport = page.getViewport({ scale })
+    const renderViewport = page.getViewport({ scale: scale * pixelRatio })
     // Keep the visible bitmap intact while PDF.js renders asynchronously.
     // Resizing the visible canvas first clears it and exposes blank page regions.
     const buffer = document.createElement('canvas')
@@ -70,6 +75,8 @@ async function render(): Promise<void> {
       if (version !== renderVersion || !canvas.value) return
       const context = canvas.value.getContext('2d')
       if (!context) return
+      intrinsicWidth.value = intrinsicViewport.width
+      intrinsicHeight.value = intrinsicViewport.height
       canvas.value.width = buffer.width
       canvas.value.height = buffer.height
       context.drawImage(buffer, 0, 0)
@@ -80,6 +87,18 @@ async function render(): Promise<void> {
     if (version !== renderVersion) return
     if (!(error instanceof Error) || error.name !== 'RenderingCancelledException') failed.value = true
   }
+}
+
+function renderPageChange(): void {
+  renderVersion += 1
+  renderTask?.cancel()
+  renderTask = null
+  loadedPage = null
+  loadedPageNumber = null
+  textLayerTask?.cancel()
+  textLayerTask = null
+  textLayer.value?.replaceChildren()
+  void render()
 }
 
 function scheduleScaleRender(): void {
@@ -111,6 +130,7 @@ onMounted(() => {
 })
 
 watch(() => props.scale, scheduleScaleRender)
+watch(() => props.pageNumber, renderPageChange)
 onBeforeUnmount(() => {
   renderVersion += 1
   observer?.disconnect()

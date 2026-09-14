@@ -3,7 +3,7 @@ import Reveal, { type RevealApi } from 'reveal.js'
 import 'reveal.js/reveal.css'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { isHtmlSlide, isSlideCover, presentationSections, slideDensity, slideWithTitle } from '../utils/slides'
-import MarkdownContent from './MarkdownContent.vue'
+import SlidesMarkdownContent from './SlidesMarkdownContent.vue'
 
 const props = withDefaults(defineProps<{
   content: string
@@ -170,14 +170,14 @@ onBeforeUnmount(() => {
               :class="[`density-${slideDensity(slide)}`, { 'section-title-slide': slideIndex === 0 && !isHtmlSlide(slide), 'cover-slide': isSlideCover(slide) }]"
             >
               <div class="slide-body">
-                <MarkdownContent :content="slideWithTitle(slide, pageNumber(sectionIndex, slideIndex))" />
+                <SlidesMarkdownContent :content="slideWithTitle(slide, pageNumber(sectionIndex, slideIndex))" />
               </div>
               <footer><span>Zett</span><small>{{ String(pageNumber(sectionIndex, slideIndex)).padStart(2, '0') }}</small></footer>
             </section>
           </section>
           <section v-else class="zett-slide" :class="[`density-${slideDensity(section[0] ?? '')}`, { 'section-title-slide': !isHtmlSlide(section[0] ?? ''), 'cover-slide': isSlideCover(section[0] ?? '') }]">
             <div class="slide-body">
-              <MarkdownContent :content="slideWithTitle(section[0] ?? '', pageNumber(sectionIndex, 0))" />
+              <SlidesMarkdownContent :content="slideWithTitle(section[0] ?? '', pageNumber(sectionIndex, 0))" />
             </div>
             <footer><span>Zett</span><small>{{ String(pageNumber(sectionIndex, 0)).padStart(2, '0') }}</small></footer>
           </section>
@@ -292,8 +292,10 @@ onBeforeUnmount(() => {
 
 /* Inline code stays quiet; fenced code becomes a readable presentation panel. */
 .slide-body :deep(code) { padding: 0 .12em; border-radius: 0; color: inherit; background: transparent; font-family: "SFMono-Regular", "SF Mono", Consolas, monospace; font-size: .86em; }
-.slide-body :deep(.code-block) { max-height: 16em; margin: .62rem .65rem; padding: .72rem .85rem; overflow: auto; border: 1px solid transparent; border-radius: 1rem; background: #eeeeee; box-shadow: 0 4px 16px rgb(0 0 0 / 10%), 0 1px 4px rgb(0 0 0 / 4%); font-size: .68em; }
-.slide-body :deep(.code-copy-button) { min-width: 2.8rem; padding: .2rem .42rem; }
+.slide-body :deep(.code-block) { margin: .62rem .4rem; border-radius: .85rem; font-size: .68em; }
+.slide-body :deep(.code-block-toolbar) { min-height: 2.15rem; padding: .35rem .55rem .2rem .78rem; font-size: .9em; }
+.slide-body :deep(.code-copy-button) { min-width: 1.7rem; width: 1.7rem; height: 1.7rem; padding: .25rem; }
+.slide-body :deep(.code-block pre) { max-height: 16em; padding: .25rem .85rem .8rem; overflow: auto; }
 .slide-body :deep(.code-block code) { padding: 0; color: #26312b; background: transparent; font-size: 1em; line-height: 1.48; }
 
 /* Display math reads as a first-class statement rather than inline prose. */

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { compileStyle, parse } from '@vue/compiler-sfc'
-import { createApp, h, nextTick } from 'vue'
+import { createApp, h, nextTick, ref } from 'vue'
 import { afterEach, expect, it, vi } from 'vitest'
 import PdfPage from './PdfPage.vue'
 import source from './PdfPage.vue?raw'
@@ -51,6 +51,60 @@ it('keeps the visible canvas intact until the offscreen render finishes', async 
     await nextTick()
     expect(visible.width).toBe(buffer.width)
     expect(drawImage).toHaveBeenCalledWith(buffer, 0, 0)
+  } finally {
+    app.unmount()
+  }
+})
+
+it('keeps the previous presentation bitmap visible while the next page renders', async () => {
+  vi.stubGlobal('IntersectionObserver', class {
+    constructor(private callback: (entries: unknown[]) => void) {}
+    observe() { this.callback([{ isIntersecting: true }]) }
+    disconnect() {}
+  })
+  const drawImage = vi.fn()
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ drawImage } as unknown as CanvasRenderingContext2D)
+  const finishes = new Map<number, () => void>()
+  const pages = new Map([1, 2].map(pageNumber => [pageNumber, {
+    getViewport: ({ scale }: { scale: number }) => ({ width: (500 + pageNumber * 10) * scale, height: 700 * scale }),
+    render: vi.fn(() => ({ promise: new Promise<void>(resolve => { finishes.set(pageNumber, resolve) }), cancel: vi.fn() })),
+    streamTextContent: vi.fn(),
+  }]))
+  const pageNumber = ref(1)
+  const host = document.createElement('div')
+  const app = createApp({
+    render: () => h(PdfPage, {
+      document: { getPage: async (number: number) => pages.get(number) } as never,
+      pageNumber: pageNumber.value,
+      scale: 1,
+      baseWidth: 500,
+      baseHeight: 700,
+    }),
+  })
+  app.mount(host)
+  try {
+    await nextTick()
+    await nextTick()
+    const visible = host.querySelector('canvas')!
+    finishes.get(1)!()
+    await Promise.resolve()
+    await nextTick()
+    const firstWidth = visible.width
+    expect(drawImage).toHaveBeenCalledTimes(1)
+
+    pageNumber.value = 2
+    await nextTick()
+    await nextTick()
+    expect(host.querySelector('canvas')).toBe(visible)
+    expect(visible.width).toBe(firstWidth)
+    expect(drawImage).toHaveBeenCalledTimes(1)
+
+    finishes.get(2)!()
+    await Promise.resolve()
+    await nextTick()
+    expect(host.querySelector('canvas')).toBe(visible)
+    expect(visible.width).not.toBe(firstWidth)
+    expect(drawImage).toHaveBeenCalledTimes(2)
   } finally {
     app.unmount()
   }

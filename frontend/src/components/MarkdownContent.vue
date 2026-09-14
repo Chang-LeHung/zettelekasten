@@ -46,7 +46,14 @@ import { renderMermaid } from '../utils/mermaidRenderer'
 import 'highlight.js/styles/github.css'
 import 'katex/dist/katex.min.css'
 
-const props = defineProps<{ content: string }>()
+const props = withDefaults(defineProps<{
+  content: string
+  allowHtml?: boolean
+  presentation?: boolean
+}>(), {
+  allowHtml: false,
+  presentation: false,
+})
 
 const COPY_RESET_DELAY_MS = 1600
 const markdownRoot = ref<HTMLElement | null>(null)
@@ -56,7 +63,6 @@ const mermaidZoom = ref(1)
 const renderedMermaidSvgs = new Map<string, string>()
 let mermaidPreviewTrigger: HTMLElement | null = null
 let renderGeneration = 0
-let renderFrame: number | null = null
 
 hljs.registerLanguage('bash', bash)
 hljs.registerLanguage('c', c)
@@ -124,51 +130,69 @@ function resolveLanguage(language: string): string {
   return /^[a-z0-9_-]+$/u.test(resolved) && hljs.getLanguage(resolved) ? resolved : ''
 }
 
-const renderer = new MarkdownIt({
-  breaks: true,
-  html: true,
-  linkify: true,
-  typographer: true,
-  highlight(code: string, language: string): string {
-    const resolvedLanguage = resolveLanguage(language)
-    if (resolvedLanguage) {
-      return hljs.highlight(code, { language: resolvedLanguage, ignoreIllegals: true }).value
-    }
-    return renderer.utils.escapeHtml(code)
-  },
-})
+function createRenderer(html: boolean) {
+  const markdownRenderer = new MarkdownIt({
+    breaks: true,
+    html,
+    linkify: true,
+    typographer: true,
+    highlight(code: string, language: string): string {
+      const resolvedLanguage = resolveLanguage(language)
+      if (resolvedLanguage) {
+        return hljs.highlight(code, { language: resolvedLanguage, ignoreIllegals: true }).value
+      }
+      return markdownRenderer.utils.escapeHtml(code)
+    },
+  })
 
-renderer.use(katex, {
-  delimiters: 'all',
-  mathFence: true,
-  throwOnError: false,
-  strict: 'ignore',
-})
-renderer.use(markdownFigures)
+  markdownRenderer.use(katex, {
+    delimiters: 'all',
+    mathFence: true,
+    throwOnError: false,
+    strict: 'ignore',
+  })
+  markdownRenderer.use(markdownFigures)
 
-renderer.renderer.rules.link_open = (tokens, index, options, _environment, self) => {
-  tokens[index].attrSet('target', '_blank')
-  tokens[index].attrSet('rel', 'noopener noreferrer')
-  return self.renderToken(tokens, index, options)
-}
-
-renderer.renderer.rules.fence = (tokens, index) => {
-  const token = tokens[index]
-  const language = token.info.trim().split(/\s+/u)[0] ?? ''
-  if (language.toLowerCase() === 'mermaid') {
-    const source = renderer.utils.escapeHtml(token.content)
-    const rendered = renderedMermaidSvgs.get(token.content)
-    const canvas = rendered ?? '<span class="mermaid-loading">Rendering diagram…</span>'
-    return `<div class="mermaid-block"><div class="mermaid-toolbar"><span>Diagram</span><div class="mermaid-actions"><button type="button" class="code-copy-button" data-mermaid-copy aria-label="Copy Mermaid source">Copy source</button><button type="button" class="code-copy-button" data-mermaid-open aria-label="Open Mermaid diagram preview">Expand</button></div></div><pre class="mermaid-source" aria-hidden="true">${source}</pre><div class="mermaid-canvas" data-mermaid-canvas>${canvas}</div></div>`
+  markdownRenderer.renderer.rules.link_open = (tokens, index, options, _environment, self) => {
+    tokens[index].attrSet('target', '_blank')
+    tokens[index].attrSet('rel', 'noopener noreferrer')
+    return self.renderToken(tokens, index, options)
   }
-  const resolvedLanguage = resolveLanguage(language)
-  const highlighted = resolvedLanguage
-    ? hljs.highlight(token.content, { language: resolvedLanguage, ignoreIllegals: true }).value
-    : renderer.utils.escapeHtml(token.content)
-  const languageClass = resolvedLanguage ? ` class="language-${resolvedLanguage}"` : ''
 
-  return `<pre class="code-block"><code${languageClass}>${highlighted}</code></pre>`
+  markdownRenderer.renderer.rules.fence = (tokens, index) => {
+    const token = tokens[index]
+    const language = token.info.trim().split(/\s+/u)[0] ?? ''
+    if (language.toLowerCase() === 'mermaid') {
+      const source = markdownRenderer.utils.escapeHtml(token.content)
+      const rendered = renderedMermaidSvgs.get(token.content)
+      const canvas = rendered ?? '<span class="mermaid-loading">Rendering diagram…</span>'
+      return `<div class="mermaid-block"><div class="mermaid-toolbar"><span>Diagram</span><div class="mermaid-actions"><button type="button" class="code-copy-button text-button" data-mermaid-copy aria-label="Copy Mermaid source">Copy source</button><button type="button" class="code-copy-button text-button" data-mermaid-open aria-label="Open Mermaid diagram preview">Expand</button></div></div><pre class="mermaid-source" aria-hidden="true">${source}</pre><div class="mermaid-canvas" data-mermaid-canvas>${canvas}</div></div>`
+    }
+    const resolvedLanguage = resolveLanguage(language)
+    const highlighted = resolvedLanguage
+      ? hljs.highlight(token.content, { language: resolvedLanguage, ignoreIllegals: true }).value
+      : markdownRenderer.utils.escapeHtml(token.content)
+    const languageClass = resolvedLanguage ? ` class="language-${resolvedLanguage}"` : ''
+    const languageLabel = markdownRenderer.utils.escapeHtml(languageLabelFor(language, resolvedLanguage))
+
+    return `<div class="code-block"><div class="code-block-toolbar"><span class="code-language"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 9-3 3 3 3m8-6 3 3-3 3m-2.5-8-3 12" /></svg>${languageLabel}</span><button type="button" class="code-copy-button icon-button" data-code-copy aria-label="Copy code" title="Copy code"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg></button></div><pre><code${languageClass}>${highlighted}</code></pre></div>`
+  }
+
+  return markdownRenderer
 }
+
+function languageLabelFor(language: string, resolvedLanguage: string): string {
+  const normalized = (resolvedLanguage || language.trim().toLowerCase())
+  const labels: Record<string, string> = {
+    bash: 'Shell', cpp: 'C++', csharp: 'C#', css: 'CSS', cuda: 'CUDA', html: 'HTML',
+    javascript: 'JavaScript', json: 'JSON', markdown: 'Markdown', python: 'Python',
+    sql: 'SQL', typescript: 'TypeScript', xml: 'XML', yaml: 'YAML',
+  }
+  return labels[normalized] ?? (normalized ? normalized[0].toUpperCase() + normalized.slice(1) : 'Code')
+}
+
+const renderer = createRenderer(false)
+const htmlRenderer = createRenderer(true)
 
 async function handleMarkdownClick(event: MouseEvent): Promise<void> {
   const target = event.target
@@ -183,22 +207,30 @@ async function handleMarkdownClick(event: MouseEvent): Promise<void> {
     return
   }
 
-  const button = target.closest<HTMLButtonElement>('[data-mermaid-copy]')
-  const code = button?.closest('.mermaid-block')?.querySelector('.mermaid-source')?.textContent
+  const button = target.closest<HTMLButtonElement>('[data-code-copy], [data-mermaid-copy]')
+  const code = button?.hasAttribute('data-mermaid-copy')
+    ? button.closest('.mermaid-block')?.querySelector('.mermaid-source')?.textContent
+    : button?.closest('.code-block')?.querySelector('code')?.textContent
   if (!button || code === null || code === undefined) return
 
   try {
     await navigator.clipboard.writeText(code)
-    button.textContent = 'Copied'
+    const originalLabel = button.getAttribute('aria-label') ?? 'Copy'
+    button.setAttribute('aria-label', 'Copied')
+    button.setAttribute('title', 'Copied')
     button.classList.add('is-copied')
     window.setTimeout(() => {
-      button.textContent = 'Copy'
+      button.setAttribute('aria-label', originalLabel)
+      button.setAttribute('title', originalLabel)
       button.classList.remove('is-copied')
     }, COPY_RESET_DELAY_MS)
   } catch {
-    button.textContent = 'Copy failed'
+    const originalLabel = button.getAttribute('aria-label') ?? 'Copy'
+    button.setAttribute('aria-label', 'Copy failed')
+    button.setAttribute('title', 'Copy failed')
     window.setTimeout(() => {
-      button.textContent = 'Copy'
+      button.setAttribute('aria-label', originalLabel)
+      button.setAttribute('title', originalLabel)
     }, COPY_RESET_DELAY_MS)
   }
 }
@@ -286,33 +318,30 @@ async function renderMermaidDiagrams(generation: number): Promise<void> {
 
 function scheduleMermaidRender(): void {
   const generation = ++renderGeneration
-  if (renderFrame !== null) window.cancelAnimationFrame(renderFrame)
-  renderFrame = window.requestAnimationFrame(() => {
-    renderFrame = null
-    void renderMermaidDiagrams(generation)
-  })
+  // Markdown is replaced by v-html. Waiting for Vue's DOM flush is sufficient
+  // and also renders diagrams in hidden slide/library panes where rAF may pause.
+  void nextTick(() => renderMermaidDiagrams(generation))
 }
 
-const html = computed(() => sanitizeMarkdown(renderer.render(props.content)))
+const html = computed(() => sanitizeMarkdown((props.allowHtml ? htmlRenderer : renderer).render(props.content)))
 
 onMounted(() => {
   scheduleMermaidRender()
   window.addEventListener('keydown', handlePreviewKeydown)
 })
 watch(
-  () => props.content,
+  () => [props.content, props.allowHtml],
   scheduleMermaidRender,
   { flush: 'post' },
 )
 onBeforeUnmount(() => {
   renderGeneration += 1
-  if (renderFrame !== null) window.cancelAnimationFrame(renderFrame)
   window.removeEventListener('keydown', handlePreviewKeydown)
 })
 </script>
 
 <template>
-  <div ref="markdownRoot" class="markdown-body" @click="handleMarkdownClick" v-html="html" />
+  <div ref="markdownRoot" class="markdown-body" :class="{ 'presentation-markdown': presentation }" @click="handleMarkdownClick" v-html="html" />
   <Teleport to="body">
     <div v-if="mermaidPreview" class="mermaid-preview-backdrop" @click.self="closeMermaidPreview">
       <section class="mermaid-preview-dialog" role="dialog" aria-modal="true" aria-label="Mermaid diagram preview">
@@ -339,7 +368,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.markdown-body { min-width: 0; color: inherit; font: inherit; line-height: 1.65; overflow-wrap: anywhere; isolation: isolate; contain: layout paint; }
+.markdown-body { min-width: 0; color: inherit; font: inherit; line-height: 1.65; overflow-wrap: anywhere; }
 .markdown-body :deep(> :first-child) { margin-top: 0; }
 .markdown-body :deep(> :last-child) { margin-bottom: 0; }
 .markdown-body :deep(p), .markdown-body :deep(ul), .markdown-body :deep(ol), .markdown-body :deep(blockquote), .markdown-body :deep(pre), .markdown-body :deep(table) { margin: .62em 0; }
@@ -353,27 +382,23 @@ onBeforeUnmount(() => {
 .markdown-body :deep(a:hover) { color: #214b35; text-decoration: none; }
 .markdown-body :deep(a:focus-visible) { outline: 2px solid currentColor; outline-offset: 3px; border-radius: 2px; }
 .markdown-body :deep(blockquote) {
-  margin: 1em .65rem;
-  padding: .9em 1.2em;
-  border: 0;
-  border-radius: .65em;
-  color: inherit;
-  background: #f4faf8;
-  box-shadow: 0 4px 16px rgb(0 0 0 / 10%), 0 1px 4px rgb(0 0 0 / 4%);
-  font-style: normal;
+  padding: .15em 0 .15em .9em;
+  border-left: .22em solid #9bb5a5;
+  color: #5f6963;
 }
-.markdown-body :deep(blockquote > :first-child) { margin-top: 0; }
-.markdown-body :deep(blockquote > :last-child) { margin-bottom: 0; }
-.markdown-body :deep(blockquote blockquote) { margin: .65em 0; background: #eaf3ee; box-shadow: 0 2px 8px rgb(0 0 0 / 6%); }
 .markdown-body :deep(.markdown-figure) { display: block; margin: 1.4em 0; padding: 0; break-inside: avoid; text-align: center; }
 .markdown-body :deep(.markdown-figure img) { display: block; width: auto; max-width: 100%; height: auto; margin: 0 auto; border: 0; border-radius: .2rem; object-fit: contain; box-shadow: none; }
 .markdown-body :deep(figcaption) { max-width: 90%; margin: .65em auto 0; color: #68736c; font-size: .85em; line-height: 1.5; text-align: center; overflow-wrap: anywhere; }
 .markdown-body :deep(.figure-number) { color: #404c44; font-weight: 650; font-variant-numeric: tabular-nums; }
 .markdown-body :deep(code) { padding: .14em .34em; border-radius: .32em; color: #744b2e; background: #f1ece7; font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: .88em; }
-.markdown-body :deep(.code-block) { max-width: 100%; margin: .62em .65rem; padding: .9rem 1rem; overflow: auto; border: 1px solid transparent; border-radius: 1rem; background: #eeeeee; box-shadow: 0 4px 16px rgb(0 0 0 / 10%), 0 1px 4px rgb(0 0 0 / 4%); }
-.markdown-body:has(> pre, > blockquote) { padding-block: .65rem; }
-.markdown-body :deep(.code-copy-button) { min-width: 3.4rem; padding: .32rem .58rem; border: 1px solid transparent; border-radius: .42rem; color: #4f5c55; background: transparent; font: inherit; text-transform: none; cursor: pointer; transition: color .16s ease, background .16s ease, border-color .16s ease; }
-.markdown-body :deep(.code-copy-button:hover) { border-color: #d4ddd7; color: #294d3b; background: #fff; }
+.markdown-body :deep(.code-block) { max-width: 100%; margin: .72em 0; overflow: hidden; border: 0; border-radius: 1.05rem; background: #f1f1f1; box-shadow: 0 5px 18px rgb(0 0 0 / 9%), 0 1px 4px rgb(0 0 0 / 4%); }
+.markdown-body :deep(.code-block-toolbar) { display: flex; align-items: center; justify-content: space-between; min-height: 2.75rem; padding: .5rem .72rem .3rem 1rem; color: #393d3a; font-size: .78em; font-weight: 620; }
+.markdown-body :deep(.code-language) { display: flex; align-items: center; gap: .55rem; }
+.markdown-body :deep(.code-language svg) { width: 1rem; height: 1rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.markdown-body :deep(.code-copy-button) { display: inline-grid; place-items: center; min-width: 2rem; height: 2rem; padding: .3rem; border: 1px solid transparent; border-radius: .55rem; color: #555c58; background: transparent; font: inherit; text-transform: none; cursor: pointer; transition: color .16s ease, background .16s ease, border-color .16s ease; }
+.markdown-body :deep(.code-copy-button.text-button) { display: inline-flex; width: auto; min-width: 3.4rem; height: auto; padding: .32rem .58rem; }
+.markdown-body :deep(.code-copy-button svg) { width: 1.08rem; height: 1.08rem; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.markdown-body :deep(.code-copy-button:hover) { border-color: #d5d8d6; color: #294d3b; background: rgb(255 255 255 / 72%); }
 .markdown-body :deep(.code-copy-button:focus-visible) { outline: 2px solid #719681; outline-offset: 1px; }
 .markdown-body :deep(.code-copy-button.is-copied) { color: #2f6a4b; }
 .markdown-body :deep(.mermaid-block) { max-width: 100%; margin: .75em 0; overflow: hidden; border: 1px solid #dfe5e1; border-radius: .8rem; background: #fbfcfb; }
@@ -381,12 +406,25 @@ onBeforeUnmount(() => {
 .markdown-body :deep(.mermaid-actions) { display: flex; align-items: center; gap: .2rem; }
 .markdown-body :deep(.mermaid-source) { display: none; }
 .markdown-body :deep(.mermaid-canvas) { display: flex; width: 100%; min-height: 6rem; padding: 1rem; overflow: auto; align-items: center; justify-content: center; }
-.markdown-body :deep(.mermaid-canvas svg) { display: block; width: 100% !important; max-width: none !important; height: auto; }
+.markdown-body :deep(.mermaid-canvas > svg) {
+  display: block;
+  width: 100% !important;
+  max-width: none !important;
+  height: auto;
+  /* App.vue gives ordinary icon SVGs a default stroke. Mermaid owns the
+     complete SVG and must start from SVG defaults or sequence lines vanish. */
+  fill: initial;
+  stroke: initial;
+  stroke-width: initial;
+  stroke-linecap: initial;
+  stroke-linejoin: initial;
+}
 .markdown-body :deep(.mermaid-loading) { color: #89928d; font-size: .84em; }
 .markdown-body :deep(.mermaid-canvas.is-error) { display: block; color: #875348; }
 .markdown-body :deep(.mermaid-error-message) { margin: 0 0 .55rem; font-size: .86em; }
 .markdown-body :deep(.mermaid-canvas.is-error pre) { margin: 0; }
-.markdown-body :deep(pre) { max-width: 100%; margin-inline: .65rem; padding: .9rem 1rem; overflow: auto; border: 1px solid transparent; border-radius: 1rem; background: #eeeeee; box-shadow: 0 4px 16px rgb(0 0 0 / 10%), 0 1px 4px rgb(0 0 0 / 4%); }
+.markdown-body :deep(.code-block pre) { max-width: 100%; margin: 0; padding: .35rem 1.15rem 1.15rem; overflow: auto; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.markdown-body :deep(pre) { max-width: 100%; padding: .9rem 1rem; overflow: auto; border: 1px solid #dfe5e1; border-radius: .72rem; background: #f6f8f7; box-shadow: inset 0 1px rgba(255,255,255,.72); }
 .markdown-body :deep(pre code) { padding: 0; color: #242b27; background: transparent; font-size: .84em; line-height: 1.62; }
 .markdown-body :deep(table) { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
 .markdown-body :deep(th), .markdown-body :deep(td) { padding: .45em .65em; border: 1px solid #dfe4e0; text-align: left; }
@@ -409,7 +447,7 @@ onBeforeUnmount(() => {
 .mermaid-preview-controls .mermaid-preview-close { margin-left: .3rem; font-size: 1.35rem; font-weight: 300; }
 .mermaid-preview-stage { min-width: 0; min-height: 0; padding: 2rem; overflow: auto; overscroll-behavior: contain; background-color: #fff; background-image: radial-gradient(#dce4df 1px, transparent 1px); background-size: 22px 22px; }
 .mermaid-preview-diagram { min-width: 28rem; margin: 0 auto; padding: 1.5rem; border-radius: .9rem; background: rgba(255, 255, 255, .92); }
-.mermaid-preview-diagram :deep(svg) { display: block; width: 100% !important; max-width: none !important; height: auto !important; margin: auto; user-select: text; }
+.mermaid-preview-diagram :deep(> svg) { display: block; width: 100% !important; max-width: none !important; height: auto !important; margin: auto; fill: initial; stroke: initial; stroke-width: initial; stroke-linecap: initial; stroke-linejoin: initial; user-select: text; }
 
 @media (max-width: 700px) {
   .mermaid-preview-backdrop { padding: .65rem; }
