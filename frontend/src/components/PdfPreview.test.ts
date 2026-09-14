@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { createApp, h, nextTick } from 'vue'
 import { afterEach, expect, it, vi } from 'vitest'
+import { getDocument } from 'pdfjs-dist'
+import { aiClient } from '../api/client'
 import PdfPreview from './PdfPreview.vue'
 
 vi.mock('pdfjs-dist', () => ({ GlobalWorkerOptions: {}, getDocument: vi.fn() }))
@@ -8,7 +10,11 @@ vi.mock('./PdfPage.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('../api/client', () => ({ aiClient: { getArtifactPdfContent: vi.fn().mockResolvedValue(null) } }))
 
 const cleanups: (() => void)[] = []
-afterEach(() => cleanups.splice(0).forEach(cleanup => cleanup()))
+afterEach(() => {
+  cleanups.splice(0).forEach(cleanup => cleanup())
+  vi.mocked(aiClient.getArtifactPdfContent).mockResolvedValue(null)
+  vi.mocked(getDocument).mockReset()
+})
 
 async function mountPreview() {
   const host = document.createElement('div')
@@ -150,3 +156,49 @@ it('remembers independent zoom levels for inline and expanded previews', async (
   await click('Close expanded PDF preview')
   expect(zoom()).toBe('100%')
 })
+
+it('presents one fitted page and navigates without changing the regular preview page', async () => {
+  vi.mocked(aiClient.getArtifactPdfContent).mockResolvedValue(new ArrayBuffer(8))
+  const document = {
+    numPages: 3,
+    getPage: vi.fn().mockResolvedValue({ getViewport: () => ({ width: 600, height: 800 }) }),
+    getOutline: vi.fn().mockResolvedValue([]),
+  }
+  vi.mocked(getDocument).mockReturnValue({ promise: Promise.resolve(document) } as never)
+  const { root } = await mountPreview()
+  await Promise.resolve()
+  await Promise.resolve()
+  await nextTick()
+  await nextTick()
+  const regularProgress = () => root.querySelector('.pdf-toolbar > div span')!.textContent
+  expect(regularProgress()).toContain('1 / 3')
+  const start = root.querySelector<HTMLButtonElement>('[aria-label="Start PDF presentation"]')!
+  expect(start.disabled).toBe(false)
+  start.click()
+  await nextTick()
+  await nextTick()
+  const presentation = documentBody().querySelector<HTMLElement>('.pdf-presentation')!
+  expect(presentation).not.toBeNull()
+  expect(presentation.querySelector('.presentation-progress')!.textContent).toContain('1 / 3')
+  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+  await nextTick()
+  expect(presentation.querySelector('.presentation-progress')!.textContent).toContain('2 / 3')
+  expect(regularProgress()).toContain('1 / 3')
+  presentation.dispatchEvent(new WheelEvent('wheel', { deltaY: 40, bubbles: true, cancelable: true }))
+  await nextTick()
+  expect(presentation.querySelector('.presentation-progress')!.textContent).toContain('3 / 3')
+  presentation.dispatchEvent(new WheelEvent('wheel', { deltaY: -40, bubbles: true, cancelable: true }))
+  await nextTick()
+  expect(presentation.querySelector('.presentation-progress')!.textContent).toContain('3 / 3')
+  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }))
+  await nextTick()
+  expect(presentation.querySelector('.presentation-progress')!.textContent).toContain('3 / 3')
+  presentation.querySelector<HTMLButtonElement>('[aria-label="Exit PDF presentation"]')!.click()
+  await nextTick()
+  expect(documentBody().querySelector('.pdf-presentation')).toBeNull()
+  expect(regularProgress()).toContain('1 / 3')
+})
+
+function documentBody(): HTMLElement {
+  return document.body
+}

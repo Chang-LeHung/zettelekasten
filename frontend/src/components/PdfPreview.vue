@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, markRaw, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
+import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import {
   GlobalWorkerOptions,
   getDocument,
@@ -41,6 +41,18 @@ const basePageWidth = ref(612)
 const basePageHeight = ref(792)
 const outline = ref<OutlineEntry[]>([])
 const expanded = ref(false)
+const presenting = ref(false)
+const presentationRoot = ref<HTMLElement | null>(null)
+const presentationPage = ref(1)
+const viewportWidth = ref(window.innerWidth)
+const viewportHeight = ref(window.innerHeight)
+const presentationScale = computed(() => Math.max(.1, Math.min(
+  (viewportWidth.value - 64) / basePageWidth.value,
+  (viewportHeight.value - 64) / basePageHeight.value,
+)))
+let presentationPreviousFocus: HTMLElement | null = null
+let presentationPreviousOverflow = ''
+let presentationWheelTimer: number | null = null
 const scale = computed({
   get: () => expanded.value ? expandedScale.value : inlineScale.value,
   set: (value: number) => {
@@ -80,6 +92,69 @@ function closeExpanded(): void {
   expanded.value = false
   document.body.style.overflow = previousOverflow
   void nextTick(() => previousFocus?.focus())
+}
+
+async function startPresentation(): Promise<void> {
+  if (!documentProxy.value || presenting.value) return
+  presentationPreviousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  presentationPreviousOverflow = document.body.style.overflow
+  presentationPage.value = currentPage.value
+  document.body.style.overflow = 'hidden'
+  presenting.value = true
+  await nextTick()
+  updatePresentationViewport()
+  presentationRoot.value?.focus()
+  try {
+    await presentationRoot.value?.requestFullscreen?.()
+  } catch {
+    // The fixed in-page stage remains fully usable when browser fullscreen is denied.
+  }
+}
+
+function stopPresentation(exitNativeFullscreen = true): void {
+  if (!presenting.value) return
+  presenting.value = false
+  if (presentationWheelTimer !== null) window.clearTimeout(presentationWheelTimer)
+  presentationWheelTimer = null
+  if (exitNativeFullscreen && document.fullscreenElement === presentationRoot.value) {
+    void document.exitFullscreen().catch(() => undefined)
+  }
+  document.body.style.overflow = expanded.value ? 'hidden' : presentationPreviousOverflow
+  void nextTick(() => presentationPreviousFocus?.focus())
+}
+
+function changePresentationPage(offset: number): void {
+  presentationPage.value = Math.min(pageCount.value, Math.max(1, presentationPage.value + offset))
+}
+
+function handlePresentationKey(event: KeyboardEvent): void {
+  if (!presenting.value) return
+  if (['ArrowRight', 'ArrowDown', 'PageDown', ' '].includes(event.key)) changePresentationPage(1)
+  else if (['ArrowLeft', 'ArrowUp', 'PageUp'].includes(event.key)) changePresentationPage(-1)
+  else if (event.key === 'Home') presentationPage.value = 1
+  else if (event.key === 'End') presentationPage.value = pageCount.value
+  else if (event.key === 'Escape') stopPresentation()
+  else return
+  event.preventDefault()
+  event.stopPropagation()
+}
+
+function handlePresentationWheel(event: WheelEvent): void {
+  event.preventDefault()
+  if (presentationWheelTimer !== null || Math.abs(event.deltaY) < 8) return
+  changePresentationPage(event.deltaY > 0 ? 1 : -1)
+  presentationWheelTimer = window.setTimeout(() => { presentationWheelTimer = null }, 320)
+}
+
+function updatePresentationViewport(): void {
+  viewportWidth.value = presentationRoot.value?.clientWidth || window.innerWidth
+  viewportHeight.value = presentationRoot.value?.clientHeight || window.innerHeight
+}
+
+function handleFullscreenChange(): void {
+  if (!presenting.value) return
+  if (!document.fullscreenElement) stopPresentation(false)
+  else updatePresentationViewport()
 }
 
 function handleExpandedKey(event: KeyboardEvent): void {
@@ -321,7 +396,16 @@ function resetScale(): void {
 }
 
 watch(() => [props.asset.session_id, props.asset.id, props.asset.version, props.artifact], () => void loadDocument(), { immediate: true })
+onMounted(() => {
+  window.addEventListener('resize', updatePresentationViewport)
+  window.addEventListener('keydown', handlePresentationKey, true)
+  document.addEventListener('fullscreenchange', handleFullscreenChange)
+})
 onBeforeUnmount(() => {
+  stopPresentation()
+  window.removeEventListener('resize', updatePresentationViewport)
+  window.removeEventListener('keydown', handlePresentationKey, true)
+  document.removeEventListener('fullscreenchange', handleFullscreenChange)
   if (expanded.value) document.body.style.overflow = previousOverflow
   loadVersion += 1
   if (scrollFrame !== null) window.cancelAnimationFrame(scrollFrame)
@@ -339,6 +423,9 @@ onBeforeUnmount(() => {
       <button class="expand-toggle" type="button" :aria-label="expanded ? 'Close expanded PDF preview' : 'Expand PDF preview'" :title="expanded ? 'Close (Esc)' : 'Expand preview'" @click="toggleExpanded">
         <svg v-if="expanded" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
         <svg v-else viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6" /></svg>
+      </button>
+      <button class="presentation-toggle" type="button" :disabled="!documentProxy || loading" aria-label="Start PDF presentation" title="Present PDF" @click="startPresentation">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M12 17v4m-4 0h8M10 8l5 2.5-5 2.5Z" /></svg>
       </button>
       <div>
         <button type="button" :disabled="currentPage <= 1 || loading" aria-label="Previous page" @click="changePage(-1)">‹</button>
@@ -395,6 +482,18 @@ onBeforeUnmount(() => {
   </div>
   </div>
   </Teleport>
+
+  <Teleport to="body">
+    <div v-if="presenting && documentProxy" ref="presentationRoot" class="pdf-presentation" role="dialog" aria-modal="true" aria-label="PDF presentation" tabindex="-1" @wheel="handlePresentationWheel">
+      <div class="presentation-page">
+        <PdfPage :key="presentationPage" :document="documentProxy" :page-number="presentationPage" :scale="presentationScale" :base-width="basePageWidth" :base-height="basePageHeight" />
+      </div>
+      <button class="presentation-close" type="button" aria-label="Exit PDF presentation" title="Exit presentation (Esc)" @click="stopPresentation()">×</button>
+      <button class="presentation-previous" type="button" :disabled="presentationPage <= 1" aria-label="Previous presentation page" @click="changePresentationPage(-1)">‹</button>
+      <button class="presentation-next" type="button" :disabled="presentationPage >= pageCount" aria-label="Next presentation page" @click="changePresentationPage(1)">›</button>
+      <span class="presentation-progress">{{ presentationPage }} / {{ pageCount }}</span>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -408,6 +507,7 @@ onBeforeUnmount(() => {
 .pdf-expanded-backdrop { position: fixed; inset: 0; z-index: 1600; display: grid; place-items: center; padding: 2vh 2vw; background: rgba(31,38,34,.4); }
 .pdf-preview.pdf-expanded { width: 96vw; height: 96vh; height: 96dvh; min-height: 0; overflow: hidden; border-radius: .9rem; background: #fafbfa; box-shadow: 0 24px 90px rgba(25,36,29,.25); outline: none; }
 .pdf-toolbar .expand-toggle { position: absolute; right: .65rem; top: 50%; transform: translateY(-50%); width: 2.5rem; height: 2.5rem; border-radius: .65rem; }
+.pdf-toolbar .presentation-toggle { position: absolute; right: 3.45rem; top: 50%; transform: translateY(-50%); }
 .pdf-expanded .expand-toggle { background: #e8eeea; color: #3d5145; }
 .pdf-toolbar { position: relative; z-index: 2; grid-column: 1 / -1; display: flex; align-items: center; justify-content: center; gap: 1.5rem; min-height: 2.85rem; padding: .4rem .75rem; border-bottom: 1px solid rgba(55,70,61,.12); background: rgba(250,251,250,.96); box-shadow: 0 2px 10px rgba(33,42,36,.04); }
 .pdf-toolbar > div { display: flex; align-items: center; gap: .34rem; }
@@ -431,6 +531,17 @@ onBeforeUnmount(() => {
 .pdf-outline p { margin: 1rem; color: #8a928d; font-size: .65rem; line-height: 1.5; }
 .pdf-pages { position: relative; min-width: 0; min-height: 0; overflow: auto; overflow-anchor: none; scrollbar-gutter: stable; padding: 1.5rem; background: #e7eae8; }
 .pdf-page-stack { display: grid; justify-items: center; gap: 1rem; width: max-content; min-width: 100%; }
+.pdf-presentation { position: fixed; inset: 0; z-index: 1900; display: grid; place-items: center; overflow: hidden; color: #eef3ef; background: #1c211e; outline: none; }
+.presentation-page { display: grid; place-items: center; width: 100%; height: 100%; }
+.presentation-page :deep(.pdf-page) { box-shadow: 0 20px 80px rgba(0,0,0,.36); }
+.pdf-presentation > button { position: absolute; display: grid; place-items: center; border: 0; color: rgba(245,248,246,.84); background: rgba(20,26,22,.5); backdrop-filter: blur(12px); cursor: pointer; }
+.pdf-presentation > button:hover:not(:disabled) { color: #fff; background: rgba(70,91,78,.78); }
+.pdf-presentation > button:disabled { opacity: .22; cursor: default; }
+.presentation-close { top: 1rem; right: 1rem; width: 3rem; height: 3rem; border-radius: .8rem; font-size: 1.7rem; }
+.presentation-previous, .presentation-next { top: 50%; width: 3.25rem; height: 4.5rem; transform: translateY(-50%); border-radius: .85rem; font-size: 2.25rem; }
+.presentation-previous { left: 1rem; }
+.presentation-next { right: 1rem; }
+.presentation-progress { position: absolute; right: 1rem; bottom: 1rem; min-width: 4.4rem; padding: .48rem .7rem; border-radius: .6rem; color: rgba(245,248,246,.86); background: rgba(20,26,22,.55); font-size: .75rem; font-variant-numeric: tabular-nums; text-align: center; backdrop-filter: blur(12px); }
 .pdf-state { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: .55rem; color: #737c76; font-size: .78rem; }
 .pdf-state.error { flex-direction: column; padding: 2rem; }
 .pdf-state.error strong { color: #3d4941; font-size: .9rem; }
