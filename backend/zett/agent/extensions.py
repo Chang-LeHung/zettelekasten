@@ -28,13 +28,15 @@ class ZettelkastenExtension(AgentExtension):
             Snippet:
                 create_artifact(content={"artifact_type": "card", "title": "...", "content": "..."})
                 create_artifact(content={"artifact_type": "slides", "title": "...", "content": "# Topic\n\n--\n\n## Detail\n\n---\n\n# Next topic"})
+                create_artifact(content={"artifact_type": "slides", "title": "Processes", "content": "<!-- slide:cover -->\\n# Processes\\n\\n## From programs to execution\\n\\nAuthor name\\n\\n[Website](https://example.com)\\n\\n---\\n# Overview\\n\\n--\\n## Process state\\n\\n- One idea"})
 
             Guidelines:
                 - Create an artifact only when it is a useful output of the conversation.
                 - Keep newly generated artifacts in draft state until the user asks to save them.
                 - A card contains one idea; use the fewest words that preserve its meaning.
                 - Keep card titles, summaries, and bodies simple, direct, and brief.
-                - Use Markdown, not raw HTML or CSS. Separate paragraphs and block elements with blank lines.
+                - Prefer Markdown. For custom layout, raw HTML with inline Grid/Flex styles is supported; scripts, event handlers, global style tags and fixed overlays are blocked.
+                - Write HTML directly, not inside a code fence. Inside HTML blocks use HTML tags for text formatting; separate Markdown blocks with blank lines.
                 - Use '# Title', '## Section', and '### Subsection'; use '**important**' sparingly and '- item' for lists.
                 - Quote with '> quoted text'; prefix each quoted paragraph with '>' and use '>>' for nested quotes.
                 - Place each figure alone in a paragraph: '![descriptive alt text](image-url "Caption")'.
@@ -46,11 +48,21 @@ class ZettelkastenExtension(AgentExtension):
                 - Put Mermaid source in a triple-backtick fence labeled 'mermaid'; the UI renders the diagram.
                 - Use pipe tables with a header separator such as '| --- | --- |'; keep columns short and readable.
                 - For slides, use an exact '---' line between horizontal sections.
+                - Cover layout is opt-in: put '<!-- slide:cover -->' alone on the first line of the page, outside code fences. The marker is hidden in the rendered slide, not stored separately.
+                - Put '# Title' immediately after the marker. Then add optional '## Subtitle', a plain author paragraph, optional '[Link label](https://...)', and optional images; separate these blocks with blank lines.
+                - A cover opening a horizontal section is centered vertically and horizontally, with a large title and no title underline. Its H2 subtitle is smaller and muted; author and links remain centered paragraphs, not extracted metadata.
+                - Cover images keep their proportions in equal-size slots, up to three per row, wrapping additional images. A standalone image gets an automatic Figure caption above it; multiple images in one paragraph have no automatic captions.
+                - Use '![Organization](accessible-url)' for a captioned logo, or place several image expressions on one line for a caption-free logo row. Never invent author names, image URLs, or local file paths.
+                - Keep covers brief; this is a preset layout, not automatic pagination. Start the next section with an exact '---' line; use '--' only when the next page belongs below the cover in the same section.
+                - A marked cover at a section's start replaces the generated chapter title page; do not add a duplicate title-only page. Unmarked Markdown never receives the cover preset.
+                - For a fully custom page, put '<!-- slide:html -->' alone on its first line, followed by raw HTML such as '<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px"><div><h1>Title</h1><p>Text</p></div><img src="/existing-image.png" style="width:100%;object-fit:contain"></div>'.
+                - The HTML marker suppresses automatic headings and a generated chapter opener. Write your own heading, spacing and alignment; use HTML tags inside HTML blocks, not Markdown syntax. Do not wrap the HTML in a code fence.
+                - Both markers select presentation only: the entire page stays in the existing Markdown content field. Do not use JSON metadata or combine both markers on one page.
                 - Use an exact '--' line for vertically related slides inside the same section.
                 - Slide separators must have no surrounding spaces. Do not use standalone '--' or '---' as decoration or code inside a deck.
                 - A slide deck must contain at least two non-empty pages.
-                - Begin every page, including vertical pages, with its own concise Markdown heading.
-                - Start each horizontal section with a title-only page; place its content below using '--'.
+                - Give ordinary and cover pages a concise Markdown heading (after the marker for covers); HTML pages supply their own HTML heading.
+                - Ordinary horizontal sections start with a title-only page followed by '--' and content pages; explicit cover or HTML openers are exceptions.
                 - Keep each slide concise: one idea, a short heading, and no more than six brief bullets.
             """
             return artifact_storage.create(
@@ -67,11 +79,12 @@ class ZettelkastenExtension(AgentExtension):
 
             Snippet:
                 update_artifact(artifact_id="...", content={"artifact_type": "article", "title": "..."})
+                update_artifact(artifact_id="...", content={"artifact_type": "slides", "title": "Processes", "content": "<!-- slide:cover -->\\n# Processes\\n\\n## Optional subtitle\\n\\nAuthor name\\n\\n---\\n# Overview\\n\\n--\\n## Details\\n\\n- One idea"})
 
             Guidelines:
                 - Read the artifact information already present in context before replacing it.
                 - Keep cards focused on one idea and remove every word that does not add meaning.
-                - Use Markdown, not raw HTML or CSS; separate paragraphs, lists, and blocks with blank lines.
+                - Markdown and sanitized raw HTML with inline Grid/Flex styles are supported; no scripts, global style tags or fixed overlays. HTML code fences display source only.
                 - Use '# Title', '## Section', '### Subsection', '**important**', and '- item' for structure.
                 - Use '> quoted text' for quotations and '>>' for nested quotes; the UI supplies the quote styling.
                 - Put each figure alone in a paragraph: '![descriptive alt text](image-url "Caption")'.
@@ -81,8 +94,14 @@ class ZettelkastenExtension(AgentExtension):
                 - Use single backticks for inline code and triple-backtick fences labeled with the code language.
                 - Mermaid diagrams use a triple-backtick 'mermaid' fence; tables use pipes and a '| --- | --- |' header separator.
                 - Preserve strict slide navigation: '---' between sections and '--' within a section.
-                - Give every slide its own concise Markdown heading.
-                - Each horizontal section begins with a title-only page, followed by '--' and its content pages.
+                - Preserve explicit page layouts; never infer a cover from ordinary prose. Put exactly one marker, '<!-- slide:cover -->' or '<!-- slide:html -->', alone on the page's first line and outside code fences.
+                - Cover syntax: marker, '# Title', optional '## Subtitle', plain author paragraph, optional '[Link label](url)', then optional '![Organization](url)' images. Separate blocks with blank lines; all content stays Markdown, not separate fields.
+                - At a section opener, the cover preset centers the page vertically and horizontally: large title without an underline, smaller muted H2 subtitle, centered author and links. Preserve this hierarchy instead of using H2 for the author.
+                - Cover images use equal-size, uncropped slots, up to three per row with wrapping. Standalone images have automatic Figure captions above them; several images on one line make a row without automatic captions.
+                - Keep covers concise and preserve real authors and accessible image URLs. Use '---' after the cover for a new horizontal section, or '--' for a related vertical page.
+                - A marked cover or HTML opener replaces the generated section title page. Do not prepend another title-only page or add a marker unless the user wants that layout.
+                - HTML pages use raw tags and inline Grid/Flex styles after '<!-- slide:html -->', with their own HTML heading and spacing. They get no automatic heading or cover styling; fenced HTML remains visible source, not rendered layout.
+                - Ordinary pages retain Markdown headings and ordinary horizontal sections retain title-only openers followed by '--' and content. These rules do not add extra headings or openers to explicit HTML or cover pages.
                 - Slide separators must be exact unpadded lines; never use standalone '--' or '---' as decoration or code inside a deck.
             """
             current = self._artifact(session_id, artifact_id)

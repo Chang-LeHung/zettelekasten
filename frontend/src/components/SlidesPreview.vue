@@ -2,7 +2,7 @@
 import Reveal, { type RevealApi } from 'reveal.js'
 import 'reveal.js/reveal.css'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { presentationSections, slideDensity, slideWithTitle } from '../utils/slides'
+import { isHtmlSlide, isSlideCover, presentationSections, slideDensity, slideWithTitle } from '../utils/slides'
 import MarkdownContent from './MarkdownContent.vue'
 
 const props = withDefaults(defineProps<{
@@ -167,7 +167,7 @@ onBeforeUnmount(() => {
               v-for="(slide, slideIndex) in section"
               :key="`${slideIndex}-${slide.slice(0, 40)}`"
               class="zett-slide"
-              :class="[`density-${slideDensity(slide)}`, { 'section-title-slide': slideIndex === 0 }]"
+              :class="[`density-${slideDensity(slide)}`, { 'section-title-slide': slideIndex === 0 && !isHtmlSlide(slide), 'cover-slide': isSlideCover(slide) }]"
             >
               <div class="slide-body">
                 <MarkdownContent :content="slideWithTitle(slide, pageNumber(sectionIndex, slideIndex))" />
@@ -175,7 +175,7 @@ onBeforeUnmount(() => {
               <footer><span>Zett</span><small>{{ String(pageNumber(sectionIndex, slideIndex)).padStart(2, '0') }}</small></footer>
             </section>
           </section>
-          <section v-else class="zett-slide section-title-slide" :class="`density-${slideDensity(section[0] ?? '')}`">
+          <section v-else class="zett-slide" :class="[`density-${slideDensity(section[0] ?? '')}`, { 'section-title-slide': !isHtmlSlide(section[0] ?? ''), 'cover-slide': isSlideCover(section[0] ?? '') }]">
             <div class="slide-body">
               <MarkdownContent :content="slideWithTitle(section[0] ?? '', pageNumber(sectionIndex, 0))" />
             </div>
@@ -233,6 +233,13 @@ onBeforeUnmount(() => {
 .section-title-slide .slide-body { display: grid; place-items: center; height: 100%; text-align: center; }
 .section-title-slide .slide-body :deep(.markdown-body > h1:first-child) { margin: 0; padding: 0; border: 0; font-size: 3em; font-weight: 600; line-height: 1.25; }
 .section-title-slide footer { display: none; }
+.cover-slide .slide-body :deep(.markdown-body) { width: 100%; text-align: center; }
+.cover-slide .slide-body :deep(h2) { margin: .7em 0 1.3em; color: var(--slide-muted); font-size: 1.15em; font-weight: 400; }
+.cover-slide .slide-body :deep(p) { margin: 1em 0; }
+.cover-slide .slide-body :deep(.markdown-figure) { display: inline-flex; flex-direction: column-reverse; vertical-align: top; width: 28%; margin: .7em 2%; }
+.cover-slide .slide-body :deep(.markdown-figure img), .cover-slide .slide-body :deep(p > img) { width: 100%; height: 4em; object-fit: contain; }
+.cover-slide .slide-body :deep(p:has(> img)) { display: flex; justify-content: center; flex-wrap: wrap; gap: 1em; }
+.cover-slide .slide-body :deep(p > img) { width: 28%; }
 .slide-body {
   height: calc(100% - 1.45rem);
   padding: 0;
@@ -276,12 +283,8 @@ onBeforeUnmount(() => {
 .slide-body :deep(li::marker) { color: inherit; }
 .slide-body :deep(li ul), .slide-body :deep(li ol) { margin-top: .22em; margin-bottom: .22em; font-size: 1em; }
 .slide-body :deep(blockquote) {
-  padding: .4em 0 .4em .9em;
-  border: 0;
-  border-left: 2px solid #aab5ae;
-  border-radius: 0;
-  color: var(--slide-muted);
-  background: transparent;
+  /* Keep the shared Markdown callout style, with compact slide spacing. */
+  padding: .75em 1em;
 }
 .slide-body :deep(blockquote > :first-child) { margin-top: 0; }
 .slide-body :deep(blockquote > :last-child) { margin-bottom: 0; }

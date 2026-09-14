@@ -1,3 +1,12 @@
+/** Layout is an explicit Markdown comment, never inferred from user prose. */
+export function isSlideCover(source: string): boolean {
+  return /^<!--\s*slide:cover\s*-->(?:\r?\n|$)/u.test(source.trim())
+}
+
+export function isHtmlSlide(source: string): boolean {
+  return /^<!--\s*slide:html\s*-->(?:\r?\n|$)/u.test(source.trim())
+}
+
 export type SlideDensity = 'normal' | 'compact' | 'dense'
 
 const SECTION_SEPARATOR = /\r?\n---(?=\r?\n|$)/u
@@ -21,6 +30,7 @@ export function splitSlideSections(source: string): string[][] {
 export function presentationSections(source: string): string[][] {
   return splitSlideSections(source).map((section, index) => {
     const first = section[0] ?? ''
+    if (isSlideCover(first) || isHtmlSlide(first)) return section
     const heading = /^(#{1,6})[\t ]+([^\n]+)(?:\n|$)/u.exec(first)
     const title = heading ? `# ${heading[2]!.replace(/[\t ]+#+[\t ]*$/u, '').trim()}` : `# Section ${index + 1}`
     // Reuse an authored title-only page; otherwise preserve all original content below it.
@@ -37,6 +47,7 @@ export function splitSlides(source: string): string[] {
 /** Give every preview page a heading, including older pages without one. */
 export function slideWithTitle(source: string, page: number): string {
   const content = source.trim()
+  if (isSlideCover(content) || isHtmlSlide(content)) return content.replace(/^<!--[^\n]*-->\s*/u, '')
   if (/^#{1,6}[\t ]+\S/u.test(content)) return content
   return `# Slide ${page}\n\n${content}`
 }

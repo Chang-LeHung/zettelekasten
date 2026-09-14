@@ -40,6 +40,7 @@ import yaml from 'highlight.js/lib/languages/yaml'
 import { katex } from '@mdit/plugin-katex'
 import MarkdownIt from 'markdown-it'
 import { markdownFigures } from '../utils/markdownFigures'
+import { sanitizeMarkdown } from '../utils/sanitizeMarkdown'
 import { changeDiagramZoom, clampDiagramZoom } from '../utils/diagramZoom'
 import { renderMermaid } from '../utils/mermaidRenderer'
 import 'highlight.js/styles/github.css'
@@ -125,7 +126,7 @@ function resolveLanguage(language: string): string {
 
 const renderer = new MarkdownIt({
   breaks: true,
-  html: false,
+  html: true,
   linkify: true,
   typographer: true,
   highlight(code: string, language: string): string {
@@ -295,7 +296,7 @@ function scheduleMermaidRender(): void {
   })
 }
 
-const html = computed(() => DOMPurify.sanitize(renderer.render(props.content)))
+const html = computed(() => sanitizeMarkdown(renderer.render(props.content)))
 
 onMounted(() => {
   scheduleMermaidRender()
@@ -341,7 +342,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.markdown-body { min-width: 0; color: inherit; font: inherit; line-height: 1.65; overflow-wrap: anywhere; }
+.markdown-body { min-width: 0; color: inherit; font: inherit; line-height: 1.65; overflow-wrap: anywhere; isolation: isolate; contain: layout paint; }
 .markdown-body :deep(> :first-child) { margin-top: 0; }
 .markdown-body :deep(> :last-child) { margin-bottom: 0; }
 .markdown-body :deep(p), .markdown-body :deep(ul), .markdown-body :deep(ol), .markdown-body :deep(blockquote), .markdown-body :deep(pre), .markdown-body :deep(table) { margin: .62em 0; }
@@ -352,10 +353,19 @@ onBeforeUnmount(() => {
 .markdown-body :deep(ul), .markdown-body :deep(ol) { padding-left: 1.45em; }
 .markdown-body :deep(li + li) { margin-top: .25em; }
 .markdown-body :deep(a) { color: #35684e; text-decoration-thickness: .08em; text-underline-offset: .16em; }
-.markdown-body :deep(blockquote) { margin: 1em 0; padding: .45em 0 .45em 1em; border-left: 2px solid #8fa79a; color: #526058; background: transparent; font-style: normal; }
+.markdown-body :deep(blockquote) {
+  margin: 1em 0;
+  padding: .9em 1.2em;
+  border: 0;
+  border-radius: .65em;
+  color: inherit;
+  background: #f4faf8;
+  box-shadow: 0 2px 12px rgb(36 57 47 / 9%);
+  font-style: normal;
+}
 .markdown-body :deep(blockquote > :first-child) { margin-top: 0; }
 .markdown-body :deep(blockquote > :last-child) { margin-bottom: 0; }
-.markdown-body :deep(blockquote blockquote) { margin: .65em 0; border-color: #c7d2cb; }
+.markdown-body :deep(blockquote blockquote) { margin: .65em 0; background: #eaf3ee; box-shadow: none; }
 .markdown-body :deep(.markdown-figure) { display: block; margin: 1.4em 0; padding: 0; break-inside: avoid; text-align: center; }
 .markdown-body :deep(.markdown-figure img) { display: block; width: auto; max-width: 100%; height: auto; margin: 0 auto; border: 0; border-radius: .2rem; object-fit: contain; box-shadow: none; }
 .markdown-body :deep(figcaption) { max-width: 90%; margin: .65em auto 0; color: #68736c; font-size: .85em; line-height: 1.5; text-align: center; overflow-wrap: anywhere; }

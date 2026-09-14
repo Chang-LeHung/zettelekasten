@@ -1,11 +1,26 @@
 import { describe, expect, it } from 'vitest'
-import { presentationSections, slideDensity, slideWithTitle, splitSlideSections, splitSlides } from './slides'
+import { isSlideCover, presentationSections, slideDensity, slideWithTitle, splitSlideSections, splitSlides } from './slides'
 
 describe('presentationSections', () => {
   it('adds chapter title pages while preserving body pages', () => {
-    expect(presentationSections('# Intro\n\nBody\n--\n## Details\n---\n# End')).toEqual([
-      ['# Intro', '# Intro\n\nBody', '## Details'], ['# End'],
+    expect(presentationSections('# Intro\n\n- Body\n--\n## Details\n---\n# End')).toEqual([
+      ['# Intro', '# Intro\n\n- Body', '## Details'], ['# End'],
     ])
+  })
+  it('uses only explicitly marked Markdown as a cover', () => {
+    const cover = '<!-- slide:cover -->\n# Talk\n\n## Subtitle\n\nAuthor\n\n[Website](https://example.com)\n\n![A](/a.png) ![B](/b.png)'
+    expect(isSlideCover(cover)).toBe(true)
+    expect(presentationSections(cover + '\n---\n# Content\n\n- Detail')).toEqual([
+      [cover], ['# Content', '# Content\n\n- Detail'],
+    ])
+    expect(isSlideCover('# Title\n\n```python\nprint(1)\n```')).toBe(false)
+    expect(isSlideCover('# Title\n\n> Quote')).toBe(false)
+    expect(isSlideCover('# Title\n\n# Other')).toBe(false)
+    expect(isSlideCover('# Talk\n\nAuthor')).toBe(false)
+    expect(slideWithTitle(cover, 1)).toBe(cover.split('\n').slice(1).join('\n'))
+    const html = '<!-- slide:html -->\n<div style="display:grid"><h1>Custom</h1></div>'
+    expect(presentationSections(html)).toEqual([[html]])
+    expect(slideWithTitle(html, 1)).toBe('<div style="display:grid"><h1>Custom</h1></div>')
   })
   it('reuses title-only pages and gives untitled chapters a fallback', () => {
     expect(presentationSections('## Topic\n--\nContent')).toEqual([['# Topic', 'Content']])
