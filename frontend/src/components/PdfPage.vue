@@ -46,9 +46,12 @@ async function render(): Promise<void> {
     const pixelRatio = Math.max(1, window.devicePixelRatio || 1)
     const displayViewport = page.getViewport({ scale: props.scale })
     const renderViewport = page.getViewport({ scale: props.scale * pixelRatio })
-    canvas.value.width = Math.ceil(renderViewport.width)
-    canvas.value.height = Math.ceil(renderViewport.height)
-    const currentTask = page.render({ canvas: canvas.value, viewport: renderViewport })
+    // Keep the visible bitmap intact while PDF.js renders asynchronously.
+    // Resizing the visible canvas first clears it and exposes blank page regions.
+    const buffer = document.createElement('canvas')
+    buffer.width = Math.ceil(renderViewport.width)
+    buffer.height = Math.ceil(renderViewport.height)
+    const currentTask = page.render({ canvas: buffer, viewport: renderViewport })
     renderTask = currentTask
     let textRender: Promise<unknown> = Promise.resolve()
     if (textLayerTask) {
@@ -64,6 +67,12 @@ async function render(): Promise<void> {
     }
     try {
       await Promise.all([currentTask.promise, textRender])
+      if (version !== renderVersion || !canvas.value) return
+      const context = canvas.value.getContext('2d')
+      if (!context) return
+      canvas.value.width = buffer.width
+      canvas.value.height = buffer.height
+      context.drawImage(buffer, 0, 0)
     } finally {
       if (renderTask === currentTask) renderTask = null
     }
@@ -124,12 +133,13 @@ onBeforeUnmount(() => {
 .pdf-page { position: relative; flex: 0 0 auto; overflow: hidden; background: #fff; box-shadow: 0 8px 30px rgba(28,37,31,.16); }
 canvas { display: block; width: 100%; height: 100%; max-width: none; background: #fff; }
 .text-layer { position: absolute; inset: 0; z-index: 1; overflow: clip; color: transparent; line-height: 1; text-align: initial; transform-origin: 0 0; user-select: text; -webkit-text-size-adjust: none; text-size-adjust: none; forced-color-adjust: none; --min-font-size: 1; --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size)); }
-.text-layer :is(span, br) { position: absolute; color: transparent; white-space: pre; cursor: text; transform-origin: 0 0; }
-.text-layer > :not(.markedContent), .text-layer .markedContent span:not(.markedContent) { z-index: 1; font-size: calc(var(--text-scale-factor) * var(--font-height)); transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv)); --font-height: 0; --scale-x: 1; --rotate: 0deg; --min-font-size-inv: calc(1 / var(--min-font-size)); }
-.text-layer .markedContent { display: contents; }
-.text-layer ::selection { color: transparent; background: rgba(83, 128, 101, .3); }
-.text-layer br::selection { background: transparent; }
-.text-layer .endOfContent { position: absolute; inset: 100% 0 0; display: block; cursor: default; user-select: none; }
+/* PDF.js inserts these nodes itself, so they do not carry Vue's scope attribute. */
+.text-layer :deep(:is(span, br)) { position: absolute; color: transparent; white-space: pre; cursor: text; transform-origin: 0 0; }
+.text-layer :deep(> :not(.markedContent)), .text-layer :deep(.markedContent span:not(.markedContent)) { z-index: 1; font-size: calc(var(--text-scale-factor) * var(--font-height)); transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv)); --font-height: 0; --scale-x: 1; --rotate: 0deg; --min-font-size-inv: calc(1 / var(--min-font-size)); }
+.text-layer :deep(.markedContent) { display: contents; }
+.text-layer :deep(::selection) { color: transparent; background: rgba(83, 128, 101, .3); }
+.text-layer :deep(br::selection) { background: transparent; }
+.text-layer :deep(.endOfContent) { position: absolute; inset: 100% 0 0; display: block; cursor: default; user-select: none; }
 .page-placeholder { position: absolute; inset: 0; display: grid; place-items: center; color: #a0a7a2; font-size: .7rem; background: #f8f9f8; }
 .page-placeholder.error { padding: 2rem; color: #9b5959; text-align: center; }
 </style>

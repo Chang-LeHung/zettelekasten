@@ -22,6 +22,8 @@ async function mountPreview() {
 
 it('resizes with the keyboard and retains width across collapse and expansion', async () => {
   const { host, root } = await mountPreview()
+  host.querySelector<HTMLButtonElement>('[aria-label="Toggle document outline"]')!.click()
+  await nextTick()
   const separator = host.querySelector<HTMLElement>('[role="separator"]')!
   separator.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
   await nextTick()
@@ -40,6 +42,8 @@ it('resizes with the keyboard and retains width across collapse and expansion', 
 
 it('bounds pointer resizing and stops when the pointer is cancelled', async () => {
   const { host, root } = await mountPreview()
+  host.querySelector<HTMLButtonElement>('[aria-label="Toggle document outline"]')!.click()
+  await nextTick()
   const separator = host.querySelector<HTMLElement>('[role="separator"]')!
   separator.setPointerCapture = vi.fn()
   function pointer(type: string, clientX: number) {
@@ -62,4 +66,62 @@ it('bounds pointer resizing and stops when the pointer is cancelled', async () =
   await nextTick()
   expect(root.style.getPropertyValue('--outline-width')).toBe('120px')
   expect(root.classList.contains('resizing-outline')).toBe(false)
+})
+
+it('opens a large in-page dialog and preserves the preview when closed with Escape', async () => {
+  const { host, root } = await mountPreview()
+  const previousOverflow = document.body.style.overflow
+  const expand = host.querySelector<HTMLButtonElement>('[aria-label="Expand PDF preview"]')!
+  expand.focus()
+  expand.click()
+  await nextTick()
+  await nextTick()
+  expect(document.querySelector('[role="dialog"]')).toBe(root)
+  expect(host.contains(root)).toBe(false)
+  expect(document.body.style.overflow).toBe('hidden')
+  expect(document.activeElement).toBe(root)
+  root.querySelector<HTMLButtonElement>('[aria-label="Toggle document outline"]')!.click()
+  await nextTick()
+  const separator = root.querySelector<HTMLElement>('[role="separator"]')!
+  separator.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+  await nextTick()
+  root.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  await nextTick()
+  await nextTick()
+  expect(document.querySelector('[role="dialog"]')).toBeNull()
+  expect(host.contains(root)).toBe(true)
+  expect(root.style.getPropertyValue('--outline-width')).toBe('260px')
+  expect(document.body.style.overflow).toBe(previousOverflow)
+  expect(document.activeElement).toBe(expand)
+})
+
+it('defaults both outlines to hidden and keeps their visibility independent', async () => {
+  const { root } = await mountPreview()
+  const toggle = () => root.querySelector<HTMLButtonElement>('[aria-label="Toggle document outline"]')!.click()
+  const expand = () => root.querySelector<HTMLButtonElement>('[aria-label="Expand PDF preview"]')!.click()
+  const close = () => root.querySelector<HTMLButtonElement>('[aria-label="Close expanded PDF preview"]')!.click()
+  expect(root.querySelector('.pdf-outline')).toBeNull()
+  toggle()
+  await nextTick()
+  expect(root.querySelector('.pdf-outline')).not.toBeNull()
+  expand()
+  await nextTick()
+  expect(root.querySelector('.pdf-outline')).toBeNull()
+  close()
+  await nextTick()
+  expect(root.querySelector('.pdf-outline')).not.toBeNull()
+  toggle()
+  await nextTick()
+  expand()
+  await nextTick()
+  toggle()
+  await nextTick()
+  close()
+  await nextTick()
+  expect(root.querySelector('.pdf-outline')).toBeNull()
+  expand()
+  await nextTick()
+  expect(root.querySelector('.pdf-outline')).not.toBeNull()
+  close()
+  await nextTick()
 })

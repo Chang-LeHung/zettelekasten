@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { markRaw, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
+import { computed, markRaw, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import {
   GlobalWorkerOptions,
   getDocument,
@@ -39,7 +39,58 @@ const scale = ref(1)
 const basePageWidth = ref(612)
 const basePageHeight = ref(792)
 const outline = ref<OutlineEntry[]>([])
-const outlineOpen = ref(true)
+const expanded = ref(false)
+const inlineOutlineOpen = ref(false)
+const expandedOutlineOpen = ref(false)
+const outlineOpen = computed({
+  get: () => expanded.value ? expandedOutlineOpen.value : inlineOutlineOpen.value,
+  set: (open: boolean) => {
+    if (expanded.value) expandedOutlineOpen.value = open
+    else inlineOutlineOpen.value = open
+  },
+})
+let previousFocus: HTMLElement | null = null
+let previousOverflow = ''
+
+async function toggleExpanded(): Promise<void> {
+  if (expanded.value) {
+    closeExpanded()
+    return
+  }
+  previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  previousOverflow = document.body.style.overflow
+  document.body.style.overflow = 'hidden'
+  expanded.value = true
+  await nextTick()
+  previewRoot.value?.focus()
+}
+
+function closeExpanded(): void {
+  if (!expanded.value) return
+  expanded.value = false
+  document.body.style.overflow = previousOverflow
+  void nextTick(() => previousFocus?.focus())
+}
+
+function handleExpandedKey(event: KeyboardEvent): void {
+  if (!expanded.value) return
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    event.stopPropagation()
+    closeExpanded()
+  } else if (event.key === 'Tab') {
+    const controls = [...(previewRoot.value?.querySelectorAll<HTMLElement>('button:not(:disabled), [tabindex="0"]') || [])]
+    const first = controls[0]
+    const last = controls.at(-1)
+    if (event.shiftKey && (document.activeElement === first || document.activeElement === previewRoot.value)) {
+      event.preventDefault()
+      last?.focus()
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault()
+      first?.focus()
+    }
+  }
+}
 const previewRoot = ref<HTMLElement | null>(null)
 const outlineWidth = ref(240)
 const resizingOutline = ref(false)
@@ -255,6 +306,7 @@ function resetScale(): void {
 
 watch(() => [props.asset.session_id, props.asset.id, props.asset.version, props.artifact], () => void loadDocument(), { immediate: true })
 onBeforeUnmount(() => {
+  if (expanded.value) document.body.style.overflow = previousOverflow
   loadVersion += 1
   if (scrollFrame !== null) window.cancelAnimationFrame(scrollFrame)
   if (zoomFrame !== null) window.cancelAnimationFrame(zoomFrame)
@@ -263,9 +315,15 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="previewRoot" class="pdf-preview" :class="{ 'outline-open': outlineOpen, 'artifact-pdf': artifact, 'resizing-outline': resizingOutline }" :style="{ '--outline-width': `${outlineWidth}px` }">
+  <Teleport to="body" :disabled="!expanded">
+  <div :class="expanded ? 'pdf-expanded-backdrop' : 'pdf-inline-host'" @click.self="closeExpanded">
+  <div ref="previewRoot" class="pdf-preview" tabindex="-1" :role="expanded ? 'dialog' : undefined" :aria-modal="expanded ? true : undefined" :aria-label="expanded ? 'Expanded PDF preview' : undefined" :class="{ 'outline-open': outlineOpen, 'artifact-pdf': artifact, 'resizing-outline': resizingOutline, 'pdf-expanded': expanded }" :style="{ '--outline-width': `${outlineWidth}px` }" @keydown="handleExpandedKey">
     <div class="pdf-toolbar" aria-label="PDF controls">
       <button class="outline-toggle" type="button" :aria-expanded="outlineOpen" aria-label="Toggle document outline" @click="outlineOpen = !outlineOpen">☰</button>
+      <button class="expand-toggle" type="button" :aria-label="expanded ? 'Close expanded PDF preview' : 'Expand PDF preview'" :title="expanded ? 'Close (Esc)' : 'Expand preview'" @click="toggleExpanded">
+        <svg v-if="expanded" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+        <svg v-else viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6" /></svg>
+      </button>
       <div>
         <button type="button" :disabled="currentPage <= 1 || loading" aria-label="Previous page" @click="changePage(-1)">‹</button>
         <span>{{ currentPage }} / {{ pageCount || '—' }}</span>
@@ -319,6 +377,8 @@ onBeforeUnmount(() => {
       </div>
     </div>
   </div>
+  </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -328,6 +388,11 @@ onBeforeUnmount(() => {
 .pdf-outline-resizer:hover, .pdf-outline-resizer:focus-visible, .resizing-outline .pdf-outline-resizer { background: #9cb3a4; outline: none; }
 .pdf-preview.resizing-outline { user-select: none; cursor: col-resize; }
 .pdf-preview.artifact-pdf { height: 65vh; min-height: 24rem; }
+.pdf-inline-host { display: contents; }
+.pdf-expanded-backdrop { position: fixed; inset: 0; z-index: 1600; display: grid; place-items: center; padding: 2vh 2vw; background: rgba(31,38,34,.4); }
+.pdf-preview.pdf-expanded { width: 96vw; height: 96vh; height: 96dvh; min-height: 0; overflow: hidden; border-radius: .9rem; background: #fafbfa; box-shadow: 0 24px 90px rgba(25,36,29,.25); outline: none; }
+.pdf-toolbar .expand-toggle { position: absolute; right: .65rem; top: 50%; transform: translateY(-50%); width: 2.5rem; height: 2.5rem; border-radius: .65rem; }
+.pdf-expanded .expand-toggle { background: #e8eeea; color: #3d5145; }
 .pdf-toolbar { position: relative; z-index: 2; grid-column: 1 / -1; display: flex; align-items: center; justify-content: center; gap: 1.5rem; min-height: 2.85rem; padding: .4rem .75rem; border-bottom: 1px solid rgba(55,70,61,.12); background: rgba(250,251,250,.96); box-shadow: 0 2px 10px rgba(33,42,36,.04); }
 .pdf-toolbar > div { display: flex; align-items: center; gap: .34rem; }
 .pdf-toolbar span { min-width: 3.8rem; color: #747d77; font-size: .7rem; font-variant-numeric: tabular-nums; text-align: center; }
@@ -348,7 +413,7 @@ onBeforeUnmount(() => {
 .pdf-outline nav button { width: 100%; padding: .48rem .55rem .48rem calc(.55rem + var(--outline-depth) * .72rem); border-radius: .45rem; overflow: hidden; color: #5f6963; font-size: .66rem; line-height: 1.35; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 .pdf-outline nav button:hover { color: #2f513e; background: #e7eee9; }
 .pdf-outline p { margin: 1rem; color: #8a928d; font-size: .65rem; line-height: 1.5; }
-.pdf-pages { position: relative; min-width: 0; min-height: 0; overflow: auto; padding: 1.5rem; background: #e7eae8; }
+.pdf-pages { position: relative; min-width: 0; min-height: 0; overflow: auto; overflow-anchor: none; scrollbar-gutter: stable; padding: 1.5rem; background: #e7eae8; }
 .pdf-page-stack { display: grid; justify-items: center; gap: 1rem; width: max-content; min-width: 100%; }
 .pdf-state { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: .55rem; color: #737c76; font-size: .78rem; }
 .pdf-state.error { flex-direction: column; padding: 2rem; }
@@ -357,7 +422,7 @@ onBeforeUnmount(() => {
 .spinner { width: .9rem; height: .9rem; border: 2px solid #cbd5cf; border-top-color: #527460; border-radius: 50%; animation: spin .75s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (max-width: 760px) {
-  .pdf-toolbar { justify-content: flex-end; gap: .35rem; }
+  .pdf-toolbar { justify-content: center; gap: .35rem; padding-inline: 2.75rem; }
   .pdf-pages { padding: .75rem; }
 }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 1.5s; } }
