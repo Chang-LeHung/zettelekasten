@@ -276,7 +276,8 @@ onBeforeUnmount(() => {
 .slide-body :deep(h3), .slide-body :deep(h4) { margin: 1em 0 .45em; font-size: 1.1em; line-height: 1.25; }
 .slide-body :deep(p), .slide-body :deep(ul), .slide-body :deep(ol), .slide-body :deep(blockquote), .slide-body :deep(table) { margin-top: .5rem; margin-bottom: .5rem; }
 .slide-body :deep(strong) { color: inherit; font-weight: 700; }
-.slide-body :deep(a) { color: #27684a; text-decoration-color: #8fb19d; text-decoration-thickness: .08em; text-underline-offset: .14em; }
+.slide-body :deep(a) { color: #27684a; text-decoration: none; }
+.slide-body :deep(a:hover) { color: #17472f; text-decoration: none; }
 .slide-body :deep(ul), .slide-body :deep(ol) { padding-left: 1.35em; }
 .slide-body :deep(li) { padding-left: .14em; }
 .slide-body :deep(li + li) { margin-top: .28em; }

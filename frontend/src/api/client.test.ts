@@ -3,6 +3,15 @@ import { aiClient, libraryClient, settingsClient } from './client'
 
 afterEach(() => vi.unstubAllGlobals())
 
+it('renames an asset through a metadata-only request', async () => {
+  const updated = { id: 'asset-1', name: 'Logo', content_url: '/unchanged/content' }
+  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(updated)))
+  vi.stubGlobal('fetch', fetchMock)
+  expect(await aiClient.renameSessionAsset('session-1', 'asset-1', 'Logo')).toEqual(updated)
+  expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/agent/session-1/assets/asset-1/name')
+  expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: 'PATCH', body: JSON.stringify({ name: 'Logo' }) })
+})
+
 it('loads slide decks into the library and keeps their content type when editing', async () => {
   const artifact = {
     id: 'slides-1',

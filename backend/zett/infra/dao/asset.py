@@ -182,6 +182,17 @@ class SessionAssetStorage(Storage[SessionAssetCreate, SessionAssetOut, str, Sess
             old_path.unlink(missing_ok=True)
         return result
 
+    def rename(self, session_id: str, entity_id: str, name: str) -> SessionAssetOut:
+        """Change display metadata only; never rewrite bytes or their UUID path."""
+        with session_scope() as session:
+            model = session.get(SessionAssetModel, entity_id)
+            if model is None or model.session_id != session_id:
+                raise KeyError(f"Session asset not found: {entity_id}")
+            model.name = name
+            model.updated_at = datetime.now(UTC)
+            session.flush()
+            return _asset_out(model)
+
     def delete(self, entity_id: str) -> bool:
         stored_path: Path | None = None
         session_id: str | None = None

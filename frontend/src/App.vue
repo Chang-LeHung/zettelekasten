@@ -5,6 +5,7 @@ import type { AgentArtifact, AgentCompactionActivity, AgentContextComposition, A
 import AgentComposerControls from './components/AgentComposerControls.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import AssetPreviewDialog from './components/AssetPreviewDialog.vue'
+import AssetRename from './components/AssetRename.vue'
 import AskUserPrompt from './components/AskUserPrompt.vue'
 import { addAgentUsage, latestAgentUsage, summarizeAgentUsage } from './utils/agentUsage'
 import { assetOpenAction, isPdfAsset } from './utils/assetOpen'
@@ -1296,6 +1297,14 @@ async function pasteAssets(event: ClipboardEvent): Promise<void> {
   }
 }
 
+async function renameAsset(asset: SessionAsset, name: string): Promise<void> {
+  const updated = await aiClient.renameSessionAsset(asset.session_id, asset.id, name)
+  // A late response from a previous session must not change the visible list.
+  if (conversationId.value !== asset.session_id) return
+  assets.value = assets.value.map(item => item.id === asset.id ? updated : item)
+  if (previewAsset.value?.id === asset.id) previewAsset.value = updated
+}
+
 function openAsset(asset: SessionAsset): void {
   const action = assetOpenAction(asset)
   if (!action) return
@@ -1756,6 +1765,7 @@ onBeforeUnmount(() => {
                     </span>
                   </button>
                   <button class="asset-delete" type="button" :aria-label="`Delete ${asset.name}`" @click="removeAsset(asset)"><svg><use href="#icon-trash" /></svg></button>
+                  <AssetRename :name="asset.name" :save="name => renameAsset(asset, name)" />
                 </article>
                 <div v-if="!filteredAssets.length" class="asset-empty">
                   <svg><use :href="assets.length ? '#icon-search' : '#icon-attachment'" /></svg>
@@ -2293,7 +2303,7 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .asset-thumbnail.links > small { background: #47749a; }
 .asset-thumbnail.code > small { background: #626f82; }
 .asset-thumbnail.notes > small { background: #9a794b; }
-.asset-row-copy { min-width: 0; display: block; padding-right: 1.15rem; }
+.asset-row-copy { min-width: 0; display: block; padding-right: 3rem; }
 .asset-row-copy strong, .asset-row-copy small, .asset-row-copy time { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .asset-row-copy strong { color: #343a36; font-size: .65rem; font-weight: 650; }
 .asset-row-copy small { margin-top: .16rem; color: #7f8681; font-size: .53rem; }

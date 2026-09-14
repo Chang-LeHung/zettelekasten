@@ -358,6 +358,13 @@ export const aiClient = {
     return response.json() as Promise<SessionAsset>
   },
 
+  renameSessionAsset(conversationId: string, assetId: string, name: string): Promise<SessionAsset> {
+    return request<SessionAsset>(`/agent/${conversationId}/assets/${assetId}/name`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
+    })
+  },
+
   deleteSessionAsset(conversationId: string, assetId: string): Promise<{ ok: boolean }> {
     return request<{ ok: boolean }>(`/agent/${conversationId}/assets/${assetId}`, { method: 'DELETE' })
   },

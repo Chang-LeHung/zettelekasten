@@ -352,7 +352,9 @@ onBeforeUnmount(() => {
 .markdown-body :deep(h3) { font-size: 1.15em; }
 .markdown-body :deep(ul), .markdown-body :deep(ol) { padding-left: 1.45em; }
 .markdown-body :deep(li + li) { margin-top: .25em; }
-.markdown-body :deep(a) { color: #35684e; text-decoration-thickness: .08em; text-underline-offset: .16em; }
+.markdown-body :deep(a) { color: #35684e; text-decoration: none; }
+.markdown-body :deep(a:hover) { color: #214b35; text-decoration: none; }
+.markdown-body :deep(a:focus-visible) { outline: 2px solid currentColor; outline-offset: 3px; border-radius: 2px; }
 .markdown-body :deep(blockquote) {
   margin: 1em 0;
   padding: .9em 1.2em;

@@ -7,6 +7,7 @@ from ...config import settings
 from ...infra.dao import session_asset_storage, session_storage
 from ...models import SessionAssetListOptions
 from ...schemas import SessionAssetCreate, SessionAssetOut, SessionAssetType
+from ..asset_names import AssetRenameIn, rename_asset
 from ..dependencies import run_sync
 from ..schemas import DeleteResponse, LinkAssetIn, TextAssetIn
 
@@ -129,3 +130,12 @@ async def delete_asset(session_id: str, asset_id: str) -> DeleteResponse:
     if asset is None:
         return DeleteResponse(ok=False)
     return DeleteResponse(ok=await run_sync(session_asset_storage.delete, asset_id))
+
+
+@router.patch("/{asset_id}/name", response_model=SessionAssetOut)
+async def rename_asset_route(session_id: str, asset_id: str, payload: AssetRenameIn) -> SessionAssetOut:
+    """Rename the display label without changing stored file names or URLs."""
+    try:
+        return await run_sync(rename_asset, session_id, asset_id, payload)
+    except KeyError as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset not found") from error
