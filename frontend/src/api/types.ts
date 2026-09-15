@@ -1,4 +1,4 @@
-export interface Tag {
+export interface TagRecord {
   id: string
   name: string
   parent_id: string | null
@@ -8,9 +8,18 @@ export interface Tag {
   updated_at: string
   path: string
   normalized_path: string
+}
+
+export interface Tag extends TagRecord {
   direct_count: number
   total_count: number
   children: Tag[]
+}
+
+export interface TagCreateInput {
+  path: string
+  description?: string | null
+  color?: string | null
 }
 
 export interface Card {

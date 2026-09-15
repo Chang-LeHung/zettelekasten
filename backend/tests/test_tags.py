@@ -99,6 +99,23 @@ def test_library_tag_api_backfills_old_artifacts_and_filters_a_parent_subtree() 
         assert client.delete(f"/api/library/tags/{root_id}?recursive=true").json() == {"ok": True}
 
 
+def test_library_tag_api_force_delete_removes_all_artifact_assignments() -> None:
+    session_id = session_storage.create(AgentSessionCreate()).session_id
+    artifact = tagged_card(session_id)
+
+    with TestClient(app) as client:
+        tree = client.get("/api/library/tags").json()
+        root_id = tree[0]["id"]
+
+        # The management UI makes both destructive choices explicit. Storage then
+        # removes assignment rows before deleting the tag subtree; no DB cascade is used.
+        response = client.delete(f"/api/library/tags/{root_id}?recursive=true&force=true")
+
+        assert response.json() == {"ok": True}
+        assert artifact_storage.get(artifact.id).tags == []
+        assert client.get("/api/library/tags").json() == []
+
+
 async def test_tag_extension_registers_real_taxonomy_tools() -> None:
     extension = TagExtension()
     context = AgentRunContext(

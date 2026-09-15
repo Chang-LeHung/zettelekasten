@@ -4,6 +4,7 @@ import { ApiError, aiClient, libraryClient, settingsClient, tagClient } from './
 import type { AgentArtifact, AgentCompactionActivity, AgentContextComposition, AgentCustomEvent, AgentModelUsage, AgentServerToolActivity, AgentSession, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageContentPart, ReasoningEffort, RuntimeSettings, SessionAsset, Tag } from './api/types'
 import AgentComposerControls from './components/AgentComposerControls.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
+import TagManagerDialog from './components/TagManagerDialog.vue'
 import AssetPreviewDialog from './components/AssetPreviewDialog.vue'
 import AssetRename from './components/AssetRename.vue'
 import AskUserPrompt from './components/AskUserPrompt.vue'
@@ -88,6 +89,9 @@ const libraryLoading = ref(false)
 const deletingLibraryItemId = ref<string | null>(null)
 const tags = ref<Tag[]>([])
 const collapsedTagIds = ref<Set<string>>(new Set())
+const hoveredTagId = ref<string | null>(null)
+const tagManagerOpen = ref(false)
+const tagManagerBusy = ref(false)
 const query = ref('')
 const activeQuery = ref('')
 const selectedTag = ref<string | null>(null)
@@ -632,6 +636,55 @@ function toggleTag(tagId: string): void {
   if (next.has(tagId)) next.delete(tagId)
   else next.add(tagId)
   collapsedTagIds.value = next
+}
+
+async function createTag(path: string): Promise<void> {
+  if (tagManagerBusy.value) return
+  tagManagerBusy.value = true
+  try {
+    const created = await tagClient.create({ path })
+    tags.value = await tagClient.list()
+    showNotice(`Tag “${created.path}” added`)
+  } catch (error) {
+    showNotice(errorMessage(error), 'error')
+  } finally {
+    tagManagerBusy.value = false
+  }
+}
+
+function tagSubtreeContains(tag: Tag, tagId: string): boolean {
+  return tag.id === tagId || tag.children.some((child) => tagSubtreeContains(child, tagId))
+}
+
+async function deleteTag(tag: Tag): Promise<void> {
+  if (tagManagerBusy.value) return
+  const childCount = visibleTagRows(tag.children).length
+  const itemCount = tag.total_count
+  const scope = childCount
+    ? `This also deletes ${childCount} nested ${childCount === 1 ? 'tag' : 'tags'}`
+    : 'This deletes the tag'
+  const assignments = itemCount
+    ? ` and removes it from ${itemCount} library ${itemCount === 1 ? 'item' : 'items'}.`
+    : '.'
+  const confirmed = await requestConfirmation(
+    `Delete “${tag.path}”?`,
+    `${scope}${assignments} The library items themselves will remain.`,
+    childCount ? 'Delete tag tree' : 'Delete tag',
+  )
+  if (!confirmed) return
+
+  tagManagerBusy.value = true
+  try {
+    await tagClient.delete(tag.id)
+    if (selectedTag.value && tagSubtreeContains(tag, selectedTag.value)) selectedTag.value = null
+    const [tagData] = await Promise.all([tagClient.list(), loadLibrary()])
+    tags.value = tagData
+    showNotice(`Tag “${tag.path}” deleted`)
+  } catch (error) {
+    showNotice(errorMessage(error), 'error')
+  } finally {
+    tagManagerBusy.value = false
+  }
 }
 
 function showNotice(message: string, kind: NoticeKind = 'success'): void {
@@ -1653,13 +1706,15 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-else class="sidebar-section">
-        <div class="sidebar-heading"><span>Collections</span><button type="button" aria-label="Add tag" @click="navigate('settings')"><svg><use href="#icon-add" /></svg></button></div>
+        <div class="sidebar-heading"><span>Collections</span><button type="button" aria-label="Manage tags" @click="tagManagerOpen = true"><svg><use href="#icon-add" /></svg></button></div>
         <div class="tag-list">
           <div
             v-for="tag in flatTags"
             :key="tag.id"
             class="tag-row"
             :style="{ '--tag-depth': tag.depth }"
+            @mouseenter="hoveredTagId = tag.id"
+            @mouseleave="hoveredTagId = null"
           >
             <button
               v-if="tag.hasChildren"
@@ -1678,8 +1733,17 @@ onBeforeUnmount(() => {
               @click="filterByTag(tag.id)"
             >
               <span class="tag-dot" :style="tag.color ? { background: tag.color } : undefined" />
-              <span class="tag-label">{{ tag.name }}</span><small>{{ tag.total_count }}</small>
+              <span class="tag-label">{{ tag.name }}</span><small v-if="hoveredTagId !== tag.id">{{ tag.total_count }}</small>
             </button>
+            <button
+              v-if="hoveredTagId === tag.id"
+              class="tag-delete"
+              type="button"
+              :disabled="tagManagerBusy"
+              :aria-label="`Delete ${tag.path}`"
+              :title="`Delete ${tag.path}`"
+              @click.stop="deleteTag(tag)"
+            ><svg><use href="#icon-trash" /></svg></button>
           </div>
           <p v-if="!flatTags.length" class="sidebar-empty">Tags will appear here.</p>
         </div>
@@ -1702,6 +1766,7 @@ onBeforeUnmount(() => {
       </Transition>
 
       <ConfirmDialog :open="confirmation.open" :title="confirmation.title" :message="confirmation.message" :confirm-label="confirmation.confirmLabel" @cancel="settleConfirmation(false)" @confirm="settleConfirmation(true)" />
+      <TagManagerDialog v-if="tagManagerOpen" :tags="tags" :busy="tagManagerBusy" @close="tagManagerOpen = false" @create="createTag" @delete="deleteTag" />
       <AssetPreviewDialog :asset="previewAsset" @close="previewAsset = null" />
       <LibraryEditor v-if="libraryEditorItem" :item="libraryEditorItem" :saving="libraryEditorSaving" @close="closeLibraryEditor" @save="saveLibraryEditor" />
 
@@ -2253,6 +2318,10 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .tag-dot { width: .42rem; height: .42rem; flex: 0 0 auto; border-radius: 50%; background: #91a89b; box-shadow: inset 0 0 0 1px rgba(0,0,0,.06); }
 .tag-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tag-select small { margin-left: auto; color: #98989d; font-size: .66rem; }
+.tag-delete { position: absolute; right: .2rem; z-index: 2; display: grid; place-items: center; width: 1.55rem; height: 1.55rem; padding: 0; border: 0; border-radius: .42rem; color: #a35e5e; background: rgba(250, 243, 242, .96); cursor: pointer; transition: color 120ms ease, background 120ms ease; }
+.tag-delete svg { width: .82rem; height: .82rem; }
+.tag-delete:hover { color: #963f3f; background: #f7e7e5; }
+.tag-delete:disabled { cursor: default; opacity: .35; }
 .session-section { overflow: hidden; }
 .session-history-list { min-height: 0; display: grid; flex: 1; align-content: start; gap: .18rem; overflow-y: auto; padding-bottom: .7rem; scrollbar-width: thin; }
 .session-history-item { position: relative; min-width: 0; border-radius: .58rem; }

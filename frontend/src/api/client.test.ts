@@ -26,6 +26,28 @@ it('loads the persistent tag tree and delegates subtree filtering to the backend
   expect(String(fetchMock.mock.calls[1]?.[0])).toContain('tag_ids=engineering')
 })
 
+it('creates tags and explicitly requests recursive assignment cleanup when deleting', async () => {
+  const created = {
+    id: 'python', path: 'Engineering/Python', normalized_path: 'engineering/python', name: 'Python',
+    parent_id: 'engineering', description: null, color: null, created_at: '', updated_at: '',
+  }
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify(created), { status: 201 }))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true })))
+  vi.stubGlobal('fetch', fetchMock)
+
+  await expect(tagClient.create({ path: 'Engineering/Python' })).resolves.toEqual(created)
+  await expect(tagClient.delete('python/tag')).resolves.toEqual({ ok: true })
+
+  expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/library/tags')
+  expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+    method: 'POST',
+    body: JSON.stringify({ path: 'Engineering/Python' }),
+  })
+  expect(String(fetchMock.mock.calls[1]?.[0])).toContain('/library/tags/python%2Ftag?recursive=true&force=true')
+  expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: 'DELETE' })
+})
+
 it('treats an uncompiled artifact PDF as pending, while preserving real request errors', async () => {
   vi.stubGlobal('fetch', vi.fn()
     .mockResolvedValueOnce(new Response(null, { status: 204 }))

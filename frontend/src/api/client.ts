@@ -19,6 +19,8 @@ import type {
   RuntimeSettings,
   SessionModelPreference,
   Tag,
+  TagCreateInput,
+  TagRecord,
   SessionAsset,
 } from './types'
 
@@ -176,6 +178,20 @@ export const libraryClient = {
 export const tagClient = {
   list(): Promise<Tag[]> {
     return request<Tag[]>('/library/tags')
+  },
+
+  create(payload: TagCreateInput): Promise<TagRecord> {
+    return request<TagRecord>('/library/tags', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  delete(tagId: string): Promise<{ ok: boolean }> {
+    const params = new URLSearchParams({ recursive: 'true', force: 'true' })
+    return request<{ ok: boolean }>(`/library/tags/${encodeURIComponent(tagId)}?${params}`, {
+      method: 'DELETE',
+    })
   },
 }
 
