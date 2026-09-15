@@ -14,13 +14,14 @@ from ...schemas import (
     AgentArtifactWrite,
     ArtifactContent,
     ArtifactStatus,
+    ArtifactTagOut,
     ArtifactType,
     LatexPdfArtifactContent,
     LatexPdfArtifactCreate,
 )
 from ..database import session_scope
 from ..latex_projects import create_latex_project, validate_latex_project_path
-from ..models import SessionArtifactModel
+from ..models import ArtifactTagModel, SessionArtifactModel
 from ..storage import Storage
 
 
@@ -61,7 +62,7 @@ def _json_load[JSONValueT](value: str | None, fallback: JSONValueT) -> JSONValue
         return fallback
 
 
-def _artifact_out(model: SessionArtifactModel) -> AgentArtifact:
+def _artifact_out(model: SessionArtifactModel, *, tags: list[ArtifactTagOut] | None = None) -> AgentArtifact:
     """Hydrate a typed artifact from its ORM record and discriminated JSON content."""
     return AgentArtifact(
         id=model.id,
@@ -74,6 +75,7 @@ def _artifact_out(model: SessionArtifactModel) -> AgentArtifact:
         metadata=_json_load(model.metadata_value, {}),
         created_at=model.created_at,
         updated_at=model.updated_at,
+        tags=tags or [],
     )
 
 
@@ -110,7 +112,13 @@ class ArtifactStorage(Storage[AgentArtifactWrite, AgentArtifact, str, ArtifactLi
     def get(self, entity_id: str) -> AgentArtifact | None:
         with session_scope() as session:
             model = session.get(SessionArtifactModel, entity_id)
-            return _artifact_out(model) if model else None
+            artifact = _artifact_out(model) if model else None
+        if artifact is None:
+            return None
+        from .tag import tag_storage
+
+        tags = tag_storage.tags_for_artifacts((entity_id,)).get(entity_id, [])
+        return artifact.model_copy(update={"tags": tags})
 
     def get_for_session(self, session_id: str, artifact_id: str) -> AgentArtifact | None:
         """Read an artifact only when it belongs to the requested session."""
@@ -145,6 +153,7 @@ class ArtifactStorage(Storage[AgentArtifactWrite, AgentArtifact, str, ArtifactLi
             model = session.get(SessionArtifactModel, entity_id)
             if model is None:
                 return False
+            session.execute(sql_delete(ArtifactTagModel).where(ArtifactTagModel.artifact_id == entity_id))
             session.delete(model)
             return True
 
@@ -160,14 +169,29 @@ class ArtifactStorage(Storage[AgentArtifactWrite, AgentArtifact, str, ArtifactLi
             if options.statuses:
                 codes = [int(STATUS_TO_CODE[ArtifactStatus(value)]) for value in options.statuses]
                 statement = statement.where(SessionArtifactModel.status.in_(codes))
+            if options.tag_ids:
+                statement = statement.where(
+                    SessionArtifactModel.id.in_(
+                        select(ArtifactTagModel.artifact_id).where(ArtifactTagModel.tag_id.in_(options.tag_ids))
+                    )
+                )
             if options.query:
                 statement = statement.where(SessionArtifactModel.title.ilike(f"%{options.query}%"))
             statement = statement.order_by(SessionArtifactModel.created_at).limit(options.limit).offset(options.offset)
-            return [_artifact_out(model) for model in session.scalars(statement)]
+            artifacts = [_artifact_out(model) for model in session.scalars(statement)]
+        from .tag import tag_storage
+
+        tags = tag_storage.tags_for_artifacts(tuple(artifact.id for artifact in artifacts))
+        return [artifact.model_copy(update={"tags": tags.get(artifact.id, [])}) for artifact in artifacts]
 
     def delete_session(self, session_id: str) -> int:
         """Explicitly remove every artifact owned by a deleted session."""
         with session_scope() as session:
+            artifact_ids = tuple(
+                session.scalars(select(SessionArtifactModel.id).where(SessionArtifactModel.session_id == session_id))
+            )
+            if artifact_ids:
+                session.execute(sql_delete(ArtifactTagModel).where(ArtifactTagModel.artifact_id.in_(artifact_ids)))
             result = session.execute(
                 sql_delete(SessionArtifactModel).where(SessionArtifactModel.session_id == session_id)
             )

@@ -1,13 +1,15 @@
 export interface Tag {
-  id: number
+  id: string
   name: string
-  parent_id: number | null
+  parent_id: string | null
   description: string | null
   color: string | null
   created_at: string
   updated_at: string
   path: string
-  card_count: number
+  normalized_path: string
+  direct_count: number
+  total_count: number
   children: Tag[]
 }
 
@@ -37,7 +39,7 @@ export interface CardCreateRequest {
 
 export interface CardListOptions {
   query?: string
-  tagId?: number | null
+  tagId?: string | null
 }
 
 export type LibraryItemType = 'card' | 'article' | 'slides' | 'latex_pdf'
@@ -284,6 +286,7 @@ export interface AgentArtifact {
   raw_content: string | null
   version: number
   metadata: Record<string, unknown>
+  tags: Array<{ id: string; path: string; name: string }>
   created_at: string
   updated_at: string
 }

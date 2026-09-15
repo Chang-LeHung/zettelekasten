@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, Integer, String, Text
+from sqlalchemy import Boolean, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -74,3 +74,31 @@ class KeyValueModel(Base):
     version: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(index=True)
     updated_at: Mapped[datetime] = mapped_column(index=True)
+
+
+class TagModel(Base):
+    """One stable node in the persistent library classification tree."""
+
+    __tablename__ = "tags"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    path: Mapped[str] = mapped_column(String(500), index=True)
+    normalized_path: Mapped[str] = mapped_column(String(500), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(100), index=True)
+    parent_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    description: Mapped[str | None] = mapped_column(Text)
+    color: Mapped[str | None] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(index=True)
+    updated_at: Mapped[datetime] = mapped_column(index=True)
+
+
+class ArtifactTagModel(Base):
+    """Explicit association between an artifact and a confirmed tag."""
+
+    __tablename__ = "artifact_tags"
+    __table_args__ = (UniqueConstraint("artifact_id", "tag_id", name="uq_artifact_tag"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    artifact_id: Mapped[str] = mapped_column(String(36), index=True)
+    tag_id: Mapped[str] = mapped_column(String(36), index=True)
+    created_at: Mapped[datetime] = mapped_column(index=True)

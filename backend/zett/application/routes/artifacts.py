@@ -9,6 +9,7 @@ from ...schemas import AgentArtifact, AgentArtifactWrite, ArtifactStatus, Artifa
 from ..dependencies import run_sync
 from ..latex_artifacts import get_latex_pdf
 from ..schemas import ArtifactCreateIn, ArtifactUpdateIn, DeleteResponse
+from ..tagging import tag_service
 
 router = APIRouter(tags=["artifacts"])
 
@@ -39,14 +40,21 @@ async def list_all_artifacts(
     q: str | None = None,
     artifact_types: list[ArtifactType] = Query(default=[]),
     statuses: list[ArtifactStatus] = Query(default=[]),
+    tag_ids: list[str] = Query(default=[]),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> list[AgentArtifact]:
     """Search artifacts across sessions for the library UI."""
+    await run_sync(tag_service.backfill_legacy_artifacts)
+    try:
+        expanded_tag_ids = await run_sync(tag_service.subtree_ids, tag_ids) if tag_ids else ()
+    except KeyError as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
     options = ArtifactListOptions(
         query=q,
         artifact_types=tuple(item.value for item in artifact_types),
         statuses=tuple(item.value for item in statuses),
+        tag_ids=expanded_tag_ids,
         limit=limit,
         offset=offset,
     )
@@ -78,7 +86,8 @@ async def create_artifact(session_id: str, payload: ArtifactCreateIn) -> AgentAr
         metadata=payload.metadata,
     )
     try:
-        return await run_sync(artifact_storage.create, entity)
+        created = await run_sync(artifact_storage.create, entity)
+        return await run_sync(tag_service.sync_confirmed_suggestions, created)
     except (ValueError, FileNotFoundError) as error:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
 
@@ -105,7 +114,8 @@ async def update_artifact(session_id: str, artifact_id: str, payload: ArtifactUp
         metadata=current.metadata,
     )
     try:
-        return await run_sync(artifact_storage.update, artifact_id, entity)
+        updated = await run_sync(artifact_storage.update, artifact_id, entity)
+        return await run_sync(tag_service.sync_confirmed_suggestions, updated)
     except (ValueError, FileNotFoundError) as error:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
 
@@ -124,7 +134,8 @@ async def save_artifact(session_id: str, artifact_id: str) -> AgentArtifact:
         metadata=current.metadata,
     )
     try:
-        return await run_sync(artifact_storage.update, artifact_id, entity)
+        saved = await run_sync(artifact_storage.update, artifact_id, entity)
+        return await run_sync(tag_service.sync_confirmed_suggestions, saved)
     except (ValueError, FileNotFoundError) as error:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
 

@@ -8,6 +8,7 @@ from .routes.assets import router as asset_router
 from .routes.providers import router as provider_router
 from .routes.sessions import router as session_router
 from .routes.settings import router as settings_router
+from .routes.tags import router as tag_router
 
 api_router = APIRouter(prefix="/api")
 api_router.include_router(session_router)
@@ -16,3 +17,4 @@ api_router.include_router(artifact_router)
 api_router.include_router(provider_router)
 api_router.include_router(agent_router)
 api_router.include_router(settings_router)
+api_router.include_router(tag_router)

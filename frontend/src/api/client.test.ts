@@ -1,7 +1,30 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { aiClient, libraryClient, settingsClient } from './client'
+import { aiClient, libraryClient, settingsClient, tagClient } from './client'
 
 afterEach(() => vi.unstubAllGlobals())
+
+it('loads the persistent tag tree and delegates subtree filtering to the backend', async () => {
+  const tree = [{
+    id: 'engineering', path: 'Engineering', normalized_path: 'engineering', name: 'Engineering',
+    parent_id: null, description: null, color: null, direct_count: 0, total_count: 1,
+    created_at: '', updated_at: '',
+    children: [{
+      id: 'python', path: 'Engineering/Python', normalized_path: 'engineering/python', name: 'Python',
+      parent_id: 'engineering', description: null, color: null, direct_count: 1, total_count: 1,
+      created_at: '', updated_at: '', children: [],
+    }],
+  }]
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify(tree)))
+    .mockResolvedValueOnce(new Response(JSON.stringify([])))
+  vi.stubGlobal('fetch', fetchMock)
+
+  expect(await tagClient.list()).toEqual(tree)
+  await libraryClient.list({ tagId: 'engineering' })
+
+  expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/library/tags')
+  expect(String(fetchMock.mock.calls[1]?.[0])).toContain('tag_ids=engineering')
+})
 
 it('treats an uncompiled artifact PDF as pending, while preserving real request errors', async () => {
   vi.stubGlobal('fetch', vi.fn()

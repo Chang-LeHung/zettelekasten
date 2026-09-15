@@ -23,6 +23,7 @@ from zett_agent import (
 from .assets import AssetExtension
 from .context_composition import ContextCompositionExtension
 from .extensions import ZettelkastenExtension
+from .tags import TagExtension
 from .zettelkasten import ZettelkastenAgent
 
 SYSTEM_PROMPT = """You are the Zettelkasten Agent, an assistant for developing ideas into durable knowledge.
@@ -80,6 +81,7 @@ class ZettelkastenAgentConfig:
                 SessionPersistenceExtension(storage),
                 AssetExtension(),
                 ZettelkastenExtension(),
+                TagExtension(),
                 CodingExtension(),
                 AskUserExtension(),
                 TodoWriteExtension(),

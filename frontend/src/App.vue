@@ -21,6 +21,7 @@ import { hasRunningTool, upsertToolActivity } from './utils/toolActivities'
 import { presentationSections } from './utils/slides'
 import { libraryExcerptText } from './utils/libraryExcerpt'
 import { asContextComposition } from './utils/contextComposition'
+import { visibleTagRows } from './utils/tagTree'
 
 const MarkdownContent = defineAsyncComponent(() => import('./components/MarkdownContent.vue'))
 const LibraryEditor = defineAsyncComponent(() => import('./components/LibraryEditor.vue'))
@@ -86,9 +87,10 @@ const libraryEditorSaving = ref(false)
 const libraryLoading = ref(false)
 const deletingLibraryItemId = ref<string | null>(null)
 const tags = ref<Tag[]>([])
+const collapsedTagIds = ref<Set<string>>(new Set())
 const query = ref('')
 const activeQuery = ref('')
-const selectedTag = ref<number | null>(null)
+const selectedTag = ref<string | null>(null)
 const view = ref<View>('new')
 const raw = ref('')
 const artifactContent = ref<ArtifactContent | null>(null)
@@ -181,7 +183,7 @@ const assetFilters: Array<{ value: AssetFilter; label: string }> = [
   { value: 'code', label: 'Code' },
 ]
 
-const flatTags = computed(() => flatten(tags.value))
+const flatTags = computed(() => visibleTagRows(tags.value, collapsedTagIds.value))
 const selectedTagName = computed(() => flatTags.value.find((tag) => tag.id === selectedTag.value)?.path)
 const pageTitle = computed(() => {
   if (view.value === 'search') return activeQuery.value ? `Results for “${activeQuery.value}”` : 'Search library'
@@ -625,8 +627,11 @@ watch(agentTurnStack, (current, previous) => {
   if (current) agentContentResizeObserver?.observe(current)
 })
 
-function flatten(nodes: Tag[], depth = 0): Array<Tag & { depth: number }> {
-  return nodes.flatMap((tag) => [{ ...tag, depth }, ...flatten(tag.children || [], depth + 1)])
+function toggleTag(tagId: string): void {
+  const next = new Set(collapsedTagIds.value)
+  if (next.has(tagId)) next.delete(tagId)
+  else next.add(tagId)
+  collapsedTagIds.value = next
 }
 
 function showNotice(message: string, kind: NoticeKind = 'success'): void {
@@ -761,6 +766,7 @@ async function saveLibraryEditor(payload: LibraryItemUpdate): Promise<void> {
     if (selectedLibraryItem.value?.item_type === updated.item_type && selectedLibraryItem.value.id === updated.id) {
       selectedLibraryItem.value = updated
     }
+    tags.value = await tagClient.list()
     showNotice(`${artifactTypeLabel(updated.item_type)} saved`)
   } catch (error) {
     showNotice(errorMessage(error), 'error')
@@ -812,7 +818,7 @@ async function search(): Promise<void> {
   await loadLibrary()
 }
 
-async function filterByTag(tagId: number | null): Promise<void> {
+async function filterByTag(tagId: string | null): Promise<void> {
   selectedTag.value = tagId
   activeQuery.value = ''
   query.value = ''
@@ -1421,7 +1427,10 @@ async function saveSelectedArtifact(): Promise<void> {
     const saved = await aiClient.saveAgentArtifact(conversationId.value, selectedArtifactId.value)
     const index = artifacts.value.findIndex((artifact) => artifact.id === saved.id)
     if (index >= 0) artifacts.value.splice(index, 1, saved)
-    if (artifactContent.value.artifact_type !== 'image') await loadLibrary()
+    if (artifactContent.value.artifact_type !== 'image') {
+      await loadLibrary()
+      tags.value = await tagClient.list()
+    }
     showNotice(
       artifactContent.value.artifact_type === 'image'
         ? 'Image changes saved'
@@ -1646,17 +1655,32 @@ onBeforeUnmount(() => {
       <div v-else class="sidebar-section">
         <div class="sidebar-heading"><span>Collections</span><button type="button" aria-label="Add tag" @click="navigate('settings')"><svg><use href="#icon-add" /></svg></button></div>
         <div class="tag-list">
-          <button
+          <div
             v-for="tag in flatTags"
             :key="tag.id"
-            :class="{ active: selectedTag === tag.id && view === 'library' }"
+            class="tag-row"
             :style="{ '--tag-depth': tag.depth }"
-            type="button"
-            @click="filterByTag(tag.id)"
           >
-            <span class="tag-dot" :style="tag.color ? { background: tag.color } : undefined" />
-            <span class="tag-label">{{ tag.name }}</span><small>{{ tag.card_count }}</small>
-          </button>
+            <button
+              v-if="tag.hasChildren"
+              class="tag-toggle"
+              :class="{ collapsed: collapsedTagIds.has(tag.id) }"
+              type="button"
+              :aria-label="`${collapsedTagIds.has(tag.id) ? 'Expand' : 'Collapse'} ${tag.name}`"
+              @click="toggleTag(tag.id)"
+            ><span>⌄</span></button>
+            <span v-else class="tag-toggle-placeholder" />
+            <button
+              class="tag-select"
+              :class="{ active: selectedTag === tag.id && view === 'library' }"
+              :title="tag.path"
+              type="button"
+              @click="filterByTag(tag.id)"
+            >
+              <span class="tag-dot" :style="tag.color ? { background: tag.color } : undefined" />
+              <span class="tag-label">{{ tag.name }}</span><small>{{ tag.total_count }}</small>
+            </button>
+          </div>
           <p v-if="!flatTags.length" class="sidebar-empty">Tags will appear here.</p>
         </div>
       </div>
@@ -2204,9 +2228,9 @@ svg { width: 1.25rem; height: 1.25rem; fill: none; stroke: currentColor; stroke-
 .brand strong { font-size: 0.94rem; line-height: 1.2; letter-spacing: -0.012em; }
 .brand small { margin-top: 0.12rem; color: var(--secondary); font-size: 0.69rem; letter-spacing: 0.01em; }
 .primary-nav { display: grid; gap: 0.18rem; }
-.primary-nav button, .sidebar-footer button, .tag-list button { position: relative; display: flex; align-items: center; width: 100%; border: 0; color: #3b3b3e; background: transparent; cursor: pointer; text-align: left; }
+.primary-nav button, .sidebar-footer button, .tag-select { position: relative; display: flex; align-items: center; width: 100%; border: 0; color: #3b3b3e; background: transparent; cursor: pointer; text-align: left; }
 .primary-nav button, .sidebar-footer button { gap: 0.7rem; min-height: 2.35rem; padding: 0 0.7rem; border-radius: 0.62rem; font-size: 0.83rem; font-weight: 530; }
-.primary-nav button:hover, .sidebar-footer button:hover, .tag-list button:hover { background: rgba(255, 255, 255, 0.48); }
+.primary-nav button:hover, .sidebar-footer button:hover, .tag-select:hover { background: rgba(255, 255, 255, 0.48); }
 .primary-nav button.active, .sidebar-footer button.active { background: rgba(255, 255, 255, 0.82); color: var(--text); box-shadow: 0 1px 4px rgba(0,0,0,.05), inset 0 0 0 1px rgba(255,255,255,.5); }
 .primary-nav button svg, .sidebar-footer button svg { width: 1rem; height: 1rem; color: #646468; }
 .primary-nav button small { margin-left: auto; color: var(--tertiary); font-size: 0.68rem; font-variant-numeric: tabular-nums; }
@@ -2217,11 +2241,18 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .sidebar-heading button:hover { background: rgba(255,255,255,.6); }
 .sidebar-heading svg { width: .85rem; height: .85rem; }
 .tag-list { min-height: 0; overflow: auto; scrollbar-width: thin; scrollbar-color: rgba(29,29,31,.16) transparent; }
-.tag-list button { gap: 0.58rem; height: 2rem; padding: 0 0.55rem 0 calc(0.7rem + var(--tag-depth) * 0.72rem); border-radius: 0.5rem; font-size: 0.77rem; }
-.tag-list button.active { color: var(--accent-dark); background: rgba(255,255,255,.64); font-weight: 600; }
+.tag-row { position: relative; display: flex; align-items: center; min-width: 0; height: 2rem; padding-left: calc(var(--tag-depth) * .72rem); }
+.tag-row::before { position: absolute; top: 0; bottom: 0; left: calc(.62rem + (var(--tag-depth) - 1) * .72rem); width: 1px; background: rgba(76,96,84,.12); content: ''; opacity: min(1, var(--tag-depth)); }
+.tag-select { min-width: 0; height: 1.85rem; gap: .58rem; padding: 0 .55rem 0 .2rem; border-radius: .5rem; font-size: .77rem; }
+.tag-select.active { color: var(--accent-dark); background: rgba(255,255,255,.64); font-weight: 600; }
+.tag-toggle, .tag-toggle-placeholder { display: grid; width: 1.25rem; height: 1.85rem; flex: 0 0 1.25rem; place-items: center; }
+.tag-toggle { padding: 0; border: 0; border-radius: .35rem; color: #8a948e; background: transparent; cursor: pointer; }
+.tag-toggle:hover { color: #486453; background: rgba(255,255,255,.55); }
+.tag-toggle span { display: block; font-size: .78rem; line-height: 1; transform: translateY(-1px); transition: transform 140ms ease; }
+.tag-toggle.collapsed span { transform: rotate(-90deg); }
 .tag-dot { width: .42rem; height: .42rem; flex: 0 0 auto; border-radius: 50%; background: #91a89b; box-shadow: inset 0 0 0 1px rgba(0,0,0,.06); }
 .tag-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tag-list small { margin-left: auto; color: #98989d; font-size: .66rem; }
+.tag-select small { margin-left: auto; color: #98989d; font-size: .66rem; }
 .session-section { overflow: hidden; }
 .session-history-list { min-height: 0; display: grid; flex: 1; align-content: start; gap: .18rem; overflow-y: auto; padding-bottom: .7rem; scrollbar-width: thin; }
 .session-history-item { position: relative; min-width: 0; border-radius: .58rem; }

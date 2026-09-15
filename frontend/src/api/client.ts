@@ -24,7 +24,6 @@ import type {
 
 const API_URL = (import.meta.env.VITE_API_URL ?? '/api').replace(/\/$/, '')
 const artifactIndex = new Map<string, AgentArtifact>()
-const tagIndex = new Map<number, string>()
 
 function asNonNegativeNumber(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0
@@ -123,11 +122,11 @@ export const libraryClient = {
     params.append('artifact_types', 'slides')
     params.append('artifact_types', 'latex_pdf')
     params.append('statuses', 'saved')
+    if (options.tagId) params.append('tag_ids', options.tagId)
     const suffix = params.size ? `?${params}` : ''
     const artifacts = await request<AgentArtifact[]>(`/artifacts${suffix}`)
     artifacts.forEach((artifact) => artifactIndex.set(artifact.id, artifact))
-    const tagPath = options.tagId == null ? null : tagIndex.get(options.tagId)
-    return artifacts.map(artifactToLibraryItem).filter((item) => !tagPath || item.tags.includes(tagPath))
+    return artifacts.map(artifactToLibraryItem)
   },
 
   delete(_itemType: LibraryItemType, itemId: string): Promise<{ ok: boolean }> {
@@ -175,26 +174,8 @@ export const libraryClient = {
 }
 
 export const tagClient = {
-  async list(): Promise<Tag[]> {
-    const items = await libraryClient.list()
-    const paths = [...new Set(items.flatMap((item) => item.tags))].sort()
-    tagIndex.clear()
-    return paths.map((path, index) => {
-      const id = index + 1
-      tagIndex.set(id, path)
-      return {
-        id,
-        name: path.split('/').at(-1) || path,
-        parent_id: null,
-        description: null,
-        color: null,
-        created_at: '',
-        updated_at: '',
-        path,
-        card_count: items.filter((item) => item.tags.includes(path)).length,
-        children: [],
-      }
-    })
+  list(): Promise<Tag[]> {
+    return request<Tag[]>('/library/tags')
   },
 }
 
@@ -461,7 +442,7 @@ function artifactToLibraryItem(artifact: AgentArtifact): LibraryItem {
     raw_content: artifact.raw_content,
     card_type: content.artifact_type === 'card' ? content.card_type : null,
     status: artifact.status,
-    tags: content.artifact_type === 'latex_pdf' ? [] : content.suggested_tags.map((tag) => tag.path),
+    tags: artifact.tags?.map((tag) => tag.path) ?? [],
     metadata: artifact.metadata,
     created_at: artifact.created_at,
     updated_at: artifact.updated_at,

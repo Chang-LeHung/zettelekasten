@@ -19,9 +19,20 @@ class ArtifactListOptions(BaseModel):
     session_id: str | None = Field(default=None, description="Owning session UUID")
     artifact_types: tuple[str, ...] = Field(default=(), description="Artifact kinds included in the result")
     statuses: tuple[str, ...] = Field(default=(), description="Lifecycle states included in the result")
+    tag_ids: tuple[str, ...] = Field(default=(), description="Assigned tag UUIDs included in the result")
     query: str | None = Field(default=None, description="Text matched against artifact titles")
     limit: int = Field(default=100, ge=1, le=500, description="Maximum artifacts returned")
     offset: int = Field(default=0, ge=0, description="Number of artifacts skipped")
+
+
+class TagListOptions(BaseModel):
+    """Filtering and pagination for persistent library tags."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    prefix: str | None = Field(default=None, description="Normalized hierarchical path prefix")
+    limit: int = Field(default=500, ge=1, le=2_000, description="Maximum tags returned")
+    offset: int = Field(default=0, ge=0, description="Number of tags skipped")
 
 
 class SessionAssetListOptions(BaseModel):

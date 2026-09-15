@@ -54,6 +54,41 @@ class SuggestedTag(BaseModel):
     reason: str | None = Field(default=None, description="Short reason for the recommendation")
 
 
+class TagWrite(BaseModel):
+    """Complete mutable fields for one persistent library tag."""
+
+    path: str = Field(min_length=1, max_length=500, description="Display path separated by slashes")
+    normalized_path: str = Field(min_length=1, max_length=500, description="Canonical path used for uniqueness")
+    name: str = Field(min_length=1, max_length=100, description="Final display segment")
+    parent_id: str | None = Field(default=None, description="Immediate parent tag UUID")
+    description: str | None = Field(default=None, max_length=1_000)
+    color: str | None = Field(default=None, max_length=32)
+
+
+class TagOut(TagWrite):
+    """Persistent tag returned by storage and application boundaries."""
+
+    id: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class ArtifactTagOut(BaseModel):
+    """Stable tag reference assigned to an artifact."""
+
+    id: str
+    path: str
+    name: str
+
+
+class TagTreeOut(TagOut):
+    """Hierarchical tag facet with direct and descendant artifact counts."""
+
+    direct_count: int = Field(default=0, ge=0)
+    total_count: int = Field(default=0, ge=0)
+    children: list[TagTreeOut] = Field(default_factory=list)
+
+
 class ArtifactType(StrEnum):
     """Kinds of durable outputs that a Zettelkasten Agent session may produce."""
 
@@ -218,6 +253,7 @@ class AgentArtifact(BaseModel):
     raw_content: str | None = Field(default=None, description="Original input associated with this artifact")
     version: int = Field(default=1, ge=1, description="Monotonic revision number")
     metadata: dict[str, object] = Field(default_factory=dict, description="Extensible artifact metadata")
+    tags: list[ArtifactTagOut] = Field(default_factory=list, description="Confirmed persistent library tags")
     created_at: datetime = Field(description="UTC artifact creation timestamp")
     updated_at: datetime = Field(description="UTC last modification timestamp")
 

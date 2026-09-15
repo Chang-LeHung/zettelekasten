@@ -5,6 +5,7 @@ import json
 
 from zett_agent import AgentExtension, AgentRunContext, SystemMessage, tool
 
+from ..application.tagging import tag_service
 from ..infra.dao import artifact_storage
 from ..models import ArtifactListOptions
 from ..schemas import AgentArtifact, AgentArtifactWrite, ArtifactContent, ArtifactCreateContent, ArtifactStatus
@@ -110,7 +111,7 @@ class ZettelkastenExtension(AgentExtension):
                 - Slide separators must be exact unpadded lines; never use standalone '--' or '---' as decoration or code inside a deck.
             """
             current = self._artifact(session_id, artifact_id)
-            return artifact_storage.update(
+            updated = artifact_storage.update(
                 artifact_id,
                 AgentArtifactWrite(
                     session_id=session_id,
@@ -120,6 +121,7 @@ class ZettelkastenExtension(AgentExtension):
                     metadata=current.metadata,
                 ),
             )
+            return tag_service.sync_confirmed_suggestions(updated)
 
         @tool
         def save_artifact(artifact_id: str) -> AgentArtifact:
@@ -135,7 +137,7 @@ class ZettelkastenExtension(AgentExtension):
                 - Call this only when the user explicitly requests saving the artifact.
             """
             current = self._artifact(session_id, artifact_id)
-            return artifact_storage.update(
+            saved = artifact_storage.update(
                 artifact_id,
                 AgentArtifactWrite(
                     session_id=session_id,
@@ -145,6 +147,7 @@ class ZettelkastenExtension(AgentExtension):
                     metadata=current.metadata,
                 ),
             )
+            return tag_service.sync_confirmed_suggestions(saved)
 
         @tool
         def delete_artifact(artifact_id: str) -> bool:

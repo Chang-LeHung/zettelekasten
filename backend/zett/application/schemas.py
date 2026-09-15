@@ -120,6 +120,28 @@ class ArtifactUpdateIn(BaseModel):
     content: ArtifactContent
 
 
+class TagCreateIn(BaseModel):
+    """Create one persistent hierarchical library tag."""
+
+    path: str = Field(min_length=1, max_length=500)
+    description: str | None = Field(default=None, max_length=1_000)
+    color: str | None = Field(default=None, max_length=32)
+
+
+class TagUpdateIn(BaseModel):
+    """Update the path or presentation metadata of one leaf tag."""
+
+    path: str | None = Field(default=None, min_length=1, max_length=500)
+    description: str | None = Field(default=None, max_length=1_000)
+    color: str | None = Field(default=None, max_length=32)
+
+
+class ArtifactTagsIn(BaseModel):
+    """Complete replacement set of confirmed tag paths for an artifact."""
+
+    paths: list[str] = Field(default_factory=list, max_length=100)
+
+
 class TextAssetIn(BaseModel):
     """Inline text asset submitted by the composer."""
 

@@ -40,6 +40,7 @@ from zett.agent import (
     context_composition,
     event_payload,
 )
+from zett.agent.tags import TagExtension
 from zett.application.presentation import message_out
 from zett.infra.agent_runtime import get_agent_runtime_storage
 
@@ -258,6 +259,7 @@ async def test_context_composition_extension_is_registered_after_prompt_extensio
         agent = await ZettelkastenAgentConfig("context-composition").create(storage)
         extensions = agent.agent.extensions
         names = [extension.name for extension in extensions]
+        assert any(isinstance(extension, TagExtension) for extension in extensions)
         assert names.index("ContextCompositionExtension") > names.index("ToolGuidelinesExtension")
     finally:
         storage.close()
