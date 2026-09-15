@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, ref } from 'vue'
+import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import type { Tag } from '../api/types'
 import { visibleTagRows } from '../utils/tagTree'
 
 const props = defineProps<{
   tags: Tag[]
   busy: boolean
+  feedback?: string
+  feedbackKind?: 'success' | 'error'
 }>()
 
 const emit = defineEmits<{
@@ -20,12 +22,17 @@ const previousFocus = document.activeElement instanceof HTMLElement ? document.a
 
 void nextTick(() => pathInput.value?.focus())
 onBeforeUnmount(() => previousFocus?.focus())
+watch(
+  () => props.feedback,
+  (feedback) => {
+    if (feedback && props.feedbackKind === 'success') path.value = ''
+  },
+)
 
 function submit(): void {
   const value = path.value.trim()
   if (!value || props.busy) return
   emit('create', value)
-  path.value = ''
 }
 </script>
 
@@ -52,6 +59,10 @@ function submit(): void {
                 {{ busy ? 'Saving…' : 'Add tag' }}
               </button>
             </div>
+            <p v-if="feedback" class="tag-manager-feedback" :class="feedbackKind" :role="feedbackKind === 'error' ? 'alert' : 'status'">
+              <svg v-if="feedbackKind !== 'error'" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6" /></svg>
+              <span>{{ feedback }}</span>
+            </p>
           </form>
 
           <div class="tag-manager-list" aria-live="polite">
@@ -101,6 +112,9 @@ function submit(): void {
 .tag-create-form button:hover:not(:disabled) { background: #41694f; }
 .tag-create-form button:disabled { cursor: default; opacity: .55; }
 .tag-create-form svg { width: .92rem; height: .92rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+.tag-manager-feedback { display: flex; align-items: center; gap: .42rem; margin: .65rem 0 0; color: #477159; font-size: .7rem; line-height: 1.4; }
+.tag-manager-feedback.error { color: #a14949; }
+.tag-manager-feedback svg { width: .9rem; height: .9rem; flex: 0 0 auto; }
 .tag-manager-list { max-height: min(27rem, calc(100vh - 15rem)); overflow-y: auto; padding: .75rem 1rem 1rem; }
 .tag-list-heading { display: flex; align-items: center; justify-content: space-between; padding: .15rem .5rem .55rem; color: #7b837e; font-size: .66rem; font-weight: 700; letter-spacing: .035em; text-transform: uppercase; }
 .tag-list-heading small { color: #a0a6a2; font-size: .62rem; font-weight: 600; letter-spacing: 0; text-transform: none; }

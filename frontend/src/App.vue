@@ -92,6 +92,8 @@ const collapsedTagIds = ref<Set<string>>(new Set())
 const hoveredTagId = ref<string | null>(null)
 const tagManagerOpen = ref(false)
 const tagManagerBusy = ref(false)
+const tagManagerFeedback = ref('')
+const tagManagerFeedbackKind = ref<'success' | 'error'>('success')
 const query = ref('')
 const activeQuery = ref('')
 const selectedTag = ref<string | null>(null)
@@ -648,16 +650,28 @@ function toggleTag(tagId: string): void {
 
 async function createTag(path: string): Promise<void> {
   if (tagManagerBusy.value) return
+  tagManagerFeedback.value = ''
   tagManagerBusy.value = true
   try {
     const created = await tagClient.create({ path })
     tags.value = await tagClient.list()
+    tagManagerFeedbackKind.value = 'success'
+    tagManagerFeedback.value = `Created “${created.path}”.`
     showNotice(`Tag “${created.path}” added`)
   } catch (error) {
-    showNotice(errorMessage(error), 'error')
+    const message = errorMessage(error)
+    tagManagerFeedbackKind.value = 'error'
+    tagManagerFeedback.value = message
+    showNotice(message, 'error')
   } finally {
     tagManagerBusy.value = false
   }
+}
+
+function openTagManager(): void {
+  tagManagerFeedback.value = ''
+  tagManagerFeedbackKind.value = 'success'
+  tagManagerOpen.value = true
 }
 
 function tagSubtreeContains(tag: Tag, tagId: string): boolean {
@@ -1717,7 +1731,7 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-else class="sidebar-section">
-        <div class="sidebar-heading"><span>Collections</span><button type="button" aria-label="Manage tags" @click="tagManagerOpen = true"><svg><use href="#icon-add" /></svg></button></div>
+        <div class="sidebar-heading"><span>Collections</span><button type="button" aria-label="Manage tags" @click="openTagManager"><svg><use href="#icon-add" /></svg></button></div>
         <div class="tag-list">
           <div
             v-for="tag in flatTags"
@@ -1777,7 +1791,7 @@ onBeforeUnmount(() => {
       </Transition>
 
       <ConfirmDialog :open="confirmation.open" :title="confirmation.title" :message="confirmation.message" :confirm-label="confirmation.confirmLabel" @cancel="settleConfirmation(false)" @confirm="settleConfirmation(true)" />
-      <TagManagerDialog v-if="tagManagerOpen" :tags="tags" :busy="tagManagerBusy" @close="tagManagerOpen = false" @create="createTag" @delete="deleteTag" />
+      <TagManagerDialog v-if="tagManagerOpen" :tags="tags" :busy="tagManagerBusy" :feedback="tagManagerFeedback" :feedback-kind="tagManagerFeedbackKind" @close="tagManagerOpen = false" @create="createTag" @delete="deleteTag" />
       <AssetPreviewDialog :asset="previewAsset" @close="previewAsset = null" />
       <LibraryEditor v-if="libraryEditorItem" :item="libraryEditorItem" :saving="libraryEditorSaving" @close="closeLibraryEditor" @save="saveLibraryEditor" />
 

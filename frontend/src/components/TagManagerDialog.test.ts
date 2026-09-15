@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { createApp, h, nextTick } from 'vue'
+import { createApp, h, nextTick, ref } from 'vue'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { Tag } from '../api/types'
 import TagManagerDialog from './TagManagerDialog.vue'
@@ -38,10 +38,18 @@ const tags: Tag[] = [{
 it('submits hierarchical paths and exposes deletion for every visible tag', async () => {
   const create = vi.fn()
   const remove = vi.fn()
+  const feedback = ref('')
   const host = document.createElement('div')
   document.body.append(host)
   const app = createApp({
-    render: () => h(TagManagerDialog, { tags, busy: false, onCreate: create, onDelete: remove }),
+    render: () => h(TagManagerDialog, {
+      tags,
+      busy: false,
+      feedback: feedback.value,
+      feedbackKind: 'success',
+      onCreate: create,
+      onDelete: remove,
+    }),
   })
   app.mount(host)
   cleanups.push(() => { app.unmount(); host.remove() })
@@ -54,6 +62,10 @@ it('submits hierarchical paths and exposes deletion for every visible tag', asyn
   await nextTick()
 
   expect(create).toHaveBeenCalledWith('Engineering / Python / Asyncio')
+  feedback.value = 'Created “Engineering/Python/Asyncio”.'
+  await nextTick()
+  expect(document.body.querySelector('[role="status"]')?.textContent).toContain('Created “Engineering/Python/Asyncio”.')
+  expect(input.value).toBe('')
   expect(document.body.querySelectorAll('.managed-tag')).toHaveLength(2)
 
   document.body.querySelector<HTMLButtonElement>('[aria-label="Delete Engineering/Python"]')!.click()
