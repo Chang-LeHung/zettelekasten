@@ -119,10 +119,9 @@ export const libraryClient = {
   async list(options: CardListOptions = {}): Promise<LibraryItem[]> {
     const params = new URLSearchParams()
     if (options.query) params.set('q', options.query)
-    params.append('artifact_types', 'card')
-    params.append('artifact_types', 'article')
-    params.append('artifact_types', 'slides')
-    params.append('artifact_types', 'latex_pdf')
+    for (const artifactType of options.artifactTypes ?? ['card', 'article', 'slides', 'latex_pdf']) {
+      params.append('artifact_types', artifactType)
+    }
     params.append('statuses', 'saved')
     if (options.tagId) params.append('tag_ids', options.tagId)
     const suffix = params.size ? `?${params}` : ''

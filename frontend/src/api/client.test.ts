@@ -26,6 +26,17 @@ it('loads the persistent tag tree and delegates subtree filtering to the backend
   expect(String(fetchMock.mock.calls[1]?.[0])).toContain('tag_ids=engineering')
 })
 
+it('sends selected artifact types to the library endpoint', async () => {
+  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify([])))
+  vi.stubGlobal('fetch', fetchMock)
+
+  await libraryClient.list({ artifactTypes: ['slides', 'latex_pdf'] })
+
+  const url = new URL(String(fetchMock.mock.calls[0]?.[0]), 'http://localhost')
+  expect(url.searchParams.getAll('artifact_types')).toEqual(['slides', 'latex_pdf'])
+  expect(url.searchParams.getAll('statuses')).toEqual(['saved'])
+})
+
 it('creates tags and explicitly requests recursive assignment cleanup when deleting', async () => {
   const created = {
     id: 'python', path: 'Engineering/Python', normalized_path: 'engineering/python', name: 'Python',

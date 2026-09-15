@@ -95,6 +95,7 @@ const tagManagerBusy = ref(false)
 const query = ref('')
 const activeQuery = ref('')
 const selectedTag = ref<string | null>(null)
+const selectedLibraryType = ref<LibraryItem['item_type'] | null>(null)
 const view = ref<View>('new')
 const raw = ref('')
 const artifactContent = ref<ArtifactContent | null>(null)
@@ -185,6 +186,13 @@ const assetFilters: Array<{ value: AssetFilter; label: string }> = [
   { value: 'links', label: 'Links' },
   { value: 'notes', label: 'Notes' },
   { value: 'code', label: 'Code' },
+]
+const libraryTypeFilters: Array<{ value: LibraryItem['item_type'] | null; label: string }> = [
+  { value: null, label: 'All' },
+  { value: 'card', label: 'Cards' },
+  { value: 'article', label: 'Articles' },
+  { value: 'slides', label: 'Slides' },
+  { value: 'latex_pdf', label: 'PDFs' },
 ]
 
 const flatTags = computed(() => visibleTagRows(tags.value, collapsedTagIds.value))
@@ -720,6 +728,7 @@ async function loadLibrary(): Promise<void> {
     libraryItems.value = await libraryClient.list({
       query: view.value === 'search' ? activeQuery.value : '',
       tagId: selectedTag.value,
+      artifactTypes: selectedLibraryType.value ? [selectedLibraryType.value] : undefined,
     })
   } catch (error) {
     showNotice(errorMessage(error), 'error')
@@ -876,6 +885,11 @@ async function filterByTag(tagId: string | null): Promise<void> {
   activeQuery.value = ''
   query.value = ''
   view.value = 'library'
+  await loadLibrary()
+}
+
+async function filterByArtifactType(artifactType: LibraryItem['item_type'] | null): Promise<void> {
+  selectedLibraryType.value = artifactType
   await loadLibrary()
 }
 
@@ -1677,11 +1691,8 @@ onBeforeUnmount(() => {
         <button :class="{ active: view === 'new' }" type="button" @click="navigate('new')">
           <svg><use href="#icon-spark" /></svg><span>AI workspace</span>
         </button>
-        <button :class="{ active: view === 'library' && selectedTag === null }" type="button" @click="navigate('library')">
+        <button :class="{ active: view === 'search' || (view === 'library' && selectedTag === null) }" type="button" @click="navigate('library')">
           <svg><use href="#icon-cards" /></svg><span>Library</span><small>{{ libraryItems.length }}</small>
-        </button>
-        <button :class="{ active: view === 'search' }" type="button" @click="openSearch">
-          <svg><use href="#icon-search" /></svg><span>Search</span><kbd>⌘ K</kbd>
         </button>
       </nav>
 
@@ -1785,6 +1796,17 @@ onBeforeUnmount(() => {
           <div class="page-heading">
             <div><p class="eyebrow">Your knowledge</p><h1>{{ pageTitle }}</h1><p>{{ pageDescription }}</p></div>
             <button v-if="selectedTag !== null" class="text-button" type="button" @click="filterByTag(null)">Clear filter</button>
+          </div>
+
+          <div class="library-type-filters" aria-label="Artifact type filters">
+            <span>Type</span>
+            <button
+              v-for="filter in libraryTypeFilters"
+              :key="filter.label"
+              :class="{ active: selectedLibraryType === filter.value }"
+              type="button"
+              @click="filterByArtifactType(filter.value)"
+            >{{ filter.label }}</button>
           </div>
 
           <div v-if="libraryLoading" class="card-grid" aria-label="Loading library">
@@ -2379,6 +2401,11 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .eyebrow { margin: 0; color: var(--accent); font-size: .67rem; font-weight: 700; letter-spacing: .075em; text-transform: uppercase; }
 .page-heading h1 { margin: .35rem 0 .3rem; font-size: clamp(1.85rem, 3vw, 2.45rem); line-height: 1.06; letter-spacing: -.032em; }
 .page-heading p:last-child, .settings-intro p, .editor-intro p { margin: 0; color: var(--secondary); font-size: .82rem; line-height: 1.55; }
+.library-type-filters { display: flex; align-items: center; gap: .3rem; margin: -1rem 0 1.15rem; }
+.library-type-filters > span { margin-right: .25rem; color: #8c938f; font-size: .66rem; font-weight: 680; letter-spacing: .045em; text-transform: uppercase; }
+.library-type-filters button { min-height: 1.85rem; padding: 0 .7rem; border: 1px solid transparent; border-radius: .58rem; color: #727975; background: transparent; cursor: pointer; font-size: .7rem; font-weight: 610; }
+.library-type-filters button:hover { color: #435449; background: rgba(255,255,255,.6); }
+.library-type-filters button.active { border-color: rgba(78,111,91,.12); color: #3f604c; background: #edf3ef; box-shadow: inset 0 0 0 1px rgba(255,255,255,.55); }
 .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr)); gap: 1rem; }
 .card { min-width: 0; height: 18rem; box-sizing: border-box; display: flex; flex-direction: column; padding: 1.1rem 1.2rem; overflow: hidden; border: 1px solid rgba(29,29,31,.075); border-radius: 1rem; background: var(--surface); box-shadow: 0 1px 2px rgba(0,0,0,.025); backdrop-filter: blur(14px); transition: transform 260ms cubic-bezier(.2,.8,.2,1), box-shadow 260ms cubic-bezier(.2,.8,.2,1), background 180ms ease; }
 .card[role="button"] { cursor: pointer; }

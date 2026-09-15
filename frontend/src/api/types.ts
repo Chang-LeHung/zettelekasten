@@ -49,6 +49,7 @@ export interface CardCreateRequest {
 export interface CardListOptions {
   query?: string
   tagId?: string | null
+  artifactTypes?: LibraryItemType[]
 }
 
 export type LibraryItemType = 'card' | 'article' | 'slides' | 'latex_pdf'
