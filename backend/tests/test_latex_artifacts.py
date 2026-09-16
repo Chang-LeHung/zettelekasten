@@ -35,8 +35,9 @@ async def test_latex_pdf_lifecycle_and_inline_content() -> None:
         artifact = response.json()
         assert artifact["content"] == content
         assert artifact["artifact_type"] == "latex_pdf"
-        with session_scope() as db:
-            row = db.scalars(select(SessionArtifactModel).where(SessionArtifactModel.id == artifact["id"])).one()
+        async with session_scope() as db:
+            rows = await db.scalars(select(SessionArtifactModel).where(SessionArtifactModel.id == artifact["id"]))
+            row = rows.one()
             assert row.artifact_type == 5
             assert row.title == "paper"
             assert json.loads(row.content_json) == content
@@ -54,7 +55,9 @@ async def test_latex_pdf_lifecycle_and_inline_content() -> None:
         assert saved.status_code == 200
         assert saved.json()["status"] == "saved"
         assert saved.json()["version"] == 3
-        assert len(artifact_storage.list(ArtifactListOptions(query="revised", artifact_types=("latex_pdf",)))) == 1
+        assert (
+            len(await artifact_storage.list(ArtifactListOptions(query="revised", artifact_types=("latex_pdf",)))) == 1
+        )
         assert client.get(url).json()["content"] == replacement
         other_session = (await session_storage.create(AgentSessionCreate())).session_id
         assert client.get(f"/api/agent/{other_session}/artifacts/{artifact['id']}/content").status_code == 404
@@ -88,7 +91,7 @@ async def test_invalid_project_cannot_be_registered(tmp_path, failure: str) -> N
     with TestClient(app) as client:
         response = client.post(f"/api/agent/{session_id}/artifacts", json={"content": content})
         assert response.status_code == 422, response.text
-    assert artifact_storage.list(ArtifactListOptions(session_id=session_id)) == []
+    assert await artifact_storage.list(ArtifactListOptions(session_id=session_id)) == []
 
 
 async def test_missing_pdf_does_not_block_metadata_or_saving() -> None:
@@ -120,7 +123,8 @@ async def test_create_allocates_directory_before_agent_writes_files(tmp_path, mo
         assert directory == settings.artifact_directory / session_id / "report"
         assert directory.is_dir()
         assert list(directory.iterdir()) == []
-        assert artifact_storage.get(artifact["id"]).content.project_path == str(directory)
+        stored = await artifact_storage.get(artifact["id"])
+        assert stored is not None and stored.content.project_path == str(directory)
         url = f"{endpoint}/{artifact['id']}"
         assert client.get(f"{url}/content").status_code == 204
         assert client.put(url, json={"content": artifact["content"]}).status_code == 200

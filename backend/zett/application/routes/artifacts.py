@@ -6,7 +6,6 @@ from fastapi.responses import FileResponse, Response
 from ...infra.dao import artifact_storage, session_storage
 from ...models import ArtifactListOptions
 from ...schemas import AgentArtifact, AgentArtifactWrite, ArtifactStatus, ArtifactType
-from ..dependencies import run_sync
 from ..latex_artifacts import get_latex_pdf
 from ..schemas import ArtifactCreateIn, ArtifactUpdateIn, DeleteResponse
 from ..tagging import tag_service
@@ -18,7 +17,7 @@ router = APIRouter(tags=["artifacts"])
 async def get_artifact_pdf(session_id: str, artifact_id: str) -> Response:
     """Resolve a session-owned compiled PDF for inline preview."""
     try:
-        path = await run_sync(get_latex_pdf, session_id, artifact_id)
+        path = await get_latex_pdf(session_id, artifact_id)
     except (FileNotFoundError, ValueError) as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Artifact PDF not found") from error
     if path is None:
@@ -45,9 +44,9 @@ async def list_all_artifacts(
     offset: int = Query(default=0, ge=0),
 ) -> list[AgentArtifact]:
     """Search artifacts across sessions for the library UI."""
-    await run_sync(tag_service.backfill_legacy_artifacts)
+    await tag_service.backfill_legacy_artifacts()
     try:
-        expanded_tag_ids = await run_sync(tag_service.subtree_ids, tag_ids) if tag_ids else ()
+        expanded_tag_ids = await tag_service.subtree_ids(tag_ids) if tag_ids else ()
     except KeyError as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
     options = ArtifactListOptions(
@@ -58,7 +57,7 @@ async def list_all_artifacts(
         limit=limit,
         offset=offset,
     )
-    return await run_sync(artifact_storage.list, options)
+    return await artifact_storage.list(options)
 
 
 @router.get("/agent/{session_id}/artifacts", response_model=list[AgentArtifact])
@@ -66,7 +65,7 @@ async def list_session_artifacts(session_id: str) -> list[AgentArtifact]:
     """List every artifact belonging to one conversation."""
     if await session_storage.get(session_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
-    return await run_sync(artifact_storage.list, ArtifactListOptions(session_id=session_id, limit=500))
+    return await artifact_storage.list(ArtifactListOptions(session_id=session_id, limit=500))
 
 
 @router.post(
@@ -87,14 +86,14 @@ async def create_artifact(session_id: str, payload: ArtifactCreateIn) -> AgentAr
     )
     try:
         created = await artifact_storage.create(entity)
-        return await run_sync(tag_service.sync_confirmed_suggestions, created)
+        return await tag_service.sync_confirmed_suggestions(created)
     except (ValueError, FileNotFoundError) as error:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
 
 
 @router.get("/agent/{session_id}/artifacts/{artifact_id}", response_model=AgentArtifact)
 async def get_artifact(session_id: str, artifact_id: str) -> AgentArtifact:
-    artifact = await run_sync(artifact_storage.get_for_session, session_id, artifact_id)
+    artifact = await artifact_storage.get_for_session(session_id, artifact_id)
     if artifact is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Artifact not found")
     return artifact
@@ -103,7 +102,7 @@ async def get_artifact(session_id: str, artifact_id: str) -> AgentArtifact:
 @router.put("/agent/{session_id}/artifacts/{artifact_id}", response_model=AgentArtifact)
 async def update_artifact(session_id: str, artifact_id: str, payload: ArtifactUpdateIn) -> AgentArtifact:
     """Replace editable content while preserving lifecycle and metadata."""
-    current = await run_sync(artifact_storage.get_for_session, session_id, artifact_id)
+    current = await artifact_storage.get_for_session(session_id, artifact_id)
     if current is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Artifact not found")
     entity = AgentArtifactWrite(
@@ -114,8 +113,8 @@ async def update_artifact(session_id: str, artifact_id: str, payload: ArtifactUp
         metadata=current.metadata,
     )
     try:
-        updated = await run_sync(artifact_storage.update, artifact_id, entity)
-        return await run_sync(tag_service.sync_confirmed_suggestions, updated)
+        updated = await artifact_storage.update(artifact_id, entity)
+        return await tag_service.sync_confirmed_suggestions(updated)
     except (ValueError, FileNotFoundError) as error:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
 
@@ -123,7 +122,7 @@ async def update_artifact(session_id: str, artifact_id: str, payload: ArtifactUp
 @router.post("/agent/{session_id}/artifacts/{artifact_id}/save", response_model=AgentArtifact)
 async def save_artifact(session_id: str, artifact_id: str) -> AgentArtifact:
     """Move a draft artifact into the durable saved library."""
-    current = await run_sync(artifact_storage.get_for_session, session_id, artifact_id)
+    current = await artifact_storage.get_for_session(session_id, artifact_id)
     if current is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Artifact not found")
     entity = AgentArtifactWrite(
@@ -134,8 +133,8 @@ async def save_artifact(session_id: str, artifact_id: str) -> AgentArtifact:
         metadata=current.metadata,
     )
     try:
-        saved = await run_sync(artifact_storage.update, artifact_id, entity)
-        return await run_sync(tag_service.sync_confirmed_suggestions, saved)
+        saved = await artifact_storage.update(artifact_id, entity)
+        return await tag_service.sync_confirmed_suggestions(saved)
     except (ValueError, FileNotFoundError) as error:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
 
@@ -143,7 +142,7 @@ async def save_artifact(session_id: str, artifact_id: str) -> AgentArtifact:
 @router.delete("/agent/{session_id}/artifacts/{artifact_id}", response_model=DeleteResponse)
 async def delete_artifact(session_id: str, artifact_id: str) -> DeleteResponse:
     """Delete an artifact only when it belongs to the path session."""
-    current = await run_sync(artifact_storage.get_for_session, session_id, artifact_id)
+    current = await artifact_storage.get_for_session(session_id, artifact_id)
     if current is None:
         return DeleteResponse(ok=False)
-    return DeleteResponse(ok=await run_sync(artifact_storage.delete, artifact_id))
+    return DeleteResponse(ok=await artifact_storage.delete(artifact_id))

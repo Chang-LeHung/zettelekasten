@@ -1,6 +1,5 @@
 """Agent extension for persistent library tag management."""
 
-import asyncio
 import json
 
 from zett_agent import AgentExtension, AgentRunContext, SystemMessage, tool
@@ -17,7 +16,7 @@ class TagExtension(AgentExtension):
         session_id = context.config.session_id
 
         @tool
-        def create_tag(path: str, description: str | None = None, color: str | None = None) -> TagOut:
+        async def create_tag(path: str, description: str | None = None, color: str | None = None) -> TagOut:
             """Create a persistent library tag and any missing parent tags.
 
             Args:
@@ -33,10 +32,10 @@ class TagExtension(AgentExtension):
                 - Reuse an existing path when it already expresses the same category.
                 - Keep segments short, stable, and meaningful; do not encode dates or confidence in the path.
             """
-            return tag_service.create_path(path, description=description, color=color)
+            return await tag_service.create_path(path, description=description, color=color)
 
         @tool
-        def list_tags() -> list[TagTreeOut]:
+        async def list_tags() -> list[TagTreeOut]:
             """List the complete persistent tag tree and artifact counts.
 
             Snippet:
@@ -45,11 +44,11 @@ class TagExtension(AgentExtension):
             Guidelines:
                 - Inspect existing tags before creating a near-duplicate category.
             """
-            tag_service.backfill_legacy_artifacts()
-            return tag_service.list_tree()
+            await tag_service.backfill_legacy_artifacts()
+            return await tag_service.list_tree()
 
         @tool
-        def update_tag(
+        async def update_tag(
             tag_id: str,
             path: str | None = None,
             description: str | None = None,
@@ -67,10 +66,10 @@ class TagExtension(AgentExtension):
                 - Use the stable ID returned by list_tags; never guess it.
                 - Tags with children cannot be moved or renamed individually.
             """
-            return tag_service.update(tag_id, path=path, description=description, color=color)
+            return await tag_service.update(tag_id, path=path, description=description, color=color)
 
         @tool
-        def delete_tag(tag_id: str, recursive: bool = False, force: bool = False) -> bool:
+        async def delete_tag(tag_id: str, recursive: bool = False, force: bool = False) -> bool:
             """Delete a persistent tag with explicit safeguards.
 
             Args:
@@ -82,10 +81,10 @@ class TagExtension(AgentExtension):
                 - Delete only after an explicit user request.
                 - Never set recursive or force unless the user has approved the wider effect.
             """
-            return tag_service.delete(tag_id, recursive=recursive, force=force)
+            return await tag_service.delete(tag_id, recursive=recursive, force=force)
 
         @tool
-        def set_artifact_tags(artifact_id: str, paths: list[str]) -> AgentArtifact:
+        async def set_artifact_tags(artifact_id: str, paths: list[str]) -> AgentArtifact:
             """Replace the confirmed persistent tags assigned to one saved artifact.
 
             Args:
@@ -100,17 +99,17 @@ class TagExtension(AgentExtension):
                 - This is a complete replacement, not an append operation.
                 - Missing paths are created as real tags, including their parent nodes.
             """
-            if artifact_storage.get_for_session(session_id, artifact_id) is None:
+            if await artifact_storage.get_for_session(session_id, artifact_id) is None:
                 raise ValueError(f"Artifact not found in this session: {artifact_id}")
-            return tag_service.replace_artifact_tags(artifact_id, paths)
+            return await tag_service.replace_artifact_tags(artifact_id, paths)
 
         for registered in (create_tag, list_tags, update_tag, delete_tag, set_artifact_tags):
             context.register_tool(registered)
 
     async def on_state(self, context: AgentRunContext) -> None:
         """Expose the real taxonomy so suggestions can reuse stable paths."""
-        await asyncio.to_thread(tag_service.backfill_legacy_artifacts)
-        tags = await asyncio.to_thread(tag_service.list_tree)
+        await tag_service.backfill_legacy_artifacts()
+        tags = await tag_service.list_tree()
         if not tags:
             return
         message = SystemMessage(

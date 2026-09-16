@@ -15,7 +15,7 @@ from ...models import ProviderListOptions
 from ...schemas import ProviderConnection, ProviderOut, ProviderType, ProviderWrite
 from ..database import session_scope
 from ..models import ProviderModel
-from ..storage import Storage
+from ..storage import AsyncStorage
 
 
 class ProviderTypeCode(IntEnum):
@@ -101,7 +101,7 @@ def _provider_out(model: ProviderModel) -> ProviderOut:
     )
 
 
-class ProviderStorage(Storage[ProviderWrite, ProviderOut, str, ProviderListOptions]):
+class ProviderStorage(AsyncStorage[ProviderWrite, ProviderOut, str, ProviderListOptions]):
     """Store model configurations while keeping API keys encrypted at rest.
 
     ``get`` and ``list`` return safe models with only ``api_key_configured``.
@@ -110,9 +110,9 @@ class ProviderStorage(Storage[ProviderWrite, ProviderOut, str, ProviderListOptio
     previously stored credential.
     """
 
-    def create(self, entity: ProviderWrite) -> ProviderOut:
+    async def create(self, entity: ProviderWrite) -> ProviderOut:
         now = datetime.now(UTC)
-        with session_scope() as session:
+        async with session_scope() as session:
             model = ProviderModel(
                 id=new_uuid7(),
                 name=entity.name,
@@ -126,17 +126,17 @@ class ProviderStorage(Storage[ProviderWrite, ProviderOut, str, ProviderListOptio
                 updated_at=now,
             )
             session.add(model)
-            session.flush()
+            await session.flush()
             return _provider_out(model)
 
-    def get(self, entity_id: str) -> ProviderOut | None:
-        with session_scope() as session:
-            model = session.get(ProviderModel, entity_id)
+    async def get(self, entity_id: str) -> ProviderOut | None:
+        async with session_scope() as session:
+            model = await session.get(ProviderModel, entity_id)
             return _provider_out(model) if model is not None else None
 
-    def update(self, entity_id: str, entity: ProviderWrite) -> ProviderOut:
-        with session_scope() as session:
-            model = session.get(ProviderModel, entity_id)
+    async def update(self, entity_id: str, entity: ProviderWrite) -> ProviderOut:
+        async with session_scope() as session:
+            model = await session.get(ProviderModel, entity_id)
             if model is None:
                 raise KeyError(f"Provider not found: {entity_id}")
             model.name = entity.name
@@ -147,20 +147,20 @@ class ProviderStorage(Storage[ProviderWrite, ProviderOut, str, ProviderListOptio
             model.enabled = entity.enabled
             model.metadata_value = json.dumps(entity.metadata, ensure_ascii=False)
             model.updated_at = datetime.now(UTC)
-            session.flush()
+            await session.flush()
             return _provider_out(model)
 
-    def delete(self, entity_id: str) -> bool:
-        with session_scope() as session:
-            model = session.get(ProviderModel, entity_id)
+    async def delete(self, entity_id: str) -> bool:
+        async with session_scope() as session:
+            model = await session.get(ProviderModel, entity_id)
             if model is None:
                 return False
-            session.delete(model)
+            await session.delete(model)
             return True
 
-    def list(self, options: ProviderListOptions | None = None) -> list[ProviderOut]:
+    async def list(self, options: ProviderListOptions | None = None) -> list[ProviderOut]:
         options = options or ProviderListOptions()
-        with session_scope() as session:
+        async with session_scope() as session:
             statement = select(ProviderModel)
             if options.query:
                 pattern = f"%{options.query}%"
@@ -173,9 +173,9 @@ class ProviderStorage(Storage[ProviderWrite, ProviderOut, str, ProviderListOptio
             statement = (
                 statement.order_by(ProviderModel.name, ProviderModel.id).limit(options.limit).offset(options.offset)
             )
-            return [_provider_out(model) for model in session.scalars(statement)]
+            return [_provider_out(model) for model in await session.scalars(statement)]
 
-    def resolve_connection(
+    async def resolve_connection(
         self,
         entity_id: str | None = None,
         *,
@@ -186,14 +186,15 @@ class ProviderStorage(Storage[ProviderWrite, ProviderOut, str, ProviderListOptio
         Model construction keeps ``enabled_only=True``. The settings API uses
         ``False`` only to preserve a hidden key while editing a disabled row.
         """
-        with session_scope() as session:
+        async with session_scope() as session:
             if entity_id is None:
                 statement = select(ProviderModel)
                 if enabled_only:
                     statement = statement.where(ProviderModel.enabled.is_(True))
-                model = session.scalars(statement.order_by(ProviderModel.name, ProviderModel.id).limit(1)).first()
+                ordered = statement.order_by(ProviderModel.name, ProviderModel.id).limit(1)
+                model = (await session.scalars(ordered)).first()
             else:
-                model = session.get(ProviderModel, entity_id)
+                model = await session.get(ProviderModel, entity_id)
             if model is None or (enabled_only and not model.enabled):
                 return None
             api_key = _decrypt_api_key(model.encrypted_api_key)

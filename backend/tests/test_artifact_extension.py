@@ -151,7 +151,7 @@ async def test_artifact_query_tools_run_complete_session_scoped_lifecycle() -> N
 
     assert result.content == "Artifact queries complete."
     assert model.step == 8
-    assert len(artifact_storage.list()) == 2
+    assert len(await artifact_storage.list()) == 2
 
 
 async def test_artifact_queries_are_scoped_to_the_owning_session() -> None:
@@ -208,4 +208,4 @@ async def test_artifact_queries_are_scoped_to_the_owning_session() -> None:
     result = await agent.run("Read the other artifact")
 
     assert result.content == "Global search found the artifact."
-    assert artifact_storage.get_for_session(owner, secret.id) is not None
+    assert await artifact_storage.get_for_session(owner, secret.id) is not None

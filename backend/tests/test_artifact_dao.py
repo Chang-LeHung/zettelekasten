@@ -5,7 +5,7 @@ from zett.infra import database
 from zett.infra.dao.artifact import artifact_storage
 from zett.infra.dao.session import session_storage
 from zett.infra.models import SessionArtifactModel
-from zett.infra.storage import Storage
+from zett.infra.storage import AsyncStorage
 from zett.models import ArtifactListOptions
 from zett.schemas import (
     AgentArtifactWrite,
@@ -49,8 +49,8 @@ async def test_artifact_storage_persists_multiple_typed_outputs_per_session() ->
         )
     )
 
-    assert isinstance(artifact_storage, Storage)
-    assert [item.id for item in artifact_storage.list(ArtifactListOptions(session_id=session_id))] == [
+    assert isinstance(artifact_storage, AsyncStorage)
+    assert [item.id for item in await artifact_storage.list(ArtifactListOptions(session_id=session_id))] == [
         card.id,
         article.id,
         image.id,
@@ -59,10 +59,9 @@ async def test_artifact_storage_persists_multiple_typed_outputs_per_session() ->
     assert article.content.artifact_type == "article"
     assert image.content.artifact_type == "image"
     assert slides.content.artifact_type == "slides"
-    with database.session_scope() as db:
-        assert db.scalars(
-            select(SessionArtifactModel.artifact_type).order_by(SessionArtifactModel.created_at)
-        ).all() == [
+    async with database.session_scope() as db:
+        rows = await db.scalars(select(SessionArtifactModel.artifact_type).order_by(SessionArtifactModel.created_at))
+        assert rows.all() == [
             1,
             2,
             3,
@@ -79,7 +78,7 @@ async def test_artifact_updates_are_versioned_and_cannot_cross_sessions() -> Non
             content=ArticleArtifactContent(title="Draft", content="First version"),
         )
     )
-    updated = artifact_storage.update(
+    updated = await artifact_storage.update(
         created.id,
         AgentArtifactWrite(
             session_id=first_session,
@@ -93,7 +92,7 @@ async def test_artifact_updates_are_versioned_and_cannot_cross_sessions() -> Non
     assert updated.content.title == "Revised"
 
     with pytest.raises(KeyError):
-        artifact_storage.update(
+        await artifact_storage.update(
             created.id,
             AgentArtifactWrite(
                 session_id=second_session,
@@ -117,16 +116,16 @@ async def test_artifact_filters_and_explicit_session_cleanup() -> None:
         )
     )
 
-    articles = artifact_storage.list(
+    articles = await artifact_storage.list(
         ArtifactListOptions(session_id=session_id, artifact_types=("article",), query="guide")
     )
     assert [item.content.title for item in articles] == ["Python guide"]
-    slides = artifact_storage.list(
+    slides = await artifact_storage.list(
         ArtifactListOptions(session_id=session_id, artifact_types=("slides",), query="Python")
     )
     assert [item.content.title for item in slides] == ["Python slides"]
-    assert artifact_storage.delete_session(session_id) == 3
-    assert artifact_storage.list(ArtifactListOptions(session_id=session_id)) == []
+    assert await artifact_storage.delete_session(session_id) == 3
+    assert await artifact_storage.list(ArtifactListOptions(session_id=session_id)) == []
 
 
 @pytest.mark.parametrize(

@@ -1,4 +1,3 @@
-import asyncio
 import json
 from datetime import UTC, datetime
 from enum import IntEnum
@@ -23,7 +22,7 @@ from ...schemas import (
 from ..database import session_scope
 from ..latex_projects import create_latex_project, validate_latex_project_path
 from ..models import ArtifactTagModel, SessionArtifactModel
-from ..storage import Storage
+from ..storage import AsyncStorage
 
 
 class ArtifactTypeCode(IntEnum):
@@ -80,27 +79,20 @@ def _artifact_out(model: SessionArtifactModel, *, tags: list[ArtifactTagOut] | N
     )
 
 
-class ArtifactStorage(Storage[AgentArtifactWrite, AgentArtifact, str, ArtifactListOptions]):
+class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifact, str, ArtifactListOptions]):
     """SQLAlchemy storage for polymorphic, session-owned artifacts."""
 
     async def create(self, entity: AgentArtifactWrite) -> AgentArtifact:
-        """Persist one artifact after confirming its Agent session exists.
-
-        The session database is asynchronous, so this boundary awaits it and
-        then runs the application-database write in a worker thread.
-        """
+        """Persist one artifact after confirming its Agent session exists."""
         from ..agent_runtime import get_agent_runtime_storage
 
         if await get_agent_runtime_storage().get_session(entity.session_id) is None:
             raise KeyError(f"Agent session not found: {entity.session_id}")
-        return await asyncio.to_thread(self._create, entity)
-
-    def _create(self, entity: AgentArtifactWrite) -> AgentArtifact:
         now = datetime.now(UTC)
         content = entity.content
         if isinstance(content, LatexPdfArtifactCreate):
             content = create_latex_project(entity.session_id, content)
-        with session_scope() as session:
+        async with session_scope() as session:
             model = SessionArtifactModel(
                 id=new_uuid7(),
                 session_id=entity.session_id,
@@ -115,26 +107,26 @@ class ArtifactStorage(Storage[AgentArtifactWrite, AgentArtifact, str, ArtifactLi
                 updated_at=now,
             )
             session.add(model)
-            session.flush()
+            await session.flush()
             return _artifact_out(model)
 
-    def get(self, entity_id: str) -> AgentArtifact | None:
-        with session_scope() as session:
-            model = session.get(SessionArtifactModel, entity_id)
+    async def get(self, entity_id: str) -> AgentArtifact | None:
+        async with session_scope() as session:
+            model = await session.get(SessionArtifactModel, entity_id)
             artifact = _artifact_out(model) if model else None
         if artifact is None:
             return None
         from .tag import tag_storage
 
-        tags = tag_storage.tags_for_artifacts((entity_id,)).get(entity_id, [])
+        tags = (await tag_storage.tags_for_artifacts((entity_id,))).get(entity_id, [])
         return artifact.model_copy(update={"tags": tags})
 
-    def get_for_session(self, session_id: str, artifact_id: str) -> AgentArtifact | None:
+    async def get_for_session(self, session_id: str, artifact_id: str) -> AgentArtifact | None:
         """Read an artifact only when it belongs to the requested session."""
-        artifact = self.get(artifact_id)
+        artifact = await self.get(artifact_id)
         return artifact if artifact is not None and artifact.session_id == session_id else None
 
-    def update(self, entity_id: str, entity: AgentArtifactWrite) -> AgentArtifact:
+    async def update(self, entity_id: str, entity: AgentArtifactWrite) -> AgentArtifact:
         if isinstance(entity.content, LatexPdfArtifactCreate) and not isinstance(
             entity.content, LatexPdfArtifactContent
         ):
@@ -142,8 +134,8 @@ class ArtifactStorage(Storage[AgentArtifactWrite, AgentArtifact, str, ArtifactLi
         if isinstance(entity.content, LatexPdfArtifactContent):
             # A draft or saved reference can precede compilation; only validate its location.
             validate_latex_project_path(entity.session_id, entity.content)
-        with session_scope() as session:
-            model = session.get(SessionArtifactModel, entity_id)
+        async with session_scope() as session:
+            model = await session.get(SessionArtifactModel, entity_id)
             if model is None or model.session_id != entity.session_id:
                 raise KeyError(f"Artifact not found: {entity_id}")
             model.artifact_type = int(TYPE_TO_CODE[entity.content.artifact_type])
@@ -154,21 +146,21 @@ class ArtifactStorage(Storage[AgentArtifactWrite, AgentArtifact, str, ArtifactLi
             model.metadata_value = json.dumps(entity.metadata, ensure_ascii=False)
             model.version += 1
             model.updated_at = datetime.now(UTC)
-            session.flush()
+            await session.flush()
             return _artifact_out(model)
 
-    def delete(self, entity_id: str) -> bool:
-        with session_scope() as session:
-            model = session.get(SessionArtifactModel, entity_id)
+    async def delete(self, entity_id: str) -> bool:
+        async with session_scope() as session:
+            model = await session.get(SessionArtifactModel, entity_id)
             if model is None:
                 return False
-            session.execute(sql_delete(ArtifactTagModel).where(ArtifactTagModel.artifact_id == entity_id))
-            session.delete(model)
+            await session.execute(sql_delete(ArtifactTagModel).where(ArtifactTagModel.artifact_id == entity_id))
+            await session.delete(model)
             return True
 
-    def list(self, options: ArtifactListOptions | None = None) -> list[AgentArtifact]:
+    async def list(self, options: ArtifactListOptions | None = None) -> list[AgentArtifact]:
         options = options or ArtifactListOptions()
-        with session_scope() as session:
+        async with session_scope() as session:
             statement = select(SessionArtifactModel)
             if options.session_id:
                 statement = statement.where(SessionArtifactModel.session_id == options.session_id)
@@ -187,21 +179,25 @@ class ArtifactStorage(Storage[AgentArtifactWrite, AgentArtifact, str, ArtifactLi
             if options.query:
                 statement = statement.where(SessionArtifactModel.title.ilike(f"%{options.query}%"))
             statement = statement.order_by(SessionArtifactModel.created_at).limit(options.limit).offset(options.offset)
-            artifacts = [_artifact_out(model) for model in session.scalars(statement)]
+            artifacts = [_artifact_out(model) for model in await session.scalars(statement)]
         from .tag import tag_storage
 
-        tags = tag_storage.tags_for_artifacts(tuple(artifact.id for artifact in artifacts))
+        tags = await tag_storage.tags_for_artifacts(tuple(artifact.id for artifact in artifacts))
         return [artifact.model_copy(update={"tags": tags.get(artifact.id, [])}) for artifact in artifacts]
 
-    def delete_session(self, session_id: str) -> int:
+    async def delete_session(self, session_id: str) -> int:
         """Explicitly remove every artifact owned by a deleted session."""
-        with session_scope() as session:
+        async with session_scope() as session:
             artifact_ids = tuple(
-                session.scalars(select(SessionArtifactModel.id).where(SessionArtifactModel.session_id == session_id))
+                await session.scalars(
+                    select(SessionArtifactModel.id).where(SessionArtifactModel.session_id == session_id)
+                )
             )
             if artifact_ids:
-                session.execute(sql_delete(ArtifactTagModel).where(ArtifactTagModel.artifact_id.in_(artifact_ids)))
-            result = session.execute(
+                await session.execute(
+                    sql_delete(ArtifactTagModel).where(ArtifactTagModel.artifact_id.in_(artifact_ids))
+                )
+            result = await session.execute(
                 sql_delete(SessionArtifactModel).where(SessionArtifactModel.session_id == session_id)
             )
             return result.rowcount

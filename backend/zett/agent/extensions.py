@@ -1,6 +1,5 @@
 """Zett-specific artifact tools and conversation context."""
 
-import asyncio
 import json
 from typing import Annotated
 
@@ -78,7 +77,7 @@ class ZettelkastenExtension(AgentExtension):
             )
 
         @tool
-        def get_artifact(artifact_id: str) -> AgentArtifact:
+        async def get_artifact(artifact_id: str) -> AgentArtifact:
             """Return the current content of one artifact in this conversation.
 
             Args:
@@ -90,10 +89,10 @@ class ZettelkastenExtension(AgentExtension):
             Guidelines:
                 - Use to fetch the latest content of an artifact after changes.
             """
-            return self._artifact(session_id, artifact_id)
+            return await self._artifact(session_id, artifact_id)
 
         @tool
-        def query_artifacts(
+        async def query_artifacts(
             query: str | None = None,
             artifact_types: tuple[str, ...] = (),
             statuses: tuple[str, ...] = (),
@@ -118,7 +117,7 @@ class ZettelkastenExtension(AgentExtension):
                 - Set all_sessions to search the entire library, for example when the user asks about artifacts from other conversations.
                 - All conversation artifacts are already in context; query narrows by title, type, or state.
             """
-            return artifact_storage.list(
+            return await artifact_storage.list(
                 ArtifactListOptions(
                     session_id=None if all_sessions else session_id,
                     artifact_types=artifact_types,
@@ -129,7 +128,7 @@ class ZettelkastenExtension(AgentExtension):
             )
 
         @tool
-        def update_artifact(artifact_id: str, content: ArtifactContent) -> AgentArtifact:
+        async def update_artifact(artifact_id: str, content: ArtifactContent) -> AgentArtifact:
             """Replace the editable content of an existing conversation artifact.
 
             Args:
@@ -163,8 +162,8 @@ class ZettelkastenExtension(AgentExtension):
                 - Ordinary pages retain Markdown headings and ordinary horizontal sections retain title-only openers followed by '--' and content. These rules do not add extra headings or openers to explicit HTML or cover pages.
                 - Slide separators must be exact unpadded lines; never use standalone '--' or '---' as decoration or code inside a deck.
             """
-            current = self._artifact(session_id, artifact_id)
-            updated = artifact_storage.update(
+            current = await self._artifact(session_id, artifact_id)
+            updated = await artifact_storage.update(
                 artifact_id,
                 AgentArtifactWrite(
                     session_id=session_id,
@@ -174,10 +173,10 @@ class ZettelkastenExtension(AgentExtension):
                     metadata=current.metadata,
                 ),
             )
-            return tag_service.sync_confirmed_suggestions(updated)
+            return await tag_service.sync_confirmed_suggestions(updated)
 
         @tool
-        def save_artifact(artifact_id: str) -> AgentArtifact:
+        async def save_artifact(artifact_id: str) -> AgentArtifact:
             """Mark one draft artifact as saved after explicit user approval.
 
             Args:
@@ -189,8 +188,8 @@ class ZettelkastenExtension(AgentExtension):
             Guidelines:
                 - Call this only when the user explicitly requests saving the artifact.
             """
-            current = self._artifact(session_id, artifact_id)
-            saved = artifact_storage.update(
+            current = await self._artifact(session_id, artifact_id)
+            saved = await artifact_storage.update(
                 artifact_id,
                 AgentArtifactWrite(
                     session_id=session_id,
@@ -200,10 +199,10 @@ class ZettelkastenExtension(AgentExtension):
                     metadata=current.metadata,
                 ),
             )
-            return tag_service.sync_confirmed_suggestions(saved)
+            return await tag_service.sync_confirmed_suggestions(saved)
 
         @tool
-        def delete_artifact(artifact_id: str) -> bool:
+        async def delete_artifact(artifact_id: str) -> bool:
             """Delete one artifact from this conversation.
 
             Args:
@@ -215,8 +214,8 @@ class ZettelkastenExtension(AgentExtension):
             Guidelines:
                 - Delete only when the user's intent is explicit.
             """
-            self._artifact(session_id, artifact_id)
-            return artifact_storage.delete(artifact_id)
+            await self._artifact(session_id, artifact_id)
+            return await artifact_storage.delete(artifact_id)
 
         for registered in (
             create_artifact,
@@ -231,10 +230,7 @@ class ZettelkastenExtension(AgentExtension):
     async def on_state(self, context: AgentRunContext) -> None:
         """Expose current artifacts as model context."""
         session_id = context.config.session_id
-        artifacts = await asyncio.to_thread(
-            artifact_storage.list,
-            ArtifactListOptions(session_id=session_id, limit=500),
-        )
+        artifacts = await artifact_storage.list(ArtifactListOptions(session_id=session_id, limit=500))
         payload = {
             "artifacts": [artifact.model_dump(mode="json") for artifact in artifacts],
         }
@@ -247,8 +243,8 @@ class ZettelkastenExtension(AgentExtension):
             context.state.messages[:] = [*instructions, workspace, *dialogue]
 
     @staticmethod
-    def _artifact(session_id: str, artifact_id: str) -> AgentArtifact:
-        artifact = artifact_storage.get_for_session(session_id, artifact_id)
+    async def _artifact(session_id: str, artifact_id: str) -> AgentArtifact:
+        artifact = await artifact_storage.get_for_session(session_id, artifact_id)
         if artifact is None:
             raise ValueError(f"Artifact not found in this session: {artifact_id}")
         return artifact

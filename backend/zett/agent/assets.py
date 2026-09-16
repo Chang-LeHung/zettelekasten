@@ -1,6 +1,5 @@
 """Session-scoped asset tools for the Zettelkasten Agent."""
 
-import asyncio
 import base64
 import binascii
 import json
@@ -104,7 +103,7 @@ class AssetExtension(AgentExtension):
             return await session_asset_storage.create(_write_model(session_id, asset))
 
         @tool
-        def get_asset(asset_id: str, include_binary_content: bool = False) -> AssetDetails:
+        async def get_asset(asset_id: str, include_binary_content: bool = False) -> AssetDetails:
             """Read one asset owned by this conversation.
 
             Args:
@@ -118,17 +117,17 @@ class AssetExtension(AgentExtension):
                 - Leave binary content excluded unless the task truly requires the bytes.
                 - Never use an asset ID from another conversation.
             """
-            asset = self._asset(session_id, asset_id)
+            asset = await self._asset(session_id, asset_id)
             encoded: str | None = None
             if include_binary_content and asset.asset_type in {SessionAssetType.IMAGE, SessionAssetType.FILE}:
-                path = session_asset_storage.content_path(session_id, asset_id)
+                path = await session_asset_storage.content_path(session_id, asset_id)
                 if path is None:
                     raise ValueError(f"Asset content is unavailable: {asset_id}")
                 encoded = base64.b64encode(path.read_bytes()).decode("ascii")
             return AssetDetails(**asset.model_dump(), content_base64=encoded)
 
         @tool
-        def update_asset(asset_id: str, asset: AssetInput) -> SessionAssetOut:
+        async def update_asset(asset_id: str, asset: AssetInput) -> SessionAssetOut:
             """Replace all editable fields and content of one conversation asset.
 
             Args:
@@ -142,11 +141,11 @@ class AssetExtension(AgentExtension):
                 - Call get_asset first when existing fields must be retained.
                 - Treat this as full replacement rather than a partial patch.
             """
-            self._asset(session_id, asset_id)
-            return session_asset_storage.update(asset_id, _write_model(session_id, asset))
+            await self._asset(session_id, asset_id)
+            return await session_asset_storage.update(asset_id, _write_model(session_id, asset))
 
         @tool
-        def delete_asset(asset_id: str) -> bool:
+        async def delete_asset(asset_id: str) -> bool:
             """Delete one asset owned by this conversation.
 
             Args:
@@ -158,11 +157,11 @@ class AssetExtension(AgentExtension):
             Guidelines:
                 - Delete an asset only when the user's intent is explicit.
             """
-            self._asset(session_id, asset_id)
-            return session_asset_storage.delete(asset_id)
+            await self._asset(session_id, asset_id)
+            return await session_asset_storage.delete(asset_id)
 
         @tool
-        def list_assets(
+        async def list_assets(
             query: str | None = None,
             asset_types: tuple[SessionAssetType, ...] = (),
             limit: Annotated[int, Field(ge=1, le=500)] = 100,
@@ -182,7 +181,7 @@ class AssetExtension(AgentExtension):
             Guidelines:
                 - Use filters and pagination instead of guessing asset IDs.
             """
-            return session_asset_storage.list(
+            return await session_asset_storage.list(
                 SessionAssetListOptions(
                     session_id=session_id,
                     query=query,
@@ -197,9 +196,8 @@ class AssetExtension(AgentExtension):
 
     async def on_state(self, context: AgentRunContext) -> None:
         """Expose lightweight asset content without injecting binary payloads."""
-        assets = await asyncio.to_thread(
-            session_asset_storage.list,
-            SessionAssetListOptions(session_id=context.config.session_id, limit=500),
+        assets = await session_asset_storage.list(
+            SessionAssetListOptions(session_id=context.config.session_id, limit=500)
         )
         if not assets:
             return
@@ -222,9 +220,9 @@ class AssetExtension(AgentExtension):
         context.state.messages[:] = [*instructions, workspace, *dialogue]
 
     @staticmethod
-    def _asset(session_id: str, asset_id: str) -> SessionAssetOut:
+    async def _asset(session_id: str, asset_id: str) -> SessionAssetOut:
         """Resolve an asset only inside the active session boundary."""
-        asset = session_asset_storage.get_for_session(session_id, asset_id)
+        asset = await session_asset_storage.get_for_session(session_id, asset_id)
         if asset is None:
             raise ValueError(f"Asset not found in this session: {asset_id}")
         return asset

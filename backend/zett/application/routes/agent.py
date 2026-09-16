@@ -31,7 +31,6 @@ from ...infra.agent_runtime import get_agent_runtime_storage
 from ...infra.dao import provider_storage, session_storage
 from ...infra.log import get_logger
 from ...schemas import ProviderConnection
-from ..dependencies import run_sync
 from ..schemas import AnalyzeRequest, ExternalEventIn, ExternalEventOut, MessageImagePartIn, MessageTextPartIn
 from ..session_context import session_context_composition_service
 from ..session_preferences import session_model_preference_service
@@ -121,7 +120,7 @@ active_requests = ActiveRequestRegistry()
 async def _remember_context_composition(session_id: str, ratios: dict[str, float]) -> None:
     """Persist an auxiliary UI metric without failing the active Agent request."""
     try:
-        await run_sync(session_context_composition_service.remember, session_id, ratios)
+        await session_context_composition_service.remember(session_id, ratios)
     except Exception:
         logger.exception("Could not persist context composition; session_id=%s", session_id)
 
@@ -163,7 +162,7 @@ async def _prepare_agent_request(session_id: str, payload: AnalyzeRequest) -> _P
     """Validate input, reserve its session, and construct request-owned resources."""
     if await session_storage.get(session_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
-    connection = await run_sync(provider_storage.resolve_connection, payload.provider_id)
+    connection = await provider_storage.resolve_connection(payload.provider_id)
     if connection is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Enabled provider not found")
     try:
@@ -171,7 +170,7 @@ async def _prepare_agent_request(session_id: str, payload: AnalyzeRequest) -> _P
     except ValueError as error:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Unsupported reasoning effort") from error
 
-    runtime_settings = await run_sync(runtime_settings_service.get)
+    runtime_settings = await runtime_settings_service.get()
     message = _user_message(payload, max_images=runtime_settings.max_message_images)
     config = AgentRunConfig(session_id=session_id, request_id=new_uuid7())
     await active_requests.reserve(config)
@@ -183,7 +182,7 @@ async def _prepare_agent_request(session_id: str, payload: AnalyzeRequest) -> _P
         async def send(frame: str) -> None:
             frames.append(frame)
 
-        storage = await run_sync(get_agent_runtime_storage)
+        storage = get_agent_runtime_storage()
         # Reserve the session before binding the Agent, allowing each new Agent
         # instance to apply the latest configuration immediately.
         agent = await ZettelkastenAgentConfig(
@@ -196,7 +195,7 @@ async def _prepare_agent_request(session_id: str, payload: AnalyzeRequest) -> _P
         await active_requests.bind(config, agent)
         # Remember only a fully prepared request. Validation, Model creation,
         # Agent construction, and registry binding may all fail before this.
-        await run_sync(session_model_preference_service.remember, session_id, connection)
+        await session_model_preference_service.remember(session_id, connection)
         return _PreparedAgentRequest(
             config=config,
             connection=connection,

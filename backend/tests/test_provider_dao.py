@@ -9,7 +9,7 @@ from zett.config import settings
 from zett.infra.dao.provider import provider_storage
 from zett.infra.database import session_scope
 from zett.infra.models import ProviderModel
-from zett.infra.storage import Storage
+from zett.infra.storage import AsyncStorage
 from zett.models import ProviderListOptions
 from zett.schemas import ProviderWrite
 
@@ -28,28 +28,28 @@ def provider(**changes) -> ProviderWrite:
     return ProviderWrite(**values)
 
 
-def test_provider_crud_encrypts_credentials_and_returns_safe_models():
-    created = provider_storage.create(provider())
-    assert isinstance(provider_storage, Storage)
+async def test_provider_crud_encrypts_credentials_and_returns_safe_models():
+    created = await provider_storage.create(provider())
+    assert isinstance(provider_storage, AsyncStorage)
     assert UUID(created.id).version == 7
     assert created.api_key_configured is True
     assert not hasattr(created, "api_key")
     assert "test-secret-key" not in repr(created)
 
-    with session_scope() as session:
-        row = session.get(ProviderModel, created.id)
+    async with session_scope() as session:
+        row = await session.get(ProviderModel, created.id)
         assert row is not None
         assert row.encrypted_api_key != "test-secret-key"
         assert "test-secret-key" not in row.encrypted_api_key
 
-    connection = provider_storage.resolve_connection(created.id)
+    connection = await provider_storage.resolve_connection(created.id)
     assert connection is not None
     assert connection.api_key is not None
     assert connection.api_key.get_secret_value() == "test-secret-key"
     assert connection.metadata == {"reasoning": True}
     assert stat.S_IMODE(settings.provider_key_path.stat().st_mode) == 0o600
 
-    updated = provider_storage.update(
+    updated = await provider_storage.update(
         created.id,
         provider(name="Local model", provider="ollama", model="qwen3", base_url=None, api_key=None),
     )
@@ -58,41 +58,45 @@ def test_provider_crud_encrypts_credentials_and_returns_safe_models():
     assert updated.api_key_configured is False
     assert updated.created_at == created.created_at
     assert updated.updated_at >= created.updated_at
-    assert provider_storage.resolve_connection(created.id).api_key is None
-    assert provider_storage.delete(created.id)
-    assert provider_storage.get(created.id) is None
-    assert not provider_storage.delete(created.id)
+    refreshed = await provider_storage.resolve_connection(created.id)
+    assert refreshed is not None and refreshed.api_key is None
+    assert await provider_storage.delete(created.id)
+    assert await provider_storage.get(created.id) is None
+    assert not await provider_storage.delete(created.id)
 
 
-def test_provider_queries_filter_before_pagination_and_choose_enabled_default():
-    disabled = provider_storage.create(provider(name="A disabled", enabled=False))
-    first = provider_storage.create(provider(name="B enabled", model="deepseek-reasoner"))
-    second = provider_storage.create(provider(name="C enabled", provider="openai", model="gpt-test"))
+async def test_provider_queries_filter_before_pagination_and_choose_enabled_default():
+    disabled = await provider_storage.create(provider(name="A disabled", enabled=False))
+    first = await provider_storage.create(provider(name="B enabled", model="deepseek-reasoner"))
+    second = await provider_storage.create(provider(name="C enabled", provider="openai", model="gpt-test"))
 
-    assert [item.id for item in provider_storage.list(ProviderListOptions(enabled=True))] == [first.id, second.id]
-    assert [item.id for item in provider_storage.list(ProviderListOptions(providers=("openai",)))] == [second.id]
-    assert [item.id for item in provider_storage.list(ProviderListOptions(query="reasoner"))] == [first.id]
-    assert [item.id for item in provider_storage.list(ProviderListOptions(enabled=True, limit=1, offset=1))] == [
-        second.id
-    ]
-    assert provider_storage.resolve_connection().id == first.id
-    assert provider_storage.resolve_connection(disabled.id) is None
-    assert provider_storage.list(ProviderListOptions(offset=100)) == []
+    enabled = await provider_storage.list(ProviderListOptions(enabled=True))
+    assert [item.id for item in enabled] == [first.id, second.id]
+    by_provider = await provider_storage.list(ProviderListOptions(providers=("openai",)))
+    assert [item.id for item in by_provider] == [second.id]
+    by_query = await provider_storage.list(ProviderListOptions(query="reasoner"))
+    assert [item.id for item in by_query] == [first.id]
+    paged = await provider_storage.list(ProviderListOptions(enabled=True, limit=1, offset=1))
+    assert [item.id for item in paged] == [second.id]
+    default = await provider_storage.resolve_connection()
+    assert default is not None and default.id == first.id
+    assert await provider_storage.resolve_connection(disabled.id) is None
+    assert await provider_storage.list(ProviderListOptions(offset=100)) == []
 
 
-def test_provider_missing_and_corrupt_credentials_fail_predictably():
-    assert provider_storage.get("missing") is None
-    assert provider_storage.resolve_connection("missing") is None
+async def test_provider_missing_and_corrupt_credentials_fail_predictably():
+    assert await provider_storage.get("missing") is None
+    assert await provider_storage.resolve_connection("missing") is None
     with pytest.raises(KeyError, match="Provider not found"):
-        provider_storage.update("missing", provider())
+        await provider_storage.update("missing", provider())
 
-    created = provider_storage.create(provider())
-    with session_scope() as session:
-        row = session.get(ProviderModel, created.id)
+    created = await provider_storage.create(provider())
+    async with session_scope() as session:
+        row = await session.get(ProviderModel, created.id)
         assert row is not None
         row.encrypted_api_key = "not-a-fernet-token"
     with pytest.raises(RuntimeError, match="cannot be decrypted"):
-        provider_storage.resolve_connection(created.id)
+        await provider_storage.resolve_connection(created.id)
 
 
 def test_provider_write_hides_api_key_from_repr_and_json():
@@ -108,14 +112,15 @@ def test_provider_write_hides_api_key_from_repr_and_json():
     }
 
 
-def test_responses_compatible_provider_round_trips_through_integer_code():
-    created = provider_storage.create(
+async def test_responses_compatible_provider_round_trips_through_integer_code():
+    created = await provider_storage.create(
         provider(provider="responses_compatible", base_url="https://responses.example/v1")
     )
 
     assert created.provider == "responses_compatible"
-    with session_scope() as session:
-        row = session.get(ProviderModel, created.id)
+    async with session_scope() as session:
+        row = await session.get(ProviderModel, created.id)
         assert row is not None
         assert row.provider == 7
-    assert provider_storage.resolve_connection(created.id).provider == "responses_compatible"
+    resolved = await provider_storage.resolve_connection(created.id)
+    assert resolved is not None and resolved.provider == "responses_compatible"

@@ -6,7 +6,7 @@ from zett.infra.dao import session_asset_storage
 from zett.main import app
 
 
-def test_rename_preserves_file_and_reference_and_checks_ownership():
+async def test_rename_preserves_file_and_reference_and_checks_ownership():
     with TestClient(app) as client:
         owner = client.post("/api/agent/start").json()["conversation_id"]
         other = client.post("/api/agent/start").json()["conversation_id"]
@@ -17,7 +17,7 @@ def test_rename_preserves_file_and_reference_and_checks_ownership():
         ).json()
         asset_id = original["id"]
         original = client.get(f"/api/agent/{owner}/assets/{asset_id}").json()
-        path = session_asset_storage.content_path(owner, asset_id)
+        path = await session_asset_storage.content_path(owner, asset_id)
         assert path is not None
         before = path.stat().st_mtime_ns
         route = f"/api/agent/{owner}/assets/{asset_id}/name"
@@ -30,7 +30,7 @@ def test_rename_preserves_file_and_reference_and_checks_ownership():
         assert updated["name"] == "南京大学校徽"
         for key in ["id", "session_id", "content_url", "sha256", "size_bytes", "mime_type", "created_at"]:
             assert updated[key] == original[key]
-        assert session_asset_storage.content_path(owner, asset_id) == path
+        assert await session_asset_storage.content_path(owner, asset_id) == path
         assert path.read_bytes() == b"image-bytes"
         assert path.stat().st_mtime_ns == before
         assert client.get(original["content_url"]).content == b"image-bytes"

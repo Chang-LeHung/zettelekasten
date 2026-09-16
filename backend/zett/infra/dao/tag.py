@@ -11,7 +11,7 @@ from ...models import TagListOptions
 from ...schemas import ArtifactTagOut, TagOut, TagWrite
 from ..database import session_scope
 from ..models import ArtifactTagModel, TagModel
-from ..storage import Storage
+from ..storage import AsyncStorage
 
 
 def _tag_out(model: TagModel) -> TagOut:
@@ -28,12 +28,12 @@ def _tag_out(model: TagModel) -> TagOut:
     )
 
 
-class TagStorage(Storage[TagWrite, TagOut, str, TagListOptions]):
+class TagStorage(AsyncStorage[TagWrite, TagOut, str, TagListOptions]):
     """Typed storage for the persistent tag taxonomy."""
 
-    def create(self, entity: TagWrite) -> TagOut:
+    async def create(self, entity: TagWrite) -> TagOut:
         now = datetime.now(UTC)
-        with session_scope() as session:
+        async with session_scope() as session:
             model = TagModel(
                 id=new_uuid7(),
                 **entity.model_dump(),
@@ -42,47 +42,47 @@ class TagStorage(Storage[TagWrite, TagOut, str, TagListOptions]):
             )
             session.add(model)
             try:
-                session.flush()
+                await session.flush()
             except IntegrityError as error:
                 raise ValueError(f"Tag path already exists: {entity.path}") from error
             return _tag_out(model)
 
-    def get(self, entity_id: str) -> TagOut | None:
-        with session_scope() as session:
-            model = session.get(TagModel, entity_id)
+    async def get(self, entity_id: str) -> TagOut | None:
+        async with session_scope() as session:
+            model = await session.get(TagModel, entity_id)
             return _tag_out(model) if model else None
 
-    def get_by_normalized_path(self, normalized_path: str) -> TagOut | None:
-        with session_scope() as session:
-            model = session.scalar(select(TagModel).where(TagModel.normalized_path == normalized_path))
+    async def get_by_normalized_path(self, normalized_path: str) -> TagOut | None:
+        async with session_scope() as session:
+            model = await session.scalar(select(TagModel).where(TagModel.normalized_path == normalized_path))
             return _tag_out(model) if model else None
 
-    def update(self, entity_id: str, entity: TagWrite) -> TagOut:
-        with session_scope() as session:
-            model = session.get(TagModel, entity_id)
+    async def update(self, entity_id: str, entity: TagWrite) -> TagOut:
+        async with session_scope() as session:
+            model = await session.get(TagModel, entity_id)
             if model is None:
                 raise KeyError(f"Tag not found: {entity_id}")
             for key, value in entity.model_dump().items():
                 setattr(model, key, value)
             model.updated_at = datetime.now(UTC)
             try:
-                session.flush()
+                await session.flush()
             except IntegrityError as error:
                 raise ValueError(f"Tag path already exists: {entity.path}") from error
             return _tag_out(model)
 
-    def delete(self, entity_id: str) -> bool:
-        with session_scope() as session:
-            model = session.get(TagModel, entity_id)
+    async def delete(self, entity_id: str) -> bool:
+        async with session_scope() as session:
+            model = await session.get(TagModel, entity_id)
             if model is None:
                 return False
-            session.execute(sql_delete(ArtifactTagModel).where(ArtifactTagModel.tag_id == entity_id))
-            session.delete(model)
+            await session.execute(sql_delete(ArtifactTagModel).where(ArtifactTagModel.tag_id == entity_id))
+            await session.delete(model)
             return True
 
-    def list(self, options: TagListOptions | None = None) -> list[TagOut]:
+    async def list(self, options: TagListOptions | None = None) -> list[TagOut]:
         options = options or TagListOptions()
-        with session_scope() as session:
+        async with session_scope() as session:
             statement = select(TagModel)
             if options.prefix:
                 statement = statement.where(
@@ -90,65 +90,71 @@ class TagStorage(Storage[TagWrite, TagOut, str, TagListOptions]):
                     | TagModel.normalized_path.startswith(f"{options.prefix}/")
                 )
             statement = statement.order_by(TagModel.normalized_path).limit(options.limit).offset(options.offset)
-            return [_tag_out(model) for model in session.scalars(statement)]
+            return [_tag_out(model) for model in await session.scalars(statement)]
 
-    def replace_artifact_tags(self, artifact_id: str, tag_ids: tuple[str, ...]) -> None:
+    async def replace_artifact_tags(self, artifact_id: str, tag_ids: tuple[str, ...]) -> None:
         """Atomically replace every confirmed tag assignment for one artifact."""
-        with session_scope() as session:
-            session.execute(sql_delete(ArtifactTagModel).where(ArtifactTagModel.artifact_id == artifact_id))
+        async with session_scope() as session:
+            await session.execute(sql_delete(ArtifactTagModel).where(ArtifactTagModel.artifact_id == artifact_id))
             now = datetime.now(UTC)
             for tag_id in dict.fromkeys(tag_ids):
-                if session.get(TagModel, tag_id) is None:
+                if await session.get(TagModel, tag_id) is None:
                     raise KeyError(f"Tag not found: {tag_id}")
                 session.add(ArtifactTagModel(id=new_uuid7(), artifact_id=artifact_id, tag_id=tag_id, created_at=now))
 
-    def tags_for_artifacts(self, artifact_ids: tuple[str, ...]) -> dict[str, list[ArtifactTagOut]]:
+    async def tags_for_artifacts(self, artifact_ids: tuple[str, ...]) -> dict[str, list[ArtifactTagOut]]:
         if not artifact_ids:
             return {}
-        with session_scope() as session:
-            rows = session.execute(
+        async with session_scope() as session:
+            result = await session.execute(
                 select(ArtifactTagModel.artifact_id, TagModel.id, TagModel.path, TagModel.name)
                 .join(TagModel, TagModel.id == ArtifactTagModel.tag_id)
                 .where(ArtifactTagModel.artifact_id.in_(artifact_ids))
                 .order_by(TagModel.normalized_path)
-            ).all()
-        result: dict[str, list[ArtifactTagOut]] = {}
+            )
+            rows = result.all()
+        grouped: dict[str, list[ArtifactTagOut]] = {}
         for artifact_id, tag_id, path, name in rows:
-            result.setdefault(artifact_id, []).append(ArtifactTagOut(id=tag_id, path=path, name=name))
-        return result
+            grouped.setdefault(artifact_id, []).append(ArtifactTagOut(id=tag_id, path=path, name=name))
+        return grouped
 
-    def assignments(self) -> dict[str, set[str]]:
+    async def assignments(self) -> dict[str, set[str]]:
         """Return directly assigned artifact UUIDs keyed by tag UUID."""
-        with session_scope() as session:
-            rows = session.execute(select(ArtifactTagModel.tag_id, ArtifactTagModel.artifact_id)).all()
+        async with session_scope() as session:
+            rows = (await session.execute(select(ArtifactTagModel.tag_id, ArtifactTagModel.artifact_id))).all()
         result: dict[str, set[str]] = {}
         for tag_id, artifact_id in rows:
             result.setdefault(tag_id, set()).add(artifact_id)
         return result
 
-    def child_count(self, tag_id: str) -> int:
-        with session_scope() as session:
-            return session.scalar(select(func.count()).select_from(TagModel).where(TagModel.parent_id == tag_id)) or 0
+    async def child_count(self, tag_id: str) -> int:
+        async with session_scope() as session:
+            count = await session.scalar(select(func.count()).select_from(TagModel).where(TagModel.parent_id == tag_id))
+            return count or 0
 
-    def assignment_count(self, tag_id: str) -> int:
-        with session_scope() as session:
+    async def assignment_count(self, tag_id: str) -> int:
+        async with session_scope() as session:
             return (
-                session.scalar(
+                await session.scalar(
                     select(func.count()).select_from(ArtifactTagModel).where(ArtifactTagModel.tag_id == tag_id)
                 )
                 or 0
             )
 
-    def delete_artifact(self, artifact_id: str) -> int:
-        with session_scope() as session:
-            result = session.execute(sql_delete(ArtifactTagModel).where(ArtifactTagModel.artifact_id == artifact_id))
+    async def delete_artifact(self, artifact_id: str) -> int:
+        async with session_scope() as session:
+            result = await session.execute(
+                sql_delete(ArtifactTagModel).where(ArtifactTagModel.artifact_id == artifact_id)
+            )
             return result.rowcount
 
-    def delete_artifacts(self, artifact_ids: tuple[str, ...]) -> int:
+    async def delete_artifacts(self, artifact_ids: tuple[str, ...]) -> int:
         if not artifact_ids:
             return 0
-        with session_scope() as session:
-            result = session.execute(sql_delete(ArtifactTagModel).where(ArtifactTagModel.artifact_id.in_(artifact_ids)))
+        async with session_scope() as session:
+            result = await session.execute(
+                sql_delete(ArtifactTagModel).where(ArtifactTagModel.artifact_id.in_(artifact_ids))
+            )
             return result.rowcount
 
 

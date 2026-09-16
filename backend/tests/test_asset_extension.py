@@ -155,7 +155,7 @@ async def test_asset_extension_runs_complete_session_scoped_crud() -> None:
     assert model.observed[0]["text_content"] == "First"
     assert model.observed[1]["text_content"] == "Revised"
     assert model.observed[2]["metadata"] == {"topic": "agents"}
-    assert session_asset_storage.list(SessionAssetListOptions(session_id=session_id)) == []
+    assert await session_asset_storage.list(SessionAssetListOptions(session_id=session_id)) == []
 
 
 async def test_asset_extension_reads_binary_only_when_explicitly_requested() -> None:
@@ -167,7 +167,7 @@ async def test_asset_extension_reads_binary_only_when_explicitly_requested() -> 
 
     assert result.content == "Binary asset read."
     assert model.asset_id is not None
-    stored = session_asset_storage.get_for_session(session_id, model.asset_id)
+    stored = await session_asset_storage.get_for_session(session_id, model.asset_id)
     assert stored is not None and stored.asset_type == "image"
 
 
@@ -204,7 +204,8 @@ async def test_asset_extension_rejects_cross_session_reads_without_leaking_data(
     result = await agent.run("Read the other asset")
 
     assert result.content == "Asset unavailable."
-    assert session_asset_storage.get_for_session(owner, secret.id).text_content == "secret"
+    stored = await session_asset_storage.get_for_session(owner, secret.id)
+    assert stored is not None and stored.text_content == "secret"
 
 
 async def test_asset_extension_rejects_invalid_base64_without_creating_an_asset() -> None:
@@ -248,4 +249,4 @@ async def test_asset_extension_rejects_invalid_base64_without_creating_an_asset(
     result = await agent.run("Create an invalid file")
 
     assert result.content == "Rejected invalid content."
-    assert session_asset_storage.list(SessionAssetListOptions(session_id=session_id)) == []
+    assert await session_asset_storage.list(SessionAssetListOptions(session_id=session_id)) == []

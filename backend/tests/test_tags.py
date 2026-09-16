@@ -35,10 +35,10 @@ async def test_hierarchical_paths_create_stable_nodes_and_aggregate_counts() -> 
     session_id = (await session_storage.create(AgentSessionCreate())).session_id
     artifact = await tagged_card(session_id)
 
-    tagged = tag_service.sync_confirmed_suggestions(artifact)
-    tree = tag_service.list_tree()
+    tagged = await tag_service.sync_confirmed_suggestions(artifact)
+    tree = await tag_service.list_tree()
 
-    assert [tag.path for tag in tag_storage.list()] == [
+    assert [tag.path for tag in await tag_storage.list()] == [
         "Engineering",
         "Engineering/Python",
         "Engineering/Python/Asyncio",
@@ -49,30 +49,31 @@ async def test_hierarchical_paths_create_stable_nodes_and_aggregate_counts() -> 
     assert tree[0].total_count == 1
     assert tree[0].children[0].children[0].direct_count == 1
 
-    same = tag_service.create_path("engineering/python/asyncio")
+    same = await tag_service.create_path("engineering/python/asyncio")
     assert same.id == tagged.tags[0].id
-    assert len(tag_storage.list()) == 3
+    assert len(await tag_storage.list()) == 3
 
     # Assigning the same artifact to an ancestor must not inflate the ancestor's subtree count.
-    tag_service.replace_artifact_tags(artifact.id, ["Engineering", "Engineering/Python/Asyncio"])
-    assert tag_service.list_tree()[0].direct_count == 1
-    assert tag_service.list_tree()[0].total_count == 1
+    await tag_service.replace_artifact_tags(artifact.id, ["Engineering", "Engineering/Python/Asyncio"])
+    assert (await tag_service.list_tree())[0].direct_count == 1
+    assert (await tag_service.list_tree())[0].total_count == 1
 
 
 async def test_tag_deletion_protects_children_and_assignments() -> None:
     session_id = (await session_storage.create(AgentSessionCreate())).session_id
-    tagged = tag_service.sync_confirmed_suggestions(await tagged_card(session_id))
-    root = tag_storage.get_by_normalized_path("engineering")
+    tagged = await tag_service.sync_confirmed_suggestions(await tagged_card(session_id))
+    root = await tag_storage.get_by_normalized_path("engineering")
     assert root is not None
 
     with pytest.raises(ValueError, match="children"):
-        tag_service.delete(root.id)
+        await tag_service.delete(root.id)
     with pytest.raises(ValueError, match="assigned"):
-        tag_service.delete(root.id, recursive=True)
+        await tag_service.delete(root.id, recursive=True)
 
-    assert tag_service.delete(root.id, recursive=True, force=True)
-    assert tag_storage.list() == []
-    assert artifact_storage.get(tagged.id).tags == []
+    assert await tag_service.delete(root.id, recursive=True, force=True)
+    assert await tag_storage.list() == []
+    refreshed = await artifact_storage.get(tagged.id)
+    assert refreshed is not None and refreshed.tags == []
 
 
 async def test_library_tag_api_backfills_old_artifacts_and_filters_a_parent_subtree() -> None:
@@ -112,7 +113,8 @@ async def test_library_tag_api_force_delete_removes_all_artifact_assignments() -
         response = client.delete(f"/api/library/tags/{root_id}?recursive=true&force=true")
 
         assert response.json() == {"ok": True}
-        assert artifact_storage.get(artifact.id).tags == []
+        refreshed = await artifact_storage.get(artifact.id)
+        assert refreshed is not None and refreshed.tags == []
         assert client.get("/api/library/tags").json() == []
 
 

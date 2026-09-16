@@ -1,25 +1,39 @@
-"""SQLAlchemy transactions for asset, artifact, and provider records."""
+"""Asynchronous SQLAlchemy transactions for application records.
 
-from collections.abc import Generator
-from contextlib import contextmanager
+Artifacts, assets, tags, providers, and key-value settings live in the
+application database; Agent session history stays in the separate zett-agent
+database. Both are asynchronous, so routes await one engine each instead of
+hopping through a worker thread per DAO call.
+"""
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
+from sqlalchemy.engine import URL
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from ..config import settings
 from .models import Base
 
-engine = create_engine(f"sqlite:///{settings.database_path}", future=True)
+#: NullPool keeps every connection inside the loop that opened it, matching the
+#: Agent session storage and allowing tests to swap paths per event loop.
+engine = create_async_engine(
+    URL.create("sqlite+aiosqlite", database=str(settings.database_path)),
+    poolclass=NullPool,
+)
+session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
 
-def init_db() -> None:
+async def init_db() -> None:
     """Create the current schema; do not migrate retired application tables."""
     settings.database_path.parent.mkdir(parents=True, exist_ok=True)
-    Base.metadata.create_all(engine)
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
 
 
-@contextmanager
-def session_scope() -> Generator[Session]:
+@asynccontextmanager
+async def session_scope() -> AsyncIterator[AsyncSession]:
     """Commit successful operations and roll back failed ones."""
-    with Session(engine) as session, session.begin():
+    async with session_factory() as session, session.begin():
         yield session

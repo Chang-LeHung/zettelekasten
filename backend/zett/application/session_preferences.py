@@ -28,24 +28,24 @@ class SessionModelPreferenceService:
     def _key(session_id: str) -> str:
         return f"{SESSION_MODEL_KEY_PREFIX}{session_id}"
 
-    def get(self, session_id: str) -> SessionModelPreference | None:
+    async def get(self, session_id: str) -> SessionModelPreference | None:
         """Return the last model used by a session, if it has completed selection."""
-        record = self._storage.get(self._key(session_id))
+        record = await self._storage.get(self._key(session_id))
         return None if record is None else SessionModelPreference.model_validate(record.value)
 
-    def remember(self, session_id: str, connection: ProviderConnection) -> SessionModelPreference:
+    async def remember(self, session_id: str, connection: ProviderConnection) -> SessionModelPreference:
         """Update the preference after an enabled provider has been resolved."""
         preference = SessionModelPreference(
             provider_id=connection.id,
             provider=connection.provider,
             model=connection.model,
         )
-        self._storage.update(self._key(session_id), preference.model_dump(mode="json"))
+        await self._storage.update(self._key(session_id), preference.model_dump(mode="json"))
         return preference
 
-    def delete(self, session_id: str) -> bool:
+    async def delete(self, session_id: str) -> bool:
         """Remove every preference revision owned by one deleted session."""
-        return self._storage.delete(self._key(session_id))
+        return await self._storage.delete(self._key(session_id))
 
 
 session_model_preference_service = SessionModelPreferenceService()

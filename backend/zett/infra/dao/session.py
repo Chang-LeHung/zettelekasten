@@ -1,7 +1,5 @@
 """Session boundary backed exclusively by the standalone Agent database."""
 
-import asyncio
-
 from zett_agent import RawMessageRecord, SessionSummary
 
 from ...models import SessionListOptions
@@ -46,8 +44,8 @@ class SessionStorage(AsyncStorage[AgentSessionCreate, SessionSummary, str, Sessi
         if await self.get(entity_id) is None:
             return False
         result = await get_agent_runtime_storage().delete_session(entity_id)
-        await asyncio.to_thread(artifact_storage.delete_session, entity_id)
-        await asyncio.to_thread(session_asset_storage.delete_session, entity_id)
+        await artifact_storage.delete_session(entity_id)
+        await session_asset_storage.delete_session(entity_id)
         return result
 
     async def list(self, options: SessionListOptions | None = None) -> list[SessionSummary]:

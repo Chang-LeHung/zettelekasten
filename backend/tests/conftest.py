@@ -1,8 +1,10 @@
 from collections.abc import AsyncIterator
+from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import URL
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from zett import config
 from zett.infra import database
@@ -10,10 +12,13 @@ from zett.infra.models import Base
 
 
 @pytest.fixture(autouse=True)
-async def isolated_database(tmp_path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[Engine]:
+async def isolated_database(tmp_path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[Path]:
     """Run every test against a fresh SQLite database outside the user's data directory."""
     database_path = tmp_path / "zett-test.db"
-    engine = create_engine(f"sqlite:///{database_path}", future=True)
+    engine = create_async_engine(
+        URL.create("sqlite+aiosqlite", database=str(database_path)),
+        poolclass=NullPool,
+    )
     monkeypatch.setattr(config.settings, "database_path", database_path)
     monkeypatch.setattr(config.settings, "agent_database_path", tmp_path / "agent-test.db")
     monkeypatch.setattr(config.settings, "asset_directory", tmp_path / "assets")
@@ -21,9 +26,11 @@ async def isolated_database(tmp_path, monkeypatch: pytest.MonkeyPatch) -> AsyncI
     monkeypatch.setattr(config.settings, "provider_key_path", tmp_path / "provider.key")
     monkeypatch.setattr(config.settings, "log_directory", tmp_path / "logs")
     monkeypatch.setattr(database, "engine", engine)
-    Base.metadata.create_all(engine)
-    yield engine
+    monkeypatch.setattr(database, "session_factory", async_sessionmaker(engine, expire_on_commit=False))
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    yield database_path
     from zett.infra.agent_runtime import close_agent_runtime_storage
 
     await close_agent_runtime_storage()
-    engine.dispose()
+    await engine.dispose()

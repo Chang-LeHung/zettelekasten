@@ -8,7 +8,6 @@ from ...infra.dao import session_asset_storage, session_storage
 from ...models import SessionAssetListOptions
 from ...schemas import SessionAssetCreate, SessionAssetOut, SessionAssetType
 from ..asset_names import AssetRenameIn, rename_asset
-from ..dependencies import run_sync
 from ..schemas import DeleteResponse, LinkAssetIn, TextAssetIn
 
 router = APIRouter(prefix="/agent/{session_id}/assets", tags=["assets"])
@@ -36,13 +35,13 @@ async def list_assets(
         limit=limit,
         offset=offset,
     )
-    return await run_sync(session_asset_storage.list, options)
+    return await session_asset_storage.list(options)
 
 
 @router.get("/{asset_id}", response_model=SessionAssetOut)
 async def get_asset(session_id: str, asset_id: str) -> SessionAssetOut:
     """Read asset metadata only within its owning session."""
-    asset = await run_sync(session_asset_storage.get_for_session, session_id, asset_id)
+    asset = await session_asset_storage.get_for_session(session_id, asset_id)
     if asset is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset not found")
     return asset
@@ -106,8 +105,8 @@ async def upload_asset(
 @router.get("/{asset_id}/content", response_class=FileResponse)
 async def get_asset_content(session_id: str, asset_id: str) -> FileResponse:
     """Preview images and PDFs inline and download other files after verifying ownership."""
-    asset = await run_sync(session_asset_storage.get_for_session, session_id, asset_id)
-    path = await run_sync(session_asset_storage.content_path, session_id, asset_id)
+    asset = await session_asset_storage.get_for_session(session_id, asset_id)
+    path = await session_asset_storage.content_path(session_id, asset_id)
     if asset is None or path is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset content not found")
     inline = asset.asset_type == SessionAssetType.IMAGE or asset.mime_type == "application/pdf"
@@ -126,16 +125,16 @@ async def get_asset_content(session_id: str, asset_id: str) -> FileResponse:
 @router.delete("/{asset_id}", response_model=DeleteResponse)
 async def delete_asset(session_id: str, asset_id: str) -> DeleteResponse:
     """Delete an asset only when it belongs to the path session."""
-    asset = await run_sync(session_asset_storage.get_for_session, session_id, asset_id)
+    asset = await session_asset_storage.get_for_session(session_id, asset_id)
     if asset is None:
         return DeleteResponse(ok=False)
-    return DeleteResponse(ok=await run_sync(session_asset_storage.delete, asset_id))
+    return DeleteResponse(ok=await session_asset_storage.delete(asset_id))
 
 
 @router.patch("/{asset_id}/name", response_model=SessionAssetOut)
 async def rename_asset_route(session_id: str, asset_id: str, payload: AssetRenameIn) -> SessionAssetOut:
     """Rename the display label without changing stored file names or URLs."""
     try:
-        return await run_sync(rename_asset, session_id, asset_id, payload)
+        return await rename_asset(session_id, asset_id, payload)
     except KeyError as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset not found") from error

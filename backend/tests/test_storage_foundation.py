@@ -1,11 +1,11 @@
 """Real isolated SQLite tests for the new storage-only foundation."""
 
+import sqlite3
 from pathlib import Path
 from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import inspect
 from zett_agent import UserMessage
 
 from zett.config import settings
@@ -14,7 +14,7 @@ from zett.infra.dao.artifact import artifact_storage
 from zett.infra.dao.asset import session_asset_storage
 from zett.infra.dao.session import session_storage
 from zett.infra.models import Base
-from zett.infra.storage import AsyncStorage, Storage
+from zett.infra.storage import AsyncStorage
 from zett.main import app
 from zett.models import ArtifactListOptions, SessionAssetListOptions, SessionListOptions
 from zett.schemas import AgentArtifactWrite, AgentSessionCreate, CardArtifactContent, SessionAssetCreate
@@ -51,28 +51,29 @@ async def test_sessions_reuse_agent_storage_and_paginate_raw_history():
     ],
 )
 async def test_asset_crud_is_typed_and_session_scoped(kind, payload):
-    assert isinstance(session_asset_storage, Storage)
+    assert isinstance(session_asset_storage, AsyncStorage)
     owner = (await session_storage.create(AgentSessionCreate())).session_id
     other = (await session_storage.create(AgentSessionCreate())).session_id
     entity = SessionAssetCreate(session_id=owner, asset_type=kind, name="../asset.bin", **payload)
     asset = await session_asset_storage.create(entity)
     assert UUID(asset.id).version == 7
-    assert session_asset_storage.get_for_session(other, asset.id) is None
-    assert session_asset_storage.content_path(other, asset.id) is None
-    assert session_asset_storage.list(SessionAssetListOptions(session_id=other)) == []
-    path = session_asset_storage.content_path(owner, asset.id)
+    assert await session_asset_storage.get_for_session(other, asset.id) is None
+    assert await session_asset_storage.content_path(other, asset.id) is None
+    assert await session_asset_storage.list(SessionAssetListOptions(session_id=other)) == []
+    path = await session_asset_storage.content_path(owner, asset.id)
     if kind in {"file", "image"}:
         assert path.parent == settings.asset_directory / owner
         assert path.read_bytes() == payload["content"]
-    updated = session_asset_storage.update(asset.id, entity.model_copy(update={"name": "Renamed"}))
+    updated = await session_asset_storage.update(asset.id, entity.model_copy(update={"name": "Renamed"}))
     assert updated.id == asset.id and updated.name == "Renamed"
     if path is not None:
         assert not path.exists()
-        assert session_asset_storage.content_path(owner, asset.id).read_bytes() == payload["content"]
+        replacement = await session_asset_storage.content_path(owner, asset.id)
+        assert replacement is not None and replacement.read_bytes() == payload["content"]
     with pytest.raises(KeyError):
-        session_asset_storage.update(asset.id, entity.model_copy(update={"session_id": other}))
-    assert session_asset_storage.delete(asset.id)
-    assert not session_asset_storage.delete(asset.id)
+        await session_asset_storage.update(asset.id, entity.model_copy(update={"session_id": other}))
+    assert await session_asset_storage.delete(asset.id)
+    assert not await session_asset_storage.delete(asset.id)
 
 
 async def test_session_deletion_explicitly_cleans_owned_assets_and_artifacts():
@@ -89,9 +90,9 @@ async def test_session_deletion_explicitly_cleans_owned_assets_and_artifacts():
     assert not await session_storage.delete(owner)
     assert await session_storage.get(owner) is None
     assert not (settings.asset_directory / owner).exists()
-    assert artifact_storage.list(ArtifactListOptions(session_id=owner)) == []
-    assert session_asset_storage.list(SessionAssetListOptions(session_id=owner)) == []
-    assert len(artifact_storage.list(ArtifactListOptions(session_id=other))) == 1
+    assert await artifact_storage.list(ArtifactListOptions(session_id=owner)) == []
+    assert await session_asset_storage.list(SessionAssetListOptions(session_id=owner)) == []
+    assert len(await artifact_storage.list(ArtifactListOptions(session_id=other))) == 1
     assert (settings.asset_directory / other).is_dir()
 
 
@@ -100,7 +101,7 @@ async def test_missing_asset_payload_does_not_mutate_storage(kind):
     owner = (await session_storage.create(AgentSessionCreate())).session_id
     with pytest.raises(ValueError):
         await session_asset_storage.create(SessionAssetCreate(session_id=owner, asset_type=kind, name="Empty"))
-    assert session_asset_storage.list() == []
+    assert await session_asset_storage.list() == []
     assert not (settings.asset_directory / owner).exists()
 
 
@@ -114,7 +115,13 @@ def test_schema_and_http_surface_contain_no_retired_business_logic(isolated_data
         "tags",
     }
     assert set(Base.metadata.tables) == expected_tables
-    assert set(inspect(isolated_database).get_table_names()) == expected_tables
+    with sqlite3.connect(isolated_database) as connection:
+        table_names = {
+            row[0]
+            for row in connection.execute("select name from sqlite_master where type = 'table'")
+            if not row[0].startswith("sqlite_")
+        }
+    assert table_names == expected_tables
     assert all(not column.foreign_keys for table in Base.metadata.tables.values() for column in table.columns)
     with TestClient(app) as client:
         assert client.get("/api/health").json() == {"ok": True}

@@ -21,7 +21,7 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
     """Initialize and release owned resources without blocking the ASGI loop."""
     log_path = await run_in_threadpool(configure_logging)
     try:
-        await run_in_threadpool(init_db)
+        await init_db()
         get_agent_runtime_storage()
         logger.info("Zett service started; log_file=%s", log_path)
         yield

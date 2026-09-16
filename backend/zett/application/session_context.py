@@ -1,7 +1,5 @@
 """Persist and reconstruct the latest context-composition view per session."""
 
-import asyncio
-
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from zett_agent import ModelRequest, SQLiteSessionStorage, SystemMessage
 
@@ -40,15 +38,15 @@ class SessionContextCompositionService:
     def _key(session_id: str) -> str:
         return f"{SESSION_CONTEXT_KEY_PREFIX}{session_id}"
 
-    def get(self, session_id: str) -> SessionContextComposition | None:
+    async def get(self, session_id: str) -> SessionContextComposition | None:
         """Return the most recently observed composition, when available."""
-        record = self._storage.get(self._key(session_id))
+        record = await self._storage.get(self._key(session_id))
         return None if record is None else SessionContextComposition.model_validate(record.value)
 
-    def remember(self, session_id: str, ratios: dict[str, float]) -> SessionContextComposition:
+    async def remember(self, session_id: str, ratios: dict[str, float]) -> SessionContextComposition:
         """Validate and replace the session's latest composition snapshot."""
         composition = SessionContextComposition.model_validate(ratios)
-        self._storage.update(self._key(session_id), composition.model_dump(mode="json"))
+        await self._storage.update(self._key(session_id), composition.model_dump(mode="json"))
         return composition
 
     async def get_or_estimate(
@@ -65,16 +63,16 @@ class SessionContextCompositionService:
         and the base system prompt. The next real model call replaces it with
         the complete live estimate.
         """
-        existing = await asyncio.to_thread(self.get, session_id)
+        existing = await self.get(session_id)
         if existing is not None:
             return existing
         view = await storage.load(session_id)
         request = ModelRequest(messages=(SystemMessage(content=system_prompt), *view.messages))
-        return await asyncio.to_thread(self.remember, session_id, context_composition(request))
+        return await self.remember(session_id, context_composition(request))
 
-    def delete(self, session_id: str) -> bool:
+    async def delete(self, session_id: str) -> bool:
         """Remove the UI snapshot when its owning Agent session is deleted."""
-        return self._storage.delete(self._key(session_id))
+        return await self._storage.delete(self._key(session_id))
 
 
 session_context_composition_service = SessionContextCompositionService()

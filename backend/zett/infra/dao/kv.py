@@ -1,18 +1,15 @@
 """Versioned JSON key-value storage implemented with SQLAlchemy."""
 
 import json
-from collections.abc import Iterator
 from datetime import UTC, datetime
-from threading import RLock
 
 from sqlalchemy import select
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from zett_agent import new_uuid7
 
 from ...schemas import JsonValue, KeyValueRecord
 from ..database import session_scope
 from ..models import KeyValueModel
-
-_write_lock = RLock()
 
 
 def _normalize_key(key: str) -> str:
@@ -46,57 +43,66 @@ class KeyValueStorage:
     its version, and refreshing its modification time.
     """
 
-    def get(self, key: str) -> KeyValueRecord | None:
+    async def get(self, key: str) -> KeyValueRecord | None:
         """Return one current value, or ``None`` when its key is absent."""
         normalized = _normalize_key(key)
-        with session_scope() as session:
+        async with session_scope() as session:
             statement = select(KeyValueModel).where(KeyValueModel.key == normalized)
-            model = session.scalars(statement).first()
+            model = (await session.scalars(statement)).first()
             return _record(model) if model is not None else None
 
-    def update(self, key: str, value: JsonValue) -> KeyValueRecord:
-        """Create or replace one value and return its incremented version."""
+    async def update(self, key: str, value: JsonValue) -> KeyValueRecord:
+        """Create or replace one value and return its incremented version.
+
+        The insert-or-update runs as one statement whose version increment is
+        evaluated by SQLite, so concurrent callers cannot read the same version
+        and no process-local lock is needed.
+        """
         normalized = _normalize_key(key)
         serialized = json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
-        with _write_lock, session_scope() as session:
-            now = datetime.now(UTC)
-            model = session.scalars(select(KeyValueModel).where(KeyValueModel.key == normalized)).first()
-            if model is None:
-                model = KeyValueModel(
-                    id=new_uuid7(),
-                    key=normalized,
-                    value=serialized,
-                    version=1,
-                    created_at=now,
-                    updated_at=now,
-                )
-                session.add(model)
-            else:
-                model.value = serialized
-                model.version += 1
-                model.updated_at = now
-            session.flush()
+        now = datetime.now(UTC)
+        statement = (
+            sqlite_insert(KeyValueModel)
+            .values(
+                id=new_uuid7(),
+                key=normalized,
+                value=serialized,
+                version=1,
+                created_at=now,
+                updated_at=now,
+            )
+            .on_conflict_do_update(
+                index_elements=[KeyValueModel.key],
+                set_={
+                    "value": serialized,
+                    "version": KeyValueModel.version + 1,
+                    "updated_at": now,
+                },
+            )
+            .returning(KeyValueModel)
+        )
+        async with session_scope() as session:
+            model = (await session.scalars(statement)).one()
             return _record(model)
 
-    def delete(self, key: str) -> bool:
+    async def delete(self, key: str) -> bool:
         """Delete one key and report whether it existed."""
         normalized = _normalize_key(key)
-        with _write_lock, session_scope() as session:
-            model = session.scalars(select(KeyValueModel).where(KeyValueModel.key == normalized)).first()
+        async with session_scope() as session:
+            model = (await session.scalars(select(KeyValueModel).where(KeyValueModel.key == normalized))).first()
             if model is None:
                 return False
-            session.delete(model)
+            await session.delete(model)
             return True
 
-    def iter_prefix(self, prefix: str = "") -> Iterator[KeyValueRecord]:
-        """Iterate a key-sorted snapshot of current values under a prefix."""
+    async def iter_prefix(self, prefix: str = "") -> list[KeyValueRecord]:
+        """Return a key-sorted snapshot of current values under a prefix."""
         statement = select(KeyValueModel)
         if prefix:
             statement = statement.where(KeyValueModel.key.startswith(prefix, autoescape=True))
         statement = statement.order_by(KeyValueModel.key)
-        with session_scope() as session:
-            snapshot = tuple(_record(model) for model in session.scalars(statement))
-        return iter(snapshot)
+        async with session_scope() as session:
+            return [_record(model) for model in await session.scalars(statement)]
 
 
 key_value_storage = KeyValueStorage()

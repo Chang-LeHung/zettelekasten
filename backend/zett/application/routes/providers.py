@@ -5,7 +5,6 @@ from fastapi import APIRouter, HTTPException, Query, status
 from ...infra.dao import provider_storage
 from ...models import ProviderListOptions
 from ...schemas import ProviderOut, ProviderWrite
-from ..dependencies import run_sync
 from ..schemas import DeleteResponse, ProviderIn, ProviderResponse
 
 router = APIRouter(prefix="/ai/providers", tags=["providers"])
@@ -32,7 +31,7 @@ def _response(provider: ProviderOut) -> ProviderResponse:
 async def _write(payload: ProviderIn, *, existing_id: str | None = None) -> ProviderWrite:
     api_key = payload.api_key
     if existing_id is not None and api_key is None:
-        connection = await run_sync(provider_storage.resolve_connection, existing_id, enabled_only=False)
+        connection = await provider_storage.resolve_connection(existing_id, enabled_only=False)
         if connection is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Provider not found")
         if connection is not None and connection.api_key is not None:
@@ -60,23 +59,20 @@ async def list_providers(
     offset: int = Query(default=0, ge=0),
 ) -> list[ProviderResponse]:
     """List safe provider metadata without credentials or ciphertext."""
-    providers = await run_sync(
-        provider_storage.list,
-        ProviderListOptions(query=q, enabled=enabled, limit=limit, offset=offset),
-    )
+    providers = await provider_storage.list(ProviderListOptions(query=q, enabled=enabled, limit=limit, offset=offset))
     return [_response(provider) for provider in providers]
 
 
 @router.post("", response_model=ProviderResponse, status_code=status.HTTP_201_CREATED)
 async def create_provider(payload: ProviderIn) -> ProviderResponse:
     """Encrypt and persist a model configuration."""
-    return _response(await run_sync(provider_storage.create, await _write(payload)))
+    return _response(await provider_storage.create(await _write(payload)))
 
 
 @router.get("/{provider_id}", response_model=ProviderResponse)
 async def get_provider(provider_id: str) -> ProviderResponse:
     """Read one safe provider configuration without decrypting its key."""
-    provider = await run_sync(provider_storage.get, provider_id)
+    provider = await provider_storage.get(provider_id)
     if provider is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Provider not found")
     return _response(provider)
@@ -86,9 +82,8 @@ async def get_provider(provider_id: str) -> ProviderResponse:
 async def update_provider(provider_id: str, payload: ProviderIn) -> ProviderResponse:
     """Replace provider settings while a blank key preserves the stored key."""
     try:
-        return _response(
-            await run_sync(provider_storage.update, provider_id, await _write(payload, existing_id=provider_id))
-        )
+        entity = await _write(payload, existing_id=provider_id)
+        return _response(await provider_storage.update(provider_id, entity))
     except KeyError as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Provider not found") from error
 
@@ -96,4 +91,4 @@ async def update_provider(provider_id: str, payload: ProviderIn) -> ProviderResp
 @router.delete("/{provider_id}", response_model=DeleteResponse)
 async def delete_provider(provider_id: str) -> DeleteResponse:
     """Delete one local provider configuration."""
-    return DeleteResponse(ok=await run_sync(provider_storage.delete, provider_id))
+    return DeleteResponse(ok=await provider_storage.delete(provider_id))

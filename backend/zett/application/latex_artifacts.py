@@ -7,8 +7,8 @@ from ..infra.latex_projects import latex_pdf_path
 from ..schemas import LatexPdfArtifactContent
 
 
-def get_latex_pdf(session_id: str, artifact_id: str) -> Path | None:
-    artifact = artifact_storage.get_for_session(session_id, artifact_id)
+async def get_latex_pdf(session_id: str, artifact_id: str) -> Path | None:
+    artifact = await artifact_storage.get_for_session(session_id, artifact_id)
     if artifact is None or not isinstance(artifact.content, LatexPdfArtifactContent):
         raise FileNotFoundError("LaTeX PDF artifact not found")
     try:

@@ -14,6 +14,6 @@ class AssetRenameIn(BaseModel):
     ]
 
 
-def rename_asset(session_id: str, asset_id: str, payload: AssetRenameIn) -> SessionAssetOut:
+async def rename_asset(session_id: str, asset_id: str, payload: AssetRenameIn) -> SessionAssetOut:
     """Preserve immutable identity and references while changing a display name."""
-    return session_asset_storage.rename(session_id, asset_id, payload.name)
+    return await session_asset_storage.rename(session_id, asset_id, payload.name)

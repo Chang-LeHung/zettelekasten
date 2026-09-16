@@ -348,7 +348,7 @@ def test_artifact_api_rejects_ambiguous_slide_boundaries() -> None:
         assert "slide separators must be exactly" in response.text
 
 
-def test_provider_http_lifecycle_preserves_blank_update_key():
+async def test_provider_http_lifecycle_preserves_blank_update_key():
     with TestClient(app) as client:
         created = client.post("/api/ai/providers", json=_provider_payload())
         assert created.status_code == 201
@@ -364,7 +364,7 @@ def test_provider_http_lifecycle_preserves_blank_update_key():
         )
         assert updated.status_code == 200
         assert updated.json()["name"] == "Renamed"
-        connection = provider_storage.resolve_connection(provider_id)
+        connection = await provider_storage.resolve_connection(provider_id)
         assert connection is not None and connection.api_key is not None
         assert connection.api_key.get_secret_value() == "secret"
         assert connection.metadata["response"] is True
@@ -599,7 +599,7 @@ class TitleAwareModel:
         self.closed = True
 
 
-def test_first_successful_turn_generates_the_session_title_once(monkeypatch):
+async def test_first_successful_turn_generates_the_session_title_once(monkeypatch):
     models: list[TitleAwareModel] = []
     request_agents = []
     original_agent_factory = agent_routes.ZettelkastenAgentConfig.create
@@ -644,9 +644,9 @@ def test_first_successful_turn_generates_the_session_title_once(monkeypatch):
             "model": "test-model",
         }
 
-    with session_scope() as session:
+    async with session_scope() as session:
         revisions = list(
-            session.scalars(
+            await session.scalars(
                 select(KeyValueModel)
                 .where(KeyValueModel.key == f"{SESSION_MODEL_KEY_PREFIX}{session_id}")
                 .order_by(KeyValueModel.version)

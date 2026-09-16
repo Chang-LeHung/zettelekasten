@@ -26,7 +26,7 @@ def normalize_tag_path(path: str) -> tuple[str, str, tuple[str, ...]]:
 class TagService:
     """Coordinate taxonomy changes and artifact assignments."""
 
-    def create_path(
+    async def create_path(
         self,
         path: str,
         *,
@@ -38,10 +38,10 @@ class TagService:
         for index in range(len(segments)):
             node_path = "/".join(segments[: index + 1])
             normalized = node_path.casefold()
-            current = tag_storage.get_by_normalized_path(normalized)
+            current = await tag_storage.get_by_normalized_path(normalized)
             if current is None:
                 is_leaf = index == len(segments) - 1
-                current = tag_storage.create(
+                current = await tag_storage.create(
                     TagWrite(
                         path=node_path,
                         normalized_path=normalized,
@@ -57,7 +57,7 @@ class TagService:
         if (description is not None and parent.description != description) or (
             color is not None and parent.color != color
         ):
-            parent = tag_storage.update(
+            parent = await tag_storage.update(
                 parent.id,
                 TagWrite(
                     path=parent.path,
@@ -70,7 +70,7 @@ class TagService:
             )
         return parent
 
-    def update(
+    async def update(
         self,
         tag_id: str,
         *,
@@ -78,12 +78,12 @@ class TagService:
         description: str | None = None,
         color: str | None = None,
     ) -> TagOut:
-        current = self.require(tag_id)
+        current = await self.require(tag_id)
         target_path, target_normalized, segments = normalize_tag_path(path or current.path)
-        if target_normalized != current.normalized_path and tag_storage.child_count(tag_id):
+        if target_normalized != current.normalized_path and await tag_storage.child_count(tag_id):
             raise ValueError("A tag with children cannot be moved or renamed")
-        parent = self.create_path("/".join(segments[:-1])) if len(segments) > 1 else None
-        return tag_storage.update(
+        parent = await self.create_path("/".join(segments[:-1])) if len(segments) > 1 else None
+        return await tag_storage.update(
             tag_id,
             TagWrite(
                 path=target_path,
@@ -95,25 +95,24 @@ class TagService:
             ),
         )
 
-    def delete(self, tag_id: str, *, recursive: bool = False, force: bool = False) -> bool:
-        current = self.require(tag_id)
-        descendants = [
-            tag
-            for tag in tag_storage.list(TagListOptions(prefix=current.normalized_path, limit=2_000))
-            if tag.id != current.id
-        ]
+    async def delete(self, tag_id: str, *, recursive: bool = False, force: bool = False) -> bool:
+        current = await self.require(tag_id)
+        subtree = await tag_storage.list(TagListOptions(prefix=current.normalized_path, limit=2_000))
+        descendants = [tag for tag in subtree if tag.id != current.id]
         if descendants and not recursive:
             raise ValueError("Tag has children; set recursive=true to delete the subtree")
         targets = [*descendants, current]
-        if not force and any(tag_storage.assignment_count(tag.id) for tag in targets):
-            raise ValueError("Tag is assigned to artifacts; set force=true to remove those assignments")
+        if not force:
+            counts = [await tag_storage.assignment_count(tag.id) for tag in targets]
+            if any(counts):
+                raise ValueError("Tag is assigned to artifacts; set force=true to remove those assignments")
         for tag in sorted(targets, key=lambda item: item.normalized_path.count("/"), reverse=True):
-            tag_storage.delete(tag.id)
+            await tag_storage.delete(tag.id)
         return True
 
-    def list_tree(self) -> list[TagTreeOut]:
-        tags = list(tag_storage.list(TagListOptions(limit=2_000)))
-        assignments = tag_storage.assignments()
+    async def list_tree(self) -> list[TagTreeOut]:
+        tags = list(await tag_storage.list(TagListOptions(limit=2_000)))
+        assignments = await tag_storage.assignments()
         children: dict[str | None, list[TagOut]] = {}
         for tag in tags:
             children.setdefault(tag.parent_id, []).append(tag)
@@ -134,57 +133,58 @@ class TagService:
 
         return [node for node, _ in (build(root) for root in children.get(None, []))]
 
-    def subtree_ids(self, tag_ids: list[str]) -> tuple[str, ...]:
+    async def subtree_ids(self, tag_ids: list[str]) -> tuple[str, ...]:
         """Expand selected taxonomy nodes to include every descendant."""
         expanded: dict[str, None] = {}
         for tag_id in tag_ids:
-            tag = self.require(tag_id)
-            for candidate in tag_storage.list(TagListOptions(prefix=tag.normalized_path, limit=2_000)):
+            tag = await self.require(tag_id)
+            candidates = await tag_storage.list(TagListOptions(prefix=tag.normalized_path, limit=2_000))
+            for candidate in candidates:
                 expanded[candidate.id] = None
         return tuple(expanded)
 
-    def replace_artifact_tags(self, artifact_id: str, paths: list[str]) -> AgentArtifact:
-        artifact = artifact_storage.get(artifact_id)
+    async def replace_artifact_tags(self, artifact_id: str, paths: list[str]) -> AgentArtifact:
+        artifact = await artifact_storage.get(artifact_id)
         if artifact is None:
             raise KeyError(f"Artifact not found: {artifact_id}")
         if artifact.status != ArtifactStatus.SAVED:
             raise ValueError("Only saved artifacts can receive persistent tags")
-        tags = [self.create_path(path) for path in dict.fromkeys(paths)]
-        tag_storage.replace_artifact_tags(artifact_id, tuple(tag.id for tag in tags))
-        refreshed = artifact_storage.get(artifact_id)
+        tags = [await self.create_path(path) for path in dict.fromkeys(paths)]
+        await tag_storage.replace_artifact_tags(artifact_id, tuple(tag.id for tag in tags))
+        refreshed = await artifact_storage.get(artifact_id)
         if refreshed is None:  # pragma: no cover - guarded above
             raise KeyError(f"Artifact not found: {artifact_id}")
         return refreshed
 
-    def sync_confirmed_suggestions(self, artifact: AgentArtifact) -> AgentArtifact:
+    async def sync_confirmed_suggestions(self, artifact: AgentArtifact) -> AgentArtifact:
         """Promote the suggestions retained by the UI into persistent assignments."""
         if artifact.status != ArtifactStatus.SAVED or not hasattr(artifact.content, "suggested_tags"):
             return artifact
         paths = [tag.path for tag in artifact.content.suggested_tags]
-        return self.replace_artifact_tags(artifact.id, paths)
+        return await self.replace_artifact_tags(artifact.id, paths)
 
-    def backfill_legacy_artifacts(self) -> None:
+    async def backfill_legacy_artifacts(self) -> None:
         """Materialize tags embedded by releases predating the assignment table."""
-        if key_value_storage.get(LEGACY_TAG_BACKFILL_KEY) is not None:
+        if await key_value_storage.get(LEGACY_TAG_BACKFILL_KEY) is not None:
             return
         offset = 0
         while True:
-            artifacts = artifact_storage.list(
+            artifacts = await artifact_storage.list(
                 ArtifactListOptions(statuses=(ArtifactStatus.SAVED,), limit=500, offset=offset)
             )
             for artifact in artifacts:
                 if not artifact.tags and hasattr(artifact.content, "suggested_tags"):
                     paths = [tag.path for tag in artifact.content.suggested_tags]
                     if paths:
-                        self.replace_artifact_tags(artifact.id, paths)
+                        await self.replace_artifact_tags(artifact.id, paths)
             if len(artifacts) < 500:
-                key_value_storage.update(LEGACY_TAG_BACKFILL_KEY, True)
+                await key_value_storage.update(LEGACY_TAG_BACKFILL_KEY, True)
                 return
             offset += len(artifacts)
 
     @staticmethod
-    def require(tag_id: str) -> TagOut:
-        tag = tag_storage.get(tag_id)
+    async def require(tag_id: str) -> TagOut:
+        tag = await tag_storage.get(tag_id)
         if tag is None:
             raise KeyError(f"Tag not found: {tag_id}")
         return tag

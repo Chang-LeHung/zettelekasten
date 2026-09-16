@@ -9,7 +9,6 @@ from ...infra.agent_runtime import get_agent_runtime_storage
 from ...infra.dao import artifact_storage, session_asset_storage, session_storage
 from ...models import ArtifactListOptions, SessionAssetListOptions, SessionListOptions
 from ...schemas import AgentSessionCreate
-from ..dependencies import run_sync
 from ..presentation import message_out, session_out
 from ..schemas import AgentStartOut, DeleteResponse, PersistedMessageOut, SessionOut
 from ..session_context import SessionContextComposition, session_context_composition_service
@@ -24,8 +23,8 @@ async def _session_detail(session_id: str) -> SessionOut:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
     messages, artifacts, assets = await asyncio.gather(
         session_storage.list_raw_messages(session_id, limit=10_000),
-        run_sync(artifact_storage.list, ArtifactListOptions(session_id=session_id, limit=500)),
-        run_sync(session_asset_storage.list, SessionAssetListOptions(session_id=session_id, limit=500)),
+        artifact_storage.list(ArtifactListOptions(session_id=session_id, limit=500)),
+        session_asset_storage.list(SessionAssetListOptions(session_id=session_id, limit=500)),
     )
     result = session_out(summary)
     result.messages = [message_out(record) for record in messages]
@@ -62,7 +61,7 @@ async def get_session_model(session_id: str) -> SessionModelPreference | None:
     """Return the provider configuration most recently used by this session."""
     if await session_storage.get(session_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
-    return await run_sync(session_model_preference_service.get, session_id)
+    return await session_model_preference_service.get(session_id)
 
 
 @router.get("/sessions/{session_id}/context-composition", response_model=SessionContextComposition)
@@ -70,7 +69,7 @@ async def get_session_context_composition(session_id: str) -> SessionContextComp
     """Return the last live context ratios, estimating sessions created before the feature."""
     if await session_storage.get(session_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
-    storage = await run_sync(get_agent_runtime_storage)
+    storage = get_agent_runtime_storage()
     return await session_context_composition_service.get_or_estimate(session_id, storage, SYSTEM_PROMPT)
 
 
@@ -103,7 +102,7 @@ async def delete_session(session_id: str) -> DeleteResponse:
     deleted = await session_storage.delete(session_id)
     if deleted:
         await asyncio.gather(
-            run_sync(session_model_preference_service.delete, session_id),
-            run_sync(session_context_composition_service.delete, session_id),
+            session_model_preference_service.delete(session_id),
+            session_context_composition_service.delete(session_id),
         )
     return DeleteResponse(ok=deleted)

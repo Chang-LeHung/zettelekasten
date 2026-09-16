@@ -1,5 +1,7 @@
 """Launch the storage foundation and unchanged frontend."""
 
+import asyncio
+
 import typer
 import uvicorn
 
@@ -23,7 +25,9 @@ def start(
     reload: bool = typer.Option(False, "--reload", help="Reload on source changes"),
 ) -> None:
     """Serve the storage foundation and existing frontend."""
-    init_db()
+    # Prepare the schema before Uvicorn owns a loop; the lifespan repeats it
+    # idempotently for `uvicorn zett.main:app` and test clients.
+    asyncio.run(init_db())
     display_host = "127.0.0.1" if host in {"0.0.0.0", "::"} else host
     logger.info("Starting Zett service; host=%s port=%d reload=%s", host, port, reload)
     typer.echo(f"http://{display_host}:{port}")
