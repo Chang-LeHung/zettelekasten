@@ -3,8 +3,8 @@ PORT ?= 6280
 DOCS_HOST ?= 127.0.0.1
 DOCS_PORT ?= 8000
 
-.PHONY: help install backend-install zett-agent-install frontend-install frontend-build start dev check \
-	zett-agent-check ruff-check typecheck pre-commit-install docs docs-serve docs-check docs-examples docs-ui-check
+.PHONY: help install backend-install zett-agent-install zettcode-install frontend-install frontend-build start dev check \
+	zett-agent-check zettcode-check ruff-check typecheck pre-commit-install docs docs-serve docs-check docs-examples docs-ui-check
 
 help:
 	@echo "Available targets:"
@@ -13,6 +13,7 @@ help:
 	@echo "  make dev       Build and start the application from source"
 	@echo "  make check     Run backend lint and frontend type/build checks"
 	@echo "  make zett-agent-check  Verify the standalone agent runtime"
+	@echo "  make zettcode-check  Verify the standalone ZettCode terminal agent"
 	@echo "  make pre-commit-install  Install the Ruff and TypeScript Git hooks"
 	@echo "  make docs      Build the Zett Agent API documentation"
 	@echo "  make docs-serve  Build and preview docs at http://$(DOCS_HOST):$(DOCS_PORT)"
@@ -30,6 +31,10 @@ backend-install:
 zett-agent-install:
 	uv sync --directory backend/zett-agent
 	@echo "zett-agent installed locally at backend/zett-agent/.venv"
+
+zettcode-install:
+	uv sync --directory backend/zettcode
+	@echo "zettcode installed locally at backend/zettcode/.venv"
 
 frontend-install:
 	npm --prefix frontend install
@@ -49,6 +54,8 @@ ruff-check:
 	uv run --directory backend ruff check zett tests
 	env -u VIRTUAL_ENV uv run --directory backend/zett-agent ruff format --check src tests examples
 	env -u VIRTUAL_ENV uv run --directory backend/zett-agent ruff check src tests examples
+	env -u VIRTUAL_ENV uv run --directory backend/zettcode ruff format --check src tests
+	env -u VIRTUAL_ENV uv run --directory backend/zettcode ruff check src tests
 
 typecheck:
 	npm --prefix frontend run typecheck
@@ -60,6 +67,7 @@ check:
 	$(MAKE) ruff-check
 	uv run --directory backend pytest
 	$(MAKE) zett-agent-check
+	$(MAKE) zettcode-check
 	$(MAKE) docs-check
 	npm --prefix frontend run test
 	$(MAKE) typecheck
@@ -69,6 +77,11 @@ zett-agent-check:
 	uv run --directory backend/zett-agent ruff format --check src tests examples
 	uv run --directory backend/zett-agent ruff check src tests examples
 	uv run --directory backend/zett-agent pytest --cov --cov-report=term-missing
+
+zettcode-check:
+	env -u VIRTUAL_ENV uv run --directory backend/zettcode ruff format --check src tests
+	env -u VIRTUAL_ENV uv run --directory backend/zettcode ruff check src tests
+	env -u VIRTUAL_ENV uv run --directory backend/zettcode pytest
 
 docs:
 	env -u VIRTUAL_ENV uv run --directory backend/zett-agent --group docs sphinx-build -E -a -W --keep-going -b html docs docs/_build/html
