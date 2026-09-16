@@ -12,3 +12,7 @@ backend/zett-agent/docs/_build/
 backend/zett-agent/docs/_generated/
 backend/zett-agent/.coverage
 backend/.zett-tool-output/
+backend/zettcode/.zett-tool-output/
+backend/zettcode/dist/
+**/.pytest_cache/
+**/.ruff_cache/
