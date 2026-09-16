@@ -144,7 +144,7 @@ class BinaryAssetModel:
 
 
 async def test_asset_extension_runs_complete_session_scoped_crud() -> None:
-    session_id = session_storage.create(AgentSessionCreate()).session_id
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
     model = AssetCrudModel()
     agent = await Agent.create(model, config=AgentRunConfig(session_id=session_id), extensions=[AssetExtension()])
 
@@ -159,7 +159,7 @@ async def test_asset_extension_runs_complete_session_scoped_crud() -> None:
 
 
 async def test_asset_extension_reads_binary_only_when_explicitly_requested() -> None:
-    session_id = session_storage.create(AgentSessionCreate()).session_id
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
     model = BinaryAssetModel(b"\x89PNG\r\n")
     agent = await Agent.create(model, config=AgentRunConfig(session_id=session_id), extensions=[AssetExtension()])
 
@@ -172,9 +172,9 @@ async def test_asset_extension_reads_binary_only_when_explicitly_requested() -> 
 
 
 async def test_asset_extension_rejects_cross_session_reads_without_leaking_data() -> None:
-    owner = session_storage.create(AgentSessionCreate()).session_id
-    other = session_storage.create(AgentSessionCreate()).session_id
-    secret = session_asset_storage.create(
+    owner = (await session_storage.create(AgentSessionCreate())).session_id
+    other = (await session_storage.create(AgentSessionCreate())).session_id
+    secret = await session_asset_storage.create(
         SessionAssetCreate(session_id=owner, asset_type="text", name="private.txt", text_content="secret")
     )
 
@@ -208,7 +208,7 @@ async def test_asset_extension_rejects_cross_session_reads_without_leaking_data(
 
 
 async def test_asset_extension_rejects_invalid_base64_without_creating_an_asset() -> None:
-    session_id = session_storage.create(AgentSessionCreate()).session_id
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
 
     class InvalidBinaryModel:
         def __init__(self) -> None:

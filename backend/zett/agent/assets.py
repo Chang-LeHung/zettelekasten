@@ -88,7 +88,7 @@ class AssetExtension(AgentExtension):
         session_id = context.config.session_id
 
         @tool
-        def create_asset(asset: AssetInput) -> SessionAssetOut:
+        async def create_asset(asset: AssetInput) -> SessionAssetOut:
             """Create a text, link, image, or file asset in this conversation.
 
             Args:
@@ -101,7 +101,7 @@ class AssetExtension(AgentExtension):
                 - Create an asset only when the user requests a durable session attachment.
                 - Use text for inline source material and link for an external URL.
             """
-            return session_asset_storage.create(_write_model(session_id, asset))
+            return await session_asset_storage.create(_write_model(session_id, asset))
 
         @tool
         def get_asset(asset_id: str, include_binary_content: bool = False) -> AssetDetails:

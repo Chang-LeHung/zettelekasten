@@ -161,7 +161,7 @@ def _user_message(payload: AnalyzeRequest, *, max_images: int) -> UserMessage:
 
 async def _prepare_agent_request(session_id: str, payload: AnalyzeRequest) -> _PreparedAgentRequest:
     """Validate input, reserve its session, and construct request-owned resources."""
-    if await run_sync(session_storage.get, session_id) is None:
+    if await session_storage.get(session_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
     connection = await run_sync(provider_storage.resolve_connection, payload.provider_id)
     if connection is None:

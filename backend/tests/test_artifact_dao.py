@@ -18,27 +18,27 @@ from zett.schemas import (
 )
 
 
-def test_artifact_storage_persists_multiple_typed_outputs_per_session() -> None:
-    session_id = session_storage.create(AgentSessionCreate()).session_id
-    card = artifact_storage.create(
+async def test_artifact_storage_persists_multiple_typed_outputs_per_session() -> None:
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
+    card = await artifact_storage.create(
         AgentArtifactWrite(
             session_id=session_id,
             content=CardArtifactContent(title="Small idea", content="A concise note.", card_type="idea"),
         )
     )
-    article = artifact_storage.create(
+    article = await artifact_storage.create(
         AgentArtifactWrite(
             session_id=session_id,
             content=ArticleArtifactContent(title="Long article", subtitle="A subtitle", content="# Body"),
         )
     )
-    image = artifact_storage.create(
+    image = await artifact_storage.create(
         AgentArtifactWrite(
             session_id=session_id,
             content=ImageArtifactContent(title="Architecture", prompt="A clean architecture diagram"),
         )
     )
-    slides = artifact_storage.create(
+    slides = await artifact_storage.create(
         AgentArtifactWrite(
             session_id=session_id,
             content=SlidesArtifactContent(
@@ -70,10 +70,10 @@ def test_artifact_storage_persists_multiple_typed_outputs_per_session() -> None:
         ]
 
 
-def test_artifact_updates_are_versioned_and_cannot_cross_sessions() -> None:
-    first_session = session_storage.create(AgentSessionCreate()).session_id
-    second_session = session_storage.create(AgentSessionCreate()).session_id
-    created = artifact_storage.create(
+async def test_artifact_updates_are_versioned_and_cannot_cross_sessions() -> None:
+    first_session = (await session_storage.create(AgentSessionCreate())).session_id
+    second_session = (await session_storage.create(AgentSessionCreate())).session_id
+    created = await artifact_storage.create(
         AgentArtifactWrite(
             session_id=first_session,
             content=ArticleArtifactContent(title="Draft", content="First version"),
@@ -102,15 +102,15 @@ def test_artifact_updates_are_versioned_and_cannot_cross_sessions() -> None:
         )
 
 
-def test_artifact_filters_and_explicit_session_cleanup() -> None:
-    session_id = session_storage.create(AgentSessionCreate()).session_id
-    artifact_storage.create(
+async def test_artifact_filters_and_explicit_session_cleanup() -> None:
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
+    await artifact_storage.create(
         AgentArtifactWrite(session_id=session_id, content=CardArtifactContent(title="Python", content="Code"))
     )
-    artifact_storage.create(
+    await artifact_storage.create(
         AgentArtifactWrite(session_id=session_id, content=ArticleArtifactContent(title="Python guide", content="Long"))
     )
-    artifact_storage.create(
+    await artifact_storage.create(
         AgentArtifactWrite(
             session_id=session_id,
             content=SlidesArtifactContent(title="Python slides", content="# Python\n\n---\n\n## Types"),

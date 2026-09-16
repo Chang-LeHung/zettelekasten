@@ -25,8 +25,8 @@ def project(session_id: str, name: str = "paper") -> dict[str, str]:
     return {"artifact_type": "latex_pdf", "project_path": str(directory), "pdf_name": f"{name}.pdf"}
 
 
-def test_latex_pdf_lifecycle_and_inline_content() -> None:
-    session_id = session_storage.create(AgentSessionCreate()).session_id
+async def test_latex_pdf_lifecycle_and_inline_content() -> None:
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
     content = project(session_id)
     endpoint = f"/api/agent/{session_id}/artifacts"
     with TestClient(app) as client:
@@ -56,7 +56,7 @@ def test_latex_pdf_lifecycle_and_inline_content() -> None:
         assert saved.json()["version"] == 3
         assert len(artifact_storage.list(ArtifactListOptions(query="revised", artifact_types=("latex_pdf",)))) == 1
         assert client.get(url).json()["content"] == replacement
-        other_session = session_storage.create(AgentSessionCreate()).session_id
+        other_session = (await session_storage.create(AgentSessionCreate())).session_id
         assert client.get(f"/api/agent/{other_session}/artifacts/{artifact['id']}/content").status_code == 404
         assert client.delete(url).json() == {"ok": True}
         assert client.get(f"{url}/content").status_code == 404
@@ -74,8 +74,8 @@ def test_pdf_name_is_a_plain_filename(name: str) -> None:
 
 
 @pytest.mark.parametrize("failure", ["outside", "symlink_project"])
-def test_invalid_project_cannot_be_registered(tmp_path, failure: str) -> None:
-    session_id = session_storage.create(AgentSessionCreate()).session_id
+async def test_invalid_project_cannot_be_registered(tmp_path, failure: str) -> None:
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
     content = project(session_id)
     directory = settings.artifact_directory / session_id / "paper"
     if failure == "outside":
@@ -91,8 +91,8 @@ def test_invalid_project_cannot_be_registered(tmp_path, failure: str) -> None:
     assert artifact_storage.list(ArtifactListOptions(session_id=session_id)) == []
 
 
-def test_missing_pdf_does_not_block_metadata_or_saving() -> None:
-    session_id = session_storage.create(AgentSessionCreate()).session_id
+async def test_missing_pdf_does_not_block_metadata_or_saving() -> None:
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
     content = project(session_id)
     with TestClient(app) as client:
         endpoint = f"/api/agent/{session_id}/artifacts"
@@ -107,10 +107,10 @@ def test_missing_pdf_does_not_block_metadata_or_saving() -> None:
         assert client.post(f"{url}/save").status_code == 200
 
 
-def test_create_allocates_directory_before_agent_writes_files(tmp_path, monkeypatch) -> None:
+async def test_create_allocates_directory_before_agent_writes_files(tmp_path, monkeypatch) -> None:
     # A configured non-default root proves consumers must use the returned path.
     monkeypatch.setattr(settings, "artifact_directory", tmp_path / "custom-projects")
-    session_id = session_storage.create(AgentSessionCreate()).session_id
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
     with TestClient(app) as client:
         endpoint = f"/api/agent/{session_id}/artifacts"
         response = client.post(endpoint, json={"content": {"artifact_type": "latex_pdf", "pdf_name": "report.pdf"}})
@@ -131,10 +131,10 @@ def test_create_allocates_directory_before_agent_writes_files(tmp_path, monkeypa
         assert client.post(f"{url}/save").status_code == 200
 
 
-def test_storage_accepts_minimal_create_input_without_touching_existing_sources() -> None:
-    session_id = session_storage.create(AgentSessionCreate()).session_id
+async def test_storage_accepts_minimal_create_input_without_touching_existing_sources() -> None:
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
     content = project(session_id)
-    result = artifact_storage.create(
+    result = await artifact_storage.create(
         AgentArtifactWrite(
             session_id=session_id,
             content=LatexPdfArtifactCreate(pdf_name="paper.pdf"),
@@ -145,9 +145,9 @@ def test_storage_accepts_minimal_create_input_without_touching_existing_sources(
 
 
 @pytest.mark.parametrize("failure", ["invalid_pdf", "symlink_pdf"])
-def test_preview_validates_pdf_after_creation(tmp_path, failure: str) -> None:
-    session_id = session_storage.create(AgentSessionCreate()).session_id
-    artifact = artifact_storage.create(
+async def test_preview_validates_pdf_after_creation(tmp_path, failure: str) -> None:
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
+    artifact = await artifact_storage.create(
         AgentArtifactWrite(
             session_id=session_id,
             content=LatexPdfArtifactCreate(pdf_name="paper.pdf"),

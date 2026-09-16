@@ -64,7 +64,7 @@ async def list_all_artifacts(
 @router.get("/agent/{session_id}/artifacts", response_model=list[AgentArtifact])
 async def list_session_artifacts(session_id: str) -> list[AgentArtifact]:
     """List every artifact belonging to one conversation."""
-    if await run_sync(session_storage.get, session_id) is None:
+    if await session_storage.get(session_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
     return await run_sync(artifact_storage.list, ArtifactListOptions(session_id=session_id, limit=500))
 
@@ -76,7 +76,7 @@ async def list_session_artifacts(session_id: str) -> list[AgentArtifact]:
 )
 async def create_artifact(session_id: str, payload: ArtifactCreateIn) -> AgentArtifact:
     """Create one typed artifact owned by the URL session."""
-    if await run_sync(session_storage.get, session_id) is None:
+    if await session_storage.get(session_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
     entity = AgentArtifactWrite(
         session_id=session_id,
@@ -86,7 +86,7 @@ async def create_artifact(session_id: str, payload: ArtifactCreateIn) -> AgentAr
         metadata=payload.metadata,
     )
     try:
-        created = await run_sync(artifact_storage.create, entity)
+        created = await artifact_storage.create(entity)
         return await run_sync(tag_service.sync_confirmed_suggestions, created)
     except (ValueError, FileNotFoundError) as error:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error

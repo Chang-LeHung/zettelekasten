@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import json
 import re
@@ -88,16 +89,25 @@ def _validate_payload(entity: SessionAssetCreate) -> None:
 class SessionAssetStorage(Storage[SessionAssetCreate, SessionAssetOut, str, SessionAssetListOptions]):
     """Persist session asset metadata in SQLite and binary payloads on local disk."""
 
-    def create(self, entity: SessionAssetCreate) -> SessionAssetOut:
+    async def create(self, entity: SessionAssetCreate) -> SessionAssetOut:
+        """Store one asset after confirming its Agent session exists.
+
+        The session database is asynchronous, so this boundary awaits it and
+        then runs the metadata write and file copy in a worker thread.
+        """
+        _validate_payload(entity)
+        from ..agent_runtime import get_agent_runtime_storage
+
+        if await get_agent_runtime_storage().get_session(entity.session_id) is None:
+            raise KeyError(f"Agent session not found: {entity.session_id}")
+        return await asyncio.to_thread(self._create, entity)
+
+    def _create(self, entity: SessionAssetCreate) -> SessionAssetOut:
         _validate_payload(entity)
         asset_id = new_uuid7()
         now = datetime.now(UTC)
         storage_name: str | None = None
         written_path: Path | None = None
-        from ..agent_runtime import get_agent_runtime_storage
-
-        if get_agent_runtime_storage().get_session(entity.session_id) is None:
-            raise KeyError(f"Agent session not found: {entity.session_id}")
         if entity.asset_type in FILE_ASSET_TYPES:
             if entity.content is None:
                 raise ValueError("Binary asset content is required")

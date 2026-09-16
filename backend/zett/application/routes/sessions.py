@@ -19,11 +19,11 @@ router = APIRouter(prefix="/agent", tags=["sessions"])
 
 
 async def _session_detail(session_id: str) -> SessionOut:
-    summary = await run_sync(session_storage.get, session_id)
+    summary = await session_storage.get(session_id)
     if summary is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
     messages, artifacts, assets = await asyncio.gather(
-        run_sync(session_storage.list_raw_messages, session_id, limit=10_000),
+        session_storage.list_raw_messages(session_id, limit=10_000),
         run_sync(artifact_storage.list, ArtifactListOptions(session_id=session_id, limit=500)),
         run_sync(session_asset_storage.list, SessionAssetListOptions(session_id=session_id, limit=500)),
     )
@@ -37,7 +37,7 @@ async def _session_detail(session_id: str) -> SessionOut:
 @router.post("/start", response_model=AgentStartOut, status_code=status.HTTP_201_CREATED)
 async def start_session() -> AgentStartOut:
     """Create an empty root conversation before its first streamed turn."""
-    session = await run_sync(session_storage.create, AgentSessionCreate())
+    session = await session_storage.create(AgentSessionCreate())
     return AgentStartOut(conversation_id=session.session_id)
 
 
@@ -47,7 +47,7 @@ async def list_sessions(
     offset: int = Query(default=0, ge=0),
 ) -> list[SessionOut]:
     """List lightweight session summaries in latest-activity order."""
-    sessions = await run_sync(session_storage.list, SessionListOptions(limit=limit, offset=offset))
+    sessions = await session_storage.list(SessionListOptions(limit=limit, offset=offset))
     return [session_out(item) for item in sessions]
 
 
@@ -60,7 +60,7 @@ async def get_session(session_id: str) -> SessionOut:
 @router.get("/sessions/{session_id}/model", response_model=SessionModelPreference | None)
 async def get_session_model(session_id: str) -> SessionModelPreference | None:
     """Return the provider configuration most recently used by this session."""
-    if await run_sync(session_storage.get, session_id) is None:
+    if await session_storage.get(session_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
     return await run_sync(session_model_preference_service.get, session_id)
 
@@ -68,7 +68,7 @@ async def get_session_model(session_id: str) -> SessionModelPreference | None:
 @router.get("/sessions/{session_id}/context-composition", response_model=SessionContextComposition)
 async def get_session_context_composition(session_id: str) -> SessionContextComposition:
     """Return the last live context ratios, estimating sessions created before the feature."""
-    if await run_sync(session_storage.get, session_id) is None:
+    if await session_storage.get(session_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
     storage = await run_sync(get_agent_runtime_storage)
     return await session_context_composition_service.get_or_estimate(session_id, storage, SYSTEM_PROMPT)
@@ -81,9 +81,9 @@ async def list_session_messages(
     offset: int = Query(default=0, ge=0),
 ) -> list[PersistedMessageOut]:
     """Page through the immutable Raw Log used by the conversation UI."""
-    if await run_sync(session_storage.get, session_id) is None:
+    if await session_storage.get(session_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
-    records = await run_sync(session_storage.list_raw_messages, session_id, limit=limit, offset=offset)
+    records = await session_storage.list_raw_messages(session_id, limit=limit, offset=offset)
     return [message_out(record) for record in records]
 
 
@@ -91,7 +91,7 @@ async def list_session_messages(
 async def update_session_title(session_id: str, payload: AgentSessionCreate) -> SessionOut:
     """Update the title without rebuilding the full conversation."""
     try:
-        updated = await run_sync(session_storage.update, session_id, payload)
+        updated = await session_storage.update(session_id, payload)
     except KeyError as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found") from error
     return session_out(updated)
@@ -100,7 +100,7 @@ async def update_session_title(session_id: str, payload: AgentSessionCreate) -> 
 @router.delete("/sessions/{session_id}", response_model=DeleteResponse)
 async def delete_session(session_id: str) -> DeleteResponse:
     """Explicitly delete a session and its owned assets and artifacts."""
-    deleted = await run_sync(session_storage.delete, session_id)
+    deleted = await session_storage.delete(session_id)
     if deleted:
         await asyncio.gather(
             run_sync(session_model_preference_service.delete, session_id),

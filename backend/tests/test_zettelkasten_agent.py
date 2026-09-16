@@ -262,7 +262,7 @@ async def test_context_composition_extension_is_registered_after_prompt_extensio
         assert any(isinstance(extension, TagExtension) for extension in extensions)
         assert names.index("ContextCompositionExtension") > names.index("ToolGuidelinesExtension")
     finally:
-        storage.close()
+        await storage.close()
 
 
 async def test_context_composition_is_refreshed_after_the_assistant_message() -> None:
@@ -320,7 +320,7 @@ async def test_factory_loads_default_user_skills_and_mcp_configuration(tmp_path,
         assert [(item.name, item.path) for item in skill.skills] == [("zett-review", skill_path.resolve())]
         assert mcp.servers == (McpHttpServer("docs", "https://docs.test/mcp", {"Authorization": "Bearer secret"}),)
     finally:
-        storage.close()
+        await storage.close()
 
 
 async def test_factory_accepts_explicit_skill_and_mcp_configuration(tmp_path) -> None:
@@ -346,7 +346,7 @@ async def test_factory_accepts_explicit_skill_and_mcp_configuration(tmp_path) ->
         assert [(item.name, item.path) for item in skill.skills] == [("project-review", skill_path.resolve())]
         assert mcp.servers == (server,)
     finally:
-        storage.close()
+        await storage.close()
 
 
 @pytest.mark.parametrize(

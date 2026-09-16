@@ -141,7 +141,7 @@ class ArtifactQueryModel:
 
 
 async def test_artifact_query_tools_run_complete_session_scoped_lifecycle() -> None:
-    session_id = session_storage.create(AgentSessionCreate()).session_id
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
     model = ArtifactQueryModel()
     agent = await Agent.create(
         model, config=AgentRunConfig(session_id=session_id), extensions=[ZettelkastenExtension()]
@@ -155,9 +155,9 @@ async def test_artifact_query_tools_run_complete_session_scoped_lifecycle() -> N
 
 
 async def test_artifact_queries_are_scoped_to_the_owning_session() -> None:
-    owner = session_storage.create(AgentSessionCreate()).session_id
-    other = session_storage.create(AgentSessionCreate()).session_id
-    secret = artifact_storage.create(
+    owner = (await session_storage.create(AgentSessionCreate())).session_id
+    other = (await session_storage.create(AgentSessionCreate())).session_id
+    secret = await artifact_storage.create(
         AgentArtifactWrite(
             session_id=owner,
             content=CardArtifactContent(artifact_type="card", title="Secret", content="hidden"),

@@ -15,7 +15,7 @@ router = APIRouter(prefix="/agent/{session_id}/assets", tags=["assets"])
 
 
 async def _require_session(session_id: str) -> None:
-    if await run_sync(session_storage.get, session_id) is None:
+    if await session_storage.get(session_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
 
 
@@ -60,7 +60,7 @@ async def create_text_asset(session_id: str, payload: TextAssetIn) -> SessionAss
         text_content=payload.content,
         metadata=payload.metadata,
     )
-    return await run_sync(session_asset_storage.create, entity)
+    return await session_asset_storage.create(entity)
 
 
 @router.post("/link", response_model=SessionAssetOut, status_code=status.HTTP_201_CREATED)
@@ -74,7 +74,7 @@ async def create_link_asset(session_id: str, payload: LinkAssetIn) -> SessionAss
         source_url=payload.url,
         metadata=payload.metadata,
     )
-    return await run_sync(session_asset_storage.create, entity)
+    return await session_asset_storage.create(entity)
 
 
 @router.post("/upload", response_model=SessionAssetOut, status_code=status.HTTP_201_CREATED)
@@ -98,7 +98,7 @@ async def upload_asset(
         content=bytes(content),
     )
     try:
-        return await run_sync(session_asset_storage.create, entity)
+        return await session_asset_storage.create(entity)
     except ValueError as error:
         raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, str(error)) from error
 

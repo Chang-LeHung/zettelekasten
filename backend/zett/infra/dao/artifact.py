@@ -1,3 +1,4 @@
+import asyncio
 import json
 from datetime import UTC, datetime
 from enum import IntEnum
@@ -82,12 +83,20 @@ def _artifact_out(model: SessionArtifactModel, *, tags: list[ArtifactTagOut] | N
 class ArtifactStorage(Storage[AgentArtifactWrite, AgentArtifact, str, ArtifactListOptions]):
     """SQLAlchemy storage for polymorphic, session-owned artifacts."""
 
-    def create(self, entity: AgentArtifactWrite) -> AgentArtifact:
-        now = datetime.now(UTC)
+    async def create(self, entity: AgentArtifactWrite) -> AgentArtifact:
+        """Persist one artifact after confirming its Agent session exists.
+
+        The session database is asynchronous, so this boundary awaits it and
+        then runs the application-database write in a worker thread.
+        """
         from ..agent_runtime import get_agent_runtime_storage
 
-        if get_agent_runtime_storage().get_session(entity.session_id) is None:
+        if await get_agent_runtime_storage().get_session(entity.session_id) is None:
             raise KeyError(f"Agent session not found: {entity.session_id}")
+        return await asyncio.to_thread(self._create, entity)
+
+    def _create(self, entity: AgentArtifactWrite) -> AgentArtifact:
+        now = datetime.now(UTC)
         content = entity.content
         if isinstance(content, LatexPdfArtifactCreate):
             content = create_latex_project(entity.session_id, content)

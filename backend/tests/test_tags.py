@@ -17,8 +17,8 @@ from zett.schemas import (
 )
 
 
-def tagged_card(session_id: str, *, saved: bool = True):
-    return artifact_storage.create(
+async def tagged_card(session_id: str, *, saved: bool = True):
+    return await artifact_storage.create(
         AgentArtifactWrite(
             session_id=session_id,
             status=ArtifactStatus.SAVED if saved else ArtifactStatus.DRAFT,
@@ -31,9 +31,9 @@ def tagged_card(session_id: str, *, saved: bool = True):
     )
 
 
-def test_hierarchical_paths_create_stable_nodes_and_aggregate_counts() -> None:
-    session_id = session_storage.create(AgentSessionCreate()).session_id
-    artifact = tagged_card(session_id)
+async def test_hierarchical_paths_create_stable_nodes_and_aggregate_counts() -> None:
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
+    artifact = await tagged_card(session_id)
 
     tagged = tag_service.sync_confirmed_suggestions(artifact)
     tree = tag_service.list_tree()
@@ -59,9 +59,9 @@ def test_hierarchical_paths_create_stable_nodes_and_aggregate_counts() -> None:
     assert tag_service.list_tree()[0].total_count == 1
 
 
-def test_tag_deletion_protects_children_and_assignments() -> None:
-    session_id = session_storage.create(AgentSessionCreate()).session_id
-    tagged = tag_service.sync_confirmed_suggestions(tagged_card(session_id))
+async def test_tag_deletion_protects_children_and_assignments() -> None:
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
+    tagged = tag_service.sync_confirmed_suggestions(await tagged_card(session_id))
     root = tag_storage.get_by_normalized_path("engineering")
     assert root is not None
 
@@ -75,9 +75,9 @@ def test_tag_deletion_protects_children_and_assignments() -> None:
     assert artifact_storage.get(tagged.id).tags == []
 
 
-def test_library_tag_api_backfills_old_artifacts_and_filters_a_parent_subtree() -> None:
-    session_id = session_storage.create(AgentSessionCreate()).session_id
-    artifact = tagged_card(session_id)
+async def test_library_tag_api_backfills_old_artifacts_and_filters_a_parent_subtree() -> None:
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
+    artifact = await tagged_card(session_id)
     assert artifact.tags == []
 
     with TestClient(app) as client:
@@ -99,9 +99,9 @@ def test_library_tag_api_backfills_old_artifacts_and_filters_a_parent_subtree() 
         assert client.delete(f"/api/library/tags/{root_id}?recursive=true").json() == {"ok": True}
 
 
-def test_library_tag_api_force_delete_removes_all_artifact_assignments() -> None:
-    session_id = session_storage.create(AgentSessionCreate()).session_id
-    artifact = tagged_card(session_id)
+async def test_library_tag_api_force_delete_removes_all_artifact_assignments() -> None:
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
+    artifact = await tagged_card(session_id)
 
     with TestClient(app) as client:
         tree = client.get("/api/library/tags").json()

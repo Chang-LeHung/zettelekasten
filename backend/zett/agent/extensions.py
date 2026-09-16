@@ -21,7 +21,7 @@ class ZettelkastenExtension(AgentExtension):
         session_id = context.config.session_id
 
         @tool
-        def create_artifact(content: ArtifactCreateContent, raw_content: str | None = None) -> AgentArtifact:
+        async def create_artifact(content: ArtifactCreateContent, raw_content: str | None = None) -> AgentArtifact:
             """Create a draft card, article, image, slide deck, or LaTeX PDF in this conversation.
 
             Args:
@@ -73,7 +73,7 @@ class ZettelkastenExtension(AgentExtension):
                 - Ordinary horizontal sections start with a title-only page followed by '--' and content pages; explicit cover or HTML openers are exceptions.
                 - Keep each slide concise: one idea, a short heading, and no more than six brief bullets.
             """
-            return artifact_storage.create(
+            return await artifact_storage.create(
                 AgentArtifactWrite(session_id=session_id, content=content, raw_content=raw_content)
             )
 

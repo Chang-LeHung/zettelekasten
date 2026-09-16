@@ -25,18 +25,18 @@ class FakeStorage:
         with self.instances_lock:
             self.instances.append(self)
 
-    def close(self) -> None:
+    async def close(self) -> None:
         self.close_count += 1
 
 
 @pytest.fixture
-def fake_runtime_storage(monkeypatch: pytest.MonkeyPatch):
+async def fake_runtime_storage(monkeypatch: pytest.MonkeyPatch):
     """Replace the real storage and reset process-global state around a test."""
-    agent_runtime.close_agent_runtime_storage()
+    await agent_runtime.close_agent_runtime_storage()
     FakeStorage.instances.clear()
     monkeypatch.setattr(agent_runtime, "SQLiteSessionStorage", FakeStorage)
     yield
-    agent_runtime.close_agent_runtime_storage()
+    await agent_runtime.close_agent_runtime_storage()
 
 
 async def test_get_agent_runtime_storage_is_safe_for_concurrent_coroutines(fake_runtime_storage):
@@ -54,12 +54,12 @@ async def test_get_agent_runtime_storage_is_safe_for_concurrent_coroutines(fake_
     assert all(storage is storages[0] for storage in storages)
 
 
-def test_path_change_and_close_are_serialized(fake_runtime_storage, monkeypatch: pytest.MonkeyPatch):
+async def test_path_change_and_close_are_serialized(fake_runtime_storage, monkeypatch: pytest.MonkeyPatch):
     first = agent_runtime.get_agent_runtime_storage()
     monkeypatch.setattr(agent_runtime.settings, "agent_database_path", Path("replacement.db"))
 
     second = agent_runtime.get_agent_runtime_storage()
-    agent_runtime.close_agent_runtime_storage()
+    await agent_runtime.close_agent_runtime_storage()
 
     assert second is not first
     assert first.close_count == 1

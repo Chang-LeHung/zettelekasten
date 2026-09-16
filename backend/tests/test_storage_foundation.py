@@ -14,28 +14,31 @@ from zett.infra.dao.artifact import artifact_storage
 from zett.infra.dao.asset import session_asset_storage
 from zett.infra.dao.session import session_storage
 from zett.infra.models import Base
-from zett.infra.storage import Storage
+from zett.infra.storage import AsyncStorage, Storage
 from zett.main import app
 from zett.models import ArtifactListOptions, SessionAssetListOptions, SessionListOptions
 from zett.schemas import AgentArtifactWrite, AgentSessionCreate, CardArtifactContent, SessionAssetCreate
 
 
 async def test_sessions_reuse_agent_storage_and_paginate_raw_history():
-    assert isinstance(session_storage, Storage)
-    first = session_storage.create(AgentSessionCreate(title="First"))
-    second = session_storage.create(AgentSessionCreate(title="Second"))
+    assert isinstance(session_storage, AsyncStorage)
+    first = await session_storage.create(AgentSessionCreate(title="First"))
+    second = await session_storage.create(AgentSessionCreate(title="Second"))
     assert UUID(first.session_id).version == 7
-    assert session_storage.get(first.session_id).title == "First"
-    assert session_storage.update(first.session_id, AgentSessionCreate(title="Renamed")).title == "Renamed"
-    assert len(session_storage.list(SessionListOptions(limit=1, offset=1))) == 1
-    assert session_storage.list(SessionListOptions(offset=100)) == []
+    fetched = await session_storage.get(first.session_id)
+    assert fetched is not None and fetched.title == "First"
+    renamed = await session_storage.update(first.session_id, AgentSessionCreate(title="Renamed"))
+    assert renamed.title == "Renamed"
+    assert len(await session_storage.list(SessionListOptions(limit=1, offset=1))) == 1
+    assert await session_storage.list(SessionListOptions(offset=100)) == []
     runtime = get_agent_runtime_storage()
     await runtime.append(first.session_id, "request-1", UserMessage(content="one"))
     await runtime.append(first.session_id, "request-2", UserMessage(content="two"))
-    assert session_storage.list_raw_messages(first.session_id, limit=1, offset=1)[0].message.text == "two"
-    assert session_storage.list_raw_messages(second.session_id) == []
+    page = await session_storage.list_raw_messages(first.session_id, limit=1, offset=1)
+    assert page[0].message.text == "two"
+    assert await session_storage.list_raw_messages(second.session_id) == []
     with pytest.raises(KeyError):
-        session_storage.update("missing", AgentSessionCreate(title="Title"))
+        await session_storage.update("missing", AgentSessionCreate(title="Title"))
 
 
 @pytest.mark.parametrize(
@@ -47,12 +50,12 @@ async def test_sessions_reuse_agent_storage_and_paginate_raw_history():
         ("file", {"content": b"file"}),
     ],
 )
-def test_asset_crud_is_typed_and_session_scoped(kind, payload):
+async def test_asset_crud_is_typed_and_session_scoped(kind, payload):
     assert isinstance(session_asset_storage, Storage)
-    owner = session_storage.create(AgentSessionCreate()).session_id
-    other = session_storage.create(AgentSessionCreate()).session_id
+    owner = (await session_storage.create(AgentSessionCreate())).session_id
+    other = (await session_storage.create(AgentSessionCreate())).session_id
     entity = SessionAssetCreate(session_id=owner, asset_type=kind, name="../asset.bin", **payload)
-    asset = session_asset_storage.create(entity)
+    asset = await session_asset_storage.create(entity)
     assert UUID(asset.id).version == 7
     assert session_asset_storage.get_for_session(other, asset.id) is None
     assert session_asset_storage.content_path(other, asset.id) is None
@@ -72,17 +75,19 @@ def test_asset_crud_is_typed_and_session_scoped(kind, payload):
     assert not session_asset_storage.delete(asset.id)
 
 
-def test_session_deletion_explicitly_cleans_owned_assets_and_artifacts():
-    owner = session_storage.create(AgentSessionCreate()).session_id
-    other = session_storage.create(AgentSessionCreate()).session_id
+async def test_session_deletion_explicitly_cleans_owned_assets_and_artifacts():
+    owner = (await session_storage.create(AgentSessionCreate())).session_id
+    other = (await session_storage.create(AgentSessionCreate())).session_id
     for sid in (owner, other):
-        session_asset_storage.create(SessionAssetCreate(session_id=sid, asset_type="file", name="f", content=b"x"))
-        artifact_storage.create(
+        await session_asset_storage.create(
+            SessionAssetCreate(session_id=sid, asset_type="file", name="f", content=b"x")
+        )
+        await artifact_storage.create(
             AgentArtifactWrite(session_id=sid, content=CardArtifactContent(title="Card", content="Body"))
         )
-    assert session_storage.delete(owner)
-    assert not session_storage.delete(owner)
-    assert session_storage.get(owner) is None
+    assert await session_storage.delete(owner)
+    assert not await session_storage.delete(owner)
+    assert await session_storage.get(owner) is None
     assert not (settings.asset_directory / owner).exists()
     assert artifact_storage.list(ArtifactListOptions(session_id=owner)) == []
     assert session_asset_storage.list(SessionAssetListOptions(session_id=owner)) == []
@@ -91,10 +96,10 @@ def test_session_deletion_explicitly_cleans_owned_assets_and_artifacts():
 
 
 @pytest.mark.parametrize("kind", ["text", "link", "file", "image"])
-def test_missing_asset_payload_does_not_mutate_storage(kind):
-    owner = session_storage.create(AgentSessionCreate()).session_id
+async def test_missing_asset_payload_does_not_mutate_storage(kind):
+    owner = (await session_storage.create(AgentSessionCreate())).session_id
     with pytest.raises(ValueError):
-        session_asset_storage.create(SessionAssetCreate(session_id=owner, asset_type=kind, name="Empty"))
+        await session_asset_storage.create(SessionAssetCreate(session_id=owner, asset_type=kind, name="Empty"))
     assert session_asset_storage.list() == []
     assert not (settings.asset_directory / owner).exists()
 

@@ -1,4 +1,4 @@
-from collections.abc import Iterator
+from collections.abc import AsyncIterator
 
 import pytest
 from sqlalchemy import create_engine
@@ -10,7 +10,7 @@ from zett.infra.models import Base
 
 
 @pytest.fixture(autouse=True)
-def isolated_database(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Engine]:
+async def isolated_database(tmp_path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[Engine]:
     """Run every test against a fresh SQLite database outside the user's data directory."""
     database_path = tmp_path / "zett-test.db"
     engine = create_engine(f"sqlite:///{database_path}", future=True)
@@ -25,5 +25,5 @@ def isolated_database(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Eng
     yield engine
     from zett.infra.agent_runtime import close_agent_runtime_storage
 
-    close_agent_runtime_storage()
+    await close_agent_runtime_storage()
     engine.dispose()
