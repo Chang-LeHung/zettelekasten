@@ -184,6 +184,8 @@ The Vue frontend keeps all backend calls in typed clients under `frontend/src/ap
 
 The standalone [`zett-agent`](backend/zett-agent) package powers Zett conversations, tool execution, and streaming. Its current local development version uses direct message fields and a small model/tool loop. Zett passes prepared history from its context snapshot and raw-log tail, excluding the current input. Tools are supplied directly to the agent, with optional guidelines appended to system instructions. Title generation and compaction use schema-bound tool responses validated by Pydantic. This simplified API is not yet published; development and `make install` use the local `zett-agent` package.
 
+The standalone [`zettcode`](backend/zettcode) package is the terminal coding agent. It composes the same agent runtime with an internally implemented differential-rendering TUI, keeps its own configuration and session database under `~/.zettcode`, and is verified by `make zettcode-check`.
+
 ## Agent Sessions and Context
 
 Each conversation can own zero or many typed artifacts. Artifacts have stable IDs, lifecycle states, versions, type-specific content, and optional links to permanent library resources. Saving a card or article publishes it to the unified library only when explicitly requested.
