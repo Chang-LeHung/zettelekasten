@@ -19,6 +19,7 @@ import { appendStreamedAssistantMessage } from './utils/streamedAssistant'
 import { defaultProviderBaseUrl, providerBaseUrlHelp } from './utils/providerDefaults'
 import { todoFromTool } from './utils/toolPresentation'
 import { hasRunningTool, upsertToolActivity } from './utils/toolActivities'
+import { TurnDetailsVisibility } from './utils/turnDetails'
 import { presentationSections } from './utils/slides'
 import { libraryExcerptText } from './utils/libraryExcerpt'
 import { asContextComposition } from './utils/contextComposition'
@@ -319,6 +320,22 @@ function stopTurnClock(): number {
 
 function isRunningTurn(index: number): boolean {
   return loading.value && index === conversationTurns.value.length - 1
+}
+
+const turnDetails = new TurnDetailsVisibility()
+
+function isTurnDetailsOpen(turn: ConversationTurn, index: number): boolean {
+  return turnDetails.isOpen(turn.id, isRunningTurn(index))
+}
+
+function toggleTurnDetails(turn: ConversationTurn, event: MouseEvent): void {
+  const details = (event.currentTarget as HTMLElement | null)?.closest('details')
+  if (!(details instanceof HTMLDetailsElement)) return
+  // The browser applies the native toggle after this handler, so the state the
+  // reader asked for is the inverse of the current one. Reading `toggle` events
+  // instead would also record this component's own automatic collapse as a
+  // reader choice and keep the panel open.
+  turnDetails.setOpen(turn.id, !details.open)
 }
 
 function turnTimeline(turn: ConversationTurn, index: number): AgentTimelineEntry[] {
@@ -1056,6 +1073,7 @@ async function ensureConversation(): Promise<string> {
 
 function applySession(session: AgentSession): void {
   conversationId.value = session.id
+  turnDetails.clear()
   window.localStorage.setItem(activeSessionKey, session.id)
   applyArtifacts(session.artifacts, false)
   assets.value = session.assets
@@ -1234,6 +1252,7 @@ async function syncSelectedArtifact(): Promise<void> {
 async function resetWorkspace(): Promise<void> {
   raw.value = ''
   artifactContent.value = null
+  turnDetails.clear()
   conversation.value = []
   followUp.value = ''
   initialMessageParts.value = []
@@ -1999,8 +2018,8 @@ onBeforeUnmount(() => {
                     </section>
 
                     <div class="turn-content">
-                      <details class="turn-execution">
-                        <summary>
+                      <details class="turn-execution" :open="isTurnDetailsOpen(turn, index)">
+                        <summary @click="toggleTurnDetails(turn, $event)">
                           <span class="turn-state-icon" aria-hidden="true"><i /></span>
                           <span class="turn-execution-copy">
                             <strong>{{ isRunningTurn(index) ? turnTask(index) : `Processed in ${turnDuration(turn, index)}` }}</strong>
