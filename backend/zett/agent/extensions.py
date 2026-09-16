@@ -2,7 +2,9 @@
 
 import asyncio
 import json
+from typing import Annotated
 
+from pydantic import Field
 from zett_agent import AgentExtension, AgentRunContext, SystemMessage, tool
 
 from ..application.tagging import tag_service
@@ -73,6 +75,54 @@ class ZettelkastenExtension(AgentExtension):
             """
             return artifact_storage.create(
                 AgentArtifactWrite(session_id=session_id, content=content, raw_content=raw_content)
+            )
+
+        @tool
+        def get_artifact(artifact_id: str) -> AgentArtifact:
+            """Return the current content of one artifact in this conversation.
+
+            Args:
+                artifact_id: Stable ID of an artifact in this conversation.
+
+            Snippet:
+                get_artifact(artifact_id="...")
+
+            Guidelines:
+                - Use to fetch the latest content of an artifact after changes.
+            """
+            return self._artifact(session_id, artifact_id)
+
+        @tool
+        def query_artifacts(
+            query: str | None = None,
+            artifact_types: tuple[str, ...] = (),
+            statuses: tuple[str, ...] = (),
+            limit: Annotated[int, Field(ge=1, le=500)] = 20,
+        ) -> list[AgentArtifact]:
+            """Search this conversation's artifacts by title text, type, and status.
+
+            Args:
+                query: Case-insensitive text matched against artifact titles.
+                artifact_types: Optional kinds such as card, article, image, slides, or latex_pdf.
+                statuses: Optional lifecycle states such as draft or saved.
+                limit: Maximum number of artifacts to return.
+
+            Snippet:
+                query_artifacts(query="paper", statuses=["saved"])
+                query_artifacts(artifact_types=["card"], limit=20)
+
+            Guidelines:
+                - Use to find artifacts in this conversation before reading or updating them.
+                - All conversation artifacts are already in context; query narrows by title, type, or state.
+            """
+            return artifact_storage.list(
+                ArtifactListOptions(
+                    session_id=session_id,
+                    artifact_types=artifact_types,
+                    statuses=statuses,
+                    query=query,
+                    limit=limit,
+                )
             )
 
         @tool
@@ -165,7 +215,14 @@ class ZettelkastenExtension(AgentExtension):
             self._artifact(session_id, artifact_id)
             return artifact_storage.delete(artifact_id)
 
-        for registered in (create_artifact, update_artifact, save_artifact, delete_artifact):
+        for registered in (
+            create_artifact,
+            get_artifact,
+            query_artifacts,
+            update_artifact,
+            save_artifact,
+            delete_artifact,
+        ):
             context.register_tool(registered)
 
     async def on_state(self, context: AgentRunContext) -> None:
