@@ -1,10 +1,11 @@
 """Versioned JSON key-value storage implemented with SQLAlchemy."""
 
+import asyncio
 import json
 from datetime import UTC, datetime
+from weakref import WeakKeyDictionary
 
 from sqlalchemy import select
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from zett_agent import new_uuid7
 
 from ...schemas import JsonValue, KeyValueRecord
@@ -41,7 +42,18 @@ class KeyValueStorage:
     ``update`` creates version one for a new key. Later updates retain the
     record identity and creation time while replacing its value, incrementing
     its version, and refreshing its modification time.
+
+    A read-modify-write needs one writer at a time. The lock is created per
+    event loop so a shared instance can serve the application loop and the
+    independent loops that tests create.
     """
+
+    def __init__(self) -> None:
+        self._write_locks: WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock] = WeakKeyDictionary()
+
+    def _write_lock(self) -> asyncio.Lock:
+        """Return this loop's writer lock without binding other loops."""
+        return self._write_locks.setdefault(asyncio.get_running_loop(), asyncio.Lock())
 
     async def get(self, key: str) -> KeyValueRecord | None:
         """Return one current value, or ``None`` when its key is absent."""
@@ -54,41 +66,36 @@ class KeyValueStorage:
     async def update(self, key: str, value: JsonValue) -> KeyValueRecord:
         """Create or replace one value and return its incremented version.
 
-        The insert-or-update runs as one statement whose version increment is
-        evaluated by SQLite, so concurrent callers cannot read the same version
-        and no process-local lock is needed.
+        Databases created before the unique constraint was declared still only
+        index the key, so the write stays a locked read-then-write instead of an
+        ``ON CONFLICT`` upsert that requires a matching constraint.
         """
         normalized = _normalize_key(key)
         serialized = json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
-        now = datetime.now(UTC)
-        statement = (
-            sqlite_insert(KeyValueModel)
-            .values(
-                id=new_uuid7(),
-                key=normalized,
-                value=serialized,
-                version=1,
-                created_at=now,
-                updated_at=now,
-            )
-            .on_conflict_do_update(
-                index_elements=[KeyValueModel.key],
-                set_={
-                    "value": serialized,
-                    "version": KeyValueModel.version + 1,
-                    "updated_at": now,
-                },
-            )
-            .returning(KeyValueModel)
-        )
-        async with session_scope() as session:
-            model = (await session.scalars(statement)).one()
+        async with self._write_lock(), session_scope() as session:
+            now = datetime.now(UTC)
+            model = (await session.scalars(select(KeyValueModel).where(KeyValueModel.key == normalized))).first()
+            if model is None:
+                model = KeyValueModel(
+                    id=new_uuid7(),
+                    key=normalized,
+                    value=serialized,
+                    version=1,
+                    created_at=now,
+                    updated_at=now,
+                )
+                session.add(model)
+            else:
+                model.value = serialized
+                model.version += 1
+                model.updated_at = now
+            await session.flush()
             return _record(model)
 
     async def delete(self, key: str) -> bool:
         """Delete one key and report whether it existed."""
         normalized = _normalize_key(key)
-        async with session_scope() as session:
+        async with self._write_lock(), session_scope() as session:
             model = (await session.scalars(select(KeyValueModel).where(KeyValueModel.key == normalized))).first()
             if model is None:
                 return False

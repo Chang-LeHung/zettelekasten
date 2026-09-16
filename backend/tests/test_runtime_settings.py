@@ -8,8 +8,12 @@ from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.engine import URL
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
+from zett.infra import database
 from zett.infra.dao.kv import KeyValueStorage
 from zett.infra.database import session_scope
 from zett.infra.models import KeyValueModel
@@ -67,6 +71,44 @@ async def test_key_value_storage_delete_removes_the_record() -> None:
     assert await storage.delete("settings.example") is True
     assert await storage.delete("settings.example") is False
     assert await storage.get("settings.example") is None
+
+
+async def test_key_value_update_works_on_a_schema_without_a_unique_index(tmp_path, monkeypatch) -> None:
+    """Databases created before the unique key constraint only index the column."""
+    legacy_engine = create_async_engine(
+        URL.create("sqlite+aiosqlite", database=str(tmp_path / "legacy.db")),
+        poolclass=NullPool,
+    )
+    monkeypatch.setattr(database, "session_factory", async_sessionmaker(legacy_engine, expire_on_commit=False))
+    async with legacy_engine.begin() as connection:
+        await connection.execute(
+            text(
+                """
+                CREATE TABLE key_values (
+                    id VARCHAR(36) NOT NULL,
+                    "key" VARCHAR(500) NOT NULL,
+                    value TEXT NOT NULL,
+                    version INTEGER NOT NULL,
+                    created_at DATETIME NOT NULL,
+                    updated_at DATETIME NOT NULL,
+                    PRIMARY KEY (id)
+                )
+                """
+            )
+        )
+        await connection.execute(text('CREATE INDEX ix_key_values_key ON key_values ("key")'))
+
+    storage = KeyValueStorage()
+    try:
+        first = await storage.update("sessions.model.legacy", {"value": 1})
+        second = await storage.update("sessions.model.legacy", {"value": 2})
+
+        assert (first.version, second.version) == (1, 2)
+        assert first.id == second.id
+        latest = await storage.get("sessions.model.legacy")
+        assert latest is not None and latest.value == {"value": 2}
+    finally:
+        await legacy_engine.dispose()
 
 
 async def test_key_value_storage_serializes_concurrent_versions() -> None:
