@@ -181,12 +181,22 @@ async def test_artifact_queries_are_scoped_to_the_owning_session() -> None:
                 message = AssistantMessage(
                     tool_calls=(ToolCall("cross-query", "query_artifacts", {"query": "Secret"}),)
                 )
-            else:
+            elif self.step == 2:
                 tool_result = request.messages[-1]
                 assert isinstance(tool_result, ToolMessage)
                 assert tool_result.success
                 assert json.loads(tool_result.content) == []
-                message = AssistantMessage(content="Artifacts unavailable.")
+                message = AssistantMessage(
+                    tool_calls=(ToolCall("global-query", "query_artifacts", {"query": "Secret", "all_sessions": True}),)
+                )
+            else:
+                tool_result = request.messages[-1]
+                assert isinstance(tool_result, ToolMessage)
+                assert tool_result.success
+                matched = json.loads(tool_result.content)
+                assert [item["content"]["title"] for item in matched] == ["Secret"]
+                assert matched[0]["session_id"] == owner
+                message = AssistantMessage(content="Global search found the artifact.")
             self.step += 1
             yield ModelEvent.completed(ModelResponse(message))
 
@@ -197,5 +207,5 @@ async def test_artifact_queries_are_scoped_to_the_owning_session() -> None:
     )
     result = await agent.run("Read the other artifact")
 
-    assert result.content == "Artifacts unavailable."
+    assert result.content == "Global search found the artifact."
     assert artifact_storage.get_for_session(owner, secret.id) is not None

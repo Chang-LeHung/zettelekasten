@@ -97,27 +97,30 @@ class ZettelkastenExtension(AgentExtension):
             query: str | None = None,
             artifact_types: tuple[str, ...] = (),
             statuses: tuple[str, ...] = (),
+            all_sessions: bool = False,
             limit: Annotated[int, Field(ge=1, le=500)] = 20,
         ) -> list[AgentArtifact]:
-            """Search this conversation's artifacts by title text, type, and status.
+            """Search artifacts by title text, type, and status.
 
             Args:
                 query: Case-insensitive text matched against artifact titles.
                 artifact_types: Optional kinds such as card, article, image, slides, or latex_pdf.
                 statuses: Optional lifecycle states such as draft or saved.
+                all_sessions: When true, search across every session instead of only this conversation.
                 limit: Maximum number of artifacts to return.
 
             Snippet:
                 query_artifacts(query="paper", statuses=["saved"])
-                query_artifacts(artifact_types=["card"], limit=20)
+                query_artifacts(artifact_types=["card"], all_sessions=True)
 
             Guidelines:
                 - Use to find artifacts in this conversation before reading or updating them.
+                - Set all_sessions to search the entire library, for example when the user asks about artifacts from other conversations.
                 - All conversation artifacts are already in context; query narrows by title, type, or state.
             """
             return artifact_storage.list(
                 ArtifactListOptions(
-                    session_id=session_id,
+                    session_id=None if all_sessions else session_id,
                     artifact_types=artifact_types,
                     statuses=statuses,
                     query=query,
