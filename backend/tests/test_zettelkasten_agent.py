@@ -9,12 +9,11 @@ import pytest
 from zett_agent import (
     DEFAULT_MCP_CONFIG_PATH,
     DEFAULT_MCP_SERVER_KEYS,
+    Agent,
     AgentEvent,
     AgentEventType,
     AgentMessage,
     AgentRunConfig,
-    AgentRunContext,
-    AgentState,
     AssistantMessage,
     McpExtension,
     McpHttpServer,
@@ -30,6 +29,7 @@ from zett_agent import (
     ToolDefinition,
     ToolMessage,
     UserMessage,
+    tool,
 )
 
 from zett.agent import (
@@ -265,25 +265,52 @@ async def test_context_composition_extension_is_registered_after_prompt_extensio
         await storage.close()
 
 
-async def test_context_composition_is_refreshed_after_the_assistant_message() -> None:
-    extension = ContextCompositionExtension()
-    context = AgentRunContext(
-        config=AgentRunConfig(session_id="session-context"),
-        state=AgentState(messages=[SystemMessage(content="System"), UserMessage(content="Question")]),
-        tools={},
+async def test_context_composition_streams_every_model_step_and_includes_tool_output() -> None:
+    """The extension must follow the live hooks; it used to implement a removed API."""
+    recorded: list[dict[str, float]] = []
+
+    @tool(guidelines="Echo one required argument.")
+    async def echo(text: str) -> str:
+        """Return the supplied text unchanged.
+
+        Args:
+            text: Text to return.
+        """
+        return text
+
+    class ToolModel:
+        def __init__(self) -> None:
+            self.step = 0
+
+        async def stream(self, request: ModelRequest) -> AsyncIterator[ModelEvent]:
+            self.step += 1
+            if self.step == 1:
+                yield ModelEvent.completed(
+                    ModelResponse(AssistantMessage(tool_calls=(ToolCall("echo-1", "echo", {"text": "body" * 400}),)))
+                )
+                return
+            yield ModelEvent.completed(ModelResponse(AssistantMessage(content="Answer")))
+
+    async def recorder(session_id: str, ratios: dict[str, float]) -> None:
+        assert session_id == "session-context"
+        recorded.append(ratios)
+
+    agent = await Agent.create(
+        ToolModel(),
+        config=AgentRunConfig("session-context"),
+        extensions=[ContextCompositionExtension(recorder)],
+        tools=[echo],
     )
-    request = ModelRequest(messages=tuple(context.state.messages))
-    before = [event async for event in extension.before_model_events(context, request)]
-    response = ModelResponse(AssistantMessage(content="A sufficiently long assistant response."))
-    context.state.messages.append(response.message)
 
-    after = [event async for event in extension.after_model_events(context, response)]
+    events = [event async for event in agent.stream("Question")]
 
-    assert before[0].payload is not None
-    assert after[0].payload is not None
-    assert before[0].payload["assistant"] == 0
-    assert after[0].payload["assistant"] > 0
-    assert sum(after[0].payload.values()) == pytest.approx(1)
+    payloads = [event.payload for event in events if event.name == "context_composition"]
+    assert len(payloads) == 4
+    assert all(payload is not None and sum(payload.values()) == pytest.approx(1) for payload in payloads)
+    assert payloads[0]["assistant"] == 0
+    # The tool result only exists once its own model step finished.
+    assert payloads[-1]["tool_output"] > 0
+    assert recorded == payloads
 
 
 async def test_factory_loads_default_user_skills_and_mcp_configuration(tmp_path, monkeypatch) -> None:

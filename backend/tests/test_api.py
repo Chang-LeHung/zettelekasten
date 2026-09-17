@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import inspect
+import json
 import threading
 from collections.abc import AsyncIterator
 from contextlib import aclosing
@@ -25,6 +26,7 @@ from zett_agent import (
 )
 
 from zett.application.routes import agent as agent_routes
+from zett.application.session_context import SESSION_CONTEXT_KEY_PREFIX
 from zett.application.session_preferences import SESSION_MODEL_KEY_PREFIX
 from zett.infra.dao import provider_storage
 from zett.infra.database import session_scope
@@ -417,7 +419,7 @@ class FakeModel:
         self.closed = True
 
 
-def test_agent_stream_uses_provider_neutral_events_and_persists_messages(monkeypatch):
+async def test_agent_stream_uses_provider_neutral_events_and_persists_messages(monkeypatch):
     model = FakeModel()
     monkeypatch.setattr(agent_routes, "create_model", lambda _connection: model)
     with TestClient(app) as client:
@@ -436,10 +438,22 @@ def test_agent_stream_uses_provider_neutral_events_and_persists_messages(monkeyp
         assert "event: reasoning_delta\n" in response.text
         assert "event: text_delta\n" in response.text
         assert "event: run_completed\n" in response.text
+        # Every model step publishes the live context ratios the composer ring reads.
+        assert "event: custom\n" in response.text
+        assert '"name":"context_composition"' in response.text
         detail = client.get(f"/api/agent/sessions/{session_id}").json()
         assert [message["role"] for message in detail["messages"]] == ["user", "assistant"]
         assert detail["messages"][1]["reasoning_content"] == "checking"
     assert model.closed
+
+    async with session_scope() as session:
+        record = await session.scalar(
+            select(KeyValueModel).where(KeyValueModel.key == f"{SESSION_CONTEXT_KEY_PREFIX}{session_id}")
+        )
+    assert record is not None
+    ratios = json.loads(record.value)
+    assert set(ratios) == {"system_prompt", "tool_prompt", "tool_output", "user", "assistant"}
+    assert sum(ratios.values()) == pytest.approx(1)
 
 
 def test_pasted_image_is_persisted_in_the_user_message_not_session_assets(monkeypatch):

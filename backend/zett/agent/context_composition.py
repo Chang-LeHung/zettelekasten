@@ -1,7 +1,7 @@
 """Estimate the semantic composition of the next model request."""
 
 import json
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import Awaitable, Callable
 
 import tiktoken
 from zett_agent import (
@@ -88,47 +88,45 @@ def context_composition(request: ModelRequest) -> dict[str, float]:
 
 
 class ContextCompositionExtension(AgentExtension):
-    """Publish context ratios before a model call and after its response."""
+    """Publish and persist context ratios for every primary model request.
+
+    ``before_model`` measures the outgoing request, which is exactly the context
+    the provider receives, and ``after_model`` refreshes that view once the
+    assistant message is appended. Tool results only exist after their own model
+    step, so tool output reaches the report on the following before-model view.
+    """
 
     def __init__(self, recorder: ContextCompositionRecorder | None = None) -> None:
         self._recorder = recorder
 
-    async def _event(self, context: AgentRunContext, request: ModelRequest) -> AgentEvent:
-        """Create one browser-safe ratio event for the supplied context view."""
-        ratios = context_composition(request)
-        if self._recorder is not None:
-            await self._recorder(context.config.session_id, ratios)
-        return AgentEvent(
-            AgentEventType.CUSTOM,
-            context.config.session_id,
-            name=CONTEXT_COMPOSITION_EVENT,
-            payload=ratios,
-        )
+    async def before_model(self, context: AgentRunContext, request: ModelRequest) -> None:
+        """Report the ratios of the request that is about to reach the provider."""
+        await self._publish(context, request)
 
-    async def before_model_events(
-        self,
-        context: AgentRunContext,
-        request: ModelRequest,
-    ) -> AsyncIterator[AgentEvent]:
-        """Expose proportions without leaking prompts, tool output, or token estimates."""
-        yield await self._event(context, request)
-
-    async def after_model_events(
-        self,
-        context: AgentRunContext,
-        response: ModelResponse,
-    ) -> AsyncIterator[AgentEvent]:
-        """Publish the context again after the complete Assistant message is appended.
-
-        The response argument identifies this lifecycle boundary; its message is
-        already present in ``context.state.messages``. Tool results do not exist
-        yet at this point. When tools run, the next before-model event naturally
-        includes their output in the following request's proportions.
-        """
+    async def after_model(self, context: AgentRunContext, response: ModelResponse) -> None:
+        """Report the ratios again after the complete assistant message is appended."""
         del response
-        request = ModelRequest(
+        await self._publish(context, self._live_request(context))
+
+    @staticmethod
+    def _live_request(context: AgentRunContext) -> ModelRequest:
+        """Rebuild the provider-visible request from the mutated run context."""
+        return ModelRequest(
             messages=tuple(context.state.messages),
             tools=tuple(tool.definition for tool in context.tools.values()),
             server_tools=tuple(context.server_tools.values()),
         )
-        yield await self._event(context, request)
+
+    async def _publish(self, context: AgentRunContext, request: ModelRequest) -> None:
+        """Record one browser-safe ratio payload and stream it to the caller."""
+        ratios = context_composition(request)
+        if self._recorder is not None:
+            await self._recorder(context.config.session_id, ratios)
+        await context.emit(
+            AgentEvent(
+                AgentEventType.CUSTOM,
+                context.config.session_id,
+                name=CONTEXT_COMPOSITION_EVENT,
+                payload=ratios,
+            )
+        )
