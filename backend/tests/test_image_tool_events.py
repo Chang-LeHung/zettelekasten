@@ -14,7 +14,7 @@ from zett.main import app
 def test_image_tool_output_is_encoded_as_data_url():
     message = ToolMessage(
         tool_call_id="image",
-        name="read_image",
+        name="view_image",
         content=[ImageContent(source=ImageBytesSource(data=b"image", media_type="image/png"))],
     )
     frame = encode_sse("tool", _message(message))
@@ -30,7 +30,7 @@ def test_image_tool_history_preserves_order_and_text_on_both_endpoints():
         session_id = client.post("/api/agent/start").json()["conversation_id"]
         message = ToolMessage(
             tool_call_id="image",
-            name="read_image",
+            name="view_image",
             content=[
                 TextContent(text="before"),
                 ImageContent(
