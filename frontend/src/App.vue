@@ -3,6 +3,7 @@ import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, r
 import { ApiError, aiClient, libraryClient, settingsClient, tagClient } from './api/client'
 import type { AgentArtifact, AgentCompactionActivity, AgentContextComposition, AgentCustomEvent, AgentModelUsage, AgentPersistedMessage, AgentServerToolActivity, AgentSession, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageContentPart, ReasoningEffort, RuntimeSettings, SessionAsset, Tag } from './api/types'
 import AgentComposerControls from './components/AgentComposerControls.vue'
+import CacheHitRate from './components/CacheHitRate.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import TagManagerDialog from './components/TagManagerDialog.vue'
 import AssetPreviewDialog from './components/AssetPreviewDialog.vue'
@@ -105,6 +106,7 @@ const raw = ref('')
 const artifactContent = ref<ArtifactContent | null>(null)
 const conversation = ref<AnalysisMessage[]>([])
 const workspaceView = ref<'workspace' | 'trace'>('workspace')
+const selectedTraceTurnId = ref<string | null>(null)
 const traceMessages = ref<AgentPersistedMessage[]>([])
 const traceLoading = ref(false)
 const traceError = ref('')
@@ -282,9 +284,45 @@ function resetStreamState(): void {
   streamingStatus.value = 'starting'
 }
 
+function traceLocationFromHash(): { sessionId: string; turnId: string | null } | null {
+  const prefix = '#trace/'
+  if (!window.location.hash.startsWith(prefix)) return null
+  const parts = window.location.hash.slice(prefix.length).split('/')
+  if ((parts.length !== 1 && parts.length !== 2) || !parts[0]) return null
+  return {
+    sessionId: decodeURIComponent(parts[0]),
+    turnId: parts[1] ? decodeURIComponent(parts[1]) : null,
+  }
+}
+
+function replaceTraceHash(turnId: string | null = selectedTraceTurnId.value): void {
+  const sessionId = conversationId.value
+  const hash = sessionId
+    ? `#trace/${encodeURIComponent(sessionId)}${turnId ? `/${encodeURIComponent(turnId)}` : ''}`
+    : '#trace'
+  window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${hash}`)
+}
+
+function clearTraceHash(): void {
+  if (!window.location.hash.startsWith('#trace')) return
+  window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`)
+}
+
+function updateTraceTurn(turnId: string): void {
+  selectedTraceTurnId.value = turnId
+  if (workspaceView.value === 'trace') replaceTraceHash(turnId)
+}
+
 function setWorkspaceView(next: 'workspace' | 'trace'): void {
   workspaceView.value = next
-  if (next === 'trace') void loadInteractionTrace()
+  if (next === 'trace') {
+    const hash = traceLocationFromHash()
+    if (hash?.sessionId === conversationId.value) selectedTraceTurnId.value = hash.turnId
+    replaceTraceHash()
+    void loadInteractionTrace()
+  } else {
+    clearTraceHash()
+  }
 }
 
 async function loadInteractionTrace(sessionId = conversationId.value): Promise<void> {
@@ -401,6 +439,11 @@ function turnTask(index: number): string {
 function turnDuration(turn: ConversationTurn, index: number): string {
   if (isRunningTurn(index)) return formatTurnDuration(turnElapsedMs.value)
   return formatTurnDuration(turn.response?.duration_ms || 0)
+}
+
+function turnResponseUsage(turn: ConversationTurn, index: number): AgentModelUsage | null {
+  if (isRunningTurn(index)) return streamingUsage.value
+  return turn.response?.usage || null
 }
 
 function updateToolActivity(activity: AgentToolActivity): void {
@@ -822,6 +865,7 @@ async function loadInitialData(): Promise<void> {
 function navigate(nextView: View): void {
   view.value = nextView
   notice.value = ''
+  if (nextView !== 'new') clearTraceHash()
   if (nextView === 'new' && conversationStarted.value) scrollAgentThread(true)
   if (nextView === 'library') {
     activeQuery.value = ''
@@ -1106,7 +1150,11 @@ async function ensureConversation(): Promise<string> {
 
 function applySession(session: AgentSession): void {
   conversationId.value = session.id
-  workspaceView.value = 'workspace'
+  const traceLocation = traceLocationFromHash()
+  const restoreTrace = traceLocation?.sessionId === session.id
+  if (!restoreTrace) clearTraceHash()
+  workspaceView.value = restoreTrace ? 'trace' : 'workspace'
+  selectedTraceTurnId.value = restoreTrace ? traceLocation.turnId : null
   turnDetails.clear()
   window.localStorage.setItem(activeSessionKey, session.id)
   applyArtifacts(session.artifacts, false)
@@ -1303,8 +1351,10 @@ async function resetWorkspace(): Promise<void> {
   conversationId.value = null
   workspaceView.value = 'workspace'
   traceMessages.value = []
+  selectedTraceTurnId.value = null
   traceError.value = ''
   traceLoading.value = false
+  clearTraceHash()
   currentContextUsage.value = null
   contextComposition.value = null
   resetStreamState()
@@ -1958,7 +2008,9 @@ onBeforeUnmount(() => {
               :messages="traceMessages"
               :loading="traceLoading"
               :error="traceError"
+              :selected-turn-id="selectedTraceTurnId"
               @refresh="loadInteractionTrace()"
+              @update:selected-turn-id="updateTraceTurn"
             />
           </div>
           <div v-else class="agent-workspace" @paste="pasteAssets">
@@ -2130,6 +2182,7 @@ onBeforeUnmount(() => {
                           <template v-for="entry in turnAnswerTimeline(turn, index)" :key="entry.id">
                             <MarkdownContent class="final-response" :content="entry.content" />
                           </template>
+                          <CacheHitRate class="turn-cache-hit" :usage="turnResponseUsage(turn, index)" />
                           <span v-if="isRunningTurn(index)" class="streaming-dots compact" aria-label="Generating"><i /><i /><i /></span>
                           <p v-else-if="!turnAnswerTimeline(turn, index).length && !turn.response?.error" class="turn-empty-response">No response was recorded for this turn.</p>
                           <div v-if="turn.response?.error" class="turn-error" role="alert">
@@ -2631,6 +2684,7 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .turn-empty-detail { margin: 0; color: #979e99; font-size: .62rem; }
 .turn-response { min-width: 0; padding-right: 7%; }
 .agent-response-content { min-width: 0; padding-top: .1rem; }
+.turn-cache-hit { margin-top: .55rem; }
 .turn-prompt .message-content, .agent-response-content { font-size: var(--conversation-font-size); line-height: 1.65; }
 .agent-response-content .final-response { margin: 0; padding: 0; border: 0; border-radius: 0; color: #303632; background: transparent; box-shadow: none; }
 .turn-task-list { margin: .1rem 0 .55rem; padding: .25rem 0 .45rem; border-bottom: 1px solid #e8ebe9; }

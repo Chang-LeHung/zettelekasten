@@ -6,6 +6,8 @@ export interface AgentUsageSummary extends AgentModelUsage {
   tokens_per_second: number | null
 }
 
+export type CacheHitLevel = 'high' | 'medium' | 'low'
+
 const EMPTY_USAGE: AgentModelUsage = {
   input_tokens: 0,
   output_tokens: 0,
@@ -29,6 +31,24 @@ export function addAgentUsage(
   }
 }
 
+/** Calculate cached input as a share of all input tokens. */
+export function calculateCacheHitRate(usage: AgentModelUsage | null | undefined): number | null {
+  if (!usage || usage.input_tokens <= 0) return null
+  return usage.cache_read_tokens / usage.input_tokens
+}
+
+/** Map a cache hit rate to the shared visual emphasis used by every message surface. */
+export function cacheHitLevel(rate: number | null | undefined): CacheHitLevel | null {
+  if (rate === null || rate === undefined) return null
+  if (rate >= 0.75) return 'high'
+  if (rate >= 0.4) return 'medium'
+  return 'low'
+}
+
+export function formatCacheHitRate(rate: number): string {
+  return `${Math.round(rate * 100)}%`
+}
+
 /** Aggregate every Assistant model step selected by the caller. */
 export function summarizeAgentUsage(messages: readonly AnalysisMessage[]): AgentUsageSummary | null {
   let usage: AgentModelUsage | null = null
@@ -47,7 +67,7 @@ export function summarizeAgentUsage(messages: readonly AnalysisMessage[]): Agent
   return {
     ...usage,
     total_tokens: usage.input_tokens + usage.output_tokens,
-    cache_hit_rate: usage.input_tokens ? usage.cache_read_tokens / usage.input_tokens : null,
+    cache_hit_rate: calculateCacheHitRate(usage),
     tokens_per_second: generationDurationMs ? timedOutputTokens / (generationDurationMs / 1000) : null,
   }
 }

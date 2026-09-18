@@ -42,7 +42,7 @@ function record(sequence: number, changes: Partial<AgentPersistedMessage> = {}):
   }
 }
 
-it('renders request messages, tool calls, and model usage', async () => {
+it('shows one button per turn and renders the selected turn', async () => {
   const host = document.createElement('div')
   document.body.append(host)
   const app = createApp(InteractionTrace, {
@@ -55,8 +55,12 @@ it('renders request messages, tool calls, and model usage', async () => {
         tool_calls: [{ id: 'call-1', name: 'read_file', arguments: { path: 'README.md' } }],
         input_tokens: 12,
         output_tokens: 5,
+        cache_read_tokens: 9,
         reasoning_tokens: 2,
+        cache_hit_rate: 0.75,
       }),
+      record(3, { request_id: 'request-2', role: 'user', content: 'Follow up' }),
+      record(4, { request_id: 'request-2', role: 'assistant', content: 'Second answer' }),
     ],
     loading: false,
     error: '',
@@ -65,11 +69,24 @@ it('renders request messages, tool calls, and model usage', async () => {
   cleanups.push(() => { app.unmount(); host.remove() })
   await nextTick()
 
-  expect(host.textContent).toContain('Turn 1')
-  expect(host.textContent).toContain('gpt-test')
-  expect(host.textContent).toContain('User message')
-  expect(host.textContent).toContain('Inspect README')
-  expect(host.textContent).toContain('1 tool call')
-  expect(host.textContent).toContain('Input 12')
-  expect(host.textContent).toContain('Output 5')
+  const buttons = host.querySelectorAll<HTMLButtonElement>('.trace-turn-list button')
+  expect(buttons).toHaveLength(2)
+  expect(buttons[0]!.textContent).toContain('Cache 75%')
+  expect(buttons[0]!.querySelector('.trace-turn-cache')?.classList.contains('high')).toBe(true)
+  expect(host.querySelector('.trace-detail')?.textContent).toContain('Second answer')
+
+  buttons[0]!.click()
+  await nextTick()
+
+  const detail = host.querySelector('.trace-detail')!
+  expect(detail.textContent).toContain('Turn 1')
+  expect(detail.textContent).toContain('gpt-test')
+  expect(detail.textContent).toContain('User message')
+  expect(detail.textContent).toContain('Inspect README')
+  expect(detail.textContent).toContain('1 tool call')
+  expect(detail.textContent).toContain('Input 12')
+  expect(detail.textContent).toContain('Output 5')
+  expect(detail.querySelector('.trace-cache-rate')?.textContent).toContain('Cache hit 75%')
+  expect(detail.querySelector('.trace-cache-rate')?.classList.contains('high')).toBe(true)
+  expect(detail.textContent).not.toContain('Second answer')
 })

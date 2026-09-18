@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest'
 
 import type { AnalysisMessage } from '../api/types'
-import { addAgentUsage, formatTokenCount, latestAgentUsage, summarizeAgentUsage } from './agentUsage'
+import {
+  addAgentUsage,
+  cacheHitLevel,
+  calculateCacheHitRate,
+  formatCacheHitRate,
+  formatTokenCount,
+  latestAgentUsage,
+  summarizeAgentUsage,
+} from './agentUsage'
 
 const usage = (input: number, output: number, cached: number) => ({
   input_tokens: input,
@@ -52,6 +60,16 @@ describe('agent usage', () => {
 
   it('adds usage from consecutive streamed model completions', () => {
     expect(addAgentUsage(usage(10, 2, 5), usage(20, 3, 10))).toEqual(usage(30, 5, 15))
+  })
+
+  it('calculates and highlights cache hit rates consistently', () => {
+    expect(calculateCacheHitRate(usage(100, 2, 75))).toBe(0.75)
+    expect(calculateCacheHitRate(usage(0, 2, 0))).toBeNull()
+    expect(cacheHitLevel(0.75)).toBe('high')
+    expect(cacheHitLevel(0.4)).toBe('medium')
+    expect(cacheHitLevel(0.39)).toBe('low')
+    expect(cacheHitLevel(null)).toBeNull()
+    expect(formatCacheHitRate(0.756)).toBe('76%')
   })
 
   it('uses only the latest completed model step for current context', () => {

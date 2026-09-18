@@ -1,22 +1,54 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { AgentPersistedMessage } from '../api/types'
-import { formatTokenCount } from '../utils/agentUsage'
+import { calculateCacheHitRate, formatTokenCount } from '../utils/agentUsage'
+import CacheHitRate from './CacheHitRate.vue'
 import {
   buildInteractionTrace,
   interactionTraceEventKind,
   interactionTraceEventLabel,
   interactionTraceUsage,
+  type InteractionTraceTurn,
 } from '../utils/interactionTrace'
 
 const props = defineProps<{
   messages: AgentPersistedMessage[]
   loading: boolean
   error: string
+  selectedTurnId?: string | null
 }>()
-const emit = defineEmits<{ refresh: [] }>()
+const emit = defineEmits<{
+  refresh: []
+  'update:selectedTurnId': [turnId: string]
+}>()
 
 const turns = computed(() => buildInteractionTrace(props.messages))
+const selectedTurnId = ref<string | null>(props.selectedTurnId || null)
+const selectedTurn = computed(
+  () => turns.value.find((turn) => turn.id === selectedTurnId.value) || turns.value.at(-1) || null,
+)
+
+watch(() => props.selectedTurnId, (turnId) => {
+  if (turnId) selectedTurnId.value = turnId
+})
+
+watch(turns, (nextTurns) => {
+  if (!nextTurns.some((turn) => turn.id === selectedTurnId.value)) {
+    selectedTurnId.value = nextTurns.at(-1)?.id || null
+    if (selectedTurnId.value) emit('update:selectedTurnId', selectedTurnId.value)
+  }
+}, { immediate: true })
+
+function selectTurn(turnId: string): void {
+  selectedTurnId.value = turnId
+  emit('update:selectedTurnId', turnId)
+}
+
+function turnTitle(turn: InteractionTraceTurn): string {
+  const prompt = turn.messages.find((message) => message.role === 'user')?.content
+  const normalized = prompt?.replace(/\s+/g, ' ').trim()
+  return normalized ? (normalized.length > 54 ? `${normalized.slice(0, 53)}…` : normalized) : `Turn ${turn.index}`
+}
 
 function formatDuration(milliseconds: number): string {
   if (milliseconds < 1_000) return `${Math.round(milliseconds)} ms`
@@ -40,6 +72,12 @@ function formatJson(value: unknown): string {
   } catch {
     return String(value)
   }
+}
+
+function cacheHitRate(message: AgentPersistedMessage): number | null {
+  if (message.role !== 'assistant') return null
+  if (message.cache_hit_rate !== null) return message.cache_hit_rate
+  return calculateCacheHitRate(interactionTraceUsage(message))
 }
 </script>
 
@@ -67,26 +105,49 @@ function formatJson(value: unknown): string {
       <span>Send a message to record the first model request.</span>
     </div>
 
-    <div v-else class="trace-turns">
-      <article v-for="turn in turns" :key="turn.id" class="trace-turn">
+    <div v-else class="trace-layout">
+      <aside class="trace-turn-list" aria-label="Conversation turns">
+        <button
+          v-for="turn in turns"
+          :key="turn.id"
+          type="button"
+          :class="{ active: selectedTurn?.id === turn.id }"
+          @click="selectTurn(turn.id)"
+        >
+          <span>Turn {{ turn.index }}</span>
+          <strong>{{ turnTitle(turn) }}</strong>
+          <div class="trace-turn-meta">
+            <small>{{ turn.messages.length }} events · {{ formatDuration(turn.duration_ms) }}</small>
+            <CacheHitRate
+              v-if="turn.usage"
+              class="trace-turn-cache"
+              label="Cache"
+              :rate="calculateCacheHitRate(turn.usage)"
+            />
+          </div>
+        </button>
+      </aside>
+
+      <div v-if="selectedTurn" class="trace-detail">
+        <article class="trace-turn">
         <header class="trace-turn-header">
           <div>
-            <span class="trace-turn-index">Turn {{ turn.index }}</span>
-            <strong>{{ turn.model || 'Model call' }}</strong>
-            <small v-if="turn.provider">{{ turn.provider }}</small>
+            <span class="trace-turn-index">Turn {{ selectedTurn.index }}</span>
+            <strong>{{ selectedTurn.model || 'Model call' }}</strong>
+            <small v-if="selectedTurn.provider">{{ selectedTurn.provider }}</small>
           </div>
           <div class="trace-turn-summary">
-            <span>{{ turn.messages.length }} events</span>
-            <span>{{ formatDuration(turn.duration_ms) }}</span>
-            <span v-if="turn.usage">Input {{ formatTokenCount(turn.usage.input_tokens) }}</span>
-            <span v-if="turn.usage">Output {{ formatTokenCount(turn.usage.output_tokens) }}</span>
-            <span v-if="turn.usage?.reasoning_tokens">Reasoning {{ formatTokenCount(turn.usage.reasoning_tokens) }}</span>
+            <span>{{ selectedTurn.messages.length }} events</span>
+            <span>{{ formatDuration(selectedTurn.duration_ms) }}</span>
+            <span v-if="selectedTurn.usage">Input {{ formatTokenCount(selectedTurn.usage.input_tokens) }}</span>
+            <span v-if="selectedTurn.usage">Output {{ formatTokenCount(selectedTurn.usage.output_tokens) }}</span>
+            <span v-if="selectedTurn.usage?.reasoning_tokens">Reasoning {{ formatTokenCount(selectedTurn.usage.reasoning_tokens) }}</span>
           </div>
         </header>
 
         <ol class="trace-events">
           <li
-            v-for="message in turn.messages"
+            v-for="message in selectedTurn.messages"
             :key="message.id"
             class="trace-event"
             :class="interactionTraceEventKind(message)"
@@ -132,24 +193,37 @@ function formatJson(value: unknown): string {
                 <span>Output {{ formatTokenCount(interactionTraceUsage(message)!.output_tokens) }}</span>
                 <span>Cache {{ formatTokenCount(interactionTraceUsage(message)!.cache_read_tokens) }}</span>
                 <span>Reasoning {{ formatTokenCount(interactionTraceUsage(message)!.reasoning_tokens) }}</span>
+                <CacheHitRate class="trace-cache-rate" :rate="cacheHitRate(message)" />
               </div>
             </div>
           </li>
         </ol>
-      </article>
+        </article>
+      </div>
     </div>
   </section>
 </template>
 
 <style scoped>
-.interaction-trace { height: 100%; min-height: 0; overflow: auto; border: 1px solid rgba(29,29,31,.08); border-radius: .8rem; background: rgba(255,255,255,.9); box-shadow: var(--shadow); scrollbar-width: thin; }
+.interaction-trace { height: 100%; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; border: 1px solid rgba(29,29,31,.08); border-radius: .8rem; background: rgba(255,255,255,.9); box-shadow: var(--shadow); }
 .trace-header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem 1.15rem; border-bottom: 1px solid var(--line); background: rgba(250,251,250,.95); backdrop-filter: blur(16px); }
 .trace-header p { margin: 0 0 .2rem; color: var(--accent); font-size: .58rem; font-weight: 720; letter-spacing: .07em; text-transform: uppercase; }
 .trace-header h1 { margin: 0; color: #343a36; font-size: 1.05rem; letter-spacing: -.02em; }
 .trace-header span { display: block; margin-top: .18rem; color: var(--tertiary); font-size: .62rem; }
 .trace-header button, .trace-state button { min-height: 2rem; padding: 0 .7rem; border: 1px solid #cfd8d2; border-radius: .52rem; color: #355442; background: #f7f9f8; cursor: pointer; font-size: .64rem; font-weight: 650; }
 .trace-header button:disabled { opacity: .5; cursor: wait; }
-.trace-turns { display: grid; gap: .8rem; padding: 1rem; }
+.trace-layout { min-height: 0; display: grid; grid-template-columns: minmax(11rem, 14rem) minmax(0, 1fr); }
+.trace-turn-list { min-height: 0; display: grid; align-content: start; gap: .25rem; padding: .65rem; overflow-y: auto; border-right: 1px solid #e4e9e6; background: #f6f8f6; scrollbar-width: thin; }
+.trace-turn-list button { width: 100%; display: grid; gap: .16rem; padding: .62rem .65rem; border: 1px solid transparent; border-radius: .58rem; color: #66716a; background: transparent; cursor: pointer; text-align: left; }
+.trace-turn-list button:hover { background: rgba(255,255,255,.72); }
+.trace-turn-list button.active { border-color: rgba(76,112,91,.16); color: #31523f; background: #fff; box-shadow: 0 1px 5px rgba(39,57,47,.07); }
+.trace-turn-list button > span { color: #7a8a80; font-size: .52rem; font-weight: 720; letter-spacing: .055em; text-transform: uppercase; }
+.trace-turn-list button strong { overflow: hidden; font-size: .65rem; font-weight: 650; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.trace-turn-list button small { overflow: hidden; color: #959c98; font-size: .52rem; text-overflow: ellipsis; white-space: nowrap; }
+.trace-turn-meta { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: .35rem; }
+.trace-turn-meta small { min-width: 0; }
+.trace-turn-cache { flex: 0 0 auto; opacity: .72; font-size: .48rem; }
+.trace-detail { min-height: 0; padding: 1rem; overflow-y: auto; scrollbar-width: thin; }
 .trace-turn { overflow: hidden; border: 1px solid rgba(56,74,64,.1); border-radius: .72rem; background: #fff; }
 .trace-turn-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding: .8rem .9rem; border-bottom: 1px solid #e8ece9; background: #f7f9f7; }
 .trace-turn-header strong, .trace-turn-header small { display: block; }
@@ -188,4 +262,9 @@ function formatJson(value: unknown): string {
 .trace-state strong { color: #4b554f; font-size: .82rem; }
 .trace-state span { max-width: 26rem; font-size: .68rem; line-height: 1.5; }
 .trace-state.error strong, .trace-state.error span { color: #8a504b; }
+@media (max-width: 760px) {
+  .trace-layout { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+  .trace-turn-list { grid-auto-flow: column; grid-auto-columns: minmax(11rem, 70vw); overflow-x: auto; overflow-y: hidden; border-right: 0; border-bottom: 1px solid #e4e9e6; }
+  .trace-detail { padding: .7rem; }
+}
 </style>
