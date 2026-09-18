@@ -50,6 +50,15 @@ function turnTitle(turn: InteractionTraceTurn): string {
   return normalized ? (normalized.length > 54 ? `${normalized.slice(0, 53)}…` : normalized) : `Turn ${turn.index}`
 }
 
+function turnModelLabel(turn: InteractionTraceTurn): string {
+  return turn.models.map((identity) => identity.model || 'Unknown model').join(' → ') || 'Model call'
+}
+
+function turnProviderLabel(turn: InteractionTraceTurn): string {
+  return [...new Set(turn.models.map((identity) => identity.provider).filter((provider) => provider))]
+    .join(' → ')
+}
+
 function formatDuration(milliseconds: number): string {
   if (milliseconds < 1_000) return `${Math.round(milliseconds)} ms`
   return `${(milliseconds / 1_000).toFixed(milliseconds < 10_000 ? 2 : 1)} s`
@@ -133,8 +142,8 @@ function cacheHitRate(message: AgentPersistedMessage): number | null {
         <header class="trace-turn-header">
           <div>
             <span class="trace-turn-index">Turn {{ selectedTurn.index }}</span>
-            <strong>{{ selectedTurn.model || 'Model call' }}</strong>
-            <small v-if="selectedTurn.provider">{{ selectedTurn.provider }}</small>
+            <strong>{{ turnModelLabel(selectedTurn) }}</strong>
+            <small v-if="turnProviderLabel(selectedTurn)">{{ turnProviderLabel(selectedTurn) }}</small>
           </div>
           <div class="trace-turn-summary">
             <span>{{ selectedTurn.messages.length }} events</span>
@@ -161,7 +170,6 @@ function cacheHitRate(message: AgentPersistedMessage): number | null {
                 </div>
                 <div class="trace-event-meta">
                   <span v-if="message.duration_ns">{{ formatDuration(message.duration_ns / 1_000_000) }}</span>
-                  <span v-if="message.model">{{ message.model }}</span>
                   <span v-if="message.tool_name">{{ message.tool_name }}</span>
                 </div>
               </header>
@@ -248,7 +256,7 @@ function cacheHitRate(message: AgentPersistedMessage): number | null {
 .trace-event-content > header strong { color: #3d4841; font-size: .68rem; }
 .trace-event-content > header small { margin-top: .13rem; color: #909892; font-size: .55rem; }
 .trace-event-meta { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .28rem; }
-.trace-message-content, .trace-message-parts pre, .trace-payload pre, .trace-tool-call pre { margin: .5rem 0 0; padding: .6rem .68rem; overflow: auto; border-radius: .52rem; color: #3f4a43; background: #f5f7f5; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: .62rem; line-height: 1.52; white-space: pre-wrap; overflow-wrap: anywhere; }
+.trace-message-content, .trace-message-parts pre, .trace-payload pre, .trace-tool-call pre { max-height: 16rem; margin: .5rem 0 0; padding: .6rem .68rem; overflow: auto; overscroll-behavior: contain; border-radius: .52rem; color: #3f4a43; background: #f5f7f5; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: .62rem; line-height: 1.52; white-space: pre-wrap; overflow-wrap: anywhere; scrollbar-width: thin; }
 .trace-message-parts { display: grid; gap: .42rem; margin-top: .5rem; }
 .trace-message-parts pre { margin: 0; }
 .trace-message-parts img { max-width: min(100%, 28rem); max-height: 20rem; border: 1px solid #dfe5e1; border-radius: .55rem; object-fit: contain; background: #eef1ef; }

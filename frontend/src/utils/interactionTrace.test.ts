@@ -76,10 +76,27 @@ describe('buildInteractionTrace', () => {
       index: 1,
       model: 'gpt-test',
       provider: 'openai',
+      models: [{ model: 'gpt-test', provider: 'openai' }],
       duration_ms: 3,
       usage: { input_tokens: 10, output_tokens: 4, reasoning_tokens: 2 },
     })
     expect(trace[0]?.messages.map((message) => message.role)).toEqual(['user', 'assistant', 'tool'])
     expect(trace[1]?.messages.map((message) => message.role)).toEqual(['assistant'])
+  })
+
+  it('keeps one model per turn and preserves a switch within the turn', () => {
+    const trace = buildInteractionTrace([
+      record(1, 'user', { content: 'Switch models' }),
+      record(2, 'assistant', { model: 'model-a', provider: 'provider-a' }),
+      record(3, 'assistant', { model: 'model-b', provider: 'provider-b' }),
+      record(4, 'user', { request_id: 'request-2', content: 'Next turn' }),
+      record(5, 'assistant', { request_id: 'request-2', model: 'model-c', provider: 'provider-c' }),
+    ])
+
+    expect(trace[0]?.models).toEqual([
+      { model: 'model-a', provider: 'provider-a' },
+      { model: 'model-b', provider: 'provider-b' },
+    ])
+    expect(trace[1]?.models).toEqual([{ model: 'model-c', provider: 'provider-c' }])
   })
 })

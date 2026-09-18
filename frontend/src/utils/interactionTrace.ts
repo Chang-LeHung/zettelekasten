@@ -1,12 +1,18 @@
 import type { AgentModelUsage, AgentPersistedMessage } from '../api/types'
 import { addAgentUsage } from './agentUsage'
 
+export interface InteractionTraceModel {
+  model: string | null
+  provider: string | null
+}
+
 export interface InteractionTraceTurn {
   id: string
   index: number
   messages: AgentPersistedMessage[]
   provider: string | null
   model: string | null
+  models: InteractionTraceModel[]
   usage: AgentModelUsage | null
   started_at: string
   completed_at: string
@@ -63,6 +69,7 @@ export function buildInteractionTrace(messages: readonly AgentPersistedMessage[]
         messages: [],
         provider: null,
         model: null,
+        models: [],
         usage: null,
         started_at: message.started_at,
         completed_at: message.completed_at,
@@ -72,8 +79,14 @@ export function buildInteractionTrace(messages: readonly AgentPersistedMessage[]
       turns.push(turn)
     }
     turn.messages.push(message)
-    turn.provider = message.provider || turn.provider
-    turn.model = message.model || turn.model
+    if (message.provider || message.model) {
+      const identity = { provider: message.provider, model: message.model }
+      if (!turn.models.some((item) => item.provider === identity.provider && item.model === identity.model)) {
+        turn.models.push(identity)
+      }
+      turn.provider ||= message.provider
+      turn.model ||= message.model
+    }
     const usage = messageUsage(message)
     if (usage) turn.usage = addAgentUsage(turn.usage, usage)
     turn.completed_at = message.completed_at
