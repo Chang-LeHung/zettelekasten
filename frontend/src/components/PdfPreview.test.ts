@@ -46,6 +46,19 @@ it('resizes with the keyboard and retains width across collapse and expansion', 
   expect(root.style.getPropertyValue('--outline-width')).toBe('260px')
 })
 
+it('shows a centered compilation state before the PDF exists', async () => {
+  const { root } = await mountPreview()
+  await nextTick()
+
+  const state = root.querySelector<HTMLElement>('.pdf-state.awaiting')
+  expect(state).not.toBeNull()
+  expect(state!.querySelector('strong')?.textContent).toBe('PDF has not been generated yet')
+  expect(state!.querySelector('.pdf-state-copy')?.textContent).toBe(
+    'Compile the LaTeX project, then refresh this preview.',
+  )
+  expect(state!.querySelector('button')?.textContent).toBe('Refresh preview')
+})
+
 it('bounds pointer resizing and stops when the pointer is cancelled', async () => {
   const { host, root } = await mountPreview()
   host.querySelector<HTMLButtonElement>('[aria-label="Toggle document outline"]')!.click()

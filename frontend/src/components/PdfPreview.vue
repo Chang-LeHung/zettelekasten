@@ -480,9 +480,9 @@ onBeforeUnmount(() => {
         />
       </div>
       <div v-if="loading" class="pdf-state"><span class="spinner" />Loading PDF…</div>
-      <div v-else-if="awaitingCompilation" class="pdf-state" role="status">
-        <strong>PDF not generated yet</strong>
-        <span>The project is ready. Its PDF will be available after compilation.</span>
+      <div v-else-if="awaitingCompilation" class="pdf-state awaiting" role="status">
+        <strong>PDF has not been generated yet</strong>
+        <span class="pdf-state-copy">Compile the LaTeX project, then refresh this preview.</span>
         <button type="button" @click="loadDocument">Refresh preview</button>
       </div>
       <div v-else-if="errorMessage" class="pdf-state error" role="alert">
@@ -555,9 +555,11 @@ onBeforeUnmount(() => {
 .presentation-next { right: 1rem; }
 .presentation-progress { position: absolute; right: 1rem; bottom: 1rem; min-width: 4.4rem; padding: .48rem .7rem; border-radius: .6rem; color: rgba(245,248,246,.86); background: rgba(20,26,22,.55); font-size: .75rem; font-variant-numeric: tabular-nums; text-align: center; backdrop-filter: blur(12px); }
 .pdf-state { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: .55rem; color: #737c76; font-size: .78rem; }
-.pdf-state.error { flex-direction: column; padding: 2rem; }
-.pdf-state.error strong { color: #3d4941; font-size: .9rem; }
-.pdf-state.error button { margin-top: .4rem; padding: .5rem .8rem; border-radius: .55rem; color: #fff; background: #476957; }
+.pdf-state.awaiting, .pdf-state.error { flex-direction: column; gap: .45rem; padding: 2rem; text-align: center; }
+.pdf-state.awaiting strong, .pdf-state.error strong { color: #3d4941; font-size: .9rem; }
+.pdf-state-copy, .pdf-state.error span { max-width: min(100%, 30rem); line-height: 1.55; }
+.pdf-state.awaiting button, .pdf-state.error button { margin-top: .55rem; padding: .5rem .8rem; border-radius: .55rem; color: #fff; background: #476957; }
+.pdf-state.awaiting button:hover, .pdf-state.error button:hover { background: #3d5c4b; }
 .spinner { width: .9rem; height: .9rem; border: 2px solid #cbd5cf; border-top-color: #527460; border-radius: 50%; animation: spin .75s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (max-width: 760px) {
