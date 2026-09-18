@@ -442,8 +442,13 @@ async def test_agent_stream_uses_provider_neutral_events_and_persists_messages(m
         assert "event: custom\n" in response.text
         assert '"name":"context_composition"' in response.text
         detail = client.get(f"/api/agent/sessions/{session_id}").json()
-        assert [message["role"] for message in detail["messages"]] == ["user", "assistant"]
-        assert detail["messages"][1]["reasoning_content"] == "checking"
+        assert any(message["role"] == "system" for message in detail["messages"])
+        assert [message["role"] for message in detail["messages"] if message["role"] != "system"] == [
+            "user",
+            "assistant",
+        ]
+        assistant = next(message for message in detail["messages"] if message["role"] == "assistant")
+        assert assistant["reasoning_content"] == "checking"
     assert model.closed
 
     async with session_scope() as session:
@@ -490,7 +495,8 @@ def test_pasted_image_is_persisted_in_the_user_message_not_session_assets(monkey
         assert image.source.data == image_bytes
         detail = client.get(f"/api/agent/sessions/{session_id}").json()
         assert detail["assets"] == []
-        assert detail["messages"][0]["parts"] == [
+        user_message = next(message for message in detail["messages"] if message["role"] == "user")
+        assert user_message["parts"] == [
             {"type": "text", "text": "Before image, "},
             {
                 "type": "image",

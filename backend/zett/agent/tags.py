@@ -117,5 +117,4 @@ class TagExtension(AgentExtension):
             + json.dumps([tag.model_dump(mode="json") for tag in tags], ensure_ascii=False)
         )
         instructions = [item for item in context.state.messages if isinstance(item, SystemMessage)]
-        dialogue = [item for item in context.state.messages if not isinstance(item, SystemMessage)]
-        context.state.messages[:] = [*instructions, message, *dialogue]
+        context.add_message(message, index=len(instructions))

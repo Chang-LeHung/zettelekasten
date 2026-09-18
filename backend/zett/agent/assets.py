@@ -216,8 +216,7 @@ class AssetExtension(AgentExtension):
         ]
         workspace = SystemMessage(content="Current session assets:\n" + json.dumps(payload, ensure_ascii=False))
         instructions = [item for item in context.state.messages if isinstance(item, SystemMessage)]
-        dialogue = [item for item in context.state.messages if not isinstance(item, SystemMessage)]
-        context.state.messages[:] = [*instructions, workspace, *dialogue]
+        context.add_message(workspace, index=len(instructions))
 
     @staticmethod
     async def _asset(session_id: str, asset_id: str) -> SessionAssetOut:

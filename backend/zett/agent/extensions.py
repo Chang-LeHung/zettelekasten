@@ -245,8 +245,7 @@ class ZettelkastenExtension(AgentExtension):
                 content="Current Zett conversation workspace previews:\n" + json.dumps(payload, ensure_ascii=False)
             )
             instructions = [item for item in context.state.messages if isinstance(item, SystemMessage)]
-            dialogue = [item for item in context.state.messages if not isinstance(item, SystemMessage)]
-            context.state.messages[:] = [*instructions, workspace, *dialogue]
+            context.add_message(workspace, index=len(instructions))
 
     @staticmethod
     async def _artifact(session_id: str, artifact_id: str) -> AgentArtifact:
