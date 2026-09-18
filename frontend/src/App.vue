@@ -9,6 +9,7 @@ import TagManagerDialog from './components/TagManagerDialog.vue'
 import AssetPreviewDialog from './components/AssetPreviewDialog.vue'
 import AssetRename from './components/AssetRename.vue'
 import AskUserPrompt from './components/AskUserPrompt.vue'
+import ToolResult from './components/ToolResult.vue'
 import { addAgentUsage, latestAgentUsage, summarizeAgentUsage } from './utils/agentUsage'
 import { assetOpenAction, isPdfAsset } from './utils/assetOpen'
 import { createAsyncRefreshScheduler } from './utils/asyncRefresh'
@@ -441,9 +442,16 @@ function turnDuration(turn: ConversationTurn, index: number): string {
   return formatTurnDuration(turn.response?.duration_ms || 0)
 }
 
-function turnResponseUsage(turn: ConversationTurn, index: number): AgentModelUsage | null {
-  if (isRunningTurn(index)) return streamingUsage.value
-  return turn.response?.usage || null
+function turnCacheHitRate(turn: ConversationTurn, index: number): number | null {
+  const messages = [...turn.responses]
+  if (isRunningTurn(index) && streamingUsage.value) {
+    messages.push({
+      role: 'assistant',
+      content: streamingMessage.value,
+      usage: streamingUsage.value,
+    })
+  }
+  return summarizeAgentUsage(messages)?.cache_hit_rate ?? null
 }
 
 function updateToolActivity(activity: AgentToolActivity): void {
@@ -2130,6 +2138,9 @@ onBeforeUnmount(() => {
                             <strong>{{ isRunningTurn(index) ? turnTask(index) : `Processed in ${turnDuration(turn, index)}` }}</strong>
                             <small>{{ isRunningTurn(index) ? `Running · ${turnDuration(turn, index)}` : 'Show thinking, tools, and task details' }}</small>
                           </span>
+                          <span class="turn-execution-metrics">
+                            <CacheHitRate class="turn-execution-cache" label="Cache" :rate="turnCacheHitRate(turn, index)" />
+                          </span>
                           <span class="turn-chevron" aria-hidden="true">›</span>
                         </summary>
                         <div class="turn-execution-details">
@@ -2161,7 +2172,7 @@ onBeforeUnmount(() => {
                               <summary><i /><span>{{ entry.activity.name.replaceAll('_', ' ') }}</span><small v-if="entry.activity.duration_ms">{{ Math.round(entry.activity.duration_ms) }} ms</small></summary>
                               <div class="tool-activity-details">
                                 <div><strong>Arguments</strong><pre>{{ formatToolValue(entry.activity.arguments || {}) }}</pre></div>
-                                <div><strong>{{ entry.activity.error_message ? 'Error' : 'Result' }}</strong><pre :class="{ error: entry.activity.error_message }">{{ entry.activity.error_message || formatToolValue(entry.activity.output) }}</pre></div>
+                                <div><strong>{{ entry.activity.error_message ? 'Error' : 'Result' }}</strong><ToolResult :output="entry.activity.output" :error="entry.activity.error_message" /></div>
                               </div>
                             </details>
                             <details v-else-if="entry.type === 'server_tool'" class="tool-activity server-tool-activity" :class="entry.activity.state">
@@ -2182,7 +2193,6 @@ onBeforeUnmount(() => {
                           <template v-for="entry in turnAnswerTimeline(turn, index)" :key="entry.id">
                             <MarkdownContent class="final-response" :content="entry.content" />
                           </template>
-                          <CacheHitRate class="turn-cache-hit" :usage="turnResponseUsage(turn, index)" />
                           <span v-if="isRunningTurn(index)" class="streaming-dots compact" aria-label="Generating"><i /><i /><i /></span>
                           <p v-else-if="!turnAnswerTimeline(turn, index).length && !turn.response?.error" class="turn-empty-response">No response was recorded for this turn.</p>
                           <div v-if="turn.response?.error" class="turn-error" role="alert">
@@ -2659,7 +2669,7 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .asset-drop-zone small { color: #989e9a; font-size: .48rem; }
 .agent-thread { min-height: 0; padding: 1.2rem; overflow-y: auto; overscroll-behavior: contain; scroll-behavior: auto; scrollbar-width: thin; scrollbar-gutter: stable; overflow-anchor: none; }
 .agent-thread.empty { display: grid; place-items: center; }
-.turn-stack { --conversation-font-size: 1rem; width: min(100%, 46rem); margin: 0 auto; }
+.turn-stack { --conversation-font-size: .94rem; width: min(100%, 46rem); margin: 0 auto; }
 .conversation-turn { display: grid; gap: .5rem; margin-bottom: .72rem; }
 .turn-content { display: grid; gap: .68rem; padding: .12rem 0 .68rem; }
 .turn-prompt { display: flex; justify-content: flex-end; padding-left: 18%; }
@@ -2668,7 +2678,7 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .turn-prompt .message-content { width: auto; min-width: 0; max-width: 100%; padding: 0; border: 0; border-radius: 0; color: inherit; background: transparent; box-shadow: none; }
 .turn-prompt-image { display: block; width: min(100%, 22rem); max-height: 18rem; margin: 0; border-radius: .75rem; object-fit: contain; background: #e2e7e4; }
 .turn-execution { margin-right: 7%; }
-.turn-execution > summary { min-height: 3.1rem; display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: .62rem; padding: .55rem .1rem; border-bottom: 1px solid #e7ebe8; cursor: pointer; list-style: none; user-select: none; }
+.turn-execution > summary { min-height: 3.1rem; display: grid; grid-template-columns: auto minmax(0,1fr) auto auto; align-items: center; gap: .62rem; padding: .55rem .1rem; border-bottom: 1px solid #e7ebe8; cursor: pointer; list-style: none; user-select: none; }
 .turn-execution > summary::-webkit-details-marker { display: none; }
 .turn-state-icon { width: 1.55rem; height: 1.55rem; display: grid; place-items: center; border: 1px solid #d9e1dc; border-radius: 50%; background: #f5f8f6; }
 .turn-state-icon i { width: .43rem; height: .43rem; border-radius: 50%; background: #72907d; }
@@ -2678,13 +2688,14 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .turn-execution-copy strong { overflow: hidden; color: #59635d; font-size: .68rem; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
 .conversation-turn.running .turn-execution-copy strong { color: #355b45; }
 .turn-execution-copy small { color: #929995; font-size: .56rem; font-variant-numeric: tabular-nums; }
+.turn-execution-metrics { min-width: 0; display: flex; align-items: center; justify-content: flex-end; }
+.turn-execution-cache { opacity: .72; font-size: .58rem; }
 .turn-chevron { color: #8e9892; font-size: 1.05rem; line-height: 1; transition: transform 160ms ease; }
 .turn-execution[open] > summary .turn-chevron { transform: rotate(90deg); }
 .turn-execution-details { display: grid; gap: .28rem; padding: .48rem 0 .2rem; animation: turn-reveal 160ms ease-out; }
 .turn-empty-detail { margin: 0; color: #979e99; font-size: .62rem; }
 .turn-response { min-width: 0; padding-right: 7%; }
 .agent-response-content { min-width: 0; padding-top: .1rem; }
-.turn-cache-hit { margin-top: .55rem; }
 .turn-prompt .message-content, .agent-response-content { font-size: var(--conversation-font-size); line-height: 1.65; }
 .agent-response-content .final-response { margin: 0; padding: 0; border: 0; border-radius: 0; color: #303632; background: transparent; box-shadow: none; }
 .turn-task-list { margin: .1rem 0 .55rem; padding: .25rem 0 .45rem; border-bottom: 1px solid #e8ebe9; }
