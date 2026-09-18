@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ApiError, aiClient, libraryClient, settingsClient, tagClient } from './api/client'
-import type { AgentArtifact, AgentCompactionActivity, AgentContextComposition, AgentCustomEvent, AgentModelUsage, AgentServerToolActivity, AgentSession, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageContentPart, ReasoningEffort, RuntimeSettings, SessionAsset, Tag } from './api/types'
+import type { AgentArtifact, AgentCompactionActivity, AgentContextComposition, AgentCustomEvent, AgentModelUsage, AgentPersistedMessage, AgentServerToolActivity, AgentSession, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageContentPart, ReasoningEffort, RuntimeSettings, SessionAsset, Tag } from './api/types'
 import AgentComposerControls from './components/AgentComposerControls.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import TagManagerDialog from './components/TagManagerDialog.vue'
@@ -30,6 +30,7 @@ const LibraryEditor = defineAsyncComponent(() => import('./components/LibraryEdi
 const PdfThumbnail = defineAsyncComponent(() => import('./components/PdfThumbnail.vue'))
 const SlidesPreview = defineAsyncComponent(() => import('./components/SlidesPreview.vue'))
 const PdfPreview = defineAsyncComponent(() => import('./components/PdfPreview.vue'))
+const InteractionTrace = defineAsyncComponent(() => import('./components/InteractionTrace.vue'))
 
 type View = 'library' | 'search' | 'new' | 'settings'
 type NoticeKind = 'success' | 'error'
@@ -103,6 +104,10 @@ const view = ref<View>('new')
 const raw = ref('')
 const artifactContent = ref<ArtifactContent | null>(null)
 const conversation = ref<AnalysisMessage[]>([])
+const workspaceView = ref<'workspace' | 'trace'>('workspace')
+const traceMessages = ref<AgentPersistedMessage[]>([])
+const traceLoading = ref(false)
+const traceError = ref('')
 const followUp = ref('')
 const initialMessageParts = ref<MessageContentPart[]>([])
 const pendingMessageImages = ref<PositionedMessageImage[]>([])
@@ -275,6 +280,30 @@ function resetStreamState(): void {
   pendingQuestion.value = null
   activeTodos.value = null
   streamingStatus.value = 'starting'
+}
+
+function setWorkspaceView(next: 'workspace' | 'trace'): void {
+  workspaceView.value = next
+  if (next === 'trace') void loadInteractionTrace()
+}
+
+async function loadInteractionTrace(sessionId = conversationId.value): Promise<void> {
+  if (!sessionId) {
+    traceMessages.value = []
+    traceError.value = ''
+    traceLoading.value = false
+    return
+  }
+  traceLoading.value = true
+  traceError.value = ''
+  try {
+    const messages = await aiClient.getAgentSessionMessages(sessionId)
+    if (conversationId.value === sessionId) traceMessages.value = messages
+  } catch (error) {
+    if (conversationId.value === sessionId) traceError.value = errorMessage(error)
+  } finally {
+    if (conversationId.value === sessionId) traceLoading.value = false
+  }
 }
 
 function commitStreamedResponse(
@@ -940,8 +969,9 @@ async function analyze(): Promise<void> {
   const requestParts = buildMessageParts(messageText, pendingMessageImages.value)
   initialMessageParts.value = displayMessageParts(requestParts, pendingMessageImages.value)
   pendingMessageImages.value = []
+  let activeConversationId: string | null = null
   try {
-    const activeConversationId = await ensureConversation()
+    activeConversationId = await ensureConversation()
     const result = await aiClient.analyzeStream(
       activeConversationId,
       messageText,
@@ -972,6 +1002,7 @@ async function analyze(): Promise<void> {
     if (activeStreamController.value === controller) activeStreamController.value = null
     loading.value = false
     if (streamingStatus.value !== 'cancelled') streamingStatus.value = 'idle'
+    if (workspaceView.value === 'trace' && activeConversationId) void loadInteractionTrace(activeConversationId)
   }
 }
 
@@ -993,8 +1024,9 @@ async function refine(): Promise<void> {
   activeStreamController.value = controller
   resetStreamState()
   startTurnClock()
+  let activeConversationId: string | null = null
   try {
-    const activeConversationId = await ensureConversation()
+    activeConversationId = await ensureConversation()
     await syncSelectedArtifact()
     const result = await aiClient.analyzeStream(
       activeConversationId,
@@ -1025,6 +1057,7 @@ async function refine(): Promise<void> {
     if (activeStreamController.value === controller) activeStreamController.value = null
     loading.value = false
     if (streamingStatus.value !== 'cancelled') streamingStatus.value = 'idle'
+    if (workspaceView.value === 'trace' && activeConversationId) void loadInteractionTrace(activeConversationId)
   }
 }
 
@@ -1073,6 +1106,7 @@ async function ensureConversation(): Promise<string> {
 
 function applySession(session: AgentSession): void {
   conversationId.value = session.id
+  workspaceView.value = 'workspace'
   turnDetails.clear()
   window.localStorage.setItem(activeSessionKey, session.id)
   applyArtifacts(session.artifacts, false)
@@ -1082,6 +1116,9 @@ function applySession(session: AgentSession): void {
   initialMessageParts.value = restored.initialParts
   pendingMessageImages.value = []
   conversation.value = restored.messages
+  traceMessages.value = session.messages
+  traceError.value = ''
+  traceLoading.value = false
   currentContextUsage.value = latestAgentUsage(restored.messages)
   contextComposition.value = null
   followUp.value = ''
@@ -1264,6 +1301,10 @@ async function resetWorkspace(): Promise<void> {
   selectedArtifactId.value = null
   artifactPreview.value = true
   conversationId.value = null
+  workspaceView.value = 'workspace'
+  traceMessages.value = []
+  traceError.value = ''
+  traceLoading.value = false
   currentContextUsage.value = null
   contextComposition.value = null
   resetStreamState()
@@ -1905,10 +1946,22 @@ onBeforeUnmount(() => {
       <template v-else-if="view === 'new'">
         <header class="topbar compact chat-topbar">
           <div class="chat-topbar-title"><span class="status-dot online" /><span>AI workspace</span></div>
+          <div class="workspace-view-switch" role="group" aria-label="AI workspace view">
+            <button :class="{ active: workspaceView === 'workspace' }" type="button" @click="setWorkspaceView('workspace')">Workspace</button>
+            <button :class="{ active: workspaceView === 'trace' }" type="button" @click="setWorkspaceView('trace')">Trace</button>
+          </div>
           <button class="close-button" type="button" aria-label="Close" @click="navigate('library')">×</button>
         </header>
         <section class="content create-view">
-          <div class="agent-workspace" @paste="pasteAssets">
+          <div v-if="workspaceView === 'trace'" class="trace-workspace">
+            <InteractionTrace
+              :messages="traceMessages"
+              :loading="traceLoading"
+              :error="traceError"
+              @refresh="loadInteractionTrace()"
+            />
+          </div>
+          <div v-else class="agent-workspace" @paste="pasteAssets">
             <aside class="assets-pane" aria-label="Session assets" tabindex="0">
               <header class="assets-header">
                 <div><strong>Assets</strong><small>Session resources</small></div>
@@ -2412,6 +2465,10 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .chat-topbar { min-height: 4.5rem; }
 .chat-topbar-title { display: flex; align-items: center; gap: .55rem; color: var(--secondary); font-size: .75rem; font-weight: 620; }
 .chat-topbar-title .status-dot { margin-left: 0; }
+.workspace-view-switch { display: flex; gap: .16rem; padding: .17rem; border: 1px solid rgba(60,78,67,.1); border-radius: .62rem; background: rgba(235,239,236,.82); }
+.workspace-view-switch button { min-height: 1.8rem; padding: 0 .68rem; border: 0; border-radius: .46rem; color: #68736c; background: transparent; cursor: pointer; font-size: .62rem; font-weight: 650; }
+.workspace-view-switch button:hover { color: #355442; }
+.workspace-view-switch button.active { color: #31523f; background: #fff; box-shadow: 0 1px 4px rgba(38,57,46,.1); }
 .search-field { flex: 1; max-width: 38rem; height: 2.65rem; display: flex; align-items: center; gap: .65rem; padding: 0 .85rem; border: 1px solid rgba(29,29,31,.08); border-radius: .78rem; background: rgba(255,255,255,.72); box-shadow: 0 1px 4px rgba(0,0,0,.035), inset 0 1px rgba(255,255,255,.8); transition: box-shadow 180ms ease, background 180ms ease; }
 .search-field:focus-within { background: white; box-shadow: 0 0 0 3px rgba(71,105,87,.12), 0 8px 24px rgba(0,0,0,.05); }
 .search-field svg { width: 1rem; height: 1rem; color: #85858a; }
@@ -2477,6 +2534,7 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 
 .create-view { width: min(100%, 124rem); max-width: 124rem; padding-right: clamp(.55rem, 1vw, 1rem); padding-left: clamp(.55rem, 1vw, 1rem); }
 .agent-workspace { height: calc(100vh - 8.2rem); min-height: 39rem; display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 5fr) minmax(0, 3fr); gap: .72rem; }
+.trace-workspace { height: calc(100vh - 8.2rem); min-height: 39rem; }
 .assets-pane, .agent-chat, .artifact-pane { min-height: 0; overflow: hidden; border: 1px solid rgba(29,29,31,.08); border-radius: 1.15rem; background: rgba(255,255,255,.84); box-shadow: var(--shadow); backdrop-filter: blur(18px); }
 .agent-chat { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
 .agent-chat-header { min-height: 4.4rem; display: flex; align-items: center; gap: 1rem; padding: .75rem 1rem; border-bottom: 1px solid var(--line); }

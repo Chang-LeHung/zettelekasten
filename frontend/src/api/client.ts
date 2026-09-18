@@ -303,6 +303,11 @@ export const aiClient = {
     return request<AgentSession>(`/agent/sessions/${conversationId}`)
   },
 
+  getAgentSessionMessages(conversationId: string, limit = 500): Promise<AgentSession['messages']> {
+    const params = new URLSearchParams({ limit: String(limit) })
+    return request<AgentSession['messages']>(`/agent/sessions/${conversationId}/messages?${params}`)
+  },
+
   getAgentSessionModel(conversationId: string): Promise<SessionModelPreference | null> {
     return request<SessionModelPreference | null>(`/agent/sessions/${conversationId}/model`)
   },
