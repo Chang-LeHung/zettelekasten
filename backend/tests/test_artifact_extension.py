@@ -10,7 +10,6 @@ from zett_agent import (
     ModelEvent,
     ModelRequest,
     ModelResponse,
-    SystemMessage,
     ToolCall,
     ToolMessage,
 )
@@ -216,7 +215,7 @@ async def test_artifact_queries_are_scoped_to_the_owning_session() -> None:
     assert await artifact_storage.get_for_session(owner, secret.id) is not None
 
 
-async def test_artifact_workspace_context_uses_bounded_previews() -> None:
+async def test_artifact_workspace_is_not_reinjected_into_system_context() -> None:
     session_id = (await session_storage.create(AgentSessionCreate())).session_id
     full_content = "Article intro.\n" + ("private body " * 200)
     await artifact_storage.create(
@@ -239,17 +238,7 @@ async def test_artifact_workspace_context_uses_bounded_previews() -> None:
     )
     await agent.run("Inspect the workspace")
 
-    workspace = next(
-        message.content
+    assert all(
+        not (message.role == "system" and "Current Zett conversation workspace previews:" in str(message.content))
         for message in requests[0].messages
-        if isinstance(message, SystemMessage)
-        and message.content.startswith("Current Zett conversation workspace previews:")
     )
-    payload = json.loads(workspace.split("\n", 1)[1])
-    preview = payload["artifacts"][0]["content"]
-    assert preview["content_preview"].startswith("Article intro.")
-    assert preview["content_truncated"] is True
-    assert "raw_content" not in payload["artifacts"][0]
-    assert "metadata" not in payload["artifacts"][0]
-    assert "RAW INPUT MUST NOT ENTER CONTEXT" not in workspace
-    assert "METADATA MUST NOT ENTER CONTEXT" not in workspace

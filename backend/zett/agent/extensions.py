@@ -1,10 +1,9 @@
-"""Zett-specific artifact tools and conversation context."""
+"""Zett-specific artifact tools."""
 
-import json
 from typing import Annotated
 
 from pydantic import Field
-from zett_agent import AgentExtension, AgentRunContext, SystemMessage, tool
+from zett_agent import AgentExtension, AgentRunContext, tool
 
 from ..application.artifact_pruner import AgentArtifactPreview, ArtifactPruner
 from ..application.tagging import tag_service
@@ -16,7 +15,13 @@ artifact_pruner = ArtifactPruner()
 
 
 class ZettelkastenExtension(AgentExtension):
-    """Expose typed artifact operations and current artifacts to the model."""
+    """Expose typed artifact operations to the model."""
+
+    # Do not add an on_state() workspace system message. A conversation starts
+    # with no artifacts, and later create/update/delete tool calls and results
+    # already remain in model context. Rebuilding a full snapshot in the leading
+    # system prefix would invalidate prompt-cache prefixes without adding new
+    # information the model has not already seen.
 
     async def on_tool(self, context: AgentRunContext) -> None:
         """Register artifact tools bound to the current conversation."""
@@ -231,21 +236,6 @@ class ZettelkastenExtension(AgentExtension):
             delete_artifact,
         ):
             context.register_tool(registered)
-
-    async def on_state(self, context: AgentRunContext) -> None:
-        """Expose bounded current-artifact previews as model context."""
-        session_id = context.config.session_id
-        artifacts = await artifact_storage.list(ArtifactListOptions(session_id=session_id, limit=500))
-        previews = artifact_pruner.prune(artifacts)
-        payload = {
-            "artifacts": [preview.model_dump(mode="json") for preview in previews],
-        }
-        if payload["artifacts"]:
-            workspace = SystemMessage(
-                content="Current Zett conversation workspace previews:\n" + json.dumps(payload, ensure_ascii=False)
-            )
-            instructions = [item for item in context.state.messages if isinstance(item, SystemMessage)]
-            context.add_message(workspace, index=len(instructions))
 
     @staticmethod
     async def _artifact(session_id: str, artifact_id: str) -> AgentArtifact:

@@ -2,11 +2,10 @@
 
 import base64
 import binascii
-import json
 from typing import Annotated, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from zett_agent import AgentExtension, AgentRunContext, SystemMessage, tool
+from zett_agent import AgentExtension, AgentRunContext, tool
 
 from ..infra.dao import session_asset_storage
 from ..models import SessionAssetListOptions
@@ -80,7 +79,13 @@ def _write_model(session_id: str, asset: AssetInput) -> SessionAssetCreate:
 
 
 class AssetExtension(AgentExtension):
-    """Expose session-isolated asset CRUD tools and current asset context."""
+    """Expose session-isolated asset CRUD tools."""
+
+    # Do not add an on_state() asset system message. A conversation starts with
+    # no assets, and later create/update/delete tool calls and results already
+    # remain in model context. Rebuilding a full snapshot in the leading system
+    # prefix would invalidate prompt-cache prefixes without adding new
+    # information the model has not already seen.
 
     async def on_tool(self, context: AgentRunContext) -> None:
         """Register asset tools bound to the current session identity."""
@@ -193,30 +198,6 @@ class AssetExtension(AgentExtension):
 
         for registered in (create_asset, get_asset, update_asset, delete_asset, list_assets):
             context.register_tool(registered)
-
-    async def on_state(self, context: AgentRunContext) -> None:
-        """Expose lightweight asset content without injecting binary payloads."""
-        assets = await session_asset_storage.list(
-            SessionAssetListOptions(session_id=context.config.session_id, limit=500)
-        )
-        if not assets:
-            return
-        payload = [
-            {
-                "id": asset.id,
-                "type": asset.asset_type,
-                "name": asset.name,
-                "mime_type": asset.mime_type,
-                "size_bytes": asset.size_bytes,
-                "text_content": asset.text_content,
-                "source_url": asset.source_url,
-                "metadata": asset.metadata,
-            }
-            for asset in assets
-        ]
-        workspace = SystemMessage(content="Current session assets:\n" + json.dumps(payload, ensure_ascii=False))
-        instructions = [item for item in context.state.messages if isinstance(item, SystemMessage)]
-        context.add_message(workspace, index=len(instructions))
 
     @staticmethod
     async def _asset(session_id: str, asset_id: str) -> SessionAssetOut:
