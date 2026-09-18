@@ -10,13 +10,14 @@ from zett_agent import (
     ModelEvent,
     ModelRequest,
     ModelResponse,
+    SystemMessage,
     ToolCall,
     ToolMessage,
 )
 
 from zett.agent.extensions import ZettelkastenExtension
 from zett.infra.dao import artifact_storage, session_storage
-from zett.schemas import AgentArtifactWrite, AgentSessionCreate, CardArtifactContent
+from zett.schemas import AgentArtifactWrite, AgentSessionCreate, ArticleArtifactContent, CardArtifactContent
 
 
 def _tool_payload(request: ModelRequest) -> dict[str, object]:
@@ -106,6 +107,10 @@ class ArtifactQueryModel:
             case 4:
                 matched = _tool_items(request)
                 assert [item["content"]["title"] for item in matched] == ["Rust ownership"]
+                assert matched[0]["content"]["content_preview"] == "Another idea"
+                assert matched[0]["content"]["content_truncated"] is False
+                assert "raw_content" not in matched[0]
+                assert "metadata" not in matched[0]
                 message = AssistantMessage(
                     tool_calls=(
                         ToolCall(
@@ -209,3 +214,42 @@ async def test_artifact_queries_are_scoped_to_the_owning_session() -> None:
 
     assert result.content == "Global search found the artifact."
     assert await artifact_storage.get_for_session(owner, secret.id) is not None
+
+
+async def test_artifact_workspace_context_uses_bounded_previews() -> None:
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
+    full_content = "Article intro.\n" + ("private body " * 200)
+    await artifact_storage.create(
+        AgentArtifactWrite(
+            session_id=session_id,
+            content=ArticleArtifactContent(title="Private article", content=full_content),
+            raw_content="RAW INPUT MUST NOT ENTER CONTEXT",
+            metadata={"internal": "METADATA MUST NOT ENTER CONTEXT"},
+        )
+    )
+    requests: list[ModelRequest] = []
+
+    class Model:
+        async def stream(self, request: ModelRequest) -> AsyncIterator[ModelEvent]:
+            requests.append(request)
+            yield ModelEvent.completed(ModelResponse(AssistantMessage(content="done")))
+
+    agent = await Agent.create(
+        Model(), config=AgentRunConfig(session_id=session_id), extensions=[ZettelkastenExtension()]
+    )
+    await agent.run("Inspect the workspace")
+
+    workspace = next(
+        message.content
+        for message in requests[0].messages
+        if isinstance(message, SystemMessage)
+        and message.content.startswith("Current Zett conversation workspace previews:")
+    )
+    payload = json.loads(workspace.split("\n", 1)[1])
+    preview = payload["artifacts"][0]["content"]
+    assert preview["content_preview"].startswith("Article intro.")
+    assert preview["content_truncated"] is True
+    assert "raw_content" not in payload["artifacts"][0]
+    assert "metadata" not in payload["artifacts"][0]
+    assert "RAW INPUT MUST NOT ENTER CONTEXT" not in workspace
+    assert "METADATA MUST NOT ENTER CONTEXT" not in workspace

@@ -6,10 +6,13 @@ from typing import Annotated
 from pydantic import Field
 from zett_agent import AgentExtension, AgentRunContext, SystemMessage, tool
 
+from ..application.artifact_pruner import AgentArtifactPreview, ArtifactPruner
 from ..application.tagging import tag_service
 from ..infra.dao import artifact_storage
 from ..models import ArtifactListOptions
 from ..schemas import AgentArtifact, AgentArtifactWrite, ArtifactContent, ArtifactCreateContent, ArtifactStatus
+
+artifact_pruner = ArtifactPruner()
 
 
 class ZettelkastenExtension(AgentExtension):
@@ -98,7 +101,7 @@ class ZettelkastenExtension(AgentExtension):
             statuses: tuple[str, ...] = (),
             all_sessions: bool = False,
             limit: Annotated[int, Field(ge=1, le=500)] = 20,
-        ) -> list[AgentArtifact]:
+        ) -> list[AgentArtifactPreview]:
             """Search artifacts by title text, type, and status.
 
             Args:
@@ -115,9 +118,10 @@ class ZettelkastenExtension(AgentExtension):
             Guidelines:
                 - Use to find artifacts in this conversation before reading or updating them.
                 - Set all_sessions to search the entire library, for example when the user asks about artifacts from other conversations.
-                - All conversation artifacts are already in context; query narrows by title, type, or state.
+                - Current conversation artifact previews are already in context; query narrows by title, type, or state.
+                - Query results contain bounded content previews. Call get_artifact before updating when the complete content is needed.
             """
-            return await artifact_storage.list(
+            artifacts = await artifact_storage.list(
                 ArtifactListOptions(
                     session_id=None if all_sessions else session_id,
                     artifact_types=artifact_types,
@@ -126,6 +130,7 @@ class ZettelkastenExtension(AgentExtension):
                     limit=limit,
                 )
             )
+            return artifact_pruner.prune(artifacts)
 
         @tool
         async def update_artifact(artifact_id: str, content: ArtifactContent) -> AgentArtifact:
@@ -140,7 +145,7 @@ class ZettelkastenExtension(AgentExtension):
                 update_artifact(artifact_id="...", content={"artifact_type": "slides", "title": "Processes", "content": "<!-- slide:cover -->\\n# Processes\\n\\n## Optional subtitle\\n\\nAuthor name\\n\\n---\\n# Overview\\n\\n--\\n## Details\\n\\n- One idea"})
 
             Guidelines:
-                - Read the artifact information already present in context before replacing it.
+                - Call get_artifact to read the complete artifact before replacing its content.
                 - Keep cards focused on one idea and remove every word that does not add meaning.
                 - Markdown and sanitized raw HTML with inline Grid/Flex styles are supported; no scripts, global style tags or fixed overlays. HTML code fences display source only.
                 - Use '# Title', '## Section', '### Subsection', '**important**', and '- item' for structure.
@@ -228,15 +233,16 @@ class ZettelkastenExtension(AgentExtension):
             context.register_tool(registered)
 
     async def on_state(self, context: AgentRunContext) -> None:
-        """Expose current artifacts as model context."""
+        """Expose bounded current-artifact previews as model context."""
         session_id = context.config.session_id
         artifacts = await artifact_storage.list(ArtifactListOptions(session_id=session_id, limit=500))
+        previews = artifact_pruner.prune(artifacts)
         payload = {
-            "artifacts": [artifact.model_dump(mode="json") for artifact in artifacts],
+            "artifacts": [preview.model_dump(mode="json") for preview in previews],
         }
         if payload["artifacts"]:
             workspace = SystemMessage(
-                content="Current Zett conversation workspace:\n" + json.dumps(payload, ensure_ascii=False)
+                content="Current Zett conversation workspace previews:\n" + json.dumps(payload, ensure_ascii=False)
             )
             instructions = [item for item in context.state.messages if isinstance(item, SystemMessage)]
             dialogue = [item for item in context.state.messages if not isinstance(item, SystemMessage)]
