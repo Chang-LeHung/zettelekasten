@@ -21,7 +21,6 @@ from zett_agent import (
     ReasoningEffort,
     TextContent,
     UserMessage,
-    new_uuid7,
 )
 
 from ...agent import ZettelkastenAgent, ZettelkastenAgentConfig, ZettelkastenEventDispatcher, encode_sse
@@ -172,7 +171,7 @@ async def _prepare_agent_request(session_id: str, payload: AnalyzeRequest) -> _P
 
     runtime_settings = await runtime_settings_service.get()
     message = _user_message(payload, max_images=runtime_settings.max_message_images)
-    config = AgentRunConfig(session_id=session_id, request_id=new_uuid7())
+    config = AgentRunConfig(session_id=session_id)
     await active_requests.reserve(config)
     model: ProviderAdapter | None = None
     try:
