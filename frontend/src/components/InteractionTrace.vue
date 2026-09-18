@@ -114,17 +114,17 @@ function cacheHitRate(message: AgentPersistedMessage): number | null {
           :class="{ active: selectedTurn?.id === turn.id }"
           @click="selectTurn(turn.id)"
         >
-          <span>Turn {{ turn.index }}</span>
-          <strong>{{ turnTitle(turn) }}</strong>
-          <div class="trace-turn-meta">
-            <small>{{ turn.messages.length }} events · {{ formatDuration(turn.duration_ms) }}</small>
+          <span class="trace-turn-top">
+            <span class="trace-turn-index">Turn {{ turn.index }}</span>
             <CacheHitRate
               v-if="turn.usage"
               class="trace-turn-cache"
               label="Cache"
               :rate="calculateCacheHitRate(turn.usage)"
             />
-          </div>
+          </span>
+          <strong>{{ turnTitle(turn) }}</strong>
+          <small>{{ turn.messages.length }} events · {{ formatDuration(turn.duration_ms) }}</small>
         </button>
       </aside>
 
@@ -213,15 +213,15 @@ function cacheHitRate(message: AgentPersistedMessage): number | null {
 .trace-header button, .trace-state button { min-height: 2rem; padding: 0 .7rem; border: 1px solid #cfd8d2; border-radius: .52rem; color: #355442; background: #f7f9f8; cursor: pointer; font-size: .64rem; font-weight: 650; }
 .trace-header button:disabled { opacity: .5; cursor: wait; }
 .trace-layout { min-height: 0; display: grid; grid-template-columns: minmax(11rem, 14rem) minmax(0, 1fr); }
-.trace-turn-list { min-height: 0; display: grid; align-content: start; gap: .25rem; padding: .65rem; overflow-y: auto; border-right: 1px solid #e4e9e6; background: #f6f8f6; scrollbar-width: thin; }
-.trace-turn-list button { width: 100%; display: grid; gap: .16rem; padding: .62rem .65rem; border: 1px solid transparent; border-radius: .58rem; color: #66716a; background: transparent; cursor: pointer; text-align: left; }
-.trace-turn-list button:hover { background: rgba(255,255,255,.72); }
-.trace-turn-list button.active { border-color: rgba(76,112,91,.16); color: #31523f; background: #fff; box-shadow: 0 1px 5px rgba(39,57,47,.07); }
-.trace-turn-list button > span { color: #7a8a80; font-size: .52rem; font-weight: 720; letter-spacing: .055em; text-transform: uppercase; }
-.trace-turn-list button strong { overflow: hidden; font-size: .65rem; font-weight: 650; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
-.trace-turn-list button small { overflow: hidden; color: #959c98; font-size: .52rem; text-overflow: ellipsis; white-space: nowrap; }
-.trace-turn-meta { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: .35rem; }
-.trace-turn-meta small { min-width: 0; }
+.trace-turn-list { min-height: 0; display: grid; align-content: start; gap: .42rem; padding: .65rem; overflow-y: auto; border-right: 1px solid #e4e9e6; background: #f6f8f6; scrollbar-width: thin; }
+.trace-turn-list button { width: 100%; display: grid; gap: .3rem; padding: .68rem .72rem .66rem; border: 1px solid rgba(68,88,76,.08); border-radius: .58rem; color: #66716a; background: rgba(255,255,255,.55); cursor: pointer; text-align: left; transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease; }
+.trace-turn-list button:hover { border-color: rgba(76,112,91,.2); background: #fff; }
+.trace-turn-list button.active { border-color: rgba(76,112,91,.2); color: #31523f; background: #fff; box-shadow: 0 2px 8px rgba(39,57,47,.08); }
+.trace-turn-top { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: .45rem; }
+.trace-turn-index { color: #849188; font-size: .5rem; font-weight: 740; letter-spacing: .075em; text-transform: uppercase; }
+.trace-turn-list button strong { overflow: hidden; color: #3f4a43; font-size: .72rem; font-weight: 670; line-height: 1.38; text-overflow: ellipsis; white-space: nowrap; }
+.trace-turn-list button.active strong { color: #2f4c3b; }
+.trace-turn-list button small { overflow: hidden; color: #9aa19d; font-size: .5rem; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
 .trace-turn-cache { flex: 0 0 auto; opacity: .72; font-size: .48rem; }
 .trace-detail { min-height: 0; padding: 1rem; overflow-y: auto; scrollbar-width: thin; }
 .trace-turn { overflow: hidden; border: 1px solid rgba(56,74,64,.1); border-radius: .72rem; background: #fff; }
