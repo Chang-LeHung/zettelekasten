@@ -6,11 +6,9 @@ from pydantic import Field
 from zett_agent import (
     Agent,
     AgentModel,
-    AgentRunConfig,
     AssistantMessage,
     RawMessageRecord,
     UserMessage,
-    new_uuid7,
     tool,
 )
 
@@ -55,7 +53,6 @@ class SessionTitleAgent:
             return None
         agent = await Agent.create(
             self._model,
-            config=AgentRunConfig(session_id=new_uuid7()),
             system_prompt=TITLE_SYSTEM_PROMPT,
             tools=(submit_session_title,),
             max_iterations=3,

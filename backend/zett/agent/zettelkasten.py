@@ -14,7 +14,6 @@ from zett_agent import (
     ExternalEvent,
     ReasoningEffort,
     create_agent,
-    new_uuid7,
 )
 
 
@@ -44,7 +43,7 @@ class ZettelkastenAgent:
         """Create one initialized conversation runtime."""
         client = await create_agent(
             model,
-            config=config or AgentRunConfig(session_id=new_uuid7()),
+            config=config,
             system_prompt=system_prompt,
             tools=tools,
             extensions=extensions,
