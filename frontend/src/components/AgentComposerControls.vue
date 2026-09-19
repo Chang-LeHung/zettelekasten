@@ -54,7 +54,7 @@ const selectedShellApproval = computed(() => (
 ))
 
 function toggleMenu(menu: 'model' | 'effort' | 'shell'): void {
-  if (props.disabled) return
+  if (props.disabled && menu !== 'shell') return
   openMenu.value = openMenu.value === menu ? null : menu
 }
 
@@ -170,7 +170,6 @@ onBeforeUnmount(() => {
       <button
         class="control-trigger shell-trigger"
         type="button"
-        :disabled="disabled"
         :aria-expanded="openMenu === 'shell'"
         aria-haspopup="listbox"
         @click="toggleMenu('shell')"

@@ -1598,6 +1598,11 @@ async function updateShellApprovalMode(mode: ShellApprovalMode): Promise<void> {
   if (!activeConversationId) return
   try {
     await aiClient.updateAgentSessionShellApproval(activeConversationId, mode)
+    if (mode === 'allow_all' && pendingShellApprovals.value.length) {
+      await Promise.all(
+        pendingShellApprovals.value.map(item => respondToShellApproval(item.toolCallId, 'execute')),
+      )
+    }
   } catch (error) {
     shellApprovalMode.value = previous
     showNotice(errorMessage(error), 'error')
