@@ -71,6 +71,11 @@ def decode_frame(frame: str) -> tuple[str, dict[str, object]]:
     return event_line.removeprefix("event: "), json.loads(data_line.removeprefix("data: "))
 
 
+async def initialized_agent(config: ZettelkastenAgentConfig) -> ZettelkastenAgent:
+    """Construct and initialize one application Agent from config."""
+    return await ZettelkastenAgent(config).initialize()
+
+
 def raw_record(message: AssistantMessage | ToolMessage, sequence: int) -> RawMessageRecord:
     """Build a minimal persisted record for HTTP projection tests."""
     now = datetime.now(UTC)
@@ -127,9 +132,9 @@ async def test_agent_uses_create_agent_and_sends_ordered_sse_frames():
         frames.append(frame)
 
     owner = asyncio.current_task()
-    agent = await ZettelkastenAgent.create(StreamingModel(), config=AgentRunConfig(session_id="session-1"))
+    agent = await initialized_agent(ZettelkastenAgentConfig("session-1"))
     client = agent.client(ZettelkastenEventDispatcher(send))
-    events = [event async for event in client.stream("Hello")]
+    events = [event async for event in client.stream("Hello", model=StreamingModel())]
     decoded = [decode_frame(frame) for frame in frames]
 
     assert [name for name, _ in decoded] == [event.type.value for event in events]
@@ -154,8 +159,8 @@ async def test_run_returns_answer_after_all_frames_are_sent():
     async def send(frame: str) -> None:
         frames.append(decode_frame(frame)[0])
 
-    agent = await ZettelkastenAgent.create(StreamingModel())
-    answer = await agent.client(ZettelkastenEventDispatcher(send)).run("Hello")
+    agent = await initialized_agent(ZettelkastenAgentConfig("run"))
+    answer = await agent.client(ZettelkastenEventDispatcher(send)).run("Hello", model=StreamingModel())
     assert answer.content == "Hi"
     assert frames[-1] == AgentEventType.RUN_COMPLETED.value
 
@@ -168,9 +173,9 @@ async def test_send_failure_propagates_and_stops_the_agent_stream():
         calls += 1
         raise RuntimeError("SSE disconnected")
 
-    agent = await ZettelkastenAgent.create(StreamingModel())
+    agent = await initialized_agent(ZettelkastenAgentConfig("send-failure"))
     with pytest.raises(RuntimeError, match="SSE disconnected"):
-        await agent.client(ZettelkastenEventDispatcher(send)).run("Hello")
+        await agent.client(ZettelkastenEventDispatcher(send)).run("Hello", model=StreamingModel())
     assert calls == 1
 
 
@@ -183,7 +188,7 @@ async def test_one_agent_uses_request_owned_models_and_dispatchers() -> None:
             yield ModelEvent.text(self.name)
             yield ModelEvent.completed(ModelResponse(AssistantMessage(content=self.name)))
 
-    agent = await ZettelkastenAgent.create()
+    agent = await initialized_agent(ZettelkastenAgentConfig("request-models"))
     received: dict[str, list[str]] = {"a": [], "b": []}
 
     async def run(session_id: str) -> str:
@@ -205,10 +210,14 @@ async def test_one_agent_uses_request_owned_models_and_dispatchers() -> None:
 
 async def test_factory_builds_a_fresh_agent_for_every_message_request() -> None:
     storage = get_agent_runtime_storage()
-    first = await ZettelkastenAgentConfig("session-a", max_iterations=7).create(storage)
-    second = await ZettelkastenAgentConfig("session-a", max_iterations=11).create(storage)
+    first_config = ZettelkastenAgentConfig("session-a", max_iterations=7, storage=storage)
+    second_config = ZettelkastenAgentConfig("session-a", max_iterations=11, storage=storage)
+    first = await initialized_agent(first_config)
+    second = await initialized_agent(second_config)
 
     assert second is not first
+    assert first.config is first_config
+    assert second.config is second_config
     assert first.agent.max_iterations == 7
     assert second.agent.max_iterations == 11
 
@@ -279,7 +288,7 @@ def test_context_composition_does_not_count_encoded_image_bytes_as_text() -> Non
 async def test_context_composition_extension_is_registered_after_prompt_extensions(tmp_path) -> None:
     storage = SQLiteSessionStorage(tmp_path / "agent.db")
     try:
-        agent = await ZettelkastenAgentConfig("context-composition").create(storage)
+        agent = await initialized_agent(ZettelkastenAgentConfig("context-composition", storage=storage))
         extensions = agent.agent.extensions
         names = [extension.name for extension in extensions]
         assert any(isinstance(extension, TagExtension) for extension in extensions)
@@ -363,7 +372,7 @@ async def test_factory_loads_default_user_skills_and_mcp_configuration(tmp_path,
     monkeypatch.chdir(tmp_path)
     storage = SQLiteSessionStorage(tmp_path / "agent.db")
     try:
-        agent = await ZettelkastenAgentConfig("configured-session").create(storage)
+        agent = await initialized_agent(ZettelkastenAgentConfig("configured-session", storage=storage))
 
         skill = next(item for item in agent.agent.extensions if isinstance(item, SkillExtension))
         mcp = next(item for item in agent.agent.extensions if isinstance(item, McpExtension))
@@ -384,12 +393,15 @@ async def test_factory_accepts_explicit_skill_and_mcp_configuration(tmp_path) ->
     storage = SQLiteSessionStorage(tmp_path / "agent.db")
     server = McpHttpServer("internal", "https://internal.test/mcp")
     try:
-        agent = await ZettelkastenAgentConfig(
-            "explicit-session",
-            skill_roots=(skill_root,),
-            mcp_servers=(server,),
-            mcp_config_path=None,
-        ).create(storage)
+        agent = await initialized_agent(
+            ZettelkastenAgentConfig(
+                "explicit-session",
+                skill_roots=(skill_root,),
+                mcp_servers=(server,),
+                mcp_config_path=None,
+                storage=storage,
+            ),
+        )
 
         skill = next(item for item in agent.agent.extensions if isinstance(item, SkillExtension))
         mcp = next(item for item in agent.agent.extensions if isinstance(item, McpExtension))

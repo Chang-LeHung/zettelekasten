@@ -1,36 +1,19 @@
-"""Configure and build one isolated Agent for each message request."""
+"""Typed configuration for one Zettelkasten Agent request."""
 
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from zett_agent import (
     DEFAULT_MCP_CONFIG_PATH,
     DEFAULT_MCP_SERVER_KEYS,
-    AgentRunConfig,
-    AskUserExtension,
-    CodingExtension,
-    CompactionExtension,
-    McpExtension,
     McpServer,
-    ModelRequestTraceExtension,
     ModelUsageActivityStorage,
-    SessionPersistenceExtension,
-    ShellApprovalExtension,
     ShellApprovalStorage,
-    SkillExtension,
     SQLiteSessionStorage,
-    TodoWriteExtension,
-    ToolGuidelinesExtension,
-    UsageActivityExtension,
 )
 
 from ..config import settings
-from .assets import AssetExtension
-from .context_composition import ContextCompositionExtension
-from .extensions import ZettelkastenExtension
-from .tags import TagExtension
-from .zettelkasten import ZettelkastenAgent
 
 SYSTEM_PROMPT = """You are the Zettelkasten Agent, an assistant for developing ideas into durable knowledge.
 Use the conversation and attached assets as source material. Create or update artifacts only when useful; ordinary
@@ -62,6 +45,7 @@ class ZettelkastenAgentConfig:
     compaction_keep_recent_tokens: int = 32_000
     usage_activity_storage: ModelUsageActivityStorage | None = None
     shell_approval_storage: ShellApprovalStorage | None = None
+    storage: SQLiteSessionStorage | None = field(default=None, repr=False, compare=False)
     context_composition_recorder: Callable[[str, dict[str, float]], Awaitable[None]] | None = None
     skill_roots: tuple[str | Path, ...] = ("~/.zett/skills",)
     mcp_servers: tuple[McpServer, ...] = ()
@@ -82,42 +66,7 @@ class ZettelkastenAgentConfig:
         if self.compaction_keep_recent_tokens >= self.compaction_max_tokens:
             raise ValueError("compaction_keep_recent_tokens must be below compaction_max_tokens")
 
-    async def create(self, storage: SQLiteSessionStorage) -> ZettelkastenAgent:
-        """Build a fresh Agent whose persistence extension restores the session."""
-        mcp_config_path = self._resolved_mcp_config_path()
-        extensions = [
-            SessionPersistenceExtension(storage),
-            AssetExtension(max_asset_size_bytes=self.max_asset_size_bytes),
-            ZettelkastenExtension(),
-            TagExtension(),
-            ShellApprovalExtension(self.shell_approval_storage),
-            CodingExtension(),
-            AskUserExtension(),
-            TodoWriteExtension(),
-            CompactionExtension(
-                max_tokens=self.compaction_max_tokens,
-                keep_recent_tokens=self.compaction_keep_recent_tokens,
-            ),
-            SkillExtension(self.skill_roots),
-            McpExtension(
-                servers=self.mcp_servers,
-                config_path=mcp_config_path,
-                server_keys=self.mcp_server_keys,
-            ),
-            ToolGuidelinesExtension(),
-            ContextCompositionExtension(self.context_composition_recorder),
-            ModelRequestTraceExtension(),
-        ]
-        if self.usage_activity_storage is not None:
-            extensions.append(UsageActivityExtension(self.usage_activity_storage))
-        return await ZettelkastenAgent.create(
-            config=AgentRunConfig(session_id=self.session_id),
-            system_prompt=SYSTEM_PROMPT,
-            extensions=tuple(extensions),
-            max_iterations=self.max_iterations,
-        )
-
-    def _resolved_mcp_config_path(self) -> str | Path | None:
+    def resolved_mcp_config_path(self) -> str | Path | None:
         """Treat the absent default file as optional while keeping custom paths strict."""
         if self.mcp_config_path is None:
             return None

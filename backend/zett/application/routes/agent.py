@@ -199,7 +199,7 @@ async def _prepare_agent_request(session_id: str, payload: AnalyzeRequest) -> _P
         storage = get_agent_runtime_storage()
         # Reserve the session before binding the Agent, allowing each new Agent
         # instance to apply the latest configuration immediately.
-        agent = await ZettelkastenAgentConfig(
+        agent_config = ZettelkastenAgentConfig(
             session_id=session_id,
             max_iterations=runtime_settings.max_turn_iterations,
             max_asset_size_bytes=runtime_settings.max_asset_size_bytes,
@@ -207,8 +207,11 @@ async def _prepare_agent_request(session_id: str, payload: AnalyzeRequest) -> _P
             compaction_keep_recent_tokens=runtime_settings.compaction_keep_recent_tokens,
             usage_activity_storage=model_usage_activity_storage,
             shell_approval_storage=shell_approval_storage,
+            storage=storage,
             context_composition_recorder=_remember_context_composition,
-        ).create(storage)
+        )
+        agent = ZettelkastenAgent(agent_config)
+        await agent.initialize()
         await active_requests.bind(config, agent)
         # Remember only a fully prepared request. Validation, Model creation,
         # Agent construction, and registry binding may all fail before this.

@@ -257,12 +257,12 @@ async def test_agent_setup_failure_releases_reservation_and_closes_provider(monk
         async def aclose(self) -> None:
             self.closed = True
 
-    async def fail_create(_config, _storage):
+    async def fail_initialize(_agent):
         raise RuntimeError("agent setup failed")
 
     model = ClosingModel()
     monkeypatch.setattr(agent_routes, "create_model", lambda _connection: model)
-    monkeypatch.setattr(agent_routes.ZettelkastenAgentConfig, "create", fail_create)
+    monkeypatch.setattr(agent_routes.ZettelkastenAgent, "initialize", fail_initialize)
     with TestClient(app) as client:
         session_id = client.post("/api/agent/start").json()["conversation_id"]
         provider_id = client.post("/api/ai/providers", json=_provider_payload()).json()["id"]
@@ -759,20 +759,20 @@ class TitleAwareModel:
 async def test_first_successful_turn_generates_the_session_title_once(monkeypatch):
     models: list[TitleAwareModel] = []
     request_agents = []
-    original_agent_factory = agent_routes.ZettelkastenAgentConfig.create
+    original_initialize = agent_routes.ZettelkastenAgent.initialize
 
     def model_factory(_connection):
         model = TitleAwareModel()
         models.append(model)
         return model
 
-    async def agent_factory(config, storage):
-        agent = await original_agent_factory(config, storage)
+    async def initialize_agent(agent):
+        await original_initialize(agent)
         request_agents.append(agent)
         return agent
 
     monkeypatch.setattr(agent_routes, "create_model", model_factory)
-    monkeypatch.setattr(agent_routes.ZettelkastenAgentConfig, "create", agent_factory)
+    monkeypatch.setattr(agent_routes.ZettelkastenAgent, "initialize", initialize_agent)
     monkeypatch.setattr("zett.application.session_titles.create_model", model_factory)
     with TestClient(app) as client:
         session_id = client.post("/api/agent/start").json()["conversation_id"]
