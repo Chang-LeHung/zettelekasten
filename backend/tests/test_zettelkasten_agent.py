@@ -15,6 +15,7 @@ from zett_agent import (
     AgentMessage,
     AgentRunConfig,
     AssistantMessage,
+    ImageBytesSource,
     ImageContent,
     ImageUrlSource,
     McpExtension,
@@ -254,6 +255,25 @@ def test_context_composition_returns_only_normalized_semantic_ratios() -> None:
     assert all(0 < ratio < 1 for ratio in ratios.values())
     assert sum(ratios.values()) == pytest.approx(1)
     assert all("token" not in key for key in ratios)
+
+
+def test_context_composition_does_not_count_encoded_image_bytes_as_text() -> None:
+    request = ModelRequest(
+        messages=[
+            SystemMessage(content="Follow these instructions. " * 1_000),
+            ToolMessage(
+                tool_call_id="image-1",
+                name="view_image",
+                content=[
+                    ImageContent(ImageBytesSource(b"\xff" * 1_000_000, "image/png")),
+                ],
+            ),
+        ]
+    )
+
+    ratios = context_composition(request)
+
+    assert ratios["system_prompt"] > ratios["tool_output"]
 
 
 async def test_context_composition_extension_is_registered_after_prompt_extensions(tmp_path) -> None:

@@ -27,6 +27,11 @@ const enabledProviders = computed(() => props.providers.filter((provider) => pro
 const selectedProvider = computed(() => (
   enabledProviders.value.find((provider) => provider.id === props.selectedProviderId) || enabledProviders.value[0] || null
 ))
+const currentContextTokens = computed(() => (
+  props.currentUsage
+    ? props.currentUsage.input_tokens + props.currentUsage.output_tokens
+    : null
+))
 
 const effortOptions: Array<{ value: ReasoningEffort; label: string; description: string }> = [
   { value: 'off', label: 'Off', description: 'Answer directly' },
@@ -153,7 +158,7 @@ onBeforeUnmount(() => {
     </dl>
     <ContextCompositionRing
       :composition="contextComposition"
-      :current-tokens="currentUsage?.input_tokens ?? null"
+      :current-tokens="currentContextTokens"
       :max-tokens="compactionMaxTokens"
     />
   </div>

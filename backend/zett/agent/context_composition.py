@@ -1,7 +1,7 @@
 """Estimate the semantic composition of the next model request."""
 
 import json
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 
 import tiktoken
 from zett_agent import (
@@ -11,9 +11,11 @@ from zett_agent import (
     AgentMessage,
     AgentRunContext,
     AssistantMessage,
+    ImageContent,
     ModelRequest,
     ModelResponse,
     SystemMessage,
+    TextContent,
     ToolMessage,
     UserMessage,
 )
@@ -21,7 +23,25 @@ from zett_agent import (
 CONTEXT_COMPOSITION_EVENT = "context_composition"
 _ENCODING = tiktoken.get_encoding("o200k_base")
 _CATEGORIES = ("system_prompt", "tool_prompt", "tool_output", "user", "assistant")
+_IMAGE_TOKEN_ESTIMATE = 1_100
 type ContextCompositionRecorder = Callable[[str, dict[str, float]], Awaitable[None]]
+
+
+def _content_token_count(content: object) -> int:
+    """Count text and bounded image estimates without serializing image bytes."""
+    if isinstance(content, str):
+        return _token_count(content)
+    if not isinstance(content, Sequence):
+        return _token_count(content)
+    total = 0
+    for part in content:
+        if isinstance(part, TextContent):
+            total += _token_count(part.text)
+        elif isinstance(part, ImageContent):
+            total += _IMAGE_TOKEN_ESTIMATE
+        else:
+            total += _token_count(repr(part))
+    return total
 
 
 def _token_count(value: object) -> int:
@@ -65,9 +85,9 @@ def context_composition(request: ModelRequest) -> dict[str, float]:
                 )
                 counts[category] += _token_count(content)
             case ToolMessage(content=content):
-                counts["tool_output"] += _token_count(content)
-            case UserMessage():
-                counts["user"] += _token_count(repr(message.content))
+                counts["tool_output"] += _content_token_count(content)
+            case UserMessage(content=content):
+                counts["user"] += _content_token_count(content)
             case AssistantMessage():
                 counts["assistant"] += _token_count(
                     {"content": message.content, "reasoning": message.reasoning, "tool_calls": message.tool_calls}
