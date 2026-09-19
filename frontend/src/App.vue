@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ApiError, aiClient, libraryClient, settingsClient, tagClient } from './api/client'
-import type { AgentArtifact, AgentCompactionActivity, AgentContextComposition, AgentCustomEvent, AgentModelUsage, AgentModelUsageActivitySeries, AgentPersistedMessage, AgentServerToolActivity, AgentSession, AgentSteeringMessage, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AgentUsageActivityDay, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageContentPart, MessageImagePart, MessagePartInput, ReasoningEffort, RuntimeSettings, SessionAsset, ShellApprovalMode, Tag } from './api/types'
+import { ApiError, aiClient, assetClient, libraryClient, settingsClient, tagClient } from './api/client'
+import type { AgentArtifact, AgentCompactionActivity, AgentContextComposition, AgentCustomEvent, AgentModelUsage, AgentModelUsageActivitySeries, AgentPersistedMessage, AgentServerToolActivity, AgentSession, AgentSteeringMessage, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AgentUsageActivityDay, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageContentPart, MessageImagePart, MessagePartInput, ReasoningEffort, RuntimeSettings, SessionAsset, ShellApprovalMode, StaticAsset, Tag } from './api/types'
 import AgentComposerControls from './components/AgentComposerControls.vue'
 import CacheHitRate from './components/CacheHitRate.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
@@ -40,6 +40,7 @@ const PdfPreview = defineAsyncComponent(() => import('./components/PdfPreview.vu
 const InteractionTrace = defineAsyncComponent(() => import('./components/InteractionTrace.vue'))
 const ModelUsageTrend = defineAsyncComponent(() => import('./components/ModelUsageTrend.vue'))
 const StaticAssetsView = defineAsyncComponent(() => import('./components/StaticAssetsView.vue'))
+const StaticAssetImportDialog = defineAsyncComponent(() => import('./components/StaticAssetImportDialog.vue'))
 
 type View = 'library' | 'search' | 'new' | 'assets' | 'settings'
 type NoticeKind = 'success' | 'error'
@@ -190,6 +191,10 @@ const assetUploading = ref(false)
 const assetQuery = ref('')
 const assetFilter = ref<AssetFilter>('all')
 const assetDragging = ref(false)
+const staticAssetImportOpen = ref(false)
+const staticAssets = ref<StaticAsset[]>([])
+const staticAssetsLoading = ref(false)
+const staticAssetImportingId = ref<string | null>(null)
 const sessions = ref<AgentSession[]>([])
 const sessionsLoading = ref(false)
 const switchingSessionId = ref<string | null>(null)
@@ -340,6 +345,9 @@ const filteredAssets = computed(() => {
     ))
     .sort((left, right) => right.created_at.localeCompare(left.created_at))
 })
+const importedStaticAssetIds = computed(() => assets.value.flatMap((asset) => (
+  typeof asset.metadata.static_asset_id === 'string' ? [asset.metadata.static_asset_id] : []
+)))
 
 function resetStreamState(): void {
   streamingMessage.value = ''
@@ -2001,6 +2009,33 @@ async function addInlineAsset(): Promise<void> {
   }
 }
 
+async function openStaticAssetImport(): Promise<void> {
+  staticAssetImportOpen.value = true
+  staticAssetsLoading.value = true
+  try {
+    staticAssets.value = await assetClient.list()
+  } catch (error) {
+    showNotice(errorMessage(error), 'error')
+  } finally {
+    staticAssetsLoading.value = false
+  }
+}
+
+async function importStaticAsset(asset: StaticAsset): Promise<void> {
+  if (staticAssetImportingId.value !== null) return
+  staticAssetImportingId.value = asset.id
+  try {
+    const sessionId = await ensureConversation()
+    const imported = await aiClient.importStaticAsset(sessionId, asset.id)
+    assets.value.push(imported)
+    showNotice(t('Referenced “{name}” from Static Assets', { name: asset.name }))
+  } catch (error) {
+    showNotice(errorMessage(error), 'error')
+  } finally {
+    staticAssetImportingId.value = null
+  }
+}
+
 async function uploadAssets(event: Event): Promise<void> {
   const input = event.target as HTMLInputElement
   const files = Array.from(input.files || [])
@@ -2174,9 +2209,12 @@ function openMessageImage(part: MessageImagePart): void {
 
 async function removeAsset(asset: SessionAsset): Promise<void> {
   if (!conversationId.value) return
+  const message = asset.metadata.import_mode === 'url'
+    ? `“${asset.name}” will be removed from this conversation. The Static Asset itself will remain available.`
+    : `“${asset.name}” will be removed from this conversation and its local file will be deleted.`
   const confirmed = await requestConfirmation(
     'Delete this asset?',
-    `“${asset.name}” will be removed from this conversation and its local file will be deleted.`,
+    message,
     'Delete asset',
   )
   if (!confirmed) return
@@ -2206,6 +2244,7 @@ function assetExtension(asset: SessionAsset): string {
 
 function classifyAsset(asset: SessionAsset): Exclude<AssetFilter, 'all'> {
   if (asset.asset_type === 'image' || asset.mime_type?.startsWith('image/')) return 'images'
+  if (asset.metadata.import_mode === 'url' && isPdfAsset(asset)) return 'documents'
   if (asset.asset_type === 'link') return 'links'
   const extension = asset.name.split('.').pop()?.toLowerCase() || ''
   const codeExtensions = new Set(['py', 'js', 'ts', 'tsx', 'jsx', 'vue', 'json', 'yaml', 'yml', 'toml', 'sh', 'sql', 'html', 'css'])
@@ -2225,6 +2264,7 @@ function assetTypeLabel(asset: SessionAsset): string {
 
 function assetSourceLabel(asset: SessionAsset): string | null {
   if (!asset.source_url) return null
+  if (asset.metadata.import_mode === 'url') return t('Static asset')
   try {
     return new URL(asset.source_url).hostname
   } catch {
@@ -2460,6 +2500,7 @@ onBeforeUnmount(() => {
       <symbol id="icon-attachment" viewBox="0 0 24 24"><path d="m8.5 12.5 6.2-6.2a3 3 0 0 1 4.2 4.2l-8.1 8.1a5 5 0 0 1-7.1-7.1l8-8"/></symbol>
       <symbol id="icon-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.1 1.1M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.1-1.1"/></symbol>
       <symbol id="icon-text" viewBox="0 0 24 24"><path d="M5 6h14M12 6v13M8 19h8"/></symbol>
+      <symbol id="icon-import" viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 19h14"/></symbol>
       <symbol id="icon-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5"/></symbol>
       <symbol id="icon-edit" viewBox="0 0 24 24"><path d="m4 20 4.2-1 10.7-10.7a2.1 2.1 0 0 0-3-3L5.2 16zM14.7 6.5l3 3"/></symbol>
       <symbol id="icon-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
@@ -2587,6 +2628,15 @@ onBeforeUnmount(() => {
       <ConfirmDialog :open="confirmation.open" :title="confirmation.title" :message="confirmation.message" :confirm-label="confirmation.confirmLabel" @cancel="settleConfirmation(false)" @confirm="settleConfirmation(true)" />
       <TagManagerDialog v-if="tagManagerOpen" :tags="tags" :busy="tagManagerBusy" :feedback="tagManagerFeedback" :feedback-kind="tagManagerFeedbackKind" @close="tagManagerOpen = false" @create="createTag" @delete="deleteTag" />
       <AssetPreviewDialog :asset="previewAsset" @close="previewAsset = null" />
+      <StaticAssetImportDialog
+        v-if="staticAssetImportOpen"
+        :assets="staticAssets"
+        :loading="staticAssetsLoading"
+        :importing-id="staticAssetImportingId"
+        :imported-ids="importedStaticAssetIds"
+        @close="staticAssetImportOpen = false"
+        @import="importStaticAsset"
+      />
       <LibraryEditor v-if="libraryEditorItem" :item="libraryEditorItem" :saving="libraryEditorSaving" @close="closeLibraryEditor" @save="saveLibraryEditor" />
 
       <template v-if="view === 'library' || view === 'search'">
@@ -2719,6 +2769,7 @@ onBeforeUnmount(() => {
                 <div class="assets-header-actions">
                   <button type="button" :title="$t('Add text note')" :aria-label="$t('Add text note')" @click="showAssetEditor('text')"><svg><use href="#icon-text" /></svg></button>
                   <button type="button" :title="$t('Add link')" :aria-label="$t('Add link')" @click="showAssetEditor('link')"><svg><use href="#icon-link" /></svg></button>
+                  <button type="button" :title="$t('Import static asset')" :aria-label="$t('Import static asset')" @click="openStaticAssetImport"><svg><use href="#icon-import" /></svg></button>
                   <button type="button" :title="$t('Upload files')" :aria-label="$t('Upload files')" @click="assetFileInput?.click()"><svg><use href="#icon-attachment" /></svg></button>
                 </div>
               </header>
@@ -2749,7 +2800,7 @@ onBeforeUnmount(() => {
                   <article v-for="asset in filteredAssets" :key="asset.id" class="asset-row">
                     <button class="asset-row-main" type="button" @click="openAsset(asset)">
                       <span class="asset-thumbnail" :class="classifyAsset(asset)">
-                        <img v-if="asset.asset_type === 'image' && asset.content_url" :src="asset.content_url" alt="" />
+                        <img v-if="asset.mime_type?.startsWith('image/') && (asset.source_url || asset.content_url)" :src="asset.source_url || asset.content_url || ''" alt="" />
                         <PdfThumbnail v-else-if="isPdfAsset(asset)" :asset="asset" />
                         <svg v-else><use :href="asset.asset_type === 'link' ? '#icon-link' : asset.asset_type === 'text' ? '#icon-text' : '#icon-attachment'" /></svg>
                         <small>{{ assetExtension(asset) }}</small>

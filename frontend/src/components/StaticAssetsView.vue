@@ -129,7 +129,7 @@ onBeforeUnmount(() => {
 
 <template>
   <header class="topbar compact">
-    <div><p class="eyebrow">{{ t('Artifacts') }}</p><h1>{{ t('Assets') }}</h1></div>
+    <div><p class="eyebrow">{{ t('Global library') }}</p><h1>{{ t('Static Assets') }}</h1></div>
     <button class="primary-action" type="button" :disabled="uploading" @click="fileInput?.click()">
       <span v-if="uploading" class="button-spinner" aria-hidden="true" />
       <svg v-else viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>

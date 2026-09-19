@@ -161,6 +161,32 @@ it('renames an asset through a metadata-only request', async () => {
   expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: 'PATCH', body: JSON.stringify({ name: 'Logo' }) })
 })
 
+it('imports a static asset into a session as a URL reference', async () => {
+  const imported = {
+    id: 'session-asset-1',
+    session_id: 'session-1',
+    asset_type: 'link',
+    name: 'reference.png',
+    mime_type: 'image/png',
+    size_bytes: 17,
+    sha256: 'url-hash',
+    text_content: null,
+    source_url: '/api/assets/static-1/content',
+    content_url: null,
+    metadata: { static_asset_id: 'static-1' },
+    created_at: '',
+    updated_at: '',
+  }
+  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(imported)))
+  vi.stubGlobal('fetch', fetchMock)
+
+  await expect(aiClient.importStaticAsset('session-1', 'static-1')).resolves.toEqual(imported)
+  expect(fetchMock).toHaveBeenCalledWith(
+    '/api/agent/session-1/assets/import/static/static-1',
+    expect.objectContaining({ method: 'POST' }),
+  )
+})
+
 it('loads slide decks into the library and keeps their content type when editing', async () => {
   const artifact = {
     id: 'slides-1',

@@ -413,6 +413,12 @@ export const aiClient = {
     })
   },
 
+  importStaticAsset(conversationId: string, staticAssetId: string): Promise<SessionAsset> {
+    return request<SessionAsset>(`/agent/${conversationId}/assets/import/static/${staticAssetId}`, {
+      method: 'POST',
+    })
+  },
+
   async uploadAsset(conversationId: string, file: File): Promise<SessionAsset> {
     const params = new URLSearchParams({ name: file.name })
     const response = await fetch(`${API_URL}/agent/${conversationId}/assets/upload?${params}`, {
@@ -508,6 +514,12 @@ export const assetClient = {
 
   getContent(assetId: string, signal?: AbortSignal): Promise<ArrayBuffer> {
     return requestBinary(`/assets/${assetId}/content`, signal)
+  },
+
+  async getUrlContent(url: string, signal?: AbortSignal): Promise<ArrayBuffer> {
+    const response = await fetch(url, { signal })
+    if (!response.ok) throw new ApiError(response.status, await response.text())
+    return response.arrayBuffer()
   },
 
   delete(assetId: string): Promise<{ ok: boolean }> {

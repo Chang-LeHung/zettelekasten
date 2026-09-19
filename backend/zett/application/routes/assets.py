@@ -9,6 +9,7 @@ from ...schemas import SessionAssetCreate, SessionAssetOut, SessionAssetType
 from ..asset_names import AssetRenameIn, rename_asset
 from ..schemas import DeleteResponse, LinkAssetIn, TextAssetIn
 from ..settings import runtime_settings_service
+from ..static_assets import static_asset_service
 
 router = APIRouter(prefix="/agent/{session_id}/assets", tags=["assets"])
 
@@ -72,6 +73,29 @@ async def create_link_asset(session_id: str, payload: LinkAssetIn) -> SessionAss
         name=payload.name,
         source_url=payload.url,
         metadata=payload.metadata,
+    )
+    return await session_asset_storage.create(entity)
+
+
+@router.post("/import/static/{static_asset_id}", response_model=SessionAssetOut, status_code=status.HTTP_201_CREATED)
+async def import_static_asset(session_id: str, static_asset_id: str) -> SessionAssetOut:
+    """Reference one global static asset from a session without copying its file."""
+    await _require_session(session_id)
+    static_asset = await static_asset_service.get(static_asset_id)
+    if static_asset is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Static asset not found")
+    entity = SessionAssetCreate(
+        session_id=session_id,
+        asset_type=SessionAssetType.LINK,
+        name=static_asset.name,
+        mime_type=static_asset.mime_type,
+        source_url=static_asset.content_url,
+        metadata={
+            "import_mode": "url",
+            "static_asset_id": static_asset.id,
+            "static_asset_size_bytes": static_asset.size_bytes,
+            "static_asset_sha256": static_asset.sha256,
+        },
     )
     return await session_asset_storage.create(entity)
 

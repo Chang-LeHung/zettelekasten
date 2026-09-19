@@ -75,3 +75,33 @@ def test_static_asset_http_lifecycle_uses_runtime_upload_limit():
 
         assert client.delete(f"/api/assets/{asset['id']}").json() == {"ok": True}
         assert client.get("/api/assets").json() == []
+
+
+def test_importing_static_asset_into_session_keeps_url_reference_without_copying_file():
+    with TestClient(app) as client:
+        owner = client.post("/api/agent/start").json()["conversation_id"]
+        static_asset = client.post(
+            "/api/assets/upload?name=reference.png",
+            content=b"png",
+            headers={"content-type": "image/png"},
+        ).json()
+
+        imported = client.post(
+            f"/api/agent/{owner}/assets/import/static/{static_asset['id']}",
+        )
+
+        assert imported.status_code == 201
+        asset = imported.json()
+        assert asset["asset_type"] == "link"
+        assert asset["name"] == "reference.png"
+        assert asset["mime_type"] == "image/png"
+        assert asset["source_url"] == static_asset["content_url"]
+        assert asset["content_url"] is None
+        assert asset["metadata"] == {
+            "import_mode": "url",
+            "static_asset_id": static_asset["id"],
+            "static_asset_size_bytes": 3,
+            "static_asset_sha256": static_asset["sha256"],
+        }
+        assert client.get(f"/api/agent/{owner}/assets/{asset['id']}/content").status_code == 404
+        assert client.get(static_asset["content_url"]).content == b"png"

@@ -39,6 +39,11 @@ owned files explicitly. Deleting a session therefore spans two SQLite
 databases and the filesystem, so cleanup is idempotent and retryable rather
 than one transaction.
 
+Importing a Static Asset into a session creates a link-style session asset
+whose `source_url` points at the global asset content endpoint. The import
+does not copy the binary payload; deleting the global asset invalidates that
+reference.
+
 ## HTTP surface
 
 Everything is mounted under `/api`.
@@ -52,7 +57,7 @@ Everything is mounted under `/api`.
 | `POST /api/agent/{id}/messages` | Run one turn and stream zett-agent events as SSE |
 | `POST /api/agent/{id}/events` | Deliver one UI answer, such as an `ask_user` choice, to the active request |
 | `POST /api/agent/{id}/steer` | Insert an urgent user message into the active request |
-| `/api/agent/{id}/assets*` | Session asset CRUD, upload, content download, rename |
+| `/api/agent/{id}/assets*` | Session asset CRUD, upload, content download, rename, and URL-only Static Asset imports |
 | `/api/assets*` | Session-independent file listing, upload, content download, and deletion |
 | `/api/agent/{id}/artifacts*`, `GET /api/artifacts` | Artifact CRUD, save, per-session listing, and library-wide search |
 | `/api/agent/{id}/artifacts/{artifact}/content` | Compiled file for a LaTeX artifact |

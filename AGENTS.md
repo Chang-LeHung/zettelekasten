@@ -61,6 +61,7 @@
 - Serve the frontend and the API from `zett.main`; new behavior is added as application services and routes, not as compatibility shims.
 - Asset and Static Asset metadata, Artifact records, Tag records, and encrypted Provider configurations use SQLAlchemy in the application database.
 - Store session binary assets under the configured asset directory with one canonical UUID directory per session, and session-independent uploads under `<asset_directory>/static`.
+- Importing a Static Asset into a session creates a URL reference and must not copy the global binary unless the user explicitly uploads it into that session.
 - Store LaTeX artifact projects under the configured artifact directory: one directory per session, one per artifact, validated for canonical IDs and symlink escape before every read.
 - Never expose filesystem paths in public models.
 - Delete owned artifacts, tag links, and asset files explicitly before removing the Agent session. Do not rely on foreign keys or cascades.

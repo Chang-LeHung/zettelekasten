@@ -7,7 +7,7 @@ import {
   type PDFDocumentProxy,
 } from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
-import { aiClient } from '../api/client'
+import { aiClient, assetClient } from '../api/client'
 import type { SessionAsset } from '../api/types'
 import PdfPage from './PdfPage.vue'
 import { pdfDocumentOptions } from '../utils/pdfDocument'
@@ -28,7 +28,7 @@ interface OutlineEntry {
 }
 
 const props = withDefaults(defineProps<{
-  asset: Pick<SessionAsset, 'id' | 'session_id'> & { version?: number }
+  asset: Pick<SessionAsset, 'id' | 'session_id'> & { version?: number; source_url?: string | null }
   artifact?: boolean
   initialMode?: 'inline' | 'expanded' | 'presentation'
 }>(), {
@@ -283,12 +283,11 @@ async function loadDocument(): Promise<void> {
   try {
     await disposeDocument()
     abortController = new AbortController()
-    const readContent = props.artifact ? aiClient.getArtifactPdfContent : aiClient.getSessionAssetContent
-    const bytes = await readContent(
-      props.asset.session_id,
-      props.asset.id,
-      abortController.signal,
-    )
+    const bytes = props.asset.source_url
+      ? await assetClient.getUrlContent(props.asset.source_url, abortController.signal)
+      : props.artifact
+        ? await aiClient.getArtifactPdfContent(props.asset.session_id, props.asset.id, abortController.signal)
+        : await aiClient.getSessionAssetContent(props.asset.session_id, props.asset.id, abortController.signal)
     if (version !== loadVersion) return
     if (bytes === null) {
       awaitingCompilation.value = true
@@ -427,7 +426,7 @@ function resetScale(): void {
   void nextTick(() => scrollToPage(anchoredPage, 'auto'))
 }
 
-watch(() => [props.asset.session_id, props.asset.id, props.asset.version, props.artifact], () => void loadDocument(), { immediate: true })
+watch(() => [props.asset.session_id, props.asset.id, props.asset.version, props.asset.source_url, props.artifact], () => void loadDocument(), { immediate: true })
 onMounted(() => {
   window.addEventListener('resize', updatePresentationViewport)
   window.addEventListener('keydown', handlePresentationKey, true)

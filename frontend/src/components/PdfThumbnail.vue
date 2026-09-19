@@ -14,7 +14,7 @@ import { pdfDocumentOptions } from '../utils/pdfDocument'
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
 const props = withDefaults(defineProps<{
-  asset: Pick<SessionAsset, 'id' | 'session_id'> | StaticAsset
+  asset: (Pick<SessionAsset, 'id' | 'session_id'> & Partial<Pick<SessionAsset, 'source_url' | 'content_url'>>) | StaticAsset
   artifact?: boolean
   fit?: 'cover' | 'contain'
 }>(), {
@@ -45,12 +45,15 @@ async function renderFirstPage(): Promise<void> {
   try {
     await dispose()
     abortController = new AbortController()
+    const referencedUrl = !props.artifact && 'session_id' in props.asset ? props.asset.source_url : null
     const bytes = props.artifact
       ? await aiClient.getArtifactPdfContent(
           'session_id' in props.asset ? props.asset.session_id : '',
           props.asset.id,
           abortController.signal,
         )
+      : referencedUrl
+        ? await assetClient.getUrlContent(referencedUrl, abortController.signal)
       : 'session_id' in props.asset
         ? await aiClient.getSessionAssetContent(props.asset.session_id, props.asset.id, abortController.signal)
         : await assetClient.getContent(props.asset.id, abortController.signal)
