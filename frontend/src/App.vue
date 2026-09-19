@@ -106,8 +106,9 @@ const view = ref<View>('new')
 const raw = ref('')
 const artifactContent = ref<ArtifactContent | null>(null)
 const conversation = ref<AnalysisMessage[]>([])
-const workspaceView = ref<'workspace' | 'trace'>('workspace')
-const selectedTraceTurnId = ref<string | null>(null)
+const initialTraceLocation = traceLocationFromHash()
+const workspaceView = ref<'workspace' | 'trace'>(initialTraceLocation ? 'trace' : 'workspace')
+const selectedTraceTurnId = ref<string | null>(initialTraceLocation?.turnId || null)
 const traceMessages = ref<AgentPersistedMessage[]>([])
 const traceLoading = ref(false)
 const traceError = ref('')
@@ -123,6 +124,7 @@ const currentContextUsage = ref<AgentModelUsage | null>(null)
 const contextComposition = ref<AgentContextComposition | null>(null)
 const streamingGenerationDurationMs = ref(0)
 const pendingQuestion = ref<AskUserState | null>(null)
+const queuedQuestions = ref<AskUserState[]>([])
 const askAnswer = ref('')
 const selectedAskOptions = ref<string[]>([])
 const answeringQuestion = ref(false)
@@ -281,6 +283,7 @@ function resetStreamState(): void {
   streamingGenerationDurationMs.value = 0
   modelStartedAt = 0
   pendingQuestion.value = null
+  queuedQuestions.value = []
   activeTodos.value = null
   streamingStatus.value = 'starting'
 }
@@ -627,16 +630,29 @@ function handleCustomAgentEvent(event: AgentCustomEvent): void {
   if (event.name !== 'ask_user') return
   const payload = event.payload
   if (typeof payload.tool_call_id !== 'string' || typeof payload.question !== 'string') return
-  pendingQuestion.value = {
+  const question: AskUserState = {
     toolCallId: payload.tool_call_id,
     question: payload.question,
     options: Array.isArray(payload.options) ? payload.options.filter((item): item is string => typeof item === 'string') : [],
     allowMultiple: payload.allow_multiple === true,
     responseEvent: typeof payload.response_event === 'string' ? payload.response_event : 'ask_user_response',
   }
+  if (pendingQuestion.value?.toolCallId === question.toolCallId) return
+  if (pendingQuestion.value) {
+    queuedQuestions.value.push(question)
+  } else {
+    pendingQuestion.value = question
+    askAnswer.value = ''
+    selectedAskOptions.value = []
+  }
+  streamingStatus.value = 'waiting_for_user'
+}
+
+function showNextAskQuestion(): void {
+  pendingQuestion.value = queuedQuestions.value.shift() || null
   askAnswer.value = ''
   selectedAskOptions.value = []
-  streamingStatus.value = 'waiting_for_user'
+  streamingStatus.value = pendingQuestion.value ? 'waiting_for_user' : 'resuming'
 }
 
 function toggleAskOption(option: string): void {
@@ -673,8 +689,7 @@ async function answerAgentQuestion(): Promise<void> {
       tool_call_id: question.toolCallId,
       answer,
     })
-    pendingQuestion.value = null
-    streamingStatus.value = 'resuming'
+    showNextAskQuestion()
   } catch (error) {
     showNotice(errorMessage(error), 'error')
   } finally {
@@ -1127,6 +1142,7 @@ function handleComposerEnter(event: KeyboardEvent): void {
 
 function stopGeneration(): void {
   pendingQuestion.value = null
+  queuedQuestions.value = []
   activeTodos.value = null
   activeStreamController.value?.abort()
 }
@@ -2213,6 +2229,7 @@ onBeforeUnmount(() => {
                 :allow-multiple="pendingQuestion.allowMultiple"
                 :selected-options="selectedAskOptions"
                 :answer="askAnswer"
+                :queued-count="queuedQuestions.length"
                 :submitting="answeringQuestion"
                 @toggle="toggleAskOption"
                 @update:answer="updateAskAnswer"

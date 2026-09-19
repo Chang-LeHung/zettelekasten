@@ -59,8 +59,15 @@ it('shows one button per turn and renders the selected turn', async () => {
         reasoning_tokens: 2,
         cache_hit_rate: 0.75,
       }),
-      record(3, { request_id: 'request-2', role: 'user', content: 'Follow up' }),
-      record(4, { request_id: 'request-2', role: 'assistant', content: 'Second answer' }),
+      record(3, {
+        role: 'tool',
+        content: '{"ok":true,"items":[1,2]}',
+        tool_call_id: 'call-1',
+        tool_name: 'read_file',
+        tool_success: true,
+      }),
+      record(4, { request_id: 'request-2', role: 'user', content: 'Follow up' }),
+      record(5, { request_id: 'request-2', role: 'assistant', content: 'Second answer' }),
     ],
     loading: false,
     error: '',
@@ -86,6 +93,11 @@ it('shows one button per turn and renders the selected turn', async () => {
   expect(detail.textContent).toContain('1 tool call')
   expect(detail.textContent).toContain('Input 12')
   expect(detail.textContent).toContain('Output 5')
+  expect(
+    Array.from(detail.querySelectorAll('.trace-message-content')).some((element) =>
+      element.textContent?.includes('"ok": true'),
+    ),
+  ).toBe(true)
   expect(detail.querySelector('.trace-cache-rate')?.textContent).toContain('Cache hit 75%')
   expect(detail.querySelector('.trace-cache-rate')?.classList.contains('high')).toBe(true)
   expect(detail.textContent).not.toContain('Second answer')

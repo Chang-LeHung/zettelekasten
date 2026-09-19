@@ -83,6 +83,15 @@ function formatJson(value: unknown): string {
   }
 }
 
+function formatTraceText(message: AgentPersistedMessage, value: string): string {
+  if (message.role !== 'tool' || !value.trim()) return value
+  try {
+    return JSON.stringify(JSON.parse(value), null, 2)
+  } catch {
+    return value
+  }
+}
+
 function cacheHitRate(message: AgentPersistedMessage): number | null {
   if (message.role !== 'assistant') return null
   if (message.cache_hit_rate !== null) return message.cache_hit_rate
@@ -176,11 +185,11 @@ function cacheHitRate(message: AgentPersistedMessage): number | null {
 
               <div v-if="message.parts.length" class="trace-message-parts">
                 <template v-for="(part, partIndex) in message.parts" :key="`${message.id}-part-${partIndex}`">
-                  <pre v-if="part.type === 'text'">{{ part.text }}</pre>
+                  <pre v-if="part.type === 'text'">{{ formatTraceText(message, part.text) }}</pre>
                   <img v-else :src="part.content_url" :alt="part.name" />
                 </template>
               </div>
-              <pre v-else-if="message.content" class="trace-message-content">{{ message.content }}</pre>
+              <pre v-else-if="message.content" class="trace-message-content">{{ formatTraceText(message, message.content) }}</pre>
 
               <details v-if="message.reasoning_content" class="trace-payload">
                 <summary>Reasoning</summary>
@@ -256,7 +265,7 @@ function cacheHitRate(message: AgentPersistedMessage): number | null {
 .trace-event-content > header strong { color: #3d4841; font-size: .68rem; }
 .trace-event-content > header small { margin-top: .13rem; color: #909892; font-size: .55rem; }
 .trace-event-meta { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .28rem; }
-.trace-message-content, .trace-message-parts pre, .trace-payload pre, .trace-tool-call pre { max-height: 16rem; margin: .5rem 0 0; padding: .6rem .68rem; overflow: auto; overscroll-behavior: contain; border-radius: .52rem; color: #3f4a43; background: #f5f7f5; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: .62rem; line-height: 1.52; white-space: pre-wrap; overflow-wrap: anywhere; scrollbar-width: thin; }
+.trace-message-content, .trace-message-parts pre, .trace-payload pre, .trace-tool-call pre { max-height: 16rem; margin: .5rem 0 0; padding: .6rem .68rem; overflow: auto; border-radius: .52rem; color: #3f4a43; background: #f5f7f5; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: .62rem; line-height: 1.52; white-space: pre-wrap; overflow-wrap: anywhere; scrollbar-width: thin; }
 .trace-message-parts { display: grid; gap: .42rem; margin-top: .5rem; }
 .trace-message-parts pre { margin: 0; }
 .trace-message-parts img { max-width: min(100%, 28rem); max-height: 20rem; border: 1px solid #dfe5e1; border-radius: .55rem; object-fit: contain; background: #eef1ef; }

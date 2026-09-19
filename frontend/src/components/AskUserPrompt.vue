@@ -5,6 +5,7 @@ const props = defineProps<{
   allowMultiple: boolean
   selectedOptions: string[]
   answer: string
+  queuedCount?: number
   submitting: boolean
 }>()
 
@@ -28,7 +29,10 @@ function updateAnswer(event: Event): void {
     <header>
       <div>
         <span>Agent question</span>
-        <small>{{ allowMultiple ? 'Select one or more options' : 'Select one option' }}</small>
+        <small>
+          {{ allowMultiple ? 'Select one or more options' : 'Select one option' }}
+          <template v-if="queuedCount"> · {{ queuedCount }} more waiting</template>
+        </small>
       </div>
       <span class="waiting"><i />Waiting for you</span>
     </header>
