@@ -2,6 +2,7 @@ import type {
   AnalysisMessage,
   AgentArtifact,
   AgentContextComposition,
+  AgentModelUsageActivitySeries,
   AgentModelUsage,
   AgentUsageActivityDay,
   AgentServerToolActivity,
@@ -472,6 +473,10 @@ export const settingsClient = {
 
   getUsageActivity(days = 365): Promise<AgentUsageActivityDay[]> {
     return request<AgentUsageActivityDay[]>(`/settings/usage-activity?days=${days}`)
+  },
+
+  getModelUsageActivity(days = 365): Promise<AgentModelUsageActivitySeries[]> {
+    return request<AgentModelUsageActivitySeries[]>(`/settings/model-usage-activity?days=${days}`)
   },
 }
 

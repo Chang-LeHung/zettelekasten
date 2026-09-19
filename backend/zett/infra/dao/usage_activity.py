@@ -5,6 +5,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from sqlalchemy import func, select
 from zett_agent import ModelUsageActivityDay, ModelUsageActivityRecord, new_uuid7
 
+from ...schemas import ModelUsageActivitySeries, UsageActivityDayRecord
 from ..database import session_scope
 from ..models import ModelUsageActivityModel
 
@@ -68,6 +69,53 @@ class SQLiteModelUsageActivityStorage:
                 )
                 for row in rows
             ]
+
+    async def model_activity(self, *, start: date, end: date) -> list[ModelUsageActivitySeries]:
+        """Return daily counters grouped by provider and model."""
+        if end < start:
+            raise ValueError("activity end date cannot precede start date")
+        start_at = datetime.combine(start, time.min, tzinfo=UTC)
+        end_at = datetime.combine(end + timedelta(days=1), time.min, tzinfo=UTC)
+        day = func.date(ModelUsageActivityModel.created_at)
+        async with session_scope() as session:
+            rows = await session.execute(
+                select(
+                    ModelUsageActivityModel.provider,
+                    ModelUsageActivityModel.model,
+                    day.label("day"),
+                    func.count(ModelUsageActivityModel.id).label("requests"),
+                    func.sum(ModelUsageActivityModel.input_tokens).label("input_tokens"),
+                    func.sum(ModelUsageActivityModel.output_tokens).label("output_tokens"),
+                    func.sum(ModelUsageActivityModel.cache_read_tokens).label("cache_read_tokens"),
+                    func.sum(ModelUsageActivityModel.cache_write_tokens).label("cache_write_tokens"),
+                    func.sum(ModelUsageActivityModel.reasoning_tokens).label("reasoning_tokens"),
+                )
+                .where(
+                    ModelUsageActivityModel.created_at >= start_at,
+                    ModelUsageActivityModel.created_at < end_at,
+                )
+                .group_by(ModelUsageActivityModel.provider, ModelUsageActivityModel.model, day)
+                .order_by(ModelUsageActivityModel.provider, ModelUsageActivityModel.model, day)
+            )
+
+        grouped: dict[tuple[str | None, str | None], list[UsageActivityDayRecord]] = {}
+        for row in rows:
+            key = (row.provider, row.model)
+            grouped.setdefault(key, []).append(
+                UsageActivityDayRecord(
+                    date=date.fromisoformat(row.day),
+                    requests=int(row.requests or 0),
+                    input_tokens=int(row.input_tokens or 0),
+                    output_tokens=int(row.output_tokens or 0),
+                    cache_read_tokens=int(row.cache_read_tokens or 0),
+                    cache_write_tokens=int(row.cache_write_tokens or 0),
+                    reasoning_tokens=int(row.reasoning_tokens or 0),
+                )
+            )
+        return [
+            ModelUsageActivitySeries(provider=provider, model=model, days=days)
+            for (provider, model), days in grouped.items()
+        ]
 
 
 model_usage_activity_storage = SQLiteModelUsageActivityStorage()

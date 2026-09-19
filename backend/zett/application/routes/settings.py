@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query
 
-from ..schemas import UsageActivityDayOut
+from ..schemas import ModelUsageActivitySeriesOut, UsageActivityDayOut
 from ..settings import RuntimeSettings, runtime_settings_service
 from ..usage_activity import usage_activity_service
 
@@ -29,3 +29,11 @@ async def get_usage_activity(
 ) -> list[UsageActivityDayOut]:
     """Return daily model request and token activity for the settings chart."""
     return await usage_activity_service.get(days)
+
+
+@router.get("/model-usage-activity", response_model=list[ModelUsageActivitySeriesOut])
+async def get_model_usage_activity(
+    days: Annotated[int, Query(ge=1, le=366)] = 365,
+) -> list[ModelUsageActivitySeriesOut]:
+    """Return daily request and token activity grouped by provider model."""
+    return await usage_activity_service.get_by_model(days)

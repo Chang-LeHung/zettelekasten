@@ -34,6 +34,14 @@ class UsageActivityDayOut(BaseModel):
     total_tokens: int
 
 
+class ModelUsageActivitySeriesOut(BaseModel):
+    """Daily request and token activity for one provider model."""
+
+    provider: str | None = None
+    model: str | None = None
+    days: list[UsageActivityDayOut]
+
+
 class PersistedToolCallOut(BaseModel):
     """One complete tool invocation selected by an Assistant message."""
 

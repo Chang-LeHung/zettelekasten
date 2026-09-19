@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ApiError, aiClient, libraryClient, settingsClient, tagClient } from './api/client'
-import type { AgentArtifact, AgentCompactionActivity, AgentContextComposition, AgentCustomEvent, AgentModelUsage, AgentPersistedMessage, AgentServerToolActivity, AgentSession, AgentSteeringMessage, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AgentUsageActivityDay, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageContentPart, MessagePartInput, ReasoningEffort, RuntimeSettings, SessionAsset, Tag } from './api/types'
+import type { AgentArtifact, AgentCompactionActivity, AgentContextComposition, AgentCustomEvent, AgentModelUsage, AgentModelUsageActivitySeries, AgentPersistedMessage, AgentServerToolActivity, AgentSession, AgentSteeringMessage, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AgentUsageActivityDay, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageContentPart, MessagePartInput, ReasoningEffort, RuntimeSettings, SessionAsset, Tag } from './api/types'
 import AgentComposerControls from './components/AgentComposerControls.vue'
 import CacheHitRate from './components/CacheHitRate.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
@@ -34,11 +34,13 @@ const PdfThumbnail = defineAsyncComponent(() => import('./components/PdfThumbnai
 const SlidesPreview = defineAsyncComponent(() => import('./components/SlidesPreview.vue'))
 const PdfPreview = defineAsyncComponent(() => import('./components/PdfPreview.vue'))
 const InteractionTrace = defineAsyncComponent(() => import('./components/InteractionTrace.vue'))
+const ModelUsageTrend = defineAsyncComponent(() => import('./components/ModelUsageTrend.vue'))
 
 type View = 'library' | 'search' | 'new' | 'settings'
 type NoticeKind = 'success' | 'error'
 type AssetEditorMode = 'closed' | 'text' | 'link'
 type AssetFilter = 'all' | 'documents' | 'images' | 'links' | 'notes' | 'code'
+type SettingsSection = 'usage' | 'providers'
 const DEFAULT_SESSION_TITLE = '新会话'
 type AgentMessageTimelineEntry = Extract<AgentTimelineEntry, { type: 'message' }>
 interface ConfirmationState {
@@ -206,7 +208,9 @@ const runtimeSettings = ref<RuntimeSettings>({
 })
 const runtimeSettingsSaving = ref(false)
 const usageActivity = ref<AgentUsageActivityDay[]>([])
+const modelUsageActivity = ref<AgentModelUsageActivitySeries[]>([])
 const usageActivityLoading = ref(false)
+const settingsSection = ref<SettingsSection>('providers')
 const searchInput = ref<HTMLInputElement | null>(null)
 const agentThread = ref<HTMLElement | null>(null)
 const agentTurnStack = ref<HTMLElement | null>(null)
@@ -1036,23 +1040,51 @@ async function loadLibrary(): Promise<void> {
 async function loadInitialData(): Promise<void> {
   usageActivityLoading.value = true
   try {
-    const [tagData, libraryData, providerData, runtimeSettingsData, usageActivityData] = await Promise.all([
+    const [
+      tagData,
+      libraryData,
+      providerData,
+      runtimeSettingsData,
+      usageActivityData,
+      modelUsageActivityData,
+    ] = await Promise.all([
       tagClient.list(),
       libraryClient.list(),
       aiClient.listProviders(),
       settingsClient.get(),
       settingsClient.getUsageActivity().catch(() => []),
+      settingsClient.getModelUsageActivity(30).catch(() => []),
     ])
     tags.value = tagData
     libraryItems.value = libraryData
     providers.value = providerData
     runtimeSettings.value = runtimeSettingsData
     usageActivity.value = usageActivityData
+    modelUsageActivity.value = modelUsageActivityData
     const firstProvider = providerData.find((provider) => provider.enabled)
     if (firstProvider) {
       selectedProviderId.value = firstProvider.id
       await selectProvider(firstProvider)
     }
+  } catch (error) {
+    showNotice(errorMessage(error), 'error')
+  } finally {
+    usageActivityLoading.value = false
+  }
+}
+
+async function selectSettingsSection(section: SettingsSection): Promise<void> {
+  if (settingsSection.value === section) return
+  settingsSection.value = section
+  if (section !== 'usage') return
+  usageActivityLoading.value = true
+  try {
+    const [usageActivityData, modelUsageActivityData] = await Promise.all([
+      settingsClient.getUsageActivity(),
+      settingsClient.getModelUsageActivity(30),
+    ])
+    usageActivity.value = usageActivityData
+    modelUsageActivity.value = modelUsageActivityData
   } catch (error) {
     showNotice(errorMessage(error), 'error')
   } finally {
@@ -2701,6 +2733,11 @@ onBeforeUnmount(() => {
       <template v-else>
         <header class="topbar compact"><div><p class="eyebrow">Preferences</p><h1>Settings</h1></div></header>
         <section class="content settings-view">
+          <nav class="settings-tabs" role="tablist" aria-label="Settings sections">
+            <button :class="{ active: settingsSection === 'usage' }" type="button" role="tab" :aria-selected="settingsSection === 'usage'" @click="selectSettingsSection('usage')">Usage</button>
+            <button :class="{ active: settingsSection === 'providers' }" type="button" role="tab" :aria-selected="settingsSection === 'providers'" @click="selectSettingsSection('providers')">Providers &amp; limits</button>
+          </nav>
+          <div v-if="settingsSection === 'providers'" class="settings-section">
           <div class="settings-intro"><div><h2>AI providers</h2><p>Keep multiple model connections and choose one for each conversation.</p></div></div>
           <div class="provider-toolbar">
             <div v-if="providers.length" class="provider-list">
@@ -2753,7 +2790,8 @@ onBeforeUnmount(() => {
               <div><button class="primary-action" :disabled="runtimeSettingsSaving" type="submit">{{ runtimeSettingsSaving ? 'Saving…' : 'Save limits' }}</button></div>
             </div>
           </form>
-
+          </div>
+          <div v-else class="settings-section">
           <div class="settings-intro runtime-settings-heading">
             <div><h2>Model activity</h2><p>Daily token requests recorded from completed LLM calls.</p></div>
           </div>
@@ -2762,6 +2800,21 @@ onBeforeUnmount(() => {
             <UsageActivityGraph v-else :days="usageActivity" />
           </div>
 
+          <div class="settings-intro runtime-settings-heading">
+            <div><h2>By model</h2><p>Request volume and token usage for every provider model.</p></div>
+          </div>
+          <div v-if="usageActivityLoading" class="settings-activity-state">Loading model activity…</div>
+          <div v-else-if="!modelUsageActivity.length" class="settings-card settings-activity-state">No model activity recorded yet.</div>
+          <div v-else class="model-usage-list">
+            <ModelUsageTrend
+              v-for="series in modelUsageActivity"
+              :key="`${series.provider || 'unknown'}:${series.model || 'unknown'}`"
+              :provider="series.provider"
+              :model="series.model"
+              :days="series.days"
+            />
+          </div>
+          </div>
         </section>
       </template>
 
@@ -3334,6 +3387,14 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .panel-actions { display: flex; justify-content: flex-end; gap: .6rem; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--line); }
 
 .settings-view { max-width: 64rem; }
+.settings-tabs { width: fit-content; display: flex; gap: .18rem; margin: .25rem 0 1.15rem; padding: .2rem; border: 1px solid rgba(60,78,67,.1); border-radius: .72rem; background: rgba(235,239,236,.82); }
+.settings-tabs button { min-height: 2rem; padding: 0 .78rem; border: 0; border-radius: .54rem; color: #69746d; background: transparent; cursor: pointer; font-size: .68rem; font-weight: 650; }
+.settings-tabs button:hover { color: #355442; }
+.settings-tabs button.active { color: #31523f; background: #fff; box-shadow: 0 1px 4px rgba(38,57,46,.1); }
+.settings-section { animation: settings-section-in 180ms ease-out both; }
+@keyframes settings-section-in { from { opacity: 0; transform: translateY(5px); } }
+.model-usage-list { display: grid; gap: 1.15rem; }
+.model-usage-list .model-usage-trend + .model-usage-trend { padding-top: 1.15rem; border-top: 1px solid rgba(29,29,31,.08); }
 .settings-intro { margin: .5rem 0 1rem; }
 .runtime-settings-heading { margin-top: 1.8rem; }
 .settings-card { padding: 1.5rem; border: 1px solid rgba(29,29,31,.075); border-radius: 1rem; background: rgba(255,255,255,.84); box-shadow: 0 2px 12px rgba(0,0,0,.025); }

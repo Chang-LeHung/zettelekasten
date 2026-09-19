@@ -111,6 +111,12 @@ export interface AgentUsageActivityDay {
   total_tokens: number
 }
 
+export interface AgentModelUsageActivitySeries {
+  provider: string | null
+  model: string | null
+  days: AgentUsageActivityDay[]
+}
+
 export interface AgentContextComposition {
   system_prompt: number
   tool_prompt: number

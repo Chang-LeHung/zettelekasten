@@ -118,12 +118,12 @@ function hideTooltip(): void {
       <span>{{ formatTokenCount(totalTokens) }} tokens</span>
     </header>
     <div class="activity-scroll">
-      <div class="activity-months" aria-hidden="true">
+      <div class="activity-months" :style="{ gridTemplateColumns: `repeat(${weeks.length}, minmax(0, 1fr))` }" aria-hidden="true">
         <span v-for="(month, index) in monthLabels" :key="`${month}-${index}`" class="activity-month">
           <span v-if="month">{{ month }}</span>
         </span>
       </div>
-      <div class="activity-grid" aria-label="Daily model token activity">
+      <div class="activity-grid" :style="{ gridTemplateColumns: `repeat(${weeks.length}, minmax(0, 1fr))` }" aria-label="Daily model token activity">
         <div v-for="(week, weekIndex) in weeks" :key="weekIndex" class="activity-week">
           <span
             v-for="(cell, dayIndex) in week"
@@ -167,19 +167,19 @@ function hideTooltip(): void {
 </template>
 
 <style scoped>
-.usage-activity { position: relative; display: grid; gap: .9rem; }
+.usage-activity { --activity-gap: .2rem; position: relative; display: grid; gap: .9rem; }
 .usage-activity > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
 .usage-activity > header strong, .usage-activity > header small { display: block; }
 .usage-activity > header strong { color: #3c4740; font-size: .86rem; }
 .usage-activity > header small { margin-top: .16rem; color: #828c86; font-size: .64rem; }
 .usage-activity > header > span { color: #496353; font-size: .74rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .activity-scroll { overflow-x: auto; padding-bottom: .18rem; scrollbar-width: thin; }
-.activity-grid { display: flex; gap: .2rem; width: max-content; }
-.activity-months { height: 1rem; display: flex; gap: .2rem; margin-bottom: .02rem; width: max-content; }
-.activity-month { position: relative; width: .68rem; flex: 0 0 auto; }
+.activity-grid { display: grid; gap: var(--activity-gap); width: 100%; min-width: 36rem; }
+.activity-months { height: 1rem; display: grid; gap: var(--activity-gap); width: 100%; min-width: 36rem; margin-bottom: .02rem; }
+.activity-month { position: relative; min-width: 0; }
 .activity-month > span { position: absolute; left: 0; bottom: .2rem; color: #68756d; font-size: .58rem; font-weight: 640; line-height: 1; white-space: nowrap; }
-.activity-week { display: grid; grid-template-rows: repeat(7, .68rem); gap: .2rem; }
-.activity-cell { width: .68rem; height: .68rem; border-radius: .17rem; background: #edf0ee; }
+.activity-week { min-width: 0; display: grid; grid-template-rows: repeat(7, auto); gap: var(--activity-gap); }
+.activity-cell { width: 100%; height: auto; aspect-ratio: 1; border-radius: .2rem; background: #edf0ee; }
 .activity-cell.empty { visibility: hidden; }
 .activity-cell.level-0, .usage-activity footer .level-0 { background: #edf0ee; }
 .activity-cell.level-1, .usage-activity footer .level-1 { background: #cce5d5; }
@@ -187,7 +187,7 @@ function hideTooltip(): void {
 .activity-cell.level-3, .usage-activity footer .level-3 { background: #4d9870; }
 .activity-cell.level-4, .usage-activity footer .level-4 { background: #236041; }
 .usage-activity footer { display: flex; align-items: center; justify-content: flex-end; gap: .24rem; color: #8a948e; font-size: .59rem; }
-.usage-activity footer i { width: .6rem; height: .6rem; border-radius: .15rem; }
+.usage-activity footer i { width: .68rem; height: .68rem; border-radius: .18rem; }
 .activity-tooltip { position: absolute; z-index: 20; width: 12rem; display: grid; gap: .28rem; padding: .55rem .62rem; border: 1px solid rgba(255,255,255,.12); border-radius: .55rem; color: #f7faf8; background: #26332c; box-shadow: 0 10px 28px rgba(24,35,29,.2); pointer-events: none; transform: translate(-50%, calc(-100% - .42rem)); }
 .activity-tooltip::after { content: ""; position: absolute; left: 50%; bottom: -.28rem; width: .48rem; height: .48rem; background: #26332c; transform: translateX(-50%) rotate(45deg); }
 .activity-tooltip strong { font-size: .61rem; }

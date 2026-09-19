@@ -383,6 +383,28 @@ it('loads model usage activity for the settings chart', async () => {
   expect(fetchMock).toHaveBeenCalledWith('/api/settings/usage-activity?days=30', expect.any(Object))
 })
 
+it('loads model usage activity grouped by provider model', async () => {
+  const series = [{
+    provider: 'deepseek',
+    model: 'deepseek-flash',
+    days: [{
+      date: '2026-09-19',
+      requests: 2,
+      input_tokens: 100,
+      output_tokens: 20,
+      cache_read_tokens: 80,
+      cache_write_tokens: 0,
+      reasoning_tokens: 5,
+      total_tokens: 120,
+    }],
+  }]
+  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(series)))
+  vi.stubGlobal('fetch', fetchMock)
+
+  expect(await settingsClient.getModelUsageActivity(30)).toEqual(series)
+  expect(fetchMock).toHaveBeenCalledWith('/api/settings/model-usage-activity?days=30', expect.any(Object))
+})
+
 it('loads the model most recently used by one session', async () => {
   const preference = {
     provider_id: 'provider-7',

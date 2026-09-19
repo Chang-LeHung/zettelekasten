@@ -12,12 +12,14 @@ def usage(
     *,
     input_tokens: int,
     output_tokens: int,
+    provider: str | None = "deepseek",
+    model: str | None = "deepseek-chat",
 ) -> ModelUsageActivityRecord:
     return ModelUsageActivityRecord(
         session_id="session",
         request_id="request",
-        provider="deepseek",
-        model="deepseek-chat",
+        provider=provider,
+        model=model,
         occurred_at=occurred_at,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
@@ -58,3 +60,57 @@ def test_settings_usage_activity_returns_zero_filled_days():
     assert len(rows) == 3
     assert all(row["requests"] == 0 for row in rows)
     assert [date.fromisoformat(row["date"]) for row in rows] == sorted(date.fromisoformat(row["date"]) for row in rows)
+
+
+async def test_model_usage_activity_groups_by_provider_and_model():
+    await model_usage_activity_storage.record(
+        usage(
+            datetime(2026, 9, 19, 1, 0, tzinfo=UTC),
+            input_tokens=100,
+            output_tokens=20,
+            provider="deepseek",
+            model="deepseek-flash",
+        )
+    )
+    await model_usage_activity_storage.record(
+        usage(
+            datetime(2026, 9, 19, 2, 0, tzinfo=UTC),
+            input_tokens=200,
+            output_tokens=40,
+            provider="openai",
+            model="gpt-test",
+        )
+    )
+
+    rows = await model_usage_activity_storage.model_activity(
+        start=date(2026, 9, 19),
+        end=date(2026, 9, 19),
+    )
+
+    assert [(row.provider, row.model, row.days[0].requests, row.days[0].total_tokens) for row in rows] == [
+        ("deepseek", "deepseek-flash", 1, 120),
+        ("openai", "gpt-test", 1, 240),
+    ]
+
+
+async def test_settings_model_usage_activity_is_zero_filled_and_sorted():
+    await model_usage_activity_storage.record(
+        usage(
+            datetime.now(UTC),
+            input_tokens=100,
+            output_tokens=20,
+            provider="deepseek",
+            model="deepseek-flash",
+        )
+    )
+    with TestClient(app) as client:
+        response = client.get("/api/settings/model-usage-activity?days=3")
+
+    assert response.status_code == 200
+    rows = response.json()
+    assert len(rows) == 1
+    assert rows[0]["provider"] == "deepseek"
+    assert rows[0]["model"] == "deepseek-flash"
+    assert len(rows[0]["days"]) == 3
+    assert sum(day["requests"] for day in rows[0]["days"]) == 1
+    assert sum(day["total_tokens"] for day in rows[0]["days"]) == 120

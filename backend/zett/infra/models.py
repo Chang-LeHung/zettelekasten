@@ -122,6 +122,7 @@ class ModelUsageActivityModel(Base):
     __table_args__ = (
         Index("ix_model_usage_activity_day", "created_at", "id"),
         Index("ix_model_usage_activity_session_day", "session_id", "created_at"),
+        Index("ix_model_usage_activity_model_day", "provider", "model", "created_at"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
