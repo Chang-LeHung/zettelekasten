@@ -54,6 +54,8 @@ const presentationRoot = ref<HTMLElement | null>(null)
 const presentationPage = ref(1)
 const viewportWidth = ref(window.innerWidth)
 const viewportHeight = ref(window.innerHeight)
+const MIN_SCALE = 0.25
+const MAX_SCALE = 2.5
 const presentationScale = computed(() => Math.max(.1, Math.min(
   (viewportWidth.value - 64) / basePageWidth.value,
   (viewportHeight.value - 64) / basePageHeight.value,
@@ -61,6 +63,8 @@ const presentationScale = computed(() => Math.max(.1, Math.min(
 let presentationPreviousFocus: HTMLElement | null = null
 let presentationPreviousOverflow = ''
 let presentationWheelTimer: number | null = null
+let inlineAutoFit = true
+let stageResizeObserver: ResizeObserver | null = null
 const scale = computed({
   get: () => expanded.value ? expandedScale.value : inlineScale.value,
   set: (value: number) => {
@@ -159,6 +163,19 @@ function handlePresentationWheel(event: WheelEvent): void {
 function updatePresentationViewport(): void {
   viewportWidth.value = presentationRoot.value?.clientWidth || window.innerWidth
   viewportHeight.value = presentationRoot.value?.clientHeight || window.innerHeight
+}
+
+function fitScaleForStage(): number {
+  const container = stage.value
+  if (!container || container.clientWidth <= 0) return 1
+  const horizontalPadding = expanded.value ? 48 : 32
+  const availableWidth = Math.max(120, container.clientWidth - horizontalPadding)
+  return Number(Math.min(1, Math.max(MIN_SCALE, availableWidth / basePageWidth.value)).toFixed(2))
+}
+
+function applyInlineAutoFit(): void {
+  if (!inlineAutoFit || expanded.value || presenting.value) return
+  inlineScale.value = fitScaleForStage()
 }
 
 function handleFullscreenChange(): void {
@@ -298,6 +315,7 @@ async function loadDocument(): Promise<void> {
     basePageHeight.value = viewport.height
     outline.value = flattenOutline((documentOutline || []) as OutlineItem[])
     await nextTick()
+    applyInlineAutoFit()
     updateCurrentPage()
     if (props.initialMode === 'presentation') await startPresentation()
   } catch (error) {
@@ -350,8 +368,9 @@ function applyWheelZoom(): void {
   const previousScale = scale.value
   const normalizedDelta = Math.min(160, Math.max(-160, pendingZoomDelta))
   pendingZoomDelta = 0
-  const nextScale = Math.min(2.5, Math.max(0.5, previousScale * Math.exp(-normalizedDelta * 0.002)))
+  const nextScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, previousScale * Math.exp(-normalizedDelta * 0.002)))
   if (Math.abs(nextScale - previousScale) < 0.005) return
+  inlineAutoFit = false
 
   const bounds = container.getBoundingClientRect()
   const pointerX = zoomPointer.x - bounds.left
@@ -396,13 +415,15 @@ function changePage(offset: number): void {
 
 function changeScale(offset: number): void {
   const anchoredPage = currentPage.value
-  scale.value = Math.min(2.5, Math.max(0.5, Number((scale.value + offset).toFixed(2))))
+  inlineAutoFit = false
+  scale.value = Math.min(MAX_SCALE, Math.max(MIN_SCALE, Number((scale.value + offset).toFixed(2))))
   void nextTick(() => scrollToPage(anchoredPage, 'auto'))
 }
 
 function resetScale(): void {
   const anchoredPage = currentPage.value
-  scale.value = 1
+  inlineAutoFit = true
+  scale.value = fitScaleForStage()
   void nextTick(() => scrollToPage(anchoredPage, 'auto'))
 }
 
@@ -412,12 +433,21 @@ onMounted(() => {
   window.addEventListener('keydown', handlePresentationKey, true)
   document.addEventListener('fullscreenchange', handleFullscreenChange)
   if (props.initialMode !== 'inline') void toggleExpanded()
+  if (typeof ResizeObserver !== 'undefined' && stage.value) {
+    stageResizeObserver = new ResizeObserver(() => {
+      applyInlineAutoFit()
+      if (presenting.value) updatePresentationViewport()
+    })
+    stageResizeObserver.observe(stage.value)
+  }
 })
 onBeforeUnmount(() => {
   stopPresentation()
   window.removeEventListener('resize', updatePresentationViewport)
   window.removeEventListener('keydown', handlePresentationKey, true)
   document.removeEventListener('fullscreenchange', handleFullscreenChange)
+  stageResizeObserver?.disconnect()
+  stageResizeObserver = null
   if (expanded.value) document.body.style.overflow = previousOverflow
   loadVersion += 1
   if (scrollFrame !== null) window.cancelAnimationFrame(scrollFrame)
@@ -439,9 +469,9 @@ onBeforeUnmount(() => {
           <button type="button" :disabled="currentPage >= pageCount || loading" aria-label="Next page" @click="changePage(1)">›</button>
         </div>
         <div class="pdf-zoom-controls">
-          <button type="button" :disabled="scale <= 0.5 || loading" aria-label="Zoom out" @click="changeScale(-0.25)">−</button>
+          <button type="button" :disabled="scale <= MIN_SCALE || loading" aria-label="Zoom out" @click="changeScale(-0.25)">−</button>
           <button class="scale-value" type="button" :disabled="loading" aria-label="Reset zoom" @click="resetScale">{{ Math.round(scale * 100) }}%</button>
-          <button type="button" :disabled="scale >= 2.5 || loading" aria-label="Zoom in" @click="changeScale(0.25)">+</button>
+          <button type="button" :disabled="scale >= MAX_SCALE || loading" aria-label="Zoom in" @click="changeScale(0.25)">+</button>
         </div>
       </div>
       <div class="pdf-toolbar-actions">

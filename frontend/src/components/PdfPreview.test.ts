@@ -59,6 +59,32 @@ it('shows a centered compilation state before the PDF exists', async () => {
   expect(state!.querySelector('button')?.textContent).toBe('Refresh preview')
 })
 
+it('fits the inline PDF width to a narrow artifact pane by default', async () => {
+  vi.mocked(aiClient.getArtifactPdfContent).mockResolvedValue(new ArrayBuffer(8))
+  vi.mocked(getDocument).mockReturnValue({
+    promise: Promise.resolve({
+      numPages: 1,
+      getPage: vi.fn().mockResolvedValue({ getViewport: () => ({ width: 600, height: 800 }) }),
+      getOutline: vi.fn().mockResolvedValue([]),
+    }),
+    destroy: vi.fn().mockResolvedValue(undefined),
+  } as never)
+  const clientWidth = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(360)
+
+  try {
+    const host = document.createElement('div')
+    document.body.append(host)
+    const app = createApp({ render: () => h(PdfPreview, { asset: { id: 'pdf', session_id: 'session' }, artifact: true }) })
+    app.mount(host)
+    cleanups.push(() => { app.unmount(); host.remove() })
+    await vi.waitFor(() => {
+      expect(host.querySelector('[aria-label="Reset zoom"]')?.textContent).toBe('55%')
+    })
+  } finally {
+    clientWidth.mockRestore()
+  }
+})
+
 it('bounds pointer resizing and stops when the pointer is cancelled', async () => {
   const { host, root } = await mountPreview()
   host.querySelector<HTMLButtonElement>('[aria-label="Toggle document outline"]')!.click()
