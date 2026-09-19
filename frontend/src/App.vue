@@ -270,7 +270,7 @@ const pageDescription = computed(() => {
     : t('{count} items in your library', { count: libraryItems.value.length })
 })
 const conversationStarted = computed(
-  () => conversation.value.length > 0 || artifacts.value.length > 0 || artifactContent.value !== null,
+  () => loading.value || conversation.value.length > 0 || artifacts.value.length > 0 || artifactContent.value !== null,
 )
 const conversationTurns = computed(() => buildConversationTurns(raw.value, conversation.value, initialMessageParts.value))
 const canSubmitMessage = computed(() => (
@@ -1701,7 +1701,10 @@ async function deleteSession(session: AgentSession): Promise<void> {
     await aiClient.deleteAgentSession(session.id)
     sessions.value = sessions.value.filter((item) => item.id !== session.id)
     if (editingSessionId.value === session.id) cancelSessionTitleEdit()
-    if (conversationId.value === session.id) await resetWorkspace()
+    if (conversationId.value === session.id) {
+      clearWorkspaceState()
+      await loadSessions(true)
+    }
     showNotice('Conversation deleted')
   } catch (error) {
     showNotice(errorMessage(error), 'error')
@@ -1773,7 +1776,7 @@ async function syncSelectedArtifact(): Promise<void> {
   if (index >= 0) artifacts.value.splice(index, 1, updated)
 }
 
-async function resetWorkspace(): Promise<void> {
+function clearWorkspaceState(): void {
   sessionSwitchGeneration += 1
   switchingSessionId.value = null
   sessionDetailRequests.clear()
@@ -1803,6 +1806,10 @@ async function resetWorkspace(): Promise<void> {
   resetStreamState()
   streamingStatus.value = 'idle'
   window.localStorage.removeItem(activeSessionKey)
+}
+
+async function resetWorkspace(): Promise<void> {
+  clearWorkspaceState()
   try {
     const started = await aiClient.startAgent()
     conversationId.value = started.conversation_id
@@ -2516,20 +2523,20 @@ onBeforeUnmount(() => {
                 <input v-model="assetQuery" type="search" :placeholder="$t('Search assets')" :aria-label="$t('Search assets')" />
               </div>
 
-              <div class="asset-filter-list" aria-label="Asset type">
-                <button v-for="filter in assetFilters" :key="filter.value" :class="{ active: assetFilter === filter.value }" type="button" @click="assetFilter = filter.value">{{ filter.label }}</button>
+              <div class="asset-filter-list" :aria-label="$t('Asset type')">
+                <button v-for="filter in assetFilters" :key="filter.value" :class="{ active: assetFilter === filter.value }" type="button" @click="assetFilter = filter.value">{{ $t(filter.label) }}</button>
               </div>
 
               <div class="asset-list-heading">
-                <span>{{ filteredAssets.length }} {{ filteredAssets.length === 1 ? 'asset' : 'assets' }}</span>
-                <small>Newest</small>
+                <span>{{ filteredAssets.length === 1 ? $t('{count} asset', { count: filteredAssets.length }) : $t('{count} assets', { count: filteredAssets.length }) }}</span>
+                <small>{{ $t('Newest') }}</small>
               </div>
 
               <form v-if="assetEditorMode !== 'closed'" class="asset-editor" @submit.prevent="addInlineAsset">
-                <strong>{{ assetEditorMode === 'link' ? 'Add a link' : 'Add a note' }}</strong>
-                <input v-model="assetName" :placeholder="assetEditorMode === 'link' ? 'Link name' : 'Note name'" />
-                <textarea v-model="assetValue" :placeholder="assetEditorMode === 'link' ? 'https://…' : 'Text content'" rows="3" />
-                <div><button :disabled="assetUploading || !assetName.trim() || !assetValue.trim()" type="submit">Add asset</button><button type="button" @click="assetEditorMode = 'closed'">Cancel</button></div>
+                <strong>{{ assetEditorMode === 'link' ? $t('Add a link') : $t('Add a note') }}</strong>
+                <input v-model="assetName" :placeholder="assetEditorMode === 'link' ? $t('Link name') : $t('Note name')" />
+                <textarea v-model="assetValue" :placeholder="assetEditorMode === 'link' ? 'https://…' : $t('Text content')" rows="3" />
+                <div><button :disabled="assetUploading || !assetName.trim() || !assetValue.trim()" type="submit">{{ $t('Add asset') }}</button><button type="button" @click="assetEditorMode = 'closed'">{{ $t('Cancel') }}</button></div>
               </form>
 
               <div class="asset-browser-list">
@@ -2552,15 +2559,15 @@ onBeforeUnmount(() => {
                 </article>
                 <div v-if="!filteredAssets.length" class="asset-empty">
                   <svg><use :href="assets.length ? '#icon-search' : '#icon-attachment'" /></svg>
-                  <strong>{{ assets.length ? 'No matching assets' : 'No assets yet' }}</strong>
-                  <small>{{ assets.length ? 'Try another search or filter.' : 'Add reference material for this conversation.' }}</small>
+                  <strong>{{ assets.length ? $t('No matching assets') : $t('No assets yet') }}</strong>
+                  <small>{{ assets.length ? $t('Try another search or filter.') : $t('Add reference material for this conversation.') }}</small>
                 </div>
               </div>
 
               <button class="asset-drop-zone" :class="{ dragging: assetDragging }" type="button" @click="assetFileInput?.click()" @dragenter.prevent="assetDragging = true" @dragover.prevent="assetDragging = true" @dragleave.prevent="assetDragging = false" @drop.prevent="dropAssets">
                 <svg><use href="#icon-attachment" /></svg>
                 <strong>{{ assetUploading ? 'Uploading…' : $t('Drop or paste assets here') }}</strong>
-                <small>Click this area, then press Ctrl/⌘ + V</small>
+                <small>{{ $t('Click this area, then press Ctrl/⌘ + V') }}</small>
               </button>
               <input ref="assetFileInput" type="file" multiple hidden @change="uploadAssets" />
             </aside>
@@ -2797,8 +2804,8 @@ onBeforeUnmount(() => {
 
             <aside class="artifact-pane artifact-workspace">
               <header class="artifact-collection-header">
-                <div><strong>Artifacts</strong><small>{{ artifacts.length }} in this conversation</small></div>
-                <span v-if="loading" class="artifact-syncing"><i />Updating</span>
+                <div><strong>{{ $t('Artifacts') }}</strong><small>{{ $t('{count} in this conversation', { count: artifacts.length }) }}</small></div>
+                <span v-if="loading" class="artifact-syncing"><i />{{ $t('Updating') }}</span>
               </header>
               <div v-if="artifacts.length" class="artifact-list" aria-label="Conversation artifacts">
                 <button v-for="artifact in artifacts" :key="artifact.id" :class="{ active: artifact.id === selectedArtifactId }" type="button" @click="selectArtifact(artifact)">
@@ -2808,29 +2815,29 @@ onBeforeUnmount(() => {
               </div>
               <div v-if="!artifactContent" class="artifact-placeholder">
                 <span><svg><use href="#icon-cards" /></svg></span>
-                <h2>No artifacts yet</h2>
-                <p>Keep talking with Zett Agent. Cards, articles, slides, and images will appear here when the conversation produces them.</p>
+                <h2>{{ $t('No artifacts yet') }}</h2>
+                <p>{{ $t('Keep talking with Zett Agent. Cards, articles, slides, and images will appear here when the conversation produces them.') }}</p>
               </div>
               <div v-else class="artifact-panel artifact-editor">
                 <div class="artifact-editor-accent" />
                 <header class="artifact-editor-header">
                   <div class="artifact-state"><i :class="{ saved: selectedArtifact?.status === 'saved' }" /><span><strong>{{ selectedArtifact?.artifact_type }} artifact</strong><small>{{ selectedArtifact?.status }} · version {{ selectedArtifact?.version }}</small></span></div>
-                  <div class="artifact-mode-switch" aria-label="Artifact display mode"><button type="button" :class="{ active: !artifactPreview }" @click="artifactPreview = false">Edit</button><button type="button" :class="{ active: artifactPreview }" @click="artifactPreview = true">Preview</button></div>
+                  <div class="artifact-mode-switch" :aria-label="$t('Artifact display mode')"><button type="button" :class="{ active: !artifactPreview }" @click="artifactPreview = false">{{ $t('Edit') }}</button><button type="button" :class="{ active: artifactPreview }" @click="artifactPreview = true">{{ $t('Preview') }}</button></div>
                 </header>
                 <div class="artifact-editor-body">
                   <div v-if="artifactContent.artifact_type === 'card'" class="card-meta-row">
                     <div class="card-type-control">
-                      <span>Card type</span>
-                      <div class="card-type-options" role="group" aria-label="Card type">
-                        <button v-for="cardType in cardTypes" :key="cardType" :class="{ active: artifactContent.card_type === cardType }" type="button" @click="artifactContent.card_type = cardType">{{ cardType }}</button>
+                      <span>{{ $t('Card type') }}</span>
+                      <div class="card-type-options" role="group" :aria-label="$t('Card type')">
+                        <button v-for="cardType in cardTypes" :key="cardType" :class="{ active: artifactContent.card_type === cardType }" type="button" @click="artifactContent.card_type = cardType">{{ $t(cardType) }}</button>
                       </div>
                     </div>
                   </div>
                   <template v-if="artifactContent.artifact_type === 'latex_pdf'">
                     <template v-if="!artifactPreview">
-                      <label class="card-summary-control"><span>Project directory</span><textarea v-model="artifactContent.project_path" rows="3" /></label>
-                      <label class="card-title-control"><span>PDF filename</span><textarea v-model="artifactContent.pdf_name" rows="1" /></label>
-                      <p>Source files stay in the project directory. Compile the PDF before saving this reference.</p>
+                      <label class="card-summary-control"><span>{{ $t('Project directory') }}</span><textarea v-model="artifactContent.project_path" rows="3" /></label>
+                      <label class="card-title-control"><span>{{ $t('PDF filename') }}</span><textarea v-model="artifactContent.pdf_name" rows="1" /></label>
+                      <p>{{ $t('Source files stay in the project directory. Compile the PDF before saving this reference.') }}</p>
                     </template>
                     <PdfPreview v-else-if="selectedArtifact" :asset="selectedArtifact" artifact />
                   </template>
