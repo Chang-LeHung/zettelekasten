@@ -1,13 +1,17 @@
 """Asynchronous CRUD endpoints for encrypted model provider settings."""
 
 from fastapi import APIRouter, HTTPException, Query, status
+from zett_agent import ProviderAuthError, ProviderResponseError
 
 from ...infra.dao import provider_storage
+from ...infra.log import get_logger
 from ...models import ProviderListOptions
-from ...schemas import ProviderOut, ProviderWrite
+from ...schemas import ProviderConnection, ProviderOut, ProviderWrite
+from ..provider_connections import ProviderConnectionTestError, verify_provider_connection
 from ..schemas import DeleteResponse, ProviderDetailResponse, ProviderIn, ProviderResponse
 
 router = APIRouter(prefix="/ai/providers", tags=["providers"])
+logger = get_logger(__name__)
 
 
 def _response(provider: ProviderOut) -> ProviderResponse:
@@ -56,6 +60,29 @@ async def _write(payload: ProviderIn, *, existing_id: str | None = None) -> Prov
     )
 
 
+async def _verify_provider(entity: ProviderWrite, provider_id: str) -> None:
+    """Probe complete settings before create or update mutates storage."""
+    connection = ProviderConnection(
+        id=provider_id,
+        provider=entity.provider,
+        model=entity.model,
+        base_url=entity.base_url,
+        api_key=entity.api_key,
+        metadata=entity.metadata,
+    )
+    try:
+        await verify_provider_connection(connection)
+    except ProviderAuthError as error:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Provider rejected the API credential") from error
+    except (ProviderConnectionTestError, ProviderResponseError, ValueError) as error:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
+    except TimeoutError as error:
+        raise HTTPException(status.HTTP_504_GATEWAY_TIMEOUT, "Provider test timed out") from error
+    except Exception as error:
+        logger.exception("Provider connection test failed; provider_id=%s", provider_id)
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Provider connection test failed") from error
+
+
 @router.get("", response_model=list[ProviderResponse])
 async def list_providers(
     q: str | None = None,
@@ -70,8 +97,10 @@ async def list_providers(
 
 @router.post("", response_model=ProviderResponse, status_code=status.HTTP_201_CREATED)
 async def create_provider(payload: ProviderIn) -> ProviderResponse:
-    """Encrypt and persist a model configuration."""
-    return _response(await provider_storage.create(await _write(payload)))
+    """Verify, encrypt, and persist a model configuration."""
+    entity = await _write(payload)
+    await _verify_provider(entity, "new-provider")
+    return _response(await provider_storage.create(entity))
 
 
 @router.get("/{provider_id}", response_model=ProviderDetailResponse)
@@ -89,9 +118,10 @@ async def get_provider(provider_id: str) -> ProviderDetailResponse:
 
 @router.put("/{provider_id}", response_model=ProviderResponse)
 async def update_provider(provider_id: str, payload: ProviderIn) -> ProviderResponse:
-    """Replace provider settings while a blank key preserves the stored key."""
+    """Verify replacement settings while a blank key preserves the stored key."""
     try:
         entity = await _write(payload, existing_id=provider_id)
+        await _verify_provider(entity, provider_id)
         return _response(await provider_storage.update(provider_id, entity))
     except KeyError as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Provider not found") from error

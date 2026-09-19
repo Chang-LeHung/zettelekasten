@@ -27,7 +27,9 @@ from zett_agent import (
     UserMessage,
 )
 
+from zett.application.provider_connections import ProviderConnectionTestError
 from zett.application.routes import agent as agent_routes
+from zett.application.routes import providers as provider_routes
 from zett.application.session_context import SESSION_CONTEXT_KEY_PREFIX
 from zett.application.session_preferences import SESSION_MODEL_KEY_PREFIX
 from zett.infra.dao import provider_storage
@@ -434,6 +436,19 @@ async def test_provider_http_lifecycle_preserves_blank_update_key():
         assert updated_detail["api_key"] == "secret"
         assert client.delete(f"/api/ai/providers/{provider_id}").json() == {"ok": True}
         assert client.get(f"/api/ai/providers/{provider_id}").status_code == 404
+
+
+async def test_provider_http_does_not_store_a_failed_connection(monkeypatch):
+    async def reject(_connection) -> None:
+        raise ProviderConnectionTestError("Provider stream ended without a response")
+
+    monkeypatch.setattr(provider_routes, "verify_provider_connection", reject)
+    with TestClient(app) as client:
+        response = client.post("/api/ai/providers", json=_provider_payload())
+
+    assert response.status_code == 422
+    assert "without a response" in response.text
+    assert await provider_storage.list() == []
 
 
 def test_provider_http_rejects_response_mode_for_native_non_responses_adapter():

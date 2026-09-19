@@ -186,6 +186,7 @@ const selectedProviderId = ref<string | null>(null)
 const reasoningEffort = ref<ReasoningEffort>('medium')
 const editingProviderId = ref<string | null>(null)
 const providerLoading = ref(false)
+const providerSaving = ref(false)
 const apiKeyVisible = ref(true)
 const ai = ref<AIProviderInput>({
   name: '',
@@ -1963,8 +1964,8 @@ async function deleteSelectedArtifact(): Promise<void> {
 }
 
 async function saveAI(): Promise<void> {
-  if (providerLoading.value) return
-  saving.value = true
+  if (providerLoading.value || providerSaving.value) return
+  providerSaving.value = true
   try {
     const providerId = editingProviderId.value
     const isNew = providerId === null
@@ -1974,11 +1975,11 @@ async function saveAI(): Promise<void> {
     providers.value = await aiClient.listProviders()
     selectedProviderId.value = saved.id
     await selectProvider(saved)
-    showNotice(isNew ? 'Provider added' : 'Provider settings saved')
+    showNotice(isNew ? 'Provider verified and added' : 'Provider verified and saved')
   } catch (error) {
     showNotice(errorMessage(error), 'error')
   } finally {
-    saving.value = false
+    providerSaving.value = false
   }
 }
 
@@ -2718,7 +2719,7 @@ onBeforeUnmount(() => {
               <div v-if="ai.provider === 'responses_compatible'" class="field"><span>API mode</span><strong>Responses API</strong><small>This compatible connection always uses the Responses protocol.</small></div>
               <div v-else-if="['openai', 'openai_compatible', 'deepseek'].includes(ai.provider)" class="field"><span>API mode</span><div class="mode-options" role="group" aria-label="API mode"><button type="button" :class="{ active: !ai.response }" @click="setResponseMode(false)">Chat Completions</button><button type="button" :class="{ active: ai.response }" @click="setResponseMode(true)">Responses API</button></div><small>Responses mode enables provider-hosted tools such as web search.</small></div>
             </div>
-            <div class="settings-actions"><button v-if="editingProviderId !== null" class="danger-button" type="button" @click="removeProvider">Delete provider</button><span v-else>Credentials are encrypted in your local database.</span><div><label class="switch"><input v-model="ai.enabled" type="checkbox" /><span /><small>{{ ai.enabled ? 'Enabled' : 'Disabled' }}</small></label><button class="primary-action" :disabled="saving || providerLoading || !ai.name || !ai.model" type="submit">{{ saving ? 'Saving…' : editingProviderId === null ? 'Add provider' : 'Save provider' }}</button></div></div>
+            <div class="settings-actions"><button v-if="editingProviderId !== null" class="danger-button" type="button" @click="removeProvider">Delete provider</button><span v-else>Credentials are encrypted in your local database.</span><div><label class="switch"><input v-model="ai.enabled" type="checkbox" /><span /><small>{{ ai.enabled ? 'Enabled' : 'Disabled' }}</small></label><button class="primary-action" :disabled="providerSaving || providerLoading || !ai.name || !ai.model" :aria-busy="providerSaving" type="submit"><span v-if="providerSaving" class="button-spinner" aria-hidden="true" /><span>{{ providerSaving ? 'Testing…' : editingProviderId === null ? 'Add provider' : 'Save provider' }}</span></button></div></div>
           </form>
 
           <div class="settings-intro runtime-settings-heading">
@@ -2934,6 +2935,7 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .primary-action:hover { filter: brightness(1.04); }
 .primary-action:disabled { opacity: .45; cursor: not-allowed; transform: none; }
 .primary-action svg { width: .95rem; height: .95rem; }
+.button-spinner { width: .86rem; height: .86rem; flex: 0 0 auto; border: 1.5px solid rgba(255,255,255,.38); border-top-color: #fff; border-radius: 50%; animation: session-spin 720ms linear infinite; }
 .secondary-action { min-height: 2.55rem; padding: 0 1rem; border-radius: .72rem; color: #55555a; background: #efeff1; font-size: .8rem; font-weight: 560; }
 .text-button { color: var(--accent-dark); background: transparent; font-size: .8rem; font-weight: 560; }
 .close-button { width: 2rem; height: 2rem; border-radius: 50%; color: #606065; background: rgba(224,224,227,.78); font-size: 1.2rem; line-height: 1; }
