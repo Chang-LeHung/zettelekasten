@@ -13,6 +13,7 @@ import ShellApprovalPrompt from './components/ShellApprovalPrompt.vue'
 import ToolResult from './components/ToolResult.vue'
 import UsageActivityGraph from './components/UsageActivityGraph.vue'
 import { addAgentUsage, latestAgentUsage, summarizeAgentUsage } from './utils/agentUsage'
+import { artifactContentFromLibraryUpdate, libraryItemFromArtifact } from './utils/artifactEditor'
 import { artifactListsEquivalent, sameArtifactRevision, stabilizeArtifactReferences } from './utils/artifactStability'
 import { assetOpenAction, isPdfAsset } from './utils/assetOpen'
 import { createAsyncRefreshScheduler } from './utils/asyncRefresh'
@@ -25,7 +26,6 @@ import { appendStreamedAssistantMessage, createStreamedAssistantMessage } from '
 import { defaultProviderBaseUrl, providerBaseUrlHelp } from './utils/providerDefaults'
 import { todoFromTool } from './utils/toolPresentation'
 import { hasRunningTool, upsertToolActivity } from './utils/toolActivities'
-import { TurnDetailsVisibility } from './utils/turnDetails'
 import { presentationSections } from './utils/slides'
 import { libraryExcerptText } from './utils/libraryExcerpt'
 import { asContextComposition } from './utils/contextComposition'
@@ -116,6 +116,7 @@ function handleSlidesFullscreenChange(): void {
   }
 }
 const libraryEditorItem = ref<LibraryItem | null>(null)
+const libraryEditorArtifactId = ref<string | null>(null)
 const libraryEditorSaving = ref(false)
 const libraryLoading = ref(false)
 const deletingLibraryItemId = ref<string | null>(null)
@@ -483,22 +484,6 @@ function isRunningTurn(index: number): boolean {
 
 function isSteeredTurn(index: number): boolean {
   return conversationTurns.value[index + 1]?.prompt.steering_status !== undefined
-}
-
-const turnDetails = new TurnDetailsVisibility()
-
-function isTurnDetailsOpen(turn: ConversationTurn, index: number): boolean {
-  return turnDetails.isOpen(turn.id, isRunningTurn(index))
-}
-
-function toggleTurnDetails(turn: ConversationTurn, event: MouseEvent): void {
-  const details = (event.currentTarget as HTMLElement | null)?.closest('details')
-  if (!(details instanceof HTMLDetailsElement)) return
-  // The browser applies the native toggle after this handler, so the state the
-  // reader asked for is the inverse of the current one. Reading `toggle` events
-  // instead would also record this component's own automatic collapse as a
-  // reader choice and keep the panel open.
-  turnDetails.setOpen(turn.id, !details.open)
 }
 
 function turnTimeline(turn: ConversationTurn, index: number): AgentTimelineEntry[] {
@@ -961,6 +946,28 @@ function scrollAgentThread(force = false): void {
   })
 }
 
+function toggleTurnExecution(event: MouseEvent): void {
+  const details = (event.currentTarget as HTMLElement | null)?.closest('details')
+  const thread = agentThread.value
+  if (!(details instanceof HTMLDetailsElement) || !thread) return
+  const summary = details.querySelector(':scope > summary')
+  if (!(summary instanceof HTMLElement)) return
+
+  event.preventDefault()
+  const previousTop = summary.getBoundingClientRect().top
+  followAgentOutput = false
+  if (agentScrollFrame !== null) {
+    window.cancelAnimationFrame(agentScrollFrame)
+    agentScrollFrame = null
+  }
+  details.open = !details.open
+  void nextTick(() => {
+    if (!details.isConnected) return
+    const offset = summary.getBoundingClientRect().top - previousTop
+    if (Math.abs(offset) > 1) thread.scrollTop += offset
+  })
+}
+
 function clearSessionTitleRefresh(): void {
   if (titleRefreshTimer !== null) window.clearTimeout(titleRefreshTimer)
   titleRefreshTimer = null
@@ -1213,6 +1220,16 @@ function openLibraryItem(item: LibraryItem): void {
 function openLibraryEditor(item: LibraryItem): void {
   if (item.item_type === 'latex_pdf') return
   selectedLibraryItem.value = null
+  libraryEditorArtifactId.value = null
+  libraryEditorItem.value = item
+}
+
+function openSelectedArtifactEditor(): void {
+  const artifact = selectedArtifact.value
+  if (!artifact) return
+  const item = libraryItemFromArtifact(artifact)
+  if (!item) return
+  libraryEditorArtifactId.value = artifact.id
   libraryEditorItem.value = item
 }
 
@@ -1227,6 +1244,7 @@ async function closeLibraryEditor(dirty: boolean): Promise<void> {
     if (!confirmed) return
   }
   libraryEditorItem.value = null
+  libraryEditorArtifactId.value = null
 }
 
 async function saveLibraryEditor(payload: LibraryItemUpdate): Promise<void> {
@@ -1234,6 +1252,19 @@ async function saveLibraryEditor(payload: LibraryItemUpdate): Promise<void> {
   if (!item || libraryEditorSaving.value) return
   libraryEditorSaving.value = true
   try {
+    const artifactId = libraryEditorArtifactId.value
+    if (artifactId !== null) {
+      const artifact = artifacts.value.find((candidate) => candidate.id === artifactId)
+      if (!artifact) return
+      artifactContent.value = artifactContentFromLibraryUpdate(artifact.content, payload)
+      const saved = await saveSelectedArtifact()
+      if (!saved) return
+      const updated = artifacts.value.find((candidate) => candidate.id === artifactId)
+      const updatedItem = updated ? libraryItemFromArtifact(updated) : null
+      if (updatedItem) libraryEditorItem.value = updatedItem
+      return
+    }
+
     const updated = await libraryClient.update(item.item_type, item.id, payload)
     libraryItems.value = libraryItems.value.map((candidate) => (
       candidate.item_type === updated.item_type && candidate.id === updated.id ? updated : candidate
@@ -1273,7 +1304,10 @@ async function deleteLibraryItem(item: LibraryItem): Promise<void> {
     await libraryClient.delete(item.item_type, item.id)
     libraryItems.value = libraryItems.value.filter((candidate) => candidate.id !== item.id)
     if (selectedLibraryItem.value?.id === item.id) selectedLibraryItem.value = null
-    if (libraryEditorItem.value?.id === item.id) libraryEditorItem.value = null
+    if (libraryEditorItem.value?.id === item.id) {
+      libraryEditorItem.value = null
+      libraryEditorArtifactId.value = null
+    }
     tags.value = await tagClient.list()
     showNotice(`${item.item_type === 'article' ? 'Article' : 'Card'} deleted`)
   } catch (error) {
@@ -1579,7 +1613,6 @@ function applySession(session: AgentSession): void {
   if (!restoreTrace) clearTraceHash()
   workspaceView.value = restoreTrace ? 'trace' : 'workspace'
   selectedTraceTurnId.value = restoreTrace ? traceLocation.turnId : null
-  turnDetails.clear()
   window.localStorage.setItem(activeSessionKey, session.id)
   applyArtifacts(session.artifacts, false)
   assets.value = session.assets
@@ -1832,7 +1865,6 @@ function clearWorkspaceState(): void {
   sessionDetailRequests.clear()
   raw.value = ''
   artifactContent.value = null
-  turnDetails.clear()
   conversation.value = []
   followUp.value = ''
   initialMessageParts.value = []
@@ -2138,28 +2170,34 @@ function formatAssetDate(value: string): string {
   }).format(parseUtcTimestamp(value))
 }
 
-async function saveSelectedArtifact(): Promise<void> {
-  if (!artifactContent.value || !conversationId.value || !selectedArtifactId.value) return
+async function saveSelectedArtifact(): Promise<boolean> {
+  const artifactId = selectedArtifactId.value
+  const activeConversationId = conversationId.value
+  const content = artifactContent.value
+  if (!content || !activeConversationId || !artifactId) return false
   saving.value = true
   try {
-    if (artifactContent.value.artifact_type !== 'latex_pdf') {
-      artifactContent.value.suggested_tags = artifactContent.value.suggested_tags.filter((tag) => selectedSuggestions.value.includes(tag.path))
+    if (content.artifact_type !== 'latex_pdf') {
+      content.suggested_tags = content.suggested_tags.filter((tag) => selectedSuggestions.value.includes(tag.path))
     }
     await syncSelectedArtifact()
-    const saved = await aiClient.saveAgentArtifact(conversationId.value, selectedArtifactId.value)
+    const saved = await aiClient.saveAgentArtifact(activeConversationId, artifactId)
     const index = artifacts.value.findIndex((artifact) => artifact.id === saved.id)
     if (index >= 0) artifacts.value.splice(index, 1, saved)
-    if (artifactContent.value.artifact_type !== 'image') {
+    if (selectedArtifactId.value === artifactId) artifactContent.value = jsonSnapshot(saved.content)
+    if (content.artifact_type !== 'image') {
       await loadLibrary()
       tags.value = await tagClient.list()
     }
     showNotice(
-      artifactContent.value.artifact_type === 'image'
+      content.artifact_type === 'image'
         ? 'Image changes saved'
-        : `${artifactTypeLabel(artifactContent.value.artifact_type)} saved to artifacts`,
+        : `${artifactTypeLabel(content.artifact_type)} saved to artifacts`,
     )
+    return true
   } catch (error) {
     showNotice(errorMessage(error), 'error')
+    return false
   } finally {
     saving.value = false
   }
@@ -2708,8 +2746,8 @@ onBeforeUnmount(() => {
                     </section>
 
                     <div class="turn-content">
-                      <details class="turn-execution" :open="isTurnDetailsOpen(turn, index)">
-                        <summary @click="toggleTurnDetails(turn, $event)">
+                      <details class="turn-execution">
+                        <summary @click="toggleTurnExecution">
                           <span class="turn-state-icon" aria-hidden="true"><i /></span>
                           <span class="turn-execution-copy">
                             <strong>{{ isRunningTurn(index) ? turnTask(index) : `Processed in ${turnDuration(turn, index)}` }}</strong>
@@ -2946,7 +2984,7 @@ onBeforeUnmount(() => {
                 <div class="artifact-editor-accent" />
                 <header class="artifact-editor-header">
                   <div class="artifact-state"><i :class="{ saved: selectedArtifact?.status === 'saved' }" /><span><strong>{{ selectedArtifact?.artifact_type }} artifact</strong><small>{{ selectedArtifact?.status }} · version {{ selectedArtifact?.version }}</small></span></div>
-                  <div class="artifact-mode-switch" :aria-label="$t('Artifact display mode')"><button type="button" :class="{ active: !artifactPreview }" @click="artifactPreview = false">{{ $t('Edit') }}</button><button type="button" :class="{ active: artifactPreview }" @click="artifactPreview = true">{{ $t('Preview') }}</button></div>
+                  <div class="artifact-mode-switch" :aria-label="$t('Artifact display mode')"><button v-if="['card', 'article', 'slides'].includes(artifactContent.artifact_type)" type="button" @click="openSelectedArtifactEditor">{{ $t('Edit') }}</button><button v-else type="button" :class="{ active: !artifactPreview }" @click="artifactPreview = false">{{ $t('Edit') }}</button><button type="button" :class="{ active: artifactPreview }" @click="artifactPreview = true">{{ $t('Preview') }}</button></div>
                 </header>
                 <div class="artifact-editor-body">
                   <div v-if="artifactContent.artifact_type === 'card'" class="card-meta-row">
@@ -3354,8 +3392,7 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .assets-search:focus-within { border-color: rgba(71,105,87,.45); box-shadow: 0 0 0 3px rgba(71,105,87,.08); }
 .assets-search svg { width: .83rem; height: .83rem; flex: 0 0 auto; color: #8a928d; }
 .assets-search input { min-width: 0; width: 100%; border: 0; outline: 0; color: #343a36; background: transparent; font-size: .7rem; }
-.asset-filter-list { display: flex; gap: .25rem; padding: 0 .75rem .62rem; overflow-x: auto; scrollbar-width: none; }
-.asset-filter-list::-webkit-scrollbar { display: none; }
+.asset-filter-list { display: flex; flex-wrap: wrap; gap: .25rem; padding: 0 .75rem .62rem; }
 .asset-filter-list button { flex: 0 0 auto; min-height: 1.7rem; padding: 0 .52rem; border: 0; border-radius: .5rem; color: #747a76; background: #e9ecea; cursor: pointer; font-size: .58rem; font-weight: 620; }
 .asset-filter-list button.active { color: white; background: #64806e; box-shadow: 0 2px 5px rgba(57,85,69,.16); }
 .asset-list-heading { display: flex; justify-content: space-between; padding: .35rem .8rem .5rem; color: #777e79; font-size: .61rem; font-weight: 630; }
@@ -3633,8 +3670,8 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .card-type-options button { min-height: 1.8rem; padding: 0 .68rem; border: 0; border-radius: .5rem; color: #747b77; background: transparent; cursor: pointer; font-size: .68rem; font-weight: 620; text-transform: capitalize; }
 .card-type-options button:hover { color: #405548; background: rgba(255,255,255,.72); }
 .card-type-options button.active { color: #2f5541; background: #fff; box-shadow: 0 1px 4px rgba(30,50,39,.1), inset 0 0 0 1px rgba(71,105,87,.1); }
-.artifact-mode-switch { display: flex; padding: .18rem; border: 1px solid #e1e5e2; border-radius: .6rem; background: #f2f4f2; }
-.artifact-mode-switch button { min-height: 1.72rem; padding: 0 .65rem; border: 0; border-radius: .43rem; color: #7a807c; background: transparent; cursor: pointer; font-size: .65rem; font-weight: 620; }
+.artifact-mode-switch { flex: 0 0 auto; display: grid; grid-template-columns: repeat(2, minmax(4.5rem, 1fr)); gap: .18rem; padding: .18rem; border: 1px solid #e1e5e2; border-radius: .6rem; background: #f2f4f2; }
+.artifact-mode-switch button { min-width: 0; min-height: 1.72rem; padding: 0 .65rem; border: 0; border-radius: .43rem; color: #7a807c; background: transparent; cursor: pointer; font-size: .65rem; font-weight: 620; white-space: nowrap; }
 .artifact-mode-switch button.active { color: #365744; background: #fff; box-shadow: 0 1px 4px rgba(24,38,30,.09); }
 .card-title-control, .card-summary-control, .card-content-control { display: grid; gap: .42rem; margin-top: 1rem; }
 .card-title-control textarea, .card-summary-control textarea, .card-content-control textarea { width: 100%; resize: vertical; border: 0; outline: 0; color: #222724; font-family: inherit; }
