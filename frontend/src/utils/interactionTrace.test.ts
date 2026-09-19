@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentPersistedMessage } from '../api/types'
-import { buildInteractionTrace } from './interactionTrace'
+import { buildInteractionTrace, splitInteractionTraceMessages } from './interactionTrace'
 
 function record(
   sequence: number,
@@ -98,5 +98,20 @@ describe('buildInteractionTrace', () => {
       { model: 'model-b', provider: 'provider-b' },
     ])
     expect(trace[1]?.models).toEqual([{ model: 'model-c', provider: 'provider-c' }])
+  })
+
+  it('splits prior trace context from the selected turn', () => {
+    const messages = [
+      record(1, 'user', { content: 'Old request' }),
+      record(2, 'assistant', { content: 'Old answer' }),
+      record(3, 'user', { request_id: 'request-2', content: 'Current request' }),
+      record(4, 'assistant', { request_id: 'request-2', content: 'Current answer' }),
+    ]
+    const current = buildInteractionTrace(messages)[1]!
+
+    const sections = splitInteractionTraceMessages(messages, current)
+
+    expect(sections.previous.map((message) => message.sequence)).toEqual([1, 2])
+    expect(sections.current.map((message) => message.sequence)).toEqual([3, 4])
   })
 })

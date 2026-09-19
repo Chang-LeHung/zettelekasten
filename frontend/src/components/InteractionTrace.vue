@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import type { AgentPersistedMessage } from '../api/types'
 import { calculateCacheHitRate, formatTokenCount } from '../utils/agentUsage'
 import CacheHitRate from './CacheHitRate.vue'
@@ -8,6 +8,7 @@ import {
   interactionTraceEventKind,
   interactionTraceEventLabel,
   interactionTraceUsage,
+  splitInteractionTraceMessages,
   type InteractionTraceTurn,
 } from '../utils/interactionTrace'
 
@@ -24,12 +25,30 @@ const emit = defineEmits<{
 
 const turns = computed(() => buildInteractionTrace(props.messages))
 const selectedTurnId = ref<string | null>(props.selectedTurnId || null)
+const showPrevious = ref(false)
+const traceDetail = ref<HTMLElement | null>(null)
 const selectedTurn = computed(
   () => turns.value.find((turn) => turn.id === selectedTurnId.value) || turns.value.at(-1) || null,
 )
+const traceSections = computed(() => (
+  selectedTurn.value
+    ? splitInteractionTraceMessages(props.messages, selectedTurn.value)
+    : { previous: [], current: [] }
+))
+const displayedMessages = computed(() => (
+  showPrevious.value
+    ? [...traceSections.value.previous, ...traceSections.value.current]
+    : traceSections.value.current
+))
+const currentMessageStart = computed(() => (showPrevious.value ? traceSections.value.previous.length : 0))
+const hasPreviousMessages = computed(() => traceSections.value.previous.length > 0)
 
 watch(() => props.selectedTurnId, (turnId) => {
   if (turnId) selectedTurnId.value = turnId
+})
+
+watch(selectedTurnId, () => {
+  showPrevious.value = false
 })
 
 watch(turns, (nextTurns) => {
@@ -42,6 +61,15 @@ watch(turns, (nextTurns) => {
 function selectTurn(turnId: string): void {
   selectedTurnId.value = turnId
   emit('update:selectedTurnId', turnId)
+}
+
+async function jumpToCurrentMessage(): Promise<void> {
+  showPrevious.value = false
+  await nextTick()
+  traceDetail.value?.querySelector<HTMLElement>('.trace-current-divider')?.scrollIntoView({
+    behavior: 'smooth',
+    block: 'start',
+  })
 }
 
 function turnTitle(turn: InteractionTraceTurn): string {
@@ -146,7 +174,7 @@ function cacheHitRate(message: AgentPersistedMessage): number | null {
         </button>
       </aside>
 
-      <div v-if="selectedTurn" class="trace-detail">
+      <div v-if="selectedTurn" ref="traceDetail" class="trace-detail">
         <article class="trace-turn">
         <header class="trace-turn-header">
           <div>
@@ -163,10 +191,23 @@ function cacheHitRate(message: AgentPersistedMessage): number | null {
           </div>
         </header>
 
+        <div v-if="hasPreviousMessages" class="trace-history-toolbar">
+          <button type="button" @click="showPrevious = !showPrevious">
+            {{ showPrevious ? 'Hide old message' : 'Old message' }}
+          </button>
+          <button type="button" @click="jumpToCurrentMessage">Jump to current</button>
+        </div>
+
         <ol class="trace-events">
+          <template v-for="(message, messageIndex) in displayedMessages" :key="message.id">
           <li
-            v-for="message in selectedTurn.messages"
-            :key="message.id"
+            v-if="messageIndex === currentMessageStart && hasPreviousMessages"
+            class="trace-current-divider"
+          >
+            <span>Current message</span>
+            <em>New</em>
+          </li>
+          <li
             class="trace-event"
             :class="interactionTraceEventKind(message)"
           >
@@ -214,6 +255,7 @@ function cacheHitRate(message: AgentPersistedMessage): number | null {
               </div>
             </div>
           </li>
+          </template>
         </ol>
         </article>
       </div>
@@ -249,21 +291,36 @@ function cacheHitRate(message: AgentPersistedMessage): number | null {
 .trace-turn-index { color: #54705f; font-size: .56rem; font-weight: 720; letter-spacing: .06em; text-transform: uppercase; }
 .trace-turn-summary { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .3rem; }
 .trace-turn-summary span, .trace-event-meta span, .trace-event-usage span { padding: .22rem .42rem; border-radius: 1rem; color: #627068; background: #e9efeb; font-size: .56rem; font-variant-numeric: tabular-nums; }
-.trace-events { display: grid; margin: 0; padding: .65rem .8rem .8rem; list-style: none; }
+.trace-history-toolbar { display: flex; align-items: center; gap: .4rem; padding: .65rem .8rem 0; }
+.trace-history-toolbar button { min-height: 1.8rem; padding: 0 .58rem; border: 1px solid #d7e0da; border-radius: .45rem; color: #52675a; background: #f7f9f7; cursor: pointer; font-size: .58rem; font-weight: 650; }
+.trace-history-toolbar button:hover, .trace-history-toolbar button:focus-visible { color: #31523f; background: #e9f0eb; outline: none; }
+.trace-events { display: grid; gap: .52rem; margin: 0; padding: .65rem .8rem .8rem; list-style: none; }
+.trace-current-divider { display: flex; align-items: center; gap: .42rem; margin: .2rem 0 .45rem 1.7rem; padding-top: .62rem; border-top: 1px solid #e3e8e5; scroll-margin-top: .8rem; }
+.trace-current-divider span { color: #54705f; font-size: .56rem; font-weight: 720; letter-spacing: .06em; text-transform: uppercase; }
+.trace-current-divider em { padding: .12rem .32rem; border-radius: .3rem; color: #355b44; background: #e4eee8; font-size: .49rem; font-style: normal; font-weight: 720; text-transform: uppercase; }
 .trace-event { position: relative; display: grid; grid-template-columns: 1.15rem minmax(0, 1fr); gap: .55rem; }
 .trace-event-rail { position: relative; display: flex; justify-content: center; }
-.trace-event-rail::after { content: ""; position: absolute; top: 1.1rem; bottom: -.2rem; width: 1px; background: #dfe5e1; }
+.trace-event-rail::after { content: ""; position: absolute; top: 1.1rem; bottom: -.68rem; width: 1px; background: #dfe5e1; }
 .trace-event:last-child .trace-event-rail::after { display: none; }
 .trace-event-rail i { position: relative; z-index: 1; width: .55rem; height: .55rem; margin-top: .85rem; border: 2px solid #fff; border-radius: 50%; background: #7d9284; box-shadow: 0 0 0 1px #cfd8d2; }
+.trace-event.user .trace-event-rail i { background: #4d7dac; }
 .trace-event.model .trace-event-rail i { background: #557b65; }
 .trace-event.tool .trace-event-rail i { background: #c08b45; }
 .trace-event.system .trace-event-rail i, .trace-event.agent .trace-event-rail i { background: #78818b; }
-.trace-event-content { min-width: 0; padding: .65rem 0 .6rem; border-bottom: 1px solid #edf0ee; }
+.trace-event-content { min-width: 0; padding: .72rem .56rem .76rem; border-bottom: 1px solid #edf0ee; border-radius: .48rem; }
 .trace-event:last-child .trace-event-content { border-bottom: 0; }
 .trace-event-content > header { display: flex; align-items: flex-start; justify-content: space-between; gap: .8rem; }
 .trace-event-content > header strong, .trace-event-content > header small { display: block; }
 .trace-event-content > header strong { color: #3d4841; font-size: .68rem; }
 .trace-event-content > header small { margin-top: .13rem; color: #909892; font-size: .55rem; }
+.trace-event.user .trace-event-content { background: rgba(65, 112, 158, .055); }
+.trace-event.user .trace-event-content > header strong { color: #3f6f9e; }
+.trace-event.model .trace-event-content { background: rgba(79, 123, 99, .055); }
+.trace-event.model .trace-event-content > header strong { color: #3f6d55; }
+.trace-event.tool .trace-event-content { background: rgba(181, 126, 53, .06); }
+.trace-event.tool .trace-event-content > header strong { color: #9a682a; }
+.trace-event.system .trace-event-content, .trace-event.agent .trace-event-content { background: rgba(103, 112, 121, .045); }
+.trace-event.system .trace-event-content > header strong, .trace-event.agent .trace-event-content > header strong { color: #65707a; }
 .trace-event-meta { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .28rem; }
 .trace-message-content, .trace-message-parts pre, .trace-payload pre, .trace-tool-call pre { max-height: 16rem; margin: .5rem 0 0; padding: .6rem .68rem; overflow: auto; border-radius: .52rem; color: #3f4a43; background: #f5f7f5; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: .62rem; line-height: 1.52; white-space: pre-wrap; overflow-wrap: anywhere; scrollbar-width: thin; }
 .trace-message-parts { display: grid; gap: .42rem; margin-top: .5rem; }

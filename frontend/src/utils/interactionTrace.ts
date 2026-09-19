@@ -21,6 +21,11 @@ export interface InteractionTraceTurn {
 
 export type InteractionTraceEventKind = 'user' | 'system' | 'agent' | 'model' | 'tool'
 
+export interface InteractionTraceSections {
+  previous: AgentPersistedMessage[]
+  current: AgentPersistedMessage[]
+}
+
 function messageUsage(message: AgentPersistedMessage): AgentModelUsage | null {
   if (message.input_tokens === null || message.output_tokens === null) return null
   return {
@@ -52,6 +57,22 @@ export function interactionTraceEventLabel(message: AgentPersistedMessage): stri
   if (message.role === 'system') return 'System instruction'
   if (message.role === 'agent') return 'Internal agent message'
   return 'User message'
+}
+
+/** Split the raw log into prior context and the selected request. */
+export function splitInteractionTraceMessages(
+  allMessages: readonly AgentPersistedMessage[],
+  turn: InteractionTraceTurn,
+): InteractionTraceSections {
+  const ordered = [...allMessages].sort((left, right) => left.sequence - right.sequence)
+  const firstCurrent = turn.messages[0]
+  if (!firstCurrent) return { previous: [], current: [] }
+  const currentStart = ordered.findIndex((message) => message.id === firstCurrent.id)
+  if (currentStart <= 0) return { previous: [], current: [...turn.messages] }
+  return {
+    previous: ordered.slice(0, currentStart),
+    current: [...turn.messages],
+  }
 }
 
 /** Group immutable Raw Log messages into LLM turns without using snapshots. */
