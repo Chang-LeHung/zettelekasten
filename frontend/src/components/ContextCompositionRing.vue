@@ -79,7 +79,7 @@ const fullness = computed(() => {
 </template>
 
 <style scoped>
-.context-ring-control { position: relative; flex: 0 0 auto; display: grid; place-items: center; margin-left: .42rem; padding: .25rem; border-radius: 50%; outline: none; cursor: help; transition: background 140ms ease, transform 140ms ease; }
+.context-ring-control { position: relative; flex: 0 0 auto; display: grid; place-items: center; margin-left: .42rem; padding: .25rem; border-radius: 50%; outline: none; cursor: default; transition: background 140ms ease, transform 140ms ease; }
 .context-ring-control:hover, .context-ring-control:focus-visible { background: #f1f5f2; transform: scale(1.05); }
 .context-ring-control:focus-visible { box-shadow: 0 0 0 3px rgba(71, 105, 87, .13); }
 .context-ring { width: 1.72rem; height: 1.72rem; display: block; overflow: visible; filter: drop-shadow(0 1px 1px rgba(45, 62, 52, .12)); transform: rotate(-90deg); }
@@ -87,8 +87,8 @@ const fullness = computed(() => {
 .context-ring-track { stroke: #e4e9e6; }
 .context-ring-segment { stroke-linecap: butt; }
 .context-ring-control.empty .context-ring { opacity: .72; }
-.context-popover { position: absolute; right: -.25rem; bottom: calc(100% + .62rem); z-index: 32; width: 13.5rem; padding: .68rem; border: 1px solid rgba(52, 70, 60, .12); border-radius: .8rem; background: rgba(255, 255, 255, .98); box-shadow: 0 14px 38px rgba(35, 49, 41, .14); opacity: 0; visibility: hidden; transform: translateY(.25rem); transition: 140ms ease; pointer-events: none; }
-.context-ring-control:hover .context-popover, .context-ring-control:focus-within .context-popover { opacity: 1; visibility: visible; transform: none; }
+.context-popover { position: absolute; right: -.25rem; bottom: calc(100% - .1rem); z-index: 32; width: 13.5rem; padding: .68rem; border: 1px solid rgba(52, 70, 60, .12); border-radius: .8rem; background: rgba(255, 255, 255, .98); box-shadow: 0 14px 38px rgba(35, 49, 41, .14); opacity: 0; visibility: hidden; transform: translateY(.25rem); transition: 140ms ease; pointer-events: none; }
+.context-ring-control:hover .context-popover, .context-ring-control:focus-within .context-popover { opacity: 1; visibility: visible; transform: none; pointer-events: auto; }
 .context-popover header { display: flex; align-items: flex-start; justify-content: space-between; gap: .6rem; margin-bottom: .55rem; color: #465149; font-size: .62rem; }
 .context-popover header > div, .context-popover header > span { display: grid; gap: .08rem; }
 .context-popover header > span { color: #67726b; text-align: right; font-variant-numeric: tabular-nums; }
