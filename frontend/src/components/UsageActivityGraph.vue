@@ -2,11 +2,13 @@
 import { computed, ref } from 'vue'
 import type { AgentUsageActivityDay } from '../api/types'
 import { calculateCacheHitRate, formatTokenCount } from '../utils/agentUsage'
+import { useI18n } from '../i18n'
 
 const props = defineProps<{
   days: AgentUsageActivityDay[]
 }>()
 
+const { locale, t } = useI18n()
 const graphRoot = ref<HTMLElement | null>(null)
 const hoveredCell = ref<DayCell | null>(null)
 const tooltipPosition = ref({ left: 0, top: 0 })
@@ -60,7 +62,7 @@ const monthLabels = computed(() => {
     const month = first.date.slice(0, 7)
     if (month === previousMonth) return ''
     previousMonth = month
-    return new Intl.DateTimeFormat('en-US', { month: 'short', timeZone: 'UTC' })
+    return new Intl.DateTimeFormat(locale.value === 'zh' ? 'zh-CN' : 'en-US', { month: 'short', timeZone: 'UTC' })
       .format(new Date(`${first.date}T00:00:00Z`))
   })
 })
@@ -79,7 +81,7 @@ function activityLevel(tokens: number, maximum: number): number {
 }
 
 function displayDate(value: string): string {
-  return new Intl.DateTimeFormat('en-US', {
+  return new Intl.DateTimeFormat(locale.value === 'zh' ? 'zh-CN' : 'en-US', {
     weekday: 'short',
     year: 'numeric',
     month: 'short',
@@ -112,10 +114,10 @@ function hideTooltip(): void {
   <section ref="graphRoot" class="usage-activity">
     <header>
       <div>
-        <strong>Last 12 months</strong>
-        <small>{{ totalRequests }} requests · {{ activeDays }} {{ activeDays === 1 ? 'active day' : 'active days' }}</small>
+        <strong>{{ t('Last 12 months') }}</strong>
+        <small>{{ activeDays === 1 ? t('{count} requests · {days} active day', { count: totalRequests, days: activeDays }) : t('{count} requests · {days} active days', { count: totalRequests, days: activeDays }) }}</small>
       </div>
-      <span>{{ formatTokenCount(totalTokens) }} tokens</span>
+      <span>{{ t('{count} tokens', { count: formatTokenCount(totalTokens) }) }}</span>
     </header>
     <div class="activity-scroll">
       <div class="activity-months" :style="{ gridTemplateColumns: `repeat(${weeks.length}, minmax(0, 1fr))` }" aria-hidden="true">
@@ -123,7 +125,7 @@ function hideTooltip(): void {
           <span v-if="month">{{ month }}</span>
         </span>
       </div>
-      <div class="activity-grid" :style="{ gridTemplateColumns: `repeat(${weeks.length}, minmax(0, 1fr))` }" aria-label="Daily model token activity">
+      <div class="activity-grid" :style="{ gridTemplateColumns: `repeat(${weeks.length}, minmax(0, 1fr))` }" :aria-label="t('Daily model token activity')">
         <div v-for="(week, weekIndex) in weeks" :key="weekIndex" class="activity-week">
           <span
             v-for="(cell, dayIndex) in week"
@@ -137,13 +139,13 @@ function hideTooltip(): void {
       </div>
     </div>
     <footer>
-      <span>Less</span>
+      <span>{{ t('Less') }}</span>
       <i class="level-0" />
       <i class="level-1" />
       <i class="level-2" />
       <i class="level-3" />
       <i class="level-4" />
-      <span>More</span>
+      <span>{{ t('More') }}</span>
     </footer>
     <div
       v-if="hoveredCell"
@@ -152,15 +154,15 @@ function hideTooltip(): void {
       role="tooltip"
     >
       <strong>{{ displayDate(hoveredCell.date) }}</strong>
-      <span>{{ hoveredCell.requests }} {{ hoveredCell.requests === 1 ? 'request' : 'requests' }}</span>
+      <span>{{ hoveredCell.requests }} {{ hoveredCell.requests === 1 ? t('request') : t('requests') }}</span>
       <dl>
-        <div><dt>Input</dt><dd>{{ formatTokenCount(hoveredCell.inputTokens) }}</dd></div>
-        <div><dt>Output</dt><dd>{{ formatTokenCount(hoveredCell.outputTokens) }}</dd></div>
-        <div><dt>Total</dt><dd>{{ formatTokenCount(hoveredCell.totalTokens) }}</dd></div>
-        <div><dt>Cache read</dt><dd>{{ formatTokenCount(hoveredCell.cacheReadTokens) }}</dd></div>
-        <div><dt>Cache hit rate</dt><dd>{{ hoveredCell.cacheHitRate === null ? '—' : formatCacheHitRatePercent(hoveredCell.cacheHitRate) }}</dd></div>
-        <div><dt>Cache write</dt><dd>{{ formatTokenCount(hoveredCell.cacheWriteTokens) }}</dd></div>
-        <div><dt>Reasoning</dt><dd>{{ formatTokenCount(hoveredCell.reasoningTokens) }}</dd></div>
+        <div><dt>{{ t('Input') }}</dt><dd>{{ formatTokenCount(hoveredCell.inputTokens) }}</dd></div>
+        <div><dt>{{ t('Output') }}</dt><dd>{{ formatTokenCount(hoveredCell.outputTokens) }}</dd></div>
+        <div><dt>{{ t('Total') }}</dt><dd>{{ formatTokenCount(hoveredCell.totalTokens) }}</dd></div>
+        <div><dt>{{ t('Cache read') }}</dt><dd>{{ formatTokenCount(hoveredCell.cacheReadTokens) }}</dd></div>
+        <div><dt>{{ t('Cache hit rate') }}</dt><dd>{{ hoveredCell.cacheHitRate === null ? '—' : formatCacheHitRatePercent(hoveredCell.cacheHitRate) }}</dd></div>
+        <div><dt>{{ t('Cache write') }}</dt><dd>{{ formatTokenCount(hoveredCell.cacheWriteTokens) }}</dd></div>
+        <div><dt>{{ t('Reasoning') }}</dt><dd>{{ formatTokenCount(hoveredCell.reasoningTokens) }}</dd></div>
       </dl>
     </div>
   </section>

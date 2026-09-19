@@ -28,6 +28,7 @@ import { presentationSections } from './utils/slides'
 import { libraryExcerptText } from './utils/libraryExcerpt'
 import { asContextComposition } from './utils/contextComposition'
 import { visibleTagRows } from './utils/tagTree'
+import { useI18n, type Locale } from './i18n'
 
 const MarkdownContent = defineAsyncComponent(() => import('./components/MarkdownContent.vue'))
 const LibraryEditor = defineAsyncComponent(() => import('./components/LibraryEditor.vue'))
@@ -43,6 +44,7 @@ type AssetEditorMode = 'closed' | 'text' | 'link'
 type AssetFilter = 'all' | 'documents' | 'images' | 'links' | 'notes' | 'code'
 type SettingsSection = 'usage' | 'providers'
 const DEFAULT_SESSION_TITLE = '新会话'
+const { locale, setLocale, t } = useI18n()
 type AgentMessageTimelineEntry = Extract<AgentTimelineEntry, { type: 'message' }>
 interface ConfirmationState {
   open: boolean
@@ -255,12 +257,17 @@ const libraryTypeFilters: Array<{ value: LibraryItem['item_type'] | null; label:
 const flatTags = computed(() => visibleTagRows(tags.value, collapsedTagIds.value))
 const selectedTagName = computed(() => flatTags.value.find((tag) => tag.id === selectedTag.value)?.path)
 const pageTitle = computed(() => {
-  if (view.value === 'search') return activeQuery.value ? `Results for “${activeQuery.value}”` : 'Search library'
-  return selectedTagName.value || 'All knowledge'
+  if (view.value === 'search') {
+    return activeQuery.value
+      ? t('Results for “{query}”', { query: activeQuery.value })
+      : t('Search library')
+  }
+  return selectedTagName.value || t('All knowledge')
 })
 const pageDescription = computed(() => {
-  if (view.value === 'search') return `${libraryItems.value.length} matching ${libraryItems.value.length === 1 ? 'item' : 'items'}`
-  return `${libraryItems.value.length} ${libraryItems.value.length === 1 ? 'item' : 'items'} in your library`
+  return view.value === 'search'
+    ? t('{count} matching items', { count: libraryItems.value.length })
+    : t('{count} items in your library', { count: libraryItems.value.length })
 })
 const conversationStarted = computed(
   () => conversationId.value !== null || artifactContent.value !== null || conversation.value.length > 0,
@@ -1183,6 +1190,10 @@ function handleShortcut(event: KeyboardEvent): void {
   }
 }
 
+function changeLocale(event: Event): void {
+  setLocale((event.target as HTMLSelectElement).value as Locale)
+}
+
 function openLibraryItem(item: LibraryItem): void {
   selectedLibraryItem.value = item
 }
@@ -1321,7 +1332,6 @@ async function analyze(): Promise<void> {
       fallbackContent: result ? 'The artifact is ready.' : 'How would you like to continue?',
     })
     await restoreSessionContextComposition(activeConversationId)
-    await refreshArtifacts(true)
     await loadSessions(true)
     scheduleSessionTitleRefresh(activeConversationId)
   } catch (error) {
@@ -1339,6 +1349,7 @@ async function analyze(): Promise<void> {
     if (activeTurnHistory === requestHistory) activeTurnHistory = null
     pendingSteeringEchoes.length = 0
     if (streamingStatus.value !== 'cancelled') streamingStatus.value = 'idle'
+    await refreshArtifactsAfterTurn(activeConversationId)
     if (workspaceView.value === 'trace' && activeConversationId) void loadInteractionTrace(activeConversationId)
     drainQueuedFollowUps()
   }
@@ -1385,7 +1396,6 @@ async function refine(queued?: QueuedFollowUp): Promise<void> {
       fallbackContent: result ? 'The artifact is ready.' : 'How would you like to continue?',
     })
     await restoreSessionContextComposition(activeConversationId)
-    await refreshArtifacts(true)
     await loadSessions(true)
     scheduleSessionTitleRefresh(activeConversationId)
   } catch (error) {
@@ -1403,6 +1413,7 @@ async function refine(queued?: QueuedFollowUp): Promise<void> {
     if (activeTurnHistory === history) activeTurnHistory = null
     pendingSteeringEchoes.length = 0
     if (streamingStatus.value !== 'cancelled') streamingStatus.value = 'idle'
+    await refreshArtifactsAfterTurn(activeConversationId)
     if (workspaceView.value === 'trace' && activeConversationId) void loadInteractionTrace(activeConversationId)
     drainQueuedFollowUps()
   }
@@ -1737,6 +1748,17 @@ function applyArtifacts(nextArtifacts: AgentArtifact[], preferLatest = true): vo
 async function refreshArtifacts(preferLatest = false): Promise<void> {
   if (!conversationId.value) return
   applyArtifacts(await aiClient.listAgentArtifacts(conversationId.value), preferLatest)
+}
+
+async function refreshArtifactsAfterTurn(sessionId: string | null): Promise<void> {
+  if (!sessionId) return
+  await agentResourceRefresh.whenIdle()
+  if (conversationId.value !== sessionId) return
+  try {
+    await refreshArtifacts(true)
+  } catch (error) {
+    showNotice(errorMessage(error), 'error')
+  }
 }
 
 async function syncSelectedArtifact(): Promise<void> {
@@ -2179,11 +2201,15 @@ async function removeProvider(): Promise<void> {
 }
 
 function formatDate(value: string): string {
-  return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' }).format(parseUtcTimestamp(value))
+  return new Intl.DateTimeFormat(locale.value === 'zh' ? 'zh-CN' : 'en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(parseUtcTimestamp(value))
 }
 
 function formatDateTime(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(locale.value === 'zh' ? 'zh-CN' : 'en-US', {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(parseUtcTimestamp(value))
@@ -2256,20 +2282,20 @@ onBeforeUnmount(() => {
     <aside class="sidebar">
       <button class="brand" type="button" aria-label="Open library" @click="navigate('library')">
         <span class="brand-mark"><img src="/logo.png" alt="" /></span>
-        <span><strong>Commonplace</strong><small>Knowledge cards</small></span>
+        <span><strong>Commonplace</strong><small>{{ $t('brand.subtitle') }}</small></span>
       </button>
 
       <nav class="primary-nav" aria-label="Main navigation">
         <button :class="{ active: view === 'new' }" type="button" @click="navigate('new')">
-          <svg><use href="#icon-spark" /></svg><span>AI workspace</span>
+          <svg><use href="#icon-spark" /></svg><span>{{ $t('nav.workspace') }}</span>
         </button>
         <button :class="{ active: view === 'search' || (view === 'library' && selectedTag === null) }" type="button" @click="navigate('library')">
-          <svg><use href="#icon-cards" /></svg><span>Library</span><small>{{ libraryItems.length }}</small>
+          <svg><use href="#icon-cards" /></svg><span>{{ $t('nav.library') }}</span><small>{{ libraryItems.length }}</small>
         </button>
       </nav>
 
       <div v-if="view === 'new'" class="sidebar-section session-section">
-        <div class="sidebar-heading"><span>Conversations</span><button type="button" aria-label="Start a new session" @click="resetWorkspace"><svg><use href="#icon-add" /></svg></button></div>
+        <div class="sidebar-heading"><span>{{ $t('nav.conversations') }}</span><button type="button" :aria-label="$t('nav.newConversation')" @click="resetWorkspace"><svg><use href="#icon-add" /></svg></button></div>
         <div class="session-history-list">
           <div
             v-for="session in visibleSessions"
@@ -2289,13 +2315,13 @@ onBeforeUnmount(() => {
             </button>
             <button v-if="editingSessionId !== session.id" class="session-delete-button" type="button" :aria-label="`Delete ${session.title || 'conversation'}`" title="Delete conversation" @click.stop="deleteSession(session)"><svg><use href="#icon-trash" /></svg></button>
           </div>
-          <p v-if="!visibleSessions.length && !sessionsLoading" class="sidebar-empty">No previous conversations.</p>
-          <button v-if="sessionsHaveMore" class="load-more-sessions" :disabled="sessionsLoading" type="button" @click="loadSessions()">{{ sessionsLoading ? 'Loading…' : 'Load more' }}</button>
+          <p v-if="!visibleSessions.length && !sessionsLoading" class="sidebar-empty">{{ $t('nav.noConversations') }}</p>
+          <button v-if="sessionsHaveMore" class="load-more-sessions" :disabled="sessionsLoading" type="button" @click="loadSessions()">{{ sessionsLoading ? $t('nav.loading') : $t('nav.loadMore') }}</button>
         </div>
       </div>
 
       <div v-else class="sidebar-section">
-        <div class="sidebar-heading"><span>Collections</span><button type="button" aria-label="Manage tags" @click="openTagManager"><svg><use href="#icon-add" /></svg></button></div>
+        <div class="sidebar-heading"><span>{{ $t('nav.collections') }}</span><button type="button" :aria-label="$t('nav.manageTags')" @click="openTagManager"><svg><use href="#icon-add" /></svg></button></div>
         <div class="tag-list">
           <div
             v-for="tag in flatTags"
@@ -2310,7 +2336,7 @@ onBeforeUnmount(() => {
               class="tag-toggle"
               :class="{ collapsed: collapsedTagIds.has(tag.id) }"
               type="button"
-              :aria-label="`${collapsedTagIds.has(tag.id) ? 'Expand' : 'Collapse'} ${tag.name}`"
+              :aria-label="`${collapsedTagIds.has(tag.id) ? $t('nav.expand') : $t('nav.collapse')} ${tag.name}`"
               @click="toggleTag(tag.id)"
             ><span>⌄</span></button>
             <span v-else class="tag-toggle-placeholder" />
@@ -2329,18 +2355,25 @@ onBeforeUnmount(() => {
               class="tag-delete"
               type="button"
               :disabled="tagManagerBusy"
-              :aria-label="`Delete ${tag.path}`"
-              :title="`Delete ${tag.path}`"
+              :aria-label="$t('nav.deleteTag', { path: tag.path })"
+              :title="$t('nav.deleteTag', { path: tag.path })"
               @click.stop="deleteTag(tag)"
             ><svg><use href="#icon-trash" /></svg></button>
           </div>
-          <p v-if="!flatTags.length" class="sidebar-empty">Tags will appear here.</p>
+          <p v-if="!flatTags.length" class="sidebar-empty">{{ $t('nav.tagsEmpty') }}</p>
         </div>
       </div>
 
       <div class="sidebar-footer">
+        <label class="locale-control">
+          <span>{{ $t('settings.language') }}</span>
+          <select :value="locale" @change="changeLocale">
+            <option value="en">{{ $t('settings.english') }}</option>
+            <option value="zh">{{ $t('settings.chinese') }}</option>
+          </select>
+        </label>
         <button :class="{ active: view === 'settings' }" type="button" @click="navigate('settings')">
-          <svg><use href="#icon-settings" /></svg><span>Settings</span>
+          <svg><use href="#icon-settings" /></svg><span>{{ $t('nav.settings') }}</span>
           <span class="status-dot" :class="{ online: providers.some((provider) => provider.enabled) }" />
         </button>
       </div>
@@ -2363,28 +2396,28 @@ onBeforeUnmount(() => {
         <header class="topbar">
           <form class="search-field" role="search" @submit.prevent="search">
             <svg><use href="#icon-search" /></svg>
-            <input ref="searchInput" v-model="query" aria-label="Search library" placeholder="Search cards, articles, slides, and sources" />
-            <button v-if="query" type="button" aria-label="Clear search" @click="query = ''; search()">×</button>
+            <input ref="searchInput" v-model="query" :aria-label="$t('search.placeholder')" :placeholder="$t('search.placeholder')" />
+            <button v-if="query" type="button" :aria-label="$t('search.clear')" @click="query = ''; search()">×</button>
             <kbd v-else>⌘ K</kbd>
           </form>
-          <button class="primary-action" type="button" @click="navigate('new')"><svg><use href="#icon-add" /></svg>New card</button>
+          <button class="primary-action" type="button" @click="navigate('new')"><svg><use href="#icon-add" /></svg>{{ $t('search.newCard') }}</button>
         </header>
 
         <section class="content library-view">
           <div class="page-heading">
-            <div><p class="eyebrow">Your knowledge</p><h1>{{ pageTitle }}</h1><p>{{ pageDescription }}</p></div>
+            <div><p class="eyebrow">{{ $t('Your knowledge') }}</p><h1>{{ pageTitle }}</h1><p>{{ pageDescription }}</p></div>
             <button v-if="selectedTag !== null" class="text-button" type="button" @click="filterByTag(null)">Clear filter</button>
           </div>
 
           <div class="library-type-filters" aria-label="Artifact type filters">
-            <span>Type</span>
+            <span>{{ $t('Type') }}</span>
             <button
               v-for="filter in libraryTypeFilters"
               :key="filter.label"
               :class="{ active: selectedLibraryType === filter.value }"
               type="button"
               @click="filterByArtifactType(filter.value)"
-            >{{ filter.label }}</button>
+            >{{ $t(filter.label) }}</button>
           </div>
 
           <div v-if="libraryLoading" class="card-grid" aria-label="Loading library">
@@ -2393,7 +2426,7 @@ onBeforeUnmount(() => {
           <div v-else-if="libraryItems.length" class="card-grid">
             <article v-for="item in libraryItems" :key="`${item.item_type}-${item.id}`" class="card" :class="`library-${item.item_type}`" role="button" tabindex="0" :aria-label="`Open ${item.title}`" @click="openLibraryItem(item)" @keydown.enter="openLibraryItem(item)" @keydown.space.prevent="openLibraryItem(item)">
               <div class="card-topline">
-                <span class="card-type">{{ item.item_type === 'card' ? item.card_type : item.item_type }}</span>
+                <span class="card-type">{{ item.item_type === 'card' ? $t(item.card_type || 'card') : $t(item.item_type) }}</span>
                 <div class="card-topline-actions">
                   <button class="card-action-button" type="button" :aria-label="`Open conversation for ${item.title}`" title="Open source conversation" @click.stop="openArtifactSession(item)" @keydown.stop>
                     <svg><use href="#icon-conversation" /></svg>
@@ -2424,7 +2457,7 @@ onBeforeUnmount(() => {
               </div>
               <div v-if="item.item_type === 'slides'" class="library-deck-summary">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M12 17v4m-4 0h8M8 9h8m-8 4h5" /></svg>
-                <span>Presentation · {{ presentationSections(item.content).flat().length }} slides</span>
+                <span>{{ $t('Presentation · {count} slides', { count: presentationSections(item.content).flat().length }) }}</span>
               </div>
               <p v-if="item.item_type !== 'latex_pdf'" class="card-excerpt">{{ libraryExcerpt(item) }}</p>
               <div class="card-footer">
@@ -2438,10 +2471,10 @@ onBeforeUnmount(() => {
           </div>
           <div v-else class="empty-state">
             <span class="empty-icon"><svg><use :href="view === 'search' ? '#icon-search' : '#icon-cards'" /></svg></span>
-            <h2>{{ view === 'search' ? 'Nothing found' : 'Your library is ready' }}</h2>
-            <p>{{ view === 'search' ? 'Try a different phrase or browse your collections.' : 'Capture a thought and let AI shape it into a useful card, article, or slide deck.' }}</p>
+            <h2>{{ view === 'search' ? $t('Nothing found') : $t('Your library is ready') }}</h2>
+            <p>{{ view === 'search' ? $t('Try a different phrase or browse your collections.') : $t('Capture a thought and let AI shape it into a useful card, article, or slide deck.') }}</p>
             <button class="primary-action" type="button" @click="view === 'search' ? navigate('library') : navigate('new')">
-              {{ view === 'search' ? 'Browse library' : 'Create your first card' }}
+              {{ view === 'search' ? $t('Browse library') : $t('Create your first card') }}
             </button>
           </div>
         </section>
@@ -2451,8 +2484,8 @@ onBeforeUnmount(() => {
         <header class="topbar compact chat-topbar">
           <div class="chat-topbar-title"><span class="status-dot online" /><span>AI workspace</span></div>
           <div class="workspace-view-switch" role="group" aria-label="AI workspace view">
-            <button :class="{ active: workspaceView === 'workspace' }" type="button" @click="setWorkspaceView('workspace')">Workspace</button>
-            <button :class="{ active: workspaceView === 'trace' }" type="button" @click="setWorkspaceView('trace')">Trace</button>
+            <button :class="{ active: workspaceView === 'workspace' }" type="button" @click="setWorkspaceView('workspace')">{{ $t('Workspace') }}</button>
+            <button :class="{ active: workspaceView === 'trace' }" type="button" @click="setWorkspaceView('trace')">{{ $t('Trace') }}</button>
           </div>
           <button class="close-button" type="button" aria-label="Close" @click="navigate('library')">×</button>
         </header>
@@ -2470,17 +2503,17 @@ onBeforeUnmount(() => {
           <div v-else class="agent-workspace" :class="{ 'session-switching': switchingSessionId !== null }" @paste="pasteAssets">
             <aside class="assets-pane" aria-label="Session assets" tabindex="0">
               <header class="assets-header">
-                <div><strong>Assets</strong><small>Session resources</small></div>
+                <div><strong>{{ $t('Assets') }}</strong><small>{{ $t('Session resources') }}</small></div>
                 <div class="assets-header-actions">
-                  <button type="button" title="Add text note" aria-label="Add text note" @click="showAssetEditor('text')"><svg><use href="#icon-text" /></svg></button>
-                  <button type="button" title="Add link" aria-label="Add link" @click="showAssetEditor('link')"><svg><use href="#icon-link" /></svg></button>
-                  <button type="button" title="Upload files" aria-label="Upload files" @click="assetFileInput?.click()"><svg><use href="#icon-attachment" /></svg></button>
+                  <button type="button" :title="$t('Add text note')" :aria-label="$t('Add text note')" @click="showAssetEditor('text')"><svg><use href="#icon-text" /></svg></button>
+                  <button type="button" :title="$t('Add link')" :aria-label="$t('Add link')" @click="showAssetEditor('link')"><svg><use href="#icon-link" /></svg></button>
+                  <button type="button" :title="$t('Upload files')" :aria-label="$t('Upload files')" @click="assetFileInput?.click()"><svg><use href="#icon-attachment" /></svg></button>
                 </div>
               </header>
 
               <div class="assets-search">
                 <svg><use href="#icon-search" /></svg>
-                <input v-model="assetQuery" type="search" placeholder="Search assets" aria-label="Search assets" />
+                <input v-model="assetQuery" type="search" :placeholder="$t('Search assets')" :aria-label="$t('Search assets')" />
               </div>
 
               <div class="asset-filter-list" aria-label="Asset type">
@@ -2526,7 +2559,7 @@ onBeforeUnmount(() => {
 
               <button class="asset-drop-zone" :class="{ dragging: assetDragging }" type="button" @click="assetFileInput?.click()" @dragenter.prevent="assetDragging = true" @dragover.prevent="assetDragging = true" @dragleave.prevent="assetDragging = false" @drop.prevent="dropAssets">
                 <svg><use href="#icon-attachment" /></svg>
-                <strong>{{ assetUploading ? 'Uploading…' : 'Drop or paste assets here' }}</strong>
+                <strong>{{ assetUploading ? 'Uploading…' : $t('Drop or paste assets here') }}</strong>
                 <small>Click this area, then press Ctrl/⌘ + V</small>
               </button>
               <input ref="assetFileInput" type="file" multiple hidden @change="uploadAssets" />
@@ -2534,8 +2567,8 @@ onBeforeUnmount(() => {
 
             <section class="agent-chat" :class="{ 'session-switching': switchingSessionId !== null }" aria-label="Knowledge card conversation" :aria-busy="switchingSessionId !== null">
               <div class="agent-chat-header">
-                <div class="agent-identity"><img src="/logo.png" alt="" /><div><strong>Zettelkasten Agent</strong><small>Turn a conversation into knowledge</small></div></div>
-                <span class="streaming-status"><i />Zettelkasten Agent online</span>
+                <div class="agent-identity"><img src="/logo.png" alt="" /><div><strong>{{ $t('Zettelkasten Agent') }}</strong><small>{{ $t('Turn a conversation into knowledge') }}</small></div></div>
+                <span class="streaming-status"><i />{{ $t('Zettelkasten Agent online') }}</span>
               </div>
 
               <div ref="agentThread" class="agent-thread" :class="{ empty: !conversationStarted && switchingSessionId === null }" aria-live="polite" @scroll.passive="handleAgentThreadScroll" @wheel.passive="handleAgentThreadWheel">
@@ -2547,9 +2580,9 @@ onBeforeUnmount(() => {
                   </div>
                   <div v-else-if="!conversationStarted" key="welcome" class="agent-welcome">
                     <span class="feature-icon"><svg><use href="#icon-spark" /></svg></span>
-                    <h2>What should we remember?</h2>
-                    <p>Share a rough thought, excerpt, or question. You can refine the result through conversation before saving it.</p>
-                    <div class="prompt-hints"><button type="button" @click="raw = 'I have an idea: '">Capture an idea</button><button type="button" @click="raw = 'Key point from what I just read: '">Summarize a note</button></div>
+                    <h2>{{ $t('What should we remember?') }}</h2>
+                    <p>{{ $t('Share a rough thought, excerpt, or question. You can refine the result through conversation before saving it.') }}</p>
+                    <div class="prompt-hints"><button type="button" @click="raw = 'I have an idea: '">{{ $t('Capture an idea') }}</button><button type="button" @click="raw = 'Key point from what I just read: '">{{ $t('Summarize a note') }}</button></div>
                   </div>
                   <div v-else ref="agentTurnStack" :key="conversationId || 'conversation'" class="turn-stack">
                   <article
@@ -2732,8 +2765,8 @@ onBeforeUnmount(() => {
                       <button type="button" :aria-label="`Remove ${image.name}`" @click="removeMessageImage(image.id)">×</button>
                     </figure>
                   </div>
-                  <textarea v-if="!conversationStarted" :value="raw" rows="3" autofocus placeholder="Message Zett Agent…" @input="updateComposerText($event, 'initial')" @keydown.enter.exact="handleComposerEnter" />
-                  <textarea v-else :value="followUp" rows="3" placeholder="Continue the conversation…" @input="updateComposerText($event, 'follow-up')" @keydown.enter.exact="handleComposerEnter" />
+                  <textarea v-if="!conversationStarted" :value="raw" rows="3" autofocus :placeholder="$t('composer.messagePlaceholder')" @input="updateComposerText($event, 'initial')" @keydown.enter.exact="handleComposerEnter" />
+                  <textarea v-else :value="followUp" rows="3" :placeholder="$t('composer.continuePlaceholder')" @input="updateComposerText($event, 'follow-up')" @keydown.enter.exact="handleComposerEnter" />
                   <div class="agent-input-footer">
                     <div class="composer-leading">
                       <AgentComposerControls
@@ -2753,7 +2786,7 @@ onBeforeUnmount(() => {
                       />
                     </div>
                     <div class="composer-submit">
-                      <small>{{ loading ? 'Enter to queue' : 'Enter to send' }}</small>
+                      <small>{{ loading ? $t('composer.enterToQueue') : $t('composer.enterToSend') }}</small>
                       <button v-if="loading" class="send-button stop" type="button" aria-label="Stop generating" @click="stopGeneration"><svg><use href="#icon-stop" /></svg></button>
                       <button class="send-button" :disabled="!canSubmitMessage" type="button" aria-label="Send message" @click="submitConversation"><svg><use href="#icon-arrow" /></svg></button>
                     </div>
@@ -2833,69 +2866,69 @@ onBeforeUnmount(() => {
       </template>
 
       <template v-else>
-        <header class="topbar compact"><div><p class="eyebrow">Preferences</p><h1>Settings</h1></div></header>
+        <header class="topbar compact"><div><p class="eyebrow">{{ $t('Preferences') }}</p><h1>{{ $t('Settings') }}</h1></div></header>
         <section class="content settings-view">
           <nav class="settings-tabs" role="tablist" aria-label="Settings sections">
-            <button :class="{ active: settingsSection === 'usage' }" type="button" role="tab" :aria-selected="settingsSection === 'usage'" @click="selectSettingsSection('usage')">Usage</button>
-            <button :class="{ active: settingsSection === 'providers' }" type="button" role="tab" :aria-selected="settingsSection === 'providers'" @click="selectSettingsSection('providers')">Providers &amp; limits</button>
+            <button :class="{ active: settingsSection === 'usage' }" type="button" role="tab" :aria-selected="settingsSection === 'usage'" @click="selectSettingsSection('usage')">{{ $t('settings.usage') }}</button>
+            <button :class="{ active: settingsSection === 'providers' }" type="button" role="tab" :aria-selected="settingsSection === 'providers'" @click="selectSettingsSection('providers')">{{ $t('settings.providersLimits') }}</button>
           </nav>
           <div v-if="settingsSection === 'providers'" class="settings-section">
-          <div class="settings-intro"><div><h2>AI providers</h2><p>Keep multiple model connections and choose one for each conversation.</p></div></div>
+          <div class="settings-intro"><div><h2>{{ $t('AI providers') }}</h2><p>{{ $t('Keep multiple model connections and choose one for each conversation.') }}</p></div></div>
           <div class="provider-toolbar">
             <div v-if="providers.length" class="provider-list">
               <button v-for="provider in providers" :key="provider.id" :class="{ active: editingProviderId === provider.id }" type="button" @click="selectProvider(provider)"><span class="status-dot" :class="{ online: provider.enabled }" /><span><strong>{{ provider.name }}</strong><small>{{ provider.provider }} · {{ provider.model }}</small></span></button>
             </div>
-            <button class="secondary-action" type="button" @click="newProvider"><svg><use href="#icon-add" /></svg>New provider</button>
+            <button class="secondary-action" type="button" @click="newProvider"><svg><use href="#icon-add" /></svg>{{ $t('New provider') }}</button>
           </div>
           <form class="settings-card" @submit.prevent="saveAI">
             <div class="form-grid">
-              <label class="field"><span>Connection name</span><input v-model="ai.name" placeholder="e.g. Fast OpenAI" /><small>Shown in the conversation provider picker.</small></label>
-              <label class="field"><span>Provider</span><select v-model="ai.provider" @change="selectProviderKind"><option value="openai_compatible">OpenAI compatible</option><option value="responses_compatible">Responses compatible</option><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="anthropic">Anthropic</option><option value="google">Google Gemini</option><option value="ollama">Ollama</option></select><small>The API format used for model requests.</small></label>
-              <label class="field"><span>Model</span><input v-model="ai.model" placeholder="e.g. gpt-4.1-mini" /><small>Use the exact model identifier from your provider.</small></label>
-              <label class="field full"><span>Base URL <em>{{ ['openai_compatible', 'responses_compatible'].includes(ai.provider) ? 'Custom' : 'Auto-filled' }}</em></span><input v-model="ai.base_url" :placeholder="ai.provider === 'responses_compatible' ? 'https://api.example.com' : 'https://api.example.com/v1'" /><small>{{ providerBaseUrlHelp(ai.provider) }}</small></label>
-              <label class="field full"><span>API key <em>{{ providerLoading ? 'Loading…' : editingProviderId === null ? 'New' : ai.api_key ? 'Loaded' : 'Not set' }}</em></span><div class="secret-input"><input v-model="ai.api_key" :type="apiKeyVisible ? 'text' : 'password'" autocomplete="off" placeholder="Leave blank to keep the saved key" /><button type="button" :aria-label="apiKeyVisible ? 'Hide API key' : 'Show API key'" :title="apiKeyVisible ? 'Hide API key' : 'Show API key'" @click="apiKeyVisible = !apiKeyVisible"><svg aria-hidden="true"><use :href="apiKeyVisible ? '#icon-eye-off' : '#icon-eye'" /></svg></button></div><small>Stored encrypted locally. Saving a blank value keeps the existing key.</small></label>
-              <label class="field temperature-field"><span>Temperature <output>{{ ai.temperature.toFixed(1) }}</output></span><input v-model.number="ai.temperature" type="range" min="0" max="2" step="0.1" /></label>
-              <div v-if="ai.provider === 'responses_compatible'" class="field"><span>API mode</span><strong>Responses API</strong><small>This compatible connection always uses the Responses protocol.</small></div>
-              <div v-else-if="['openai', 'openai_compatible', 'deepseek'].includes(ai.provider)" class="field"><span>API mode</span><div class="mode-options" role="group" aria-label="API mode"><button type="button" :class="{ active: !ai.response }" @click="setResponseMode(false)">Chat Completions</button><button type="button" :class="{ active: ai.response }" @click="setResponseMode(true)">Responses API</button></div><small>Responses mode enables provider-hosted tools such as web search.</small></div>
+              <label class="field"><span>{{ $t('Connection name') }}</span><input v-model="ai.name" placeholder="e.g. Fast OpenAI" /><small>Shown in the conversation provider picker.</small></label>
+              <label class="field"><span>{{ $t('Provider') }}</span><select v-model="ai.provider" @change="selectProviderKind"><option value="openai_compatible">OpenAI compatible</option><option value="responses_compatible">Responses compatible</option><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="anthropic">Anthropic</option><option value="google">Google Gemini</option><option value="ollama">Ollama</option></select><small>The API format used for model requests.</small></label>
+              <label class="field"><span>{{ $t('Model') }}</span><input v-model="ai.model" placeholder="e.g. gpt-4.1-mini" /><small>Use the exact model identifier from your provider.</small></label>
+              <label class="field full"><span>{{ $t('Base URL') }} <em>{{ ['openai_compatible', 'responses_compatible'].includes(ai.provider) ? 'Custom' : 'Auto-filled' }}</em></span><input v-model="ai.base_url" :placeholder="ai.provider === 'responses_compatible' ? 'https://api.example.com' : 'https://api.example.com/v1'" /><small>{{ providerBaseUrlHelp(ai.provider) }}</small></label>
+              <label class="field full"><span>{{ $t('API key') }} <em>{{ providerLoading ? 'Loading…' : editingProviderId === null ? 'New' : ai.api_key ? 'Loaded' : 'Not set' }}</em></span><div class="secret-input"><input v-model="ai.api_key" :type="apiKeyVisible ? 'text' : 'password'" autocomplete="off" placeholder="Leave blank to keep the saved key" /><button type="button" :aria-label="apiKeyVisible ? 'Hide API key' : 'Show API key'" :title="apiKeyVisible ? 'Hide API key' : 'Show API key'" @click="apiKeyVisible = !apiKeyVisible"><svg aria-hidden="true"><use :href="apiKeyVisible ? '#icon-eye-off' : '#icon-eye'" /></svg></button></div><small>Stored encrypted locally. Saving a blank value keeps the existing key.</small></label>
+              <label class="field temperature-field"><span>{{ $t('Temperature') }} <output>{{ ai.temperature.toFixed(1) }}</output></span><input v-model.number="ai.temperature" type="range" min="0" max="2" step="0.1" /></label>
+              <div v-if="ai.provider === 'responses_compatible'" class="field"><span>{{ $t('API mode') }}</span><strong>Responses API</strong><small>This compatible connection always uses the Responses protocol.</small></div>
+              <div v-else-if="['openai', 'openai_compatible', 'deepseek'].includes(ai.provider)" class="field"><span>{{ $t('API mode') }}</span><div class="mode-options" role="group" :aria-label="$t('API mode')"><button type="button" :class="{ active: !ai.response }" @click="setResponseMode(false)">Chat Completions</button><button type="button" :class="{ active: ai.response }" @click="setResponseMode(true)">Responses API</button></div><small>Responses mode enables provider-hosted tools such as web search.</small></div>
             </div>
             <div class="settings-actions"><button v-if="editingProviderId !== null" class="danger-button" type="button" @click="removeProvider">Delete provider</button><span v-else>Credentials are encrypted in your local database.</span><div><label class="switch"><input v-model="ai.enabled" type="checkbox" /><span /><small>{{ ai.enabled ? 'Enabled' : 'Disabled' }}</small></label><button class="primary-action" :disabled="providerSaving || providerLoading || !ai.name || !ai.model" :aria-busy="providerSaving" type="submit"><span v-if="providerSaving" class="button-spinner" aria-hidden="true" /><span>{{ providerSaving ? 'Testing…' : editingProviderId === null ? 'Add provider' : 'Save provider' }}</span></button></div></div>
           </form>
 
           <div class="settings-intro runtime-settings-heading">
-            <div><h2>Conversation limits</h2><p>Control local limits applied to new Agent requests.</p></div>
+            <div><h2>{{ $t('Conversation limits') }}</h2><p>{{ $t('Control local limits applied to new Agent requests.') }}</p></div>
           </div>
           <form class="settings-card" @submit.prevent="saveRuntimeSettings">
             <div class="form-grid">
               <label class="field">
-                <span>Images per message</span>
+                <span>{{ $t('Images per message') }}</span>
                 <input v-model.number="runtimeSettings.max_message_images" type="number" min="1" max="256" step="1" />
                 <small>Maximum number of images that can be pasted into one user message.</small>
               </label>
               <label class="field">
-                <span>Model steps per turn</span>
+                <span>{{ $t('Model steps per turn') }}</span>
                 <input v-model.number="runtimeSettings.max_turn_iterations" type="number" min="1" max="256" step="1" />
                 <small>Maximum model calls, including tool-loop continuations, allowed in one turn.</small>
               </label>
               <label class="field">
-                <span>Compact context at</span>
+                <span>{{ $t('Compact context at') }}</span>
                 <input v-model.number="runtimeSettings.compaction_max_tokens" type="number" min="128000" max="800000" step="1000" />
                 <small>Estimated active-context tokens that trigger a compact snapshot.</small>
               </label>
               <label class="field">
-                <span>Keep recent context</span>
+                <span>{{ $t('Keep recent context') }}</span>
                 <input v-model.number="runtimeSettings.compaction_keep_recent_tokens" type="number" min="32000" max="256000" step="1000" />
                 <small>Recent estimated tokens retained verbatim after compaction.</small>
               </label>
             </div>
             <div class="settings-actions">
               <span>Stored locally and applied without restarting Zett.</span>
-              <div><button class="primary-action" :disabled="runtimeSettingsSaving" type="submit">{{ runtimeSettingsSaving ? 'Saving…' : 'Save limits' }}</button></div>
+              <div><button class="primary-action" :disabled="runtimeSettingsSaving" type="submit">{{ runtimeSettingsSaving ? 'Saving…' : $t('Save limits') }}</button></div>
             </div>
           </form>
           </div>
           <div v-else class="settings-section">
           <div class="settings-intro runtime-settings-heading">
-            <div><h2>Model activity</h2><p>Daily token requests recorded from completed LLM calls.</p></div>
+            <div><h2>{{ $t('Model activity') }}</h2><p>{{ $t('Daily token requests recorded from completed LLM calls.') }}</p></div>
           </div>
           <div class="settings-card">
             <div v-if="usageActivityLoading" class="settings-activity-state">Loading activity…</div>
@@ -2903,7 +2936,7 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="settings-intro runtime-settings-heading">
-            <div><h2>By model</h2><p>Request volume and token usage for every provider model.</p></div>
+            <div><h2>{{ $t('By model') }}</h2><p>{{ $t('Request volume and token usage for every provider model.') }}</p></div>
           </div>
           <div v-if="usageActivityLoading" class="settings-activity-state">Loading model activity…</div>
           <div v-else-if="!modelUsageActivity.length" class="settings-card settings-activity-state">No model activity recorded yet.</div>
@@ -3063,6 +3096,8 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .load-more-sessions:disabled { opacity: .55; cursor: wait; }
 .sidebar-empty { padding: .55rem; color: var(--tertiary); font-size: .72rem; }
 .sidebar-footer { padding-top: .65rem; border-top: 1px solid rgba(29,29,31,.07); }
+.locale-control { display: flex; align-items: center; justify-content: space-between; gap: .45rem; margin-bottom: .3rem; padding: 0 .55rem; color: #77777c; font-size: .64rem; }
+.locale-control select { min-width: 5.4rem; height: 1.8rem; padding: 0 1.65rem 0 .55rem; border: 1px solid rgba(29,29,31,.1); border-radius: .5rem; color: #4e5651; background: rgba(255,255,255,.65); cursor: pointer; font-size: .65rem; }
 .status-dot { margin-left: auto; width: .43rem; height: .43rem; border-radius: 50%; background: #aaa; box-shadow: 0 0 0 3px rgba(0,0,0,.03); }
 .status-dot.online { background: #49a369; box-shadow: 0 0 0 3px rgba(73,163,105,.12); }
 
@@ -3406,11 +3441,11 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .chat-composer textarea { display: block; width: 100%; min-height: 4.5rem; padding: .7rem 2.8rem .7rem .75rem; resize: none; border: 1px solid rgba(29,29,31,.11); border-radius: .75rem; outline: 0; color: var(--text); background: white; font-size: .72rem; line-height: 1.45; }
 .chat-composer textarea:focus { border-color: rgba(71,105,87,.48); box-shadow: 0 0 0 3px rgba(71,105,87,.1); }
 .chat-composer > small { position: absolute; left: 1rem; bottom: .48rem; color: var(--tertiary); font-size: .55rem; }
-.send-button { position: absolute; right: 1.05rem; top: 1.15rem; display: grid; place-items: center; width: 2.25rem; height: 2.25rem; padding: 0; border: 0; border-radius: .68rem; color: white; background: var(--accent); cursor: pointer; }
+.send-button { position: absolute; right: 1.05rem; top: 1.15rem; display: grid; place-items: center; width: 2.5rem; height: 2.5rem; padding: 0; border: 0; border-radius: .75rem; color: white; background: var(--accent); cursor: pointer; }
 .send-button:disabled { opacity: .35; cursor: not-allowed; transform: none; }
-.send-button svg { width: 1rem; height: 1rem; transform: rotate(-90deg); }
+.send-button svg { width: 1.16rem; height: 1.16rem; transform: rotate(-90deg); }
 .send-button.stop { background: #59635d; }
-.send-button.stop svg { width: .82rem; height: .82rem; transform: none; fill: currentColor; }
+.send-button.stop svg { width: .96rem; height: .96rem; transform: none; fill: currentColor; }
 .artifact-panel { padding: 1.5rem; border: 1px solid rgba(29,29,31,.08); border-radius: 1.1rem; background: rgba(255,255,255,.88); box-shadow: var(--shadow); backdrop-filter: blur(18px); transform-origin: 50% 0; }
 .artifact-panel.artifact-editor { position: relative; display: flex; flex-direction: column; padding: 0; overflow: hidden; color: #252a27; background: #fff; }
 .artifact-editor-accent { height: .26rem; flex: 0 0 auto; background: linear-gradient(90deg, #385d49, #77a087 70%, #b5cabb); }
@@ -3630,6 +3665,7 @@ kbd, .card-type, .card-tags span { font-size: .69rem; }
   .primary-nav button small, .primary-nav kbd, .status-dot { display: none; }
   .primary-nav button svg, .sidebar-footer button svg { width: 1.15rem; height: 1.15rem; }
   .sidebar-footer { position: absolute; right: .65rem; bottom: max(.45rem, env(safe-area-inset-bottom)); width: calc((100% - 1.3rem) / 4); padding: 0; border: 0; }
+  .locale-control { display: none; }
   .topbar { min-height: 4.5rem; padding: .8rem 1rem; }
   .topbar .primary-action { width: 2.65rem; padding: 0; font-size: 0; }
   .topbar .primary-action svg { width: 1rem; height: 1rem; }

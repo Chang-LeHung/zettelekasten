@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useI18n } from '../i18n'
 
 defineProps<{
   command: string
@@ -13,6 +14,7 @@ const emit = defineEmits<{
   abort: []
 }>()
 
+const { t } = useI18n()
 const remember = ref(false)
 </script>
 
@@ -20,22 +22,22 @@ const remember = ref(false)
   <section class="shell-approval" aria-live="polite">
     <header>
       <div>
-        <span>Shell command approval</span>
-        <small>The command will run in the current workspace · timeout {{ timeoutSeconds }}s.</small>
+        <span>{{ t('shellApproval.title') }}</span>
+        <small>{{ t('shellApproval.description', { seconds: timeoutSeconds }) }}</small>
       </div>
-      <span class="waiting"><i />Waiting for you</span>
+      <span class="waiting"><i />{{ t('shellApproval.waiting') }}</span>
     </header>
     <pre><code>{{ command }}</code></pre>
     <footer>
       <label v-if="rememberSupported" class="remember">
         <input v-model="remember" type="checkbox" />
-        <span>Always allow this exact command</span>
+        <span>{{ t('shellApproval.remember') }}</span>
       </label>
-      <small v-else>This decision applies to this command only.</small>
+      <small v-else>{{ t('shellApproval.once') }}</small>
       <div>
-        <button class="abort" type="button" :disabled="submitting" @click="emit('abort')">Abort</button>
+        <button class="abort" type="button" :disabled="submitting" @click="emit('abort')">{{ t('shellApproval.abort') }}</button>
         <button class="execute" type="button" :disabled="submitting" @click="emit('execute', remember)">
-          {{ submitting ? 'Sending…' : 'Execute' }}
+          {{ submitting ? t('shellApproval.sending') : t('shellApproval.execute') }}
         </button>
       </div>
     </footer>

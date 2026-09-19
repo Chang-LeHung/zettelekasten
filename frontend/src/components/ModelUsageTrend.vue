@@ -8,6 +8,7 @@ import { CanvasRenderer } from 'echarts/renderers'
 import VChart from 'vue-echarts'
 import type { AgentUsageActivityDay } from '../api/types'
 import { formatTokenCount } from '../utils/agentUsage'
+import { useI18n } from '../i18n'
 
 use([CanvasRenderer, LineChart, BarChart, GridComponent, TooltipComponent])
 
@@ -17,8 +18,9 @@ const props = defineProps<{
   days: AgentUsageActivityDay[]
 }>()
 
-const providerLabel = computed(() => props.provider || 'Unknown provider')
-const modelLabel = computed(() => props.model || 'Unknown model')
+const { t } = useI18n()
+const providerLabel = computed(() => props.provider || t('Unknown provider'))
+const modelLabel = computed(() => props.model || t('Unknown model'))
 const modelIcon = computed(() => (props.provider || props.model || '?').slice(0, 1).toUpperCase())
 const chartDays = computed(() => focusActivityRange(props.days))
 const dates = computed(() => chartDays.value.map(day => day.date))
@@ -191,11 +193,11 @@ function formatDateLabel(value: string): string {
     </header>
     <div class="model-trend-grid">
       <article class="model-trend-card">
-        <div class="model-trend-heading"><strong>API requests</strong><span>{{ formatInteger(totalRequests) }}</span></div>
+        <div class="model-trend-heading"><strong>{{ t('API requests') }}</strong><span>{{ formatInteger(totalRequests) }}</span></div>
         <VChart class="model-trend-chart" :option="requestOption" autoresize />
       </article>
       <article class="model-trend-card">
-        <div class="model-trend-heading"><strong>Tokens</strong><span>{{ formatInteger(totalTokens) }}</span></div>
+        <div class="model-trend-heading"><strong>{{ t('Tokens') }}</strong><span>{{ formatInteger(totalTokens) }}</span></div>
         <VChart class="model-trend-chart" :option="tokenOption" autoresize />
       </article>
     </div>

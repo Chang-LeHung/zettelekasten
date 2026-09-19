@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { AgentContextComposition, AgentModelUsage, AIProvider, ReasoningEffort, ShellApprovalMode } from '../api/types'
 import { formatTokenCount, type AgentUsageSummary } from '../utils/agentUsage'
+import { useI18n } from '../i18n'
 import ContextCompositionRing from './ContextCompositionRing.vue'
 
 const props = defineProps<{
@@ -24,6 +25,7 @@ const emit = defineEmits<{
 }>()
 
 const root = ref<HTMLElement | null>(null)
+const { t } = useI18n()
 const openMenu = ref<'model' | 'effort' | 'shell' | null>(null)
 const enabledProviders = computed(() => props.providers.filter((provider) => provider.enabled))
 const selectedProvider = computed(() => (
@@ -35,20 +37,20 @@ const currentContextTokens = computed(() => (
     : null
 ))
 
-const effortOptions: Array<{ value: ReasoningEffort; label: string; description: string }> = [
-  { value: 'off', label: 'Off', description: 'Answer directly' },
-  { value: 'low', label: 'Low', description: 'Light thinking' },
-  { value: 'medium', label: 'Medium', description: 'Balanced depth' },
-  { value: 'high', label: 'High', description: 'Deep analysis' },
-]
+const effortOptions = computed<Array<{ value: ReasoningEffort; label: string; description: string }>>(() => [
+  { value: 'off', label: t('composer.off'), description: 'Answer directly' },
+  { value: 'low', label: t('composer.low'), description: 'Light thinking' },
+  { value: 'medium', label: t('composer.medium'), description: 'Balanced depth' },
+  { value: 'high', label: t('composer.high'), description: 'Deep analysis' },
+])
 
-const selectedEffort = computed(() => effortOptions.find((option) => option.value === props.effort) || effortOptions[2])
-const shellApprovalOptions: Array<{ value: ShellApprovalMode; label: string; description: string }> = [
-  { value: 'review', label: 'Review', description: 'Approve shell commands' },
-  { value: 'allow_all', label: 'Allow all', description: 'Run shell commands directly' },
-]
+const selectedEffort = computed(() => effortOptions.value.find((option) => option.value === props.effort) || effortOptions.value[2])
+const shellApprovalOptions = computed<Array<{ value: ShellApprovalMode; label: string; description: string }>>(() => [
+  { value: 'review', label: t('composer.review'), description: t('composer.reviewDescription') },
+  { value: 'allow_all', label: t('composer.allowAll'), description: t('composer.allowAllDescription') },
+])
 const selectedShellApproval = computed(() => (
-  shellApprovalOptions.find((option) => option.value === props.shellApproval) || shellApprovalOptions[0]
+  shellApprovalOptions.value.find((option) => option.value === props.shellApproval) || shellApprovalOptions.value[0]
 ))
 
 function toggleMenu(menu: 'model' | 'effort' | 'shell'): void {
@@ -105,7 +107,7 @@ onBeforeUnmount(() => {
           <svg viewBox="0 0 24 24"><path d="m12 3 1.2 4.8L18 9.5l-4.8 1.7L12 16l-1.2-4.8L6 9.5l4.8-1.7zM18.5 15l.6 2.1 2.1.6-2.1.6-.6 2.1-.6-2.1-2.1-.6 2.1-.6z" /></svg>
         </span>
         <span class="control-copy">
-          <small>Model</small>
+          <small>{{ t('composer.model') }}</small>
           <strong>{{ selectedProvider?.model || 'Add a provider' }}</strong>
         </span>
         <svg class="control-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m6 8 4 4 4-4" /></svg>
@@ -141,7 +143,7 @@ onBeforeUnmount(() => {
         @click="toggleMenu('effort')"
       >
         <span class="effort-dot" :class="effort" aria-hidden="true" />
-        <span class="control-copy"><small>Thinking</small><strong>{{ selectedEffort.label }}</strong></span>
+        <span class="control-copy"><small>{{ t('composer.thinking') }}</small><strong>{{ selectedEffort.label }}</strong></span>
         <svg class="control-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m6 8 4 4 4-4" /></svg>
       </button>
 
@@ -176,12 +178,12 @@ onBeforeUnmount(() => {
         <span class="control-icon shell-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.4 2.8 8.3 7 10 4.2-1.7 7-5.6 7-10V6z" /><path d="m9 12 2 2 4-4" /></svg>
         </span>
-        <span class="control-copy"><small>Shell</small><strong>{{ selectedShellApproval.label }}</strong></span>
+        <span class="control-copy"><small>{{ t('composer.shell') }}</small><strong>{{ selectedShellApproval.label }}</strong></span>
         <svg class="control-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m6 8 4 4 4-4" /></svg>
       </button>
 
       <div v-if="openMenu === 'shell'" class="control-popover shell-popover" role="listbox" aria-label="Shell approval">
-        <header><strong>Shell approval</strong><small>For the next message</small></header>
+        <header><strong>Shell approval</strong><small>{{ t('composer.nextMessage') }}</small></header>
         <button
           v-for="option in shellApprovalOptions"
           :key="option.value"
@@ -200,10 +202,10 @@ onBeforeUnmount(() => {
     </div>
 
     <dl v-if="usage" class="usage-strip" aria-label="Conversation token usage">
-      <div title="Input tokens accumulated across every model step"><dt>Total in</dt><dd>{{ formatTokenCount(usage.input_tokens) }}</dd></div>
-      <div title="Output tokens accumulated across every model step"><dt>Total out</dt><dd>{{ formatTokenCount(usage.output_tokens) }}</dd></div>
-      <div title="Cached input tokens divided by all input tokens"><dt>Cache</dt><dd>{{ usage.cache_hit_rate === null ? '—' : `${(usage.cache_hit_rate * 100).toFixed(1)}%` }}</dd></div>
-      <div title="Output tokens per second of model generation"><dt>Speed</dt><dd>{{ usage.tokens_per_second === null ? '—' : `${usage.tokens_per_second.toFixed(1)} tok/s` }}</dd></div>
+      <div title="Input tokens accumulated across every model step"><dt>{{ t('composer.totalIn') }}</dt><dd>{{ formatTokenCount(usage.input_tokens) }}</dd></div>
+      <div title="Output tokens accumulated across every model step"><dt>{{ t('composer.totalOut') }}</dt><dd>{{ formatTokenCount(usage.output_tokens) }}</dd></div>
+      <div title="Cached input tokens divided by all input tokens"><dt>{{ t('composer.cache') }}</dt><dd>{{ usage.cache_hit_rate === null ? '—' : `${(usage.cache_hit_rate * 100).toFixed(1)}%` }}</dd></div>
+      <div title="Output tokens per second of model generation"><dt>{{ t('composer.speed') }}</dt><dd>{{ usage.tokens_per_second === null ? '—' : `${usage.tokens_per_second.toFixed(1)} tok/s` }}</dd></div>
     </dl>
     <ContextCompositionRing
       :composition="contextComposition"
