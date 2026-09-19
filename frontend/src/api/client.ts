@@ -193,6 +193,13 @@ export const tagClient = {
     })
   },
 
+  replaceArtifactTags(artifactId: string, paths: string[]): Promise<AgentArtifact> {
+    return request<AgentArtifact>(`/library/tags/artifacts/${encodeURIComponent(artifactId)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ paths }),
+    })
+  },
+
   delete(tagId: string): Promise<{ ok: boolean }> {
     const params = new URLSearchParams({ recursive: 'true', force: 'true' })
     return request<{ ok: boolean }>(`/library/tags/${encodeURIComponent(tagId)}?${params}`, {

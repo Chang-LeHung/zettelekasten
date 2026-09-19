@@ -120,6 +120,9 @@ const libraryEditorArtifactId = ref<string | null>(null)
 const libraryEditorSaving = ref(false)
 const libraryLoading = ref(false)
 const deletingLibraryItemId = ref<string | null>(null)
+const draggingLibraryItem = ref<LibraryItem | null>(null)
+const tagDropTargetId = ref<string | null>(null)
+const tagAssignmentBusy = ref(false)
 const tags = ref<Tag[]>([])
 const collapsedTagIds = ref<Set<string>>(new Set())
 const hoveredTagId = ref<string | null>(null)
@@ -1291,6 +1294,75 @@ async function copyLibraryItemId(item: LibraryItem): Promise<void> {
   }
 }
 
+function startLibraryItemDrag(item: LibraryItem, event: DragEvent): void {
+  draggingLibraryItem.value = item
+  tagDropTargetId.value = null
+  if (!event.dataTransfer) return
+  event.dataTransfer.effectAllowed = 'copy'
+  event.dataTransfer.setData('application/x-zett-artifact-id', item.id)
+  event.dataTransfer.setData('text/plain', item.id)
+}
+
+function endLibraryItemDrag(): void {
+  draggingLibraryItem.value = null
+  tagDropTargetId.value = null
+}
+
+function draggedLibraryItem(event: DragEvent): LibraryItem | null {
+  if (draggingLibraryItem.value) return draggingLibraryItem.value
+  const artifactId = event.dataTransfer?.getData('application/x-zett-artifact-id')
+    || event.dataTransfer?.getData('text/plain')
+  return libraryItems.value.find((item) => item.id === artifactId) || null
+}
+
+function handleTagDragOver(tag: Tag, event: DragEvent): void {
+  const item = draggedLibraryItem(event)
+  if (!item || tagAssignmentBusy.value) return
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
+  tagDropTargetId.value = tag.id
+}
+
+function handleTagDragLeave(tag: Tag, event: DragEvent): void {
+  const row = event.currentTarget
+  if (row instanceof HTMLElement && event.relatedTarget instanceof Node && row.contains(event.relatedTarget)) return
+  if (tagDropTargetId.value === tag.id) tagDropTargetId.value = null
+}
+
+function applyArtifactTags(artifact: AgentArtifact): void {
+  const paths = artifact.tags.map((tag) => tag.path)
+  const updateItem = (item: LibraryItem): LibraryItem => (
+    item.id === artifact.id ? { ...item, tags: paths, updated_at: artifact.updated_at } : item
+  )
+  libraryItems.value = libraryItems.value.map(updateItem)
+  if (selectedLibraryItem.value) selectedLibraryItem.value = updateItem(selectedLibraryItem.value)
+}
+
+async function dropLibraryItemOnTag(tag: Tag, event: DragEvent): Promise<void> {
+  const item = draggedLibraryItem(event)
+  if (!item || tagAssignmentBusy.value) return
+  event.preventDefault()
+  const nextPaths = [...new Set([...item.tags, tag.path])]
+  if (nextPaths.length === item.tags.length) {
+    showNotice(`“${item.title}” is already in ${tag.path}`)
+    endLibraryItemDrag()
+    return
+  }
+
+  tagAssignmentBusy.value = true
+  try {
+    const updated = await tagClient.replaceArtifactTags(item.id, nextPaths)
+    applyArtifactTags(updated)
+    tags.value = await tagClient.list()
+    showNotice(`Added “${item.title}” to ${tag.path}`)
+  } catch (error) {
+    showNotice(errorMessage(error), 'error')
+  } finally {
+    tagAssignmentBusy.value = false
+    endLibraryItemDrag()
+  }
+}
+
 async function deleteLibraryItem(item: LibraryItem): Promise<void> {
   if (deletingLibraryItemId.value !== null) return
   const confirmed = await requestConfirmation(
@@ -2447,9 +2519,14 @@ onBeforeUnmount(() => {
             v-for="tag in flatTags"
             :key="tag.id"
             class="tag-row"
+            :class="{ 'drop-target': tagDropTargetId === tag.id, 'drop-busy': tagAssignmentBusy }"
             :style="{ '--tag-depth': tag.depth }"
             @mouseenter="hoveredTagId = tag.id"
             @mouseleave="hoveredTagId = null"
+            @dragenter="handleTagDragOver(tag, $event)"
+            @dragover="handleTagDragOver(tag, $event)"
+            @dragleave="handleTagDragLeave(tag, $event)"
+            @drop="dropLibraryItemOnTag(tag, $event)"
           >
             <button
               v-if="tag.hasChildren"
@@ -2544,7 +2621,21 @@ onBeforeUnmount(() => {
             <div v-for="index in 6" :key="index" class="card skeleton" />
           </div>
           <div v-else-if="libraryItems.length" class="card-grid">
-            <article v-for="item in libraryItems" :key="`${item.item_type}-${item.id}`" class="card" :class="`library-${item.item_type}`" role="button" tabindex="0" :aria-label="`Open ${item.title}`" @click="openLibraryItem(item)" @keydown.enter="openLibraryItem(item)" @keydown.space.prevent="openLibraryItem(item)">
+            <article
+              v-for="item in libraryItems"
+              :key="`${item.item_type}-${item.id}`"
+              class="card"
+              :class="[`library-${item.item_type}`, { dragging: draggingLibraryItem?.id === item.id }]"
+              role="button"
+              tabindex="0"
+              draggable="true"
+              :aria-label="`Open ${item.title}`"
+              @click="openLibraryItem(item)"
+              @keydown.enter="openLibraryItem(item)"
+              @keydown.space.prevent="openLibraryItem(item)"
+              @dragstart="startLibraryItemDrag(item, $event)"
+              @dragend="endLibraryItemDrag"
+            >
               <div class="card-topline">
                 <span class="card-type">{{ item.item_type === 'card' ? $t(item.card_type || 'card') : $t(item.item_type) }}</span>
                 <div class="card-topline-actions">
@@ -3234,6 +3325,10 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .tag-list { min-height: 0; overflow: auto; scrollbar-width: thin; scrollbar-color: rgba(29,29,31,.16) transparent; }
 .tag-row { position: relative; display: flex; align-items: center; min-width: 0; height: 2rem; padding-left: calc(var(--tag-depth) * .72rem); }
 .tag-row::before { position: absolute; top: 0; bottom: 0; left: calc(.62rem + (var(--tag-depth) - 1) * .72rem); width: 1px; background: rgba(76,96,84,.12); content: ''; opacity: min(1, var(--tag-depth)); }
+.tag-row.drop-target { border-radius: .58rem; background: rgba(225,237,230,.82); box-shadow: inset 0 0 0 1px rgba(80,122,96,.2); }
+.tag-row.drop-target .tag-select { color: #315641; background: transparent; font-weight: 660; }
+.tag-row.drop-target .tag-dot { background: #5f8a70 !important; transform: scale(1.22); }
+.tag-row.drop-busy .tag-select { cursor: progress; }
 .tag-select { min-width: 0; height: 1.85rem; gap: .58rem; padding: 0 .55rem 0 .2rem; border-radius: .5rem; font-size: .77rem; }
 .tag-select.active { color: var(--accent-dark); background: rgba(255,255,255,.64); font-weight: 600; }
 .tag-toggle, .tag-toggle-placeholder { display: grid; width: 1.25rem; height: 1.85rem; flex: 0 0 1.25rem; place-items: center; }
@@ -3322,6 +3417,9 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr)); gap: 1rem; }
 .card { container-type: inline-size; container-name: artifact-card; min-width: 0; height: 18rem; box-sizing: border-box; display: flex; flex-direction: column; padding: 1.1rem 1.2rem; overflow: hidden; border: 1px solid rgba(29,29,31,.075); border-radius: 1rem; background: var(--surface); box-shadow: 0 1px 2px rgba(0,0,0,.025); backdrop-filter: blur(14px); transition: transform 260ms cubic-bezier(.2,.8,.2,1), box-shadow 260ms cubic-bezier(.2,.8,.2,1), background 180ms ease; }
 .card[role="button"] { cursor: pointer; }
+.card[draggable="true"] { cursor: grab; }
+.card[draggable="true"]:active { cursor: grabbing; }
+.card.dragging { opacity: .52; transform: scale(.985); }
 .card:hover { transform: translateY(-3px); background: rgba(255,255,255,.96); box-shadow: var(--shadow); }
 .card:active { transform: scale(.985); transition-duration: 100ms; }
 .card-topline { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: .45rem; }

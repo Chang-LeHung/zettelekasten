@@ -88,6 +88,38 @@ it('creates tags and explicitly requests recursive assignment cleanup when delet
   expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: 'DELETE' })
 })
 
+it('replaces an artifact tag set through the persistent tag endpoint', async () => {
+  const artifact = {
+    id: 'artifact-1',
+    session_id: 'session-1',
+    artifact_type: 'card',
+    status: 'saved',
+    content: {
+      artifact_type: 'card',
+      card_type: 'note',
+      title: 'Card',
+      summary: '',
+      content: 'Body',
+      suggested_tags: [],
+      keywords: [],
+    },
+    raw_content: null,
+    version: 1,
+    metadata: {},
+    tags: [{ id: 'python', path: 'Engineering/Python', name: 'Python' }],
+    created_at: '',
+    updated_at: '',
+  }
+  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(artifact)))
+  vi.stubGlobal('fetch', fetchMock)
+
+  await expect(tagClient.replaceArtifactTags('artifact-1', ['Engineering/Python'])).resolves.toEqual(artifact)
+  expect(fetchMock).toHaveBeenCalledWith('/api/library/tags/artifacts/artifact-1', expect.objectContaining({
+    method: 'PUT',
+    body: JSON.stringify({ paths: ['Engineering/Python'] }),
+  }))
+})
+
 it('treats an uncompiled artifact PDF as pending, while preserving real request errors', async () => {
   vi.stubGlobal('fetch', vi.fn()
     .mockResolvedValueOnce(new Response(null, { status: 204 }))
