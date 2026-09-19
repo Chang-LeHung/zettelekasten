@@ -8,6 +8,7 @@ afterEach(() => cleanups.splice(0).forEach(cleanup => cleanup()))
 
 it('allows an image-only ask_user response and previews the image', async () => {
   const removeImage = vi.fn()
+  const previewImage = vi.fn()
   const host = document.createElement('div')
   document.body.append(host)
   const app = createApp(AskUserPrompt, {
@@ -27,6 +28,7 @@ it('allows an image-only ask_user response and previews the image', async () => 
     }],
     submitting: false,
     onRemoveImage: removeImage,
+    onPreviewImage: previewImage,
   })
   app.mount(host)
   cleanups.push(() => { app.unmount(); host.remove() })
@@ -35,6 +37,12 @@ it('allows an image-only ask_user response and previews the image', async () => 
   expect(host.querySelector<HTMLImageElement>('.ask-images img')?.alt).toBe('clipboard.png')
   expect(host.querySelector<HTMLButtonElement>('.ask-submit')?.disabled).toBe(false)
 
-  host.querySelector<HTMLButtonElement>('.ask-images button')?.click()
+  host.querySelector<HTMLButtonElement>('.ask-image-preview')?.click()
+  expect(previewImage).toHaveBeenCalledWith({
+    name: 'clipboard.png',
+    url: 'data:image/png;base64,aW1hZ2U=',
+  })
+
+  host.querySelector<HTMLButtonElement>('.ask-image-remove')?.click()
   expect(removeImage).toHaveBeenCalledWith('image-1')
 })

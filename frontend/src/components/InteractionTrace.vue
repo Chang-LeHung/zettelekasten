@@ -22,6 +22,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   refresh: []
+  previewImage: [image: { name: string; url: string }]
   'update:selectedTurnId': [turnId: string]
 }>()
 
@@ -229,7 +230,15 @@ function cacheHitRate(message: AgentPersistedMessage): number | null {
               <div v-if="message.parts.length" class="trace-message-parts">
                 <template v-for="(part, partIndex) in message.parts" :key="`${message.id}-part-${partIndex}`">
                   <TraceCopyBlock v-if="part.type === 'text'" flush :content="formatTraceText(message, part.text)" />
-                  <img v-else :src="part.content_url" :alt="part.name" />
+                  <button
+                    v-else
+                    class="trace-message-image-button"
+                    type="button"
+                    :aria-label="`Preview ${part.name}`"
+                    @click="emit('previewImage', { name: part.name, url: part.content_url })"
+                  >
+                    <img :src="part.content_url" :alt="part.name" />
+                  </button>
                 </template>
               </div>
               <TraceCopyBlock
@@ -365,6 +374,9 @@ function cacheHitRate(message: AgentPersistedMessage): number | null {
 .trace-event.system .trace-event-content > header strong, .trace-event.agent .trace-event-content > header strong { color: #65707a; }
 .trace-event-meta { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .28rem; }
 .trace-message-parts { display: grid; gap: .42rem; margin-top: .5rem; }
+.trace-message-image-button { width: fit-content; max-width: 100%; display: block; padding: 0; border: 0; border-radius: .55rem; background: transparent; cursor: zoom-in; }
+.trace-message-image-button:hover img { box-shadow: 0 0 0 2px rgba(71,105,87,.22); }
+.trace-message-image-button:focus-visible { outline: 3px solid rgba(71,105,87,.24); outline-offset: 2px; }
 .trace-message-parts img { max-width: min(100%, 28rem); max-height: 20rem; border: 1px solid #dfe5e1; border-radius: .55rem; object-fit: contain; background: #eef1ef; }
 .trace-payload { margin-top: .48rem; }
 .trace-payload > summary { width: fit-content; min-height: 1.8rem; display: inline-flex; align-items: center; gap: .34rem; padding: 0 .48rem; border: 1px solid #dce4df; border-radius: .42rem; color: #52645a; background: #f7f9f7; cursor: pointer; font-size: .6rem; font-weight: 650; list-style: none; transition: border-color 140ms ease, background 140ms ease, color 140ms ease; }

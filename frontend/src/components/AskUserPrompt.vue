@@ -17,6 +17,7 @@ const emit = defineEmits<{
   toggle: [option: string]
   'update:answer': [value: string]
   addImages: [files: File[]]
+  previewImage: [image: { name: string; url: string }]
   removeImage: [id: string]
   submit: []
 }>()
@@ -68,8 +69,15 @@ function pasteImages(event: ClipboardEvent): void {
     <form @submit.prevent="emit('submit')" @paste="pasteImages">
       <div v-if="images.length" class="ask-images">
         <figure v-for="image in images" :key="image.id">
-          <img :src="image.content_url" :alt="image.name" />
-          <button type="button" :aria-label="`Remove ${image.name}`" @click="emit('removeImage', image.id)">×</button>
+          <button
+            class="ask-image-preview"
+            type="button"
+            :aria-label="`Preview ${image.name}`"
+            @click="emit('previewImage', { name: image.name, url: image.content_url })"
+          >
+            <img :src="image.content_url" :alt="image.name" />
+          </button>
+          <button class="ask-image-remove" type="button" :aria-label="`Remove ${image.name}`" @click="emit('removeImage', image.id)">×</button>
         </figure>
       </div>
       <fieldset>
@@ -154,8 +162,11 @@ fieldset { display: grid; gap: .35rem; min-width: 0; margin: 0; padding: 0; bord
 footer { justify-content: space-between; gap: 1rem; margin-top: .65rem; }
 .ask-images { display: flex; gap: .42rem; margin-bottom: .62rem; overflow-x: auto; scrollbar-width: thin; }
 .ask-images figure { position: relative; width: 3.5rem; height: 3.5rem; flex: 0 0 auto; margin: 0; }
+.ask-image-preview { width: 100%; height: 100%; display: block; padding: 0; border: 0; border-radius: .58rem; background: transparent; cursor: zoom-in; }
+.ask-image-preview:hover img, .ask-image-preview:focus-visible img { box-shadow: 0 0 0 2px rgba(71,105,87,.22); }
+.ask-image-preview:focus-visible { outline: 2px solid rgba(71,105,87,.2); outline-offset: 2px; }
 .ask-images img { width: 100%; height: 100%; display: block; border: 1px solid #dbe3dd; border-radius: .58rem; object-fit: cover; background: #eef1ef; }
-.ask-images button { position: absolute; top: -.28rem; right: -.28rem; width: 1rem; height: 1rem; display: grid; place-items: center; padding: 0; border: 2px solid #fff; border-radius: 50%; color: #fff; background: #59645d; cursor: pointer; font-size: .67rem; line-height: 1; }
+.ask-images .ask-image-remove { position: absolute; top: -.28rem; right: -.28rem; width: 1rem; height: 1rem; display: grid; place-items: center; padding: 0; border: 2px solid #fff; border-radius: 50%; color: #fff; background: #59645d; cursor: pointer; font-size: .67rem; line-height: 1; }
 .ask-attach { min-width: 0; display: flex; align-items: center; gap: .48rem; }
 .ask-attach > button { min-height: 2rem; display: inline-flex; align-items: center; gap: .3rem; padding: 0 .55rem; border: 1px solid #d6e0d9; border-radius: .55rem; color: #557062; background: #fff; cursor: pointer; font-size: .63rem; font-weight: 650; }
 .ask-attach > button:hover, .ask-attach > button:focus-visible { border-color: #9db4a5; color: #315541; background: #edf4ef; outline: none; }

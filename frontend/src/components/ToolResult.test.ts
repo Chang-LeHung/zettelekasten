@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createApp, nextTick } from 'vue'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import ToolResult from './ToolResult.vue'
 
 const cleanups: (() => void)[] = []
@@ -28,6 +28,22 @@ it('renders image tool output as an image instead of base64 text', async () => {
   expect(host.textContent).toContain('before')
   expect(host.textContent).toContain('after')
   expect(host.textContent).not.toContain('data:image/png;base64')
+})
+
+it('emits a preview request when an image result is clicked', async () => {
+  const host = document.createElement('div')
+  document.body.append(host)
+  const previewImage = vi.fn()
+  const app = createApp(ToolResult, {
+    output: [{ type: 'image', url: 'data:image/png;base64,aW1hZ2U=', alt_text: 'preview.png' }],
+    onPreviewImage: previewImage,
+  })
+  app.mount(host)
+  cleanups.push(() => { app.unmount(); host.remove() })
+  await nextTick()
+
+  host.querySelector<HTMLButtonElement>('.tool-result-image-button')?.click()
+  expect(previewImage).toHaveBeenCalledWith({ name: 'preview.png', url: 'data:image/png;base64,aW1hZ2U=' })
 })
 
 it('keeps ordinary tool output and errors as text', async () => {

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ApiError, aiClient, libraryClient, settingsClient, tagClient } from './api/client'
-import type { AgentArtifact, AgentCompactionActivity, AgentContextComposition, AgentCustomEvent, AgentModelUsage, AgentModelUsageActivitySeries, AgentPersistedMessage, AgentServerToolActivity, AgentSession, AgentSteeringMessage, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AgentUsageActivityDay, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageContentPart, MessagePartInput, ReasoningEffort, RuntimeSettings, SessionAsset, ShellApprovalMode, Tag } from './api/types'
+import type { AgentArtifact, AgentCompactionActivity, AgentContextComposition, AgentCustomEvent, AgentModelUsage, AgentModelUsageActivitySeries, AgentPersistedMessage, AgentServerToolActivity, AgentSession, AgentSteeringMessage, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AgentUsageActivityDay, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageContentPart, MessageImagePart, MessagePartInput, ReasoningEffort, RuntimeSettings, SessionAsset, ShellApprovalMode, Tag } from './api/types'
 import AgentComposerControls from './components/AgentComposerControls.vue'
 import CacheHitRate from './components/CacheHitRate.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
@@ -20,6 +20,7 @@ import { buildConversationTurns, formatTurnDuration, splitTurnTimeline, type Con
 import { jsonSnapshot } from './utils/jsonSnapshot'
 import { buildMessageParts, displayMessageParts, rebaseImagePositions, type PositionedMessageImage } from './utils/messageParts'
 import { restorePersistedConversation } from './utils/persistedConversation'
+import { moveItemBeforeOrAfter } from './utils/reorder'
 import { appendStreamedAssistantMessage, createStreamedAssistantMessage } from './utils/streamedAssistant'
 import { defaultProviderBaseUrl, providerBaseUrlHelp } from './utils/providerDefaults'
 import { todoFromTool } from './utils/toolPresentation'
@@ -133,6 +134,7 @@ const raw = ref('')
 const artifactContent = ref<ArtifactContent | null>(null)
 const conversation = ref<AnalysisMessage[]>([])
 const queuedFollowUps = ref<QueuedFollowUp[]>([])
+const draggingQueuedFollowUpId = ref<number | null>(null)
 const steeringQueuedFollowUpId = ref<number | null>(null)
 let nextQueuedFollowUpId = 0
 let activeTurnHistory: AnalysisMessage[] | null = null
@@ -1453,6 +1455,35 @@ function removeQueuedFollowUp(item: QueuedFollowUp): void {
   queuedFollowUps.value = queuedFollowUps.value.filter((queued) => queued.id !== item.id)
 }
 
+function startQueuedFollowUpDrag(item: QueuedFollowUp, event: DragEvent): void {
+  draggingQueuedFollowUpId.value = item.id
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', String(item.id))
+  }
+}
+
+function dropQueuedFollowUp(target: QueuedFollowUp, event: DragEvent): void {
+  event.preventDefault()
+  const sourceId = draggingQueuedFollowUpId.value
+    ?? Number(event.dataTransfer?.getData('text/plain') || Number.NaN)
+  if (!Number.isFinite(sourceId)) return
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  const placeAfter = event.clientY > rect.top + rect.height / 2
+  queuedFollowUps.value = moveItemBeforeOrAfter(
+    queuedFollowUps.value,
+    sourceId,
+    target.id,
+    placeAfter,
+    item => item.id,
+  )
+  draggingQueuedFollowUpId.value = null
+}
+
+function endQueuedFollowUpDrag(): void {
+  draggingQueuedFollowUpId.value = null
+}
+
 async function steerQueuedFollowUp(item: QueuedFollowUp): Promise<void> {
   const activeConversationId = conversationId.value
   if (!activeConversationId || !loading.value) return
@@ -2006,6 +2037,28 @@ function openAsset(asset: SessionAsset): void {
   window.open(action.url, '_blank', 'noopener,noreferrer')
 }
 
+function openImagePreview(image: { name: string; url: string }): void {
+  previewAsset.value = {
+    id: `message-image-${image.name}`,
+    session_id: conversationId.value || '',
+    asset_type: 'image',
+    name: image.name,
+    mime_type: null,
+    size_bytes: 0,
+    sha256: null,
+    text_content: null,
+    source_url: null,
+    content_url: image.url,
+    metadata: {},
+    created_at: '',
+    updated_at: '',
+  }
+}
+
+function openMessageImage(part: MessageImagePart): void {
+  openImagePreview({ name: part.name, url: part.content_url })
+}
+
 async function removeAsset(asset: SessionAsset): Promise<void> {
   if (!conversationId.value) return
   const confirmed = await requestConfirmation(
@@ -2514,6 +2567,7 @@ onBeforeUnmount(() => {
               :error="traceError"
               :selected-turn-id="selectedTraceTurnId"
               @refresh="loadInteractionTrace()"
+              @preview-image="openImagePreview"
               @update:selected-turn-id="updateTraceTurn"
             />
           </div>
@@ -2622,12 +2676,15 @@ onBeforeUnmount(() => {
                             >
                               <MarkdownContent :content="part.text" />
                             </div>
-                            <img
+                            <button
                               v-else-if="part.type === 'image'"
-                              class="turn-prompt-image"
-                              :src="part.content_url"
-                              :alt="part.name"
-                            />
+                              class="turn-prompt-image-button"
+                              type="button"
+                              :aria-label="`Preview ${part.name}`"
+                              @click="openMessageImage(part)"
+                            >
+                              <img class="turn-prompt-image" :src="part.content_url" :alt="part.name" />
+                            </button>
                           </template>
                         </template>
                         <div v-else-if="turn.prompt.content" class="message-content">
@@ -2678,7 +2735,7 @@ onBeforeUnmount(() => {
                               <summary><i /><span>{{ entry.activity.name.replaceAll('_', ' ') }}</span><small v-if="entry.activity.duration_ms">{{ Math.round(entry.activity.duration_ms) }} ms</small></summary>
                               <div class="tool-activity-details">
                                 <div><strong>Arguments</strong><pre>{{ formatToolValue(entry.activity.arguments || {}) }}</pre></div>
-                                <div><strong>{{ entry.activity.error_message ? 'Error' : 'Result' }}</strong><ToolResult :output="entry.activity.output" :error="entry.activity.error_message" /></div>
+                                <div><strong>{{ entry.activity.error_message ? 'Error' : 'Result' }}</strong><ToolResult :output="entry.activity.output" :error="entry.activity.error_message" @preview-image="openImagePreview" /></div>
                               </div>
                             </details>
                             <details v-else-if="entry.type === 'server_tool'" class="tool-activity server-tool-activity" :class="entry.activity.state">
@@ -2727,6 +2784,7 @@ onBeforeUnmount(() => {
                 @toggle="toggleAskOption"
                 @update:answer="updateAskAnswer"
                 @add-images="attachAskUserImages"
+                @preview-image="openImagePreview"
                 @remove-image="removeAskUserImage"
                 @submit="answerAgentQuestion"
               />
@@ -2744,13 +2802,39 @@ onBeforeUnmount(() => {
 
               <div class="agent-composer-stack">
                 <div v-if="queuedFollowUps.length" class="queued-followup-list" aria-label="Queued follow-up messages" aria-live="polite">
-                  <article v-for="item in queuedFollowUps" :key="item.id" class="queued-followup">
+                  <article
+                    v-for="item in queuedFollowUps"
+                    :key="item.id"
+                    class="queued-followup"
+                    :class="{ dragging: draggingQueuedFollowUpId === item.id }"
+                    @dragover.prevent
+                    @drop.prevent="dropQueuedFollowUp(item, $event)"
+                  >
+                    <button
+                      class="queued-followup-drag"
+                      type="button"
+                      draggable="true"
+                      title="Drag to reorder"
+                      aria-label="Drag to reorder"
+                      @dragstart.stop="startQueuedFollowUpDrag(item, $event)"
+                      @dragend.stop="endQueuedFollowUpDrag"
+                    >
+                      <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="7" cy="5" r="1" /><circle cx="13" cy="5" r="1" /><circle cx="7" cy="10" r="1" /><circle cx="13" cy="10" r="1" /><circle cx="7" cy="15" r="1" /><circle cx="13" cy="15" r="1" /></svg>
+                    </button>
                     <span class="queued-followup-icon" aria-hidden="true"><svg><use href="#icon-conversation" /></svg></span>
                     <div class="queued-followup-copy">
                       <p>{{ queuedFollowUpText(item) }}</p>
                       <div v-if="item.visibleParts.some((part) => part.type === 'image')" class="queued-followup-images">
                         <template v-for="(part, partIndex) in item.visibleParts" :key="`${item.id}-${partIndex}`">
-                          <img v-if="part.type === 'image'" :src="part.content_url" :alt="part.name" />
+                          <button
+                            v-if="part.type === 'image'"
+                            class="queued-followup-image-preview"
+                            type="button"
+                            :aria-label="`Preview ${part.name}`"
+                            @click="openImagePreview({ name: part.name, url: part.content_url })"
+                          >
+                            <img :src="part.content_url" :alt="part.name" />
+                          </button>
                         </template>
                       </div>
                     </div>
@@ -2778,8 +2862,15 @@ onBeforeUnmount(() => {
                 <form class="agent-input" @submit.prevent="submitConversation">
                   <div v-if="pendingMessageImages.length" class="message-image-drafts" aria-label="Images attached to this message">
                     <figure v-for="image in pendingMessageImages" :key="image.id">
-                      <img :src="image.content_url" :alt="image.name" />
-                      <button type="button" :aria-label="`Remove ${image.name}`" @click="removeMessageImage(image.id)">×</button>
+                      <button
+                        class="message-image-preview"
+                        type="button"
+                        :aria-label="`Preview ${image.name}`"
+                        @click="openImagePreview({ name: image.name, url: image.content_url })"
+                      >
+                        <img :src="image.content_url" :alt="image.name" />
+                      </button>
+                      <button class="message-image-remove" type="button" :aria-label="`Remove ${image.name}`" @click="removeMessageImage(image.id)">×</button>
                     </figure>
                   </div>
                   <textarea v-if="!conversationStarted" :value="raw" rows="3" autofocus :placeholder="$t('composer.messagePlaceholder')" @input="updateComposerText($event, 'initial')" @keydown.enter.exact="handleComposerEnter" />
@@ -3295,6 +3386,9 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .turn-steering-status { display: inline-flex; align-items: center; gap: .38rem; width: fit-content; padding: .24rem .45rem; border-radius: .4rem; color: #4c6857; background: #e3eee7; font-size: .56rem; font-weight: 570; line-height: 1.35; }
 .turn-steering-status i { width: .38rem; height: .38rem; flex: 0 0 auto; border-radius: 50%; background: #6f927b; animation: activity-pulse 1.1s ease-in-out infinite; }
 .turn-prompt .message-content { width: auto; min-width: 0; max-width: 100%; padding: 0; border: 0; border-radius: 0; color: inherit; background: transparent; box-shadow: none; }
+.turn-prompt-image-button { width: fit-content; max-width: 100%; display: block; padding: 0; border: 0; border-radius: .75rem; background: transparent; cursor: zoom-in; }
+.turn-prompt-image-button:hover .turn-prompt-image { box-shadow: 0 0 0 2px rgba(71,105,87,.22); }
+.turn-prompt-image-button:focus-visible { outline: 3px solid rgba(71,105,87,.24); outline-offset: 2px; }
 .turn-prompt-image { display: block; width: min(100%, 22rem); max-height: 18rem; margin: 0; border-radius: .75rem; object-fit: contain; background: #e2e7e4; }
 .turn-execution { margin-right: 7%; }
 .turn-execution > summary { min-height: 3.1rem; display: grid; grid-template-columns: auto minmax(0,1fr) auto auto; align-items: center; gap: .62rem; padding: .55rem .1rem; border-bottom: 1px solid #e7ebe8; cursor: pointer; list-style: none; user-select: none; }
@@ -3346,11 +3440,19 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .queued-followup-list + .agent-input { margin-top: 0; }
 .queued-followup { min-width: 0; min-height: 2.6rem; display: flex; align-items: center; gap: .52rem; padding: .34rem .25rem; border-radius: .55rem; }
 .queued-followup + .queued-followup { border-top: 1px solid rgba(54,73,61,.1); border-radius: 0; }
+.queued-followup.dragging { opacity: .52; background: #e5ece7; }
+.queued-followup-drag { width: 1.2rem; height: 1.7rem; flex: 0 0 auto; display: grid; place-items: center; padding: 0; border: 0; border-radius: .35rem; color: #9aa29d; background: transparent; cursor: grab; }
+.queued-followup-drag:active { cursor: grabbing; }
+.queued-followup-drag:hover, .queued-followup-drag:focus-visible { color: #53675b; background: #e4ebe6; outline: none; }
+.queued-followup-drag svg { width: .78rem; height: .78rem; fill: currentColor; }
 .queued-followup-icon { width: 1.42rem; height: 1.42rem; flex: 0 0 auto; display: grid; place-items: center; color: #67776c; }
 .queued-followup-icon svg { width: .82rem; height: .82rem; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .queued-followup-copy { min-width: 0; flex: 1; }
 .queued-followup-copy p { margin: 0; overflow: hidden; color: #48534d; font-size: .65rem; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
 .queued-followup-images { display: flex; gap: .28rem; margin-top: .32rem; }
+.queued-followup-image-preview { width: 1.7rem; height: 1.7rem; display: block; padding: 0; border: 0; border-radius: .36rem; background: transparent; cursor: zoom-in; }
+.queued-followup-image-preview:hover img, .queued-followup-image-preview:focus-visible img { box-shadow: 0 0 0 2px rgba(71,105,87,.22); }
+.queued-followup-image-preview:focus-visible { outline: 2px solid rgba(71,105,87,.2); outline-offset: 2px; }
 .queued-followup-images img { width: 1.7rem; height: 1.7rem; border: 1px solid #d8e0da; border-radius: .36rem; object-fit: cover; background: #eef2ef; }
 .queued-followup-steer { flex: 0 0 auto; min-height: 1.72rem; display: inline-flex; align-items: center; gap: .28rem; padding: 0 .42rem; border: 0; border-radius: .42rem; color: #54655b; background: transparent; cursor: pointer; font-size: .59rem; font-weight: 620; }
 .queued-followup-steer svg { width: .76rem; height: .76rem; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
@@ -3362,8 +3464,11 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .agent-input { margin: .8rem; padding: .25rem; border: 1px solid rgba(29,29,31,.11); border-radius: .9rem; background: white; box-shadow: 0 3px 16px rgba(0,0,0,.055); }
 .message-image-drafts { display: flex; gap: .42rem; padding: .55rem .58rem .1rem; overflow-x: auto; }
 .message-image-drafts figure { position: relative; width: 3.5rem; height: 3.5rem; flex: 0 0 auto; margin: 0; }
+.message-image-preview { display: block; width: 100%; height: 100%; padding: 0; border: 0; border-radius: .66rem; background: transparent; cursor: zoom-in; }
+.message-image-preview:hover img, .message-image-preview:focus-visible img { box-shadow: 0 0 0 2px rgba(71,105,87,.22); }
+.message-image-preview:focus-visible { outline: 2px solid rgba(71,105,87,.2); outline-offset: 2px; }
 .message-image-drafts img { display: block; width: 100%; height: 100%; border: 1px solid #dce3de; border-radius: .66rem; object-fit: cover; background: #f2f4f2; }
-.message-image-drafts button { position: absolute; top: -.28rem; right: -.28rem; width: 1rem; height: 1rem; display: grid; place-items: center; padding: 0; border: 2px solid #fff; border-radius: 50%; color: #fff; background: #59645d; box-shadow: 0 1px 4px rgba(31,39,34,.18); cursor: pointer; font-size: .67rem; line-height: 1; }
+.message-image-drafts .message-image-remove { position: absolute; top: -.28rem; right: -.28rem; width: 1rem; height: 1rem; display: grid; place-items: center; padding: 0; border: 2px solid #fff; border-radius: 50%; color: #fff; background: #59645d; box-shadow: 0 1px 4px rgba(31,39,34,.18); cursor: pointer; font-size: .67rem; line-height: 1; }
 .agent-input:focus-within { border-color: rgba(71,105,87,.4); box-shadow: 0 0 0 3px rgba(71,105,87,.1), 0 5px 20px rgba(0,0,0,.06); }
 .agent-input textarea { display: block; width: 100%; min-height: 4rem; padding: .7rem .8rem .25rem; resize: none; border: 0; outline: 0; color: var(--text); background: transparent; font-size: .78rem; line-height: 1.5; }
 .agent-input-footer { display: flex; align-items: center; justify-content: space-between; gap: .5rem; min-height: 2.45rem; padding: 0 .3rem .1rem .45rem; }
