@@ -270,7 +270,7 @@ const pageDescription = computed(() => {
     : t('{count} items in your library', { count: libraryItems.value.length })
 })
 const conversationStarted = computed(
-  () => conversationId.value !== null || artifactContent.value !== null || conversation.value.length > 0,
+  () => conversation.value.length > 0 || artifacts.value.length > 0 || artifactContent.value !== null,
 )
 const conversationTurns = computed(() => buildConversationTurns(raw.value, conversation.value, initialMessageParts.value))
 const canSubmitMessage = computed(() => (
