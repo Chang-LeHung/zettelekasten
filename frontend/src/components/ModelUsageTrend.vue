@@ -24,13 +24,13 @@ const chartDays = computed(() => focusActivityRange(props.days))
 const dates = computed(() => chartDays.value.map(day => day.date))
 const totalRequests = computed(() => chartDays.value.reduce((total, day) => total + day.requests, 0))
 const totalTokens = computed(() => chartDays.value.reduce((total, day) => total + day.total_tokens, 0))
-const sparseRequestData = computed(() => chartDays.value.filter(day => day.requests > 0).length < 3)
+const sparseRequestData = computed(() => chartDays.value.filter(day => day.requests > 0).length < 4)
 
 const requestOption = computed<EChartsOption>(() => ({
   animationDuration: 320,
   animationEasing: 'cubicOut',
   grid: chartGrid(),
-  tooltip: chartTooltip(formatInteger),
+  tooltip: requestTooltip(),
   xAxis: chartXAxis(dates.value, sparseRequestData.value),
   yAxis: chartYAxis(formatRequestTick),
   series: [
@@ -39,16 +39,29 @@ const requestOption = computed<EChartsOption>(() => ({
           type: 'bar',
           data: chartDays.value.map(day => day.requests),
           barMaxWidth: 16,
-          itemStyle: { color: '#6f95e2', borderRadius: [3, 3, 0, 0] },
-          emphasis: { itemStyle: { color: '#4f7ed7' } },
+          itemStyle: { color: '#7fa58b', borderRadius: [3, 3, 0, 0] },
+          emphasis: { itemStyle: { color: '#5d8a70' } },
         }
       : {
           type: 'line',
           data: chartDays.value.map(day => day.requests),
-          smooth: 0.38,
+          smooth: 0.32,
+          smoothMonotone: 'x',
           symbol: 'none',
-          lineStyle: { color: '#4f7ed7', width: 2.4 },
-          areaStyle: { color: 'rgba(105, 146, 223, .3)' },
+          lineStyle: { color: '#5d8a70', width: 2.4 },
+          areaStyle: {
+            color: {
+              type: 'linear',
+              x: 0,
+              y: 0,
+              x2: 0,
+              y2: 1,
+              colorStops: [
+                { offset: 0, color: 'rgba(93,138,112,.34)' },
+                { offset: 1, color: 'rgba(93,138,112,.035)' },
+              ],
+            },
+          },
           emphasis: { focus: 'series' },
         },
   ],
@@ -66,8 +79,8 @@ const tokenOption = computed<EChartsOption>(() => ({
       type: 'bar',
       data: chartDays.value.map(day => day.total_tokens),
       barMaxWidth: 16,
-      itemStyle: { color: '#8bb1ee', borderRadius: [3, 3, 0, 0] },
-      emphasis: { itemStyle: { color: '#5d8ddd' } },
+      itemStyle: { color: '#8fb59b', borderRadius: [3, 3, 0, 0] },
+      emphasis: { itemStyle: { color: '#5d8a70' } },
     },
   ],
 }))
@@ -98,13 +111,26 @@ function chartTooltip(valueFormatter: (value: number) => string) {
     trigger: 'axis' as const,
     valueFormatter: (value: unknown) => valueFormatter(Number(value)),
     backgroundColor: 'rgba(255,255,255,.98)',
-    borderColor: 'rgba(55,70,61,.12)',
+    borderColor: 'rgba(66,91,75,.16)',
     borderWidth: 1,
     padding: [8, 10],
     textStyle: { color: '#3e4842', fontSize: 12 },
     axisPointer: {
       type: 'line' as const,
-      lineStyle: { color: 'rgba(93,111,101,.42)', type: 'dashed' as const },
+      lineStyle: { color: 'rgba(84,116,95,.44)', type: 'dashed' as const },
+    },
+  }
+}
+
+function requestTooltip() {
+  return {
+    ...chartTooltip(formatInteger),
+    formatter: (params: unknown) => {
+      const first = Array.isArray(params) ? params[0] : params
+      const index = Number((first as { dataIndex?: number } | undefined)?.dataIndex ?? -1)
+      const day = chartDays.value[index]
+      if (!day) return ''
+      return `<div style="font-weight:650;margin-bottom:.2rem">${day.date}</div><div style="color:#58665e">${formatInteger(day.requests)} requests</div>`
     },
   }
 }
@@ -184,7 +210,7 @@ function formatDateLabel(value: string): string {
 .model-usage-trend header strong { color: #26332c; font-size: .82rem; }
 .model-usage-trend header small { margin-top: .12rem; color: #87918b; font-size: .6rem; text-transform: capitalize; }
 .model-trend-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem; }
-.model-trend-card { min-width: 0; padding: .8rem .8rem .35rem; overflow: hidden; border: 1px solid rgba(35,45,39,.06); border-radius: .95rem; background: #f1f2f4; }
+.model-trend-card { min-width: 0; padding: .8rem .8rem .35rem; overflow: hidden; border: 1px solid rgba(35,45,39,.06); border-radius: .95rem; background: #f3f5f3; }
 .model-trend-heading { display: flex; align-items: baseline; gap: .45rem; margin-bottom: .18rem; color: #3c4540; }
 .model-trend-heading strong { font-size: .72rem; }
 .model-trend-heading span { color: #59635d; font-size: .72rem; font-weight: 720; font-variant-numeric: tabular-nums; }
