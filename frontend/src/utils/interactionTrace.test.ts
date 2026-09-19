@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentPersistedMessage } from '../api/types'
-import { buildInteractionTrace, splitInteractionTraceMessages } from './interactionTrace'
+import {
+  buildInteractionTrace,
+  interactionTraceModelRequest,
+  splitInteractionTraceMessages,
+} from './interactionTrace'
 
 function record(
   sequence: number,
@@ -113,5 +117,23 @@ describe('buildInteractionTrace', () => {
 
     expect(sections.previous.map((message) => message.sequence)).toEqual([1, 2])
     expect(sections.current.map((message) => message.sequence)).toEqual([3, 4])
+  })
+
+  it('reads the request tool definitions attached to an assistant message', () => {
+    const message = record(1, 'assistant', {
+      attributes: {
+        model_request_trace: {
+          schema_version: 1,
+          tools: [{ name: 'read_file', description: 'Read.', parameters: {}, deferred: false }],
+          server_tools: [{ type: 'web_search', configuration: {} }],
+        },
+      },
+    })
+
+    expect(interactionTraceModelRequest(message)).toEqual({
+      schema_version: 1,
+      tools: [{ name: 'read_file', description: 'Read.', parameters: {}, deferred: false }],
+      server_tools: [{ type: 'web_search', configuration: {} }],
+    })
   })
 })

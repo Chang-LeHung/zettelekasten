@@ -1,4 +1,4 @@
-import type { AgentModelUsage, AgentPersistedMessage } from '../api/types'
+import type { AgentModelRequestTrace, AgentModelUsage, AgentPersistedMessage } from '../api/types'
 import { addAgentUsage } from './agentUsage'
 
 export interface InteractionTraceModel {
@@ -57,6 +57,18 @@ export function interactionTraceEventLabel(message: AgentPersistedMessage): stri
   if (message.role === 'system') return 'System instruction'
   if (message.role === 'agent') return 'Internal agent message'
   return 'User message'
+}
+
+export function interactionTraceModelRequest(message: AgentPersistedMessage): AgentModelRequestTrace | null {
+  const value = message.attributes.model_request_trace
+  if (!value || typeof value !== 'object') return null
+  const trace = value as Partial<AgentModelRequestTrace>
+  if (
+    trace.schema_version !== 1
+    || !Array.isArray(trace.tools)
+    || !Array.isArray(trace.server_tools)
+  ) return null
+  return trace as AgentModelRequestTrace
 }
 
 /** Split the raw log into prior context and the selected request. */

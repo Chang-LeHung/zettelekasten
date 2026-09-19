@@ -174,6 +174,24 @@ export interface AgentModelUsage {
   reasoning_tokens: number
 }
 
+export interface AgentToolDefinitionTrace {
+  name: string
+  description: string
+  parameters: Record<string, unknown>
+  deferred: boolean
+}
+
+export interface AgentServerToolDefinitionTrace {
+  type: string
+  configuration: Record<string, unknown>
+}
+
+export interface AgentModelRequestTrace {
+  schema_version: number
+  tools: AgentToolDefinitionTrace[]
+  server_tools: AgentServerToolDefinitionTrace[]
+}
+
 export interface AgentToolActivity {
   id: string
   name: string

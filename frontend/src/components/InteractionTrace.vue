@@ -3,10 +3,12 @@ import { computed, nextTick, ref, watch } from 'vue'
 import type { AgentPersistedMessage } from '../api/types'
 import { calculateCacheHitRate, formatTokenCount } from '../utils/agentUsage'
 import CacheHitRate from './CacheHitRate.vue'
+import TraceCopyBlock from './TraceCopyBlock.vue'
 import {
   buildInteractionTrace,
   interactionTraceEventKind,
   interactionTraceEventLabel,
+  interactionTraceModelRequest,
   interactionTraceUsage,
   splitInteractionTraceMessages,
   type InteractionTraceTurn,
@@ -226,15 +228,19 @@ function cacheHitRate(message: AgentPersistedMessage): number | null {
 
               <div v-if="message.parts.length" class="trace-message-parts">
                 <template v-for="(part, partIndex) in message.parts" :key="`${message.id}-part-${partIndex}`">
-                  <pre v-if="part.type === 'text'">{{ formatTraceText(message, part.text) }}</pre>
+                  <TraceCopyBlock v-if="part.type === 'text'" flush :content="formatTraceText(message, part.text)" />
                   <img v-else :src="part.content_url" :alt="part.name" />
                 </template>
               </div>
-              <pre v-else-if="message.content" class="trace-message-content">{{ formatTraceText(message, message.content) }}</pre>
+              <TraceCopyBlock
+                v-else-if="message.content"
+                class="trace-message-content"
+                :content="formatTraceText(message, message.content)"
+              />
 
               <details v-if="message.reasoning_content" class="trace-payload">
                 <summary>Reasoning</summary>
-                <pre>{{ message.reasoning_content }}</pre>
+                <TraceCopyBlock :content="message.reasoning_content" />
               </details>
 
               <details v-if="message.tool_calls.length" class="trace-payload">
@@ -242,8 +248,44 @@ function cacheHitRate(message: AgentPersistedMessage): number | null {
                 <div v-for="call in message.tool_calls" :key="call.id" class="trace-tool-call">
                   <strong>{{ call.name }}</strong>
                   <small>{{ call.id }}</small>
-                  <pre>{{ formatJson(call.arguments) }}</pre>
+                  <TraceCopyBlock compact label="arguments" :content="formatJson(call.arguments)" />
                 </div>
+              </details>
+
+              <details v-if="interactionTraceModelRequest(message)" class="trace-payload trace-tool-definitions">
+                <summary>
+                  Tool definitions
+                  <small>
+                    {{ interactionTraceModelRequest(message)?.tools.length || 0 }} local ·
+                    {{ interactionTraceModelRequest(message)?.server_tools.length || 0 }} provider
+                  </small>
+                </summary>
+                <section v-if="interactionTraceModelRequest(message)?.tools.length" class="trace-tool-section">
+                  <h3>Local tools</h3>
+                  <article
+                    v-for="tool in interactionTraceModelRequest(message)?.tools || []"
+                    :key="tool.name"
+                    class="trace-tool-definition"
+                  >
+                    <header>
+                      <strong>{{ tool.name }}</strong>
+                      <span v-if="tool.deferred">Deferred</span>
+                    </header>
+                    <p>{{ tool.description }}</p>
+                    <TraceCopyBlock compact label="parameters" :content="formatJson(tool.parameters)" />
+                  </article>
+                </section>
+                <section v-if="interactionTraceModelRequest(message)?.server_tools.length" class="trace-tool-section">
+                  <h3>Provider tools</h3>
+                  <article
+                    v-for="tool in interactionTraceModelRequest(message)?.server_tools || []"
+                    :key="tool.type"
+                    class="trace-tool-definition"
+                  >
+                    <header><strong>{{ tool.type }}</strong><span>Provider</span></header>
+                    <TraceCopyBlock compact label="configuration" :content="formatJson(tool.configuration)" />
+                  </article>
+                </section>
               </details>
 
               <div v-if="interactionTraceUsage(message)" class="trace-event-usage">
@@ -322,15 +364,27 @@ function cacheHitRate(message: AgentPersistedMessage): number | null {
 .trace-event.system .trace-event-content, .trace-event.agent .trace-event-content { background: rgba(103, 112, 121, .045); }
 .trace-event.system .trace-event-content > header strong, .trace-event.agent .trace-event-content > header strong { color: #65707a; }
 .trace-event-meta { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .28rem; }
-.trace-message-content, .trace-message-parts pre, .trace-payload pre, .trace-tool-call pre { max-height: 16rem; margin: .5rem 0 0; padding: .6rem .68rem; overflow: auto; border-radius: .52rem; color: #3f4a43; background: #f5f7f5; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: .62rem; line-height: 1.52; white-space: pre-wrap; overflow-wrap: anywhere; scrollbar-width: thin; }
 .trace-message-parts { display: grid; gap: .42rem; margin-top: .5rem; }
-.trace-message-parts pre { margin: 0; }
 .trace-message-parts img { max-width: min(100%, 28rem); max-height: 20rem; border: 1px solid #dfe5e1; border-radius: .55rem; object-fit: contain; background: #eef1ef; }
 .trace-payload { margin-top: .48rem; }
-.trace-payload summary { color: #5d6a62; cursor: pointer; font-size: .6rem; font-weight: 650; }
+.trace-payload > summary { width: fit-content; min-height: 1.8rem; display: inline-flex; align-items: center; gap: .34rem; padding: 0 .48rem; border: 1px solid #dce4df; border-radius: .42rem; color: #52645a; background: #f7f9f7; cursor: pointer; font-size: .6rem; font-weight: 650; list-style: none; transition: border-color 140ms ease, background 140ms ease, color 140ms ease; }
+.trace-payload > summary::-webkit-details-marker { display: none; }
+.trace-payload > summary::before { content: "›"; color: #89958e; font-size: .82rem; line-height: 1; transform: translateY(-.02rem) rotate(0); transition: transform 140ms ease; }
+.trace-payload[open] > summary { border-color: #cbd8d0; color: #355442; background: #edf3ef; }
+.trace-payload[open] > summary::before { transform: translateY(-.02rem) rotate(90deg); }
+.trace-payload > summary:hover, .trace-payload > summary:focus-visible { border-color: #b9cbc0; color: #31523f; background: #edf3ef; outline: none; }
 .trace-tool-call { display: grid; gap: .2rem; margin-top: .45rem; }
 .trace-tool-call strong { color: #4e6355; font-size: .62rem; }
 .trace-tool-call small { color: #929a95; font-size: .53rem; }
+.trace-tool-definitions > summary { display: flex; align-items: center; gap: .4rem; }
+.trace-tool-definitions > summary small { color: #929a95; font-size: .53rem; font-weight: 500; }
+.trace-tool-section { margin-top: .58rem; }
+.trace-tool-section h3 { margin: 0 0 .34rem; color: #66736b; font-size: .55rem; font-weight: 720; letter-spacing: .055em; text-transform: uppercase; }
+.trace-tool-definition { display: grid; gap: .32rem; margin-top: .38rem; padding: .55rem .6rem; border: 1px solid #e1e7e3; border-radius: .52rem; background: #fafbfa; }
+.trace-tool-definition header { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.trace-tool-definition header strong { color: #3f5046; font-size: .64rem; }
+.trace-tool-definition header span { padding: .12rem .3rem; border-radius: .3rem; color: #5f6c64; background: #e9efeb; font-size: .48rem; font-weight: 680; text-transform: uppercase; }
+.trace-tool-definition p { margin: 0; color: #68736c; font-size: .59rem; line-height: 1.45; }
 .trace-event-usage { display: flex; flex-wrap: wrap; gap: .28rem; margin-top: .5rem; }
 .trace-state { min-height: 18rem; display: grid; place-items: center; align-content: center; gap: .35rem; padding: 2rem; color: #818983; text-align: center; }
 .trace-state strong { color: #4b554f; font-size: .82rem; }

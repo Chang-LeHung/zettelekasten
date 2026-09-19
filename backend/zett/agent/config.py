@@ -13,6 +13,7 @@ from zett_agent import (
     CompactionExtension,
     McpExtension,
     McpServer,
+    ModelRequestTraceExtension,
     SessionPersistenceExtension,
     SkillExtension,
     SQLiteSessionStorage,
@@ -97,6 +98,7 @@ class ZettelkastenAgentConfig:
                 ),
                 ToolGuidelinesExtension(),
                 ContextCompositionExtension(self.context_composition_recorder),
+                ModelRequestTraceExtension(),
             ),
             max_iterations=self.max_iterations,
         )
