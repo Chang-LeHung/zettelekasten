@@ -10,6 +10,7 @@ from zett_agent import AssistantMessage, ModelEvent, ModelRequest, ModelResponse
 from zett import config
 from zett.application import provider_connections
 from zett.infra import database
+from zett.infra.artifact_search import ensure_artifact_search
 from zett.infra.models import Base
 
 
@@ -45,6 +46,7 @@ async def isolated_database(tmp_path, monkeypatch: pytest.MonkeyPatch) -> AsyncI
     monkeypatch.setattr(database, "session_factory", async_sessionmaker(engine, expire_on_commit=False))
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
+        await ensure_artifact_search(connection)
     yield database_path
     from zett.infra.agent_runtime import close_agent_runtime_storage
 

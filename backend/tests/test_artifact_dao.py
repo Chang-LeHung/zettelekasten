@@ -48,13 +48,20 @@ async def test_artifact_storage_persists_multiple_typed_outputs_per_session() ->
             ),
         )
     )
+    card = await artifact_storage.update(
+        card.id,
+        AgentArtifactWrite(
+            session_id=session_id,
+            content=CardArtifactContent(title="Updated idea", content="A revised note.", card_type="idea"),
+        ),
+    )
 
     assert isinstance(artifact_storage, AsyncStorage)
     assert [item.id for item in await artifact_storage.list(ArtifactListOptions(session_id=session_id))] == [
         card.id,
-        article.id,
-        image.id,
         slides.id,
+        image.id,
+        article.id,
     ]
     assert article.content.artifact_type == "article"
     assert image.content.artifact_type == "image"
@@ -126,6 +133,51 @@ async def test_artifact_filters_and_explicit_session_cleanup() -> None:
     assert [item.content.title for item in slides] == ["Python slides"]
     assert await artifact_storage.delete_session(session_id) == 3
     assert await artifact_storage.list(ArtifactListOptions(session_id=session_id)) == []
+
+
+async def test_artifact_search_uses_bm25_and_reindexes_updates() -> None:
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
+    title_match = await artifact_storage.create(
+        AgentArtifactWrite(
+            session_id=session_id,
+            content=CardArtifactContent(title="Needle in title", content="Unrelated body"),
+        )
+    )
+    content_match = await artifact_storage.create(
+        AgentArtifactWrite(
+            session_id=session_id,
+            content=ArticleArtifactContent(title="Other article", content="The needle appears in this body"),
+        )
+    )
+
+    matches = await artifact_storage.list(ArtifactListOptions(query="needle"))
+    assert [item.id for item in matches] == [title_match.id, content_match.id]
+
+    await artifact_storage.update(
+        content_match.id,
+        AgentArtifactWrite(
+            session_id=session_id,
+            content=ArticleArtifactContent(title="Other article", content="Replacement content"),
+        ),
+    )
+
+    assert [item.id for item in await artifact_storage.list(ArtifactListOptions(query="needle"))] == [title_match.id]
+    assert [item.id for item in await artifact_storage.list(ArtifactListOptions(query="replacement"))] == [
+        content_match.id
+    ]
+
+
+async def test_artifact_search_supports_chinese_substrings() -> None:
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
+    created = await artifact_storage.create(
+        AgentArtifactWrite(
+            session_id=session_id,
+            content=CardArtifactContent(title="机器学习笔记", content="向量检索与知识库"),
+        )
+    )
+
+    assert [item.id for item in await artifact_storage.list(ArtifactListOptions(query="机器学习"))] == [created.id]
+    assert [item.id for item in await artifact_storage.list(ArtifactListOptions(query="向量"))] == [created.id]
 
 
 @pytest.mark.parametrize(

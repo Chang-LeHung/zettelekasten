@@ -380,7 +380,7 @@ def test_session_asset_and_artifact_http_lifecycle():
         assert [item["id"] for item in client.get("/api/artifacts?artifact_types=slides").json()] == [slides_id]
 
         detail = client.get(f"/api/agent/sessions/{session_id}").json()
-        assert [item["id"] for item in detail["artifacts"]] == [artifact_id, slides_id]
+        assert [item["id"] for item in detail["artifacts"]] == [slides_id, artifact_id]
         assert {item["id"] for item in detail["assets"]} == {
             text.json()["id"],
             asset_id,

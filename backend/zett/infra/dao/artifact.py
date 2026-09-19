@@ -4,8 +4,8 @@ from enum import IntEnum
 from typing import cast
 
 from pydantic import TypeAdapter
+from sqlalchemy import Float, String, or_, select, text
 from sqlalchemy import delete as sql_delete
-from sqlalchemy import select
 from zett_agent import new_uuid7
 
 from ...models import ArtifactListOptions
@@ -18,6 +18,12 @@ from ...schemas import (
     ArtifactType,
     LatexPdfArtifactContent,
     LatexPdfArtifactCreate,
+)
+from ..artifact_search import (
+    build_fts_query,
+    delete_artifact_search,
+    delete_artifacts_search,
+    upsert_artifact_search,
 )
 from ..database import session_scope
 from ..latex_projects import create_latex_project, validate_latex_project_path
@@ -108,6 +114,12 @@ class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifact, str, Artif
             )
             session.add(model)
             await session.flush()
+            await upsert_artifact_search(
+                session,
+                artifact_id=model.id,
+                content=content,
+                raw_content=entity.raw_content,
+            )
             return _artifact_out(model)
 
     async def get(self, entity_id: str) -> AgentArtifact | None:
@@ -147,6 +159,12 @@ class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifact, str, Artif
             model.version += 1
             model.updated_at = datetime.now(UTC)
             await session.flush()
+            await upsert_artifact_search(
+                session,
+                artifact_id=model.id,
+                content=entity.content,
+                raw_content=entity.raw_content,
+            )
             return _artifact_out(model)
 
     async def delete(self, entity_id: str) -> bool:
@@ -155,6 +173,7 @@ class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifact, str, Artif
             if model is None:
                 return False
             await session.execute(sql_delete(ArtifactTagModel).where(ArtifactTagModel.artifact_id == entity_id))
+            await delete_artifact_search(session, entity_id)
             await session.delete(model)
             return True
 
@@ -176,9 +195,36 @@ class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifact, str, Artif
                         select(ArtifactTagModel.artifact_id).where(ArtifactTagModel.tag_id.in_(options.tag_ids))
                     )
                 )
+            rank = None
             if options.query:
-                statement = statement.where(SessionArtifactModel.title.ilike(f"%{options.query}%"))
-            statement = statement.order_by(SessionArtifactModel.created_at).limit(options.limit).offset(options.offset)
+                fts_query = build_fts_query(options.query)
+                if fts_query is None:
+                    pattern = f"%{options.query}%"
+                    statement = statement.where(
+                        or_(
+                            SessionArtifactModel.title.ilike(pattern),
+                            SessionArtifactModel.content_json.ilike(pattern),
+                            SessionArtifactModel.raw_content.ilike(pattern),
+                        )
+                    )
+                else:
+                    rank = (
+                        text(
+                            "SELECT artifact_id, bm25(artifact_search, 0.0, 8.0, 1.0) AS rank "
+                            "FROM artifact_search "
+                            "WHERE artifact_search MATCH :search_query"
+                        )
+                        .columns(artifact_id=String, rank=Float)
+                        .bindparams(search_query=fts_query)
+                        .subquery("artifact_search_rank")
+                    )
+                    statement = statement.join(rank, rank.c.artifact_id == SessionArtifactModel.id)
+            order = (
+                (rank.c.rank, SessionArtifactModel.updated_at.desc(), SessionArtifactModel.id.desc())
+                if rank is not None
+                else (SessionArtifactModel.updated_at.desc(), SessionArtifactModel.id.desc())
+            )
+            statement = statement.order_by(*order).limit(options.limit).offset(options.offset)
             artifacts = [_artifact_out(model) for model in await session.scalars(statement)]
         from .tag import tag_storage
 
@@ -197,6 +243,7 @@ class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifact, str, Artif
                 await session.execute(
                     sql_delete(ArtifactTagModel).where(ArtifactTagModel.artifact_id.in_(artifact_ids))
                 )
+                await delete_artifacts_search(session, artifact_ids)
             result = await session.execute(
                 sql_delete(SessionArtifactModel).where(SessionArtifactModel.session_id == session_id)
             )

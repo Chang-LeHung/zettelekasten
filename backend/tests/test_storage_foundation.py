@@ -116,13 +116,7 @@ def test_schema_and_http_surface_contain_no_retired_business_logic(isolated_data
         "tags",
     }
     expected_indexes = {
-        "ix_artifacts_created",
-        "ix_artifacts_session_created",
         "ix_artifact_tags_tag_artifact",
-        "ix_assets_created",
-        "ix_assets_session_created",
-        "ix_model_usage_activity_day",
-        "ix_model_usage_activity_session_day",
     }
     assert set(Base.metadata.tables) == expected_tables
     with sqlite3.connect(isolated_database) as connection:
@@ -130,6 +124,8 @@ def test_schema_and_http_surface_contain_no_retired_business_logic(isolated_data
             row[0]
             for row in connection.execute("select name from sqlite_master where type = 'table'")
             if not row[0].startswith("sqlite_")
+            and row[0] != "artifact_search"
+            and not row[0].startswith("artifact_search_")
         }
         index_names = {
             row[0] for row in connection.execute("select name from sqlite_master where type = 'index'") if row[0]

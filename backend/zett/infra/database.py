@@ -15,6 +15,7 @@ from sqlalchemy.pool import NullPool
 from sqlalchemy.schema import CreateIndex
 
 from ..config import settings
+from .artifact_search import ensure_artifact_search
 from .models import Base
 
 #: NullPool keeps every connection inside the loop that opened it, matching the
@@ -39,6 +40,7 @@ async def init_db() -> None:
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
         await ensure_indexes(connection)
+        await ensure_artifact_search(connection)
 
 
 @asynccontextmanager

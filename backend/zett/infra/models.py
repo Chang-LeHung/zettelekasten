@@ -12,10 +12,6 @@ class SessionArtifactModel(Base):
     """Typed, versioned output produced within an agent session."""
 
     __tablename__ = "session_artifacts"
-    __table_args__ = (
-        Index("ix_artifacts_created", "created_at", "id"),
-        Index("ix_artifacts_session_created", "session_id", "created_at", "id"),
-    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     session_id: Mapped[str] = mapped_column(String(36), index=True)
@@ -34,15 +30,11 @@ class SessionAssetModel(Base):
     """Metadata for text, link, image, or file assets owned by one session."""
 
     __tablename__ = "session_assets"
-    __table_args__ = (
-        Index("ix_assets_created", "created_at", "id"),
-        Index("ix_assets_session_created", "session_id", "created_at", "id"),
-    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     session_id: Mapped[str] = mapped_column(String(36), index=True)
     asset_type: Mapped[int] = mapped_column(Integer, index=True)
-    name: Mapped[str] = mapped_column(String(500))
+    name: Mapped[str] = mapped_column(String(500), index=True)
     mime_type: Mapped[str | None] = mapped_column(String(255))
     size_bytes: Mapped[int] = mapped_column(Integer, default=0)
     sha256: Mapped[str | None] = mapped_column(String(64), index=True)
@@ -119,11 +111,6 @@ class ModelUsageActivityModel(Base):
     """One completed model request's token usage, retained for activity charts."""
 
     __tablename__ = "model_usage_activity"
-    __table_args__ = (
-        Index("ix_model_usage_activity_day", "created_at", "id"),
-        Index("ix_model_usage_activity_session_day", "session_id", "created_at"),
-        Index("ix_model_usage_activity_model_day", "provider", "model", "created_at"),
-    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     session_id: Mapped[str] = mapped_column(String(36))
