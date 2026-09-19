@@ -82,8 +82,8 @@ const fullness = computed(() => {
 .context-ring-control { position: relative; flex: 0 0 auto; display: grid; place-items: center; margin-left: .42rem; padding: .25rem; border-radius: 50%; outline: none; cursor: default; transition: background 140ms ease, transform 140ms ease; }
 .context-ring-control:hover, .context-ring-control:focus-visible { background: #f1f5f2; transform: scale(1.05); }
 .context-ring-control:focus-visible { box-shadow: 0 0 0 3px rgba(71, 105, 87, .13); }
-.context-ring { width: 1.72rem; height: 1.72rem; display: block; overflow: visible; filter: drop-shadow(0 1px 1px rgba(45, 62, 52, .12)); transform: rotate(-90deg); }
-.context-ring-track, .context-ring-segment { fill: none; stroke-width: 3; }
+.context-ring { width: 2rem; height: 2rem; display: block; overflow: visible; filter: drop-shadow(0 1px 1px rgba(45, 62, 52, .12)); transform: rotate(-90deg); }
+.context-ring-track, .context-ring-segment { fill: none; stroke-width: 3.2; }
 .context-ring-track { stroke: #e4e9e6; }
 .context-ring-segment { stroke-linecap: butt; }
 .context-ring-control.empty .context-ring { opacity: .72; }

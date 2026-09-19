@@ -3406,11 +3406,11 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .chat-composer textarea { display: block; width: 100%; min-height: 4.5rem; padding: .7rem 2.8rem .7rem .75rem; resize: none; border: 1px solid rgba(29,29,31,.11); border-radius: .75rem; outline: 0; color: var(--text); background: white; font-size: .72rem; line-height: 1.45; }
 .chat-composer textarea:focus { border-color: rgba(71,105,87,.48); box-shadow: 0 0 0 3px rgba(71,105,87,.1); }
 .chat-composer > small { position: absolute; left: 1rem; bottom: .48rem; color: var(--tertiary); font-size: .55rem; }
-.send-button { position: absolute; right: 1.05rem; top: 1.15rem; display: grid; place-items: center; width: 2rem; height: 2rem; padding: 0; border: 0; border-radius: .62rem; color: white; background: var(--accent); cursor: pointer; }
+.send-button { position: absolute; right: 1.05rem; top: 1.15rem; display: grid; place-items: center; width: 2.25rem; height: 2.25rem; padding: 0; border: 0; border-radius: .68rem; color: white; background: var(--accent); cursor: pointer; }
 .send-button:disabled { opacity: .35; cursor: not-allowed; transform: none; }
-.send-button svg { width: .85rem; height: .85rem; transform: rotate(-90deg); }
+.send-button svg { width: 1rem; height: 1rem; transform: rotate(-90deg); }
 .send-button.stop { background: #59635d; }
-.send-button.stop svg { width: .72rem; height: .72rem; transform: none; fill: currentColor; }
+.send-button.stop svg { width: .82rem; height: .82rem; transform: none; fill: currentColor; }
 .artifact-panel { padding: 1.5rem; border: 1px solid rgba(29,29,31,.08); border-radius: 1.1rem; background: rgba(255,255,255,.88); box-shadow: var(--shadow); backdrop-filter: blur(18px); transform-origin: 50% 0; }
 .artifact-panel.artifact-editor { position: relative; display: flex; flex-direction: column; padding: 0; overflow: hidden; color: #252a27; background: #fff; }
 .artifact-editor-accent { height: .26rem; flex: 0 0 auto; background: linear-gradient(90deg, #385d49, #77a087 70%, #b5cabb); }

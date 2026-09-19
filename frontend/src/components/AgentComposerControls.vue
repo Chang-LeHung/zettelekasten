@@ -221,9 +221,9 @@ onBeforeUnmount(() => {
 .control-trigger[aria-expanded='true'] { box-shadow: 0 1px 5px rgba(42, 63, 51, .06); }
 .control-trigger:focus-visible { outline: 3px solid rgba(71, 105, 87, .14); outline-offset: 1px; }
 .control-trigger:disabled { opacity: .6; cursor: default; }
-.model-trigger { width: clamp(10rem, 15vw, 13rem); }
+.model-trigger { width: clamp(8.5rem, 11vw, 10.5rem); }
 .effort-trigger { width: 7.2rem; }
-.shell-trigger { width: 7.2rem; }
+.shell-trigger { width: 8.35rem; }
 .control-icon { width: 1.65rem; height: 1.65rem; flex: 0 0 auto; display: grid; place-items: center; border-radius: .52rem; color: #42614f; background: #e9f0eb; }
 .control-icon svg { width: .88rem; height: .88rem; fill: none; stroke: currentColor; stroke-width: 1.65; stroke-linecap: round; stroke-linejoin: round; }
 .control-copy { min-width: 0; flex: 1; display: grid; gap: .05rem; }
