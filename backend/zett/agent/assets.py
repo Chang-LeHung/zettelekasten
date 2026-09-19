@@ -7,6 +7,7 @@ from typing import Annotated, Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from zett_agent import AgentExtension, AgentRunContext, tool
 
+from ..config import settings
 from ..infra.dao import session_asset_storage
 from ..models import SessionAssetListOptions
 from ..schemas import SessionAssetCreate, SessionAssetOut, SessionAssetType
@@ -81,6 +82,11 @@ def _write_model(session_id: str, asset: AssetInput) -> SessionAssetCreate:
 class AssetExtension(AgentExtension):
     """Expose session-isolated asset CRUD tools."""
 
+    def __init__(self, max_asset_size_bytes: int | None = None) -> None:
+        self._max_asset_size_bytes = (
+            settings.max_asset_size_bytes if max_asset_size_bytes is None else max_asset_size_bytes
+        )
+
     # Do not add an on_state() asset system message. A conversation starts with
     # no assets, and later create/update/delete tool calls and results already
     # remain in model context. Rebuilding a full snapshot in the leading system
@@ -105,7 +111,7 @@ class AssetExtension(AgentExtension):
                 - Create an asset only when the user requests a durable session attachment.
                 - Use text for inline source material and link for an external URL.
             """
-            return await session_asset_storage.create(_write_model(session_id, asset))
+            return await session_asset_storage.create(self._write_model(session_id, asset))
 
         @tool
         async def get_asset(asset_id: str, include_binary_content: bool = False) -> AssetDetails:
@@ -147,7 +153,7 @@ class AssetExtension(AgentExtension):
                 - Treat this as full replacement rather than a partial patch.
             """
             await self._asset(session_id, asset_id)
-            return await session_asset_storage.update(asset_id, _write_model(session_id, asset))
+            return await session_asset_storage.update(asset_id, self._write_model(session_id, asset))
 
         @tool
         async def delete_asset(asset_id: str) -> bool:
@@ -206,3 +212,13 @@ class AssetExtension(AgentExtension):
         if asset is None:
             raise ValueError(f"Asset not found in this session: {asset_id}")
         return asset
+
+    def _write_model(self, session_id: str, asset: AssetInput) -> SessionAssetCreate:
+        """Validate the configured payload limit before touching storage or disk."""
+        entity = _write_model(session_id, asset)
+        payload = (
+            entity.content if entity.content is not None else (entity.text_content or entity.source_url or "").encode()
+        )
+        if len(payload) > self._max_asset_size_bytes:
+            raise ValueError(f"Asset exceeds the configured {self._max_asset_size_bytes} byte size limit")
+        return entity

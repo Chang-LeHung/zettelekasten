@@ -648,12 +648,12 @@ def test_pasted_image_is_persisted_in_the_user_message_not_session_assets(monkey
 def test_message_images_reject_empty_turns_invalid_base64_and_oversized_collections(monkeypatch):
     model = FakeModel()
     monkeypatch.setattr(agent_routes, "create_model", lambda _connection: model)
-    monkeypatch.setattr(agent_routes.settings, "max_asset_size_bytes", 3)
     with TestClient(app) as client:
         session_id = client.post("/api/agent/start").json()["conversation_id"]
         provider_id = client.post("/api/ai/providers", json=_provider_payload()).json()["id"]
         endpoint = f"/api/agent/{session_id}/messages"
         common = {"provider_id": provider_id, "raw_content": ""}
+        assert client.put("/api/settings", json={"max_asset_size_bytes": 3}).status_code == 200
 
         assert client.post(endpoint, json=common).status_code == 422
         invalid = client.post(
@@ -680,7 +680,7 @@ def test_message_images_reject_empty_turns_invalid_base64_and_oversized_collecti
         )
         assert oversized.status_code == 413
 
-        monkeypatch.setattr(agent_routes.settings, "max_asset_size_bytes", 100)
+        assert client.put("/api/settings", json={"max_asset_size_bytes": 100}).status_code == 200
         too_many = client.post(
             endpoint,
             json={
@@ -820,3 +820,17 @@ async def test_first_successful_turn_generates_the_session_title_once(monkeypatc
     assert [agent.agent.max_iterations for agent in request_agents] == [36, 9]
     assert sum(model.title_requests > 0 for model in models) == 1
     assert all(model.closed for model in models)
+
+
+def test_asset_upload_uses_runtime_size_limit():
+    with TestClient(app) as client:
+        session_id = client.post("/api/agent/start").json()["conversation_id"]
+        response = client.put("/api/settings", json={"max_asset_size_bytes": 3})
+        assert response.status_code == 200
+
+        endpoint = f"/api/agent/{session_id}/assets/upload?name=large.bin"
+        oversized = client.post(endpoint, content=b"1234", headers={"content-type": "application/octet-stream"})
+        assert oversized.status_code == 413
+
+        accepted = client.post(endpoint, content=b"123", headers={"content-type": "application/octet-stream"})
+        assert accepted.status_code == 201

@@ -25,6 +25,7 @@ from zett_agent import (
     UsageActivityExtension,
 )
 
+from ..config import settings
 from .assets import AssetExtension
 from .context_composition import ContextCompositionExtension
 from .extensions import ZettelkastenExtension
@@ -56,6 +57,7 @@ class ZettelkastenAgentConfig:
 
     session_id: str
     max_iterations: int = 36
+    max_asset_size_bytes: int = settings.max_asset_size_bytes
     compaction_max_tokens: int = 128_000
     compaction_keep_recent_tokens: int = 32_000
     usage_activity_storage: ModelUsageActivityStorage | None = None
@@ -71,6 +73,8 @@ class ZettelkastenAgentConfig:
             raise ValueError("session_id cannot be empty")
         if isinstance(self.max_iterations, bool) or self.max_iterations < 1:
             raise ValueError("max_iterations must be a positive integer")
+        if isinstance(self.max_asset_size_bytes, bool) or self.max_asset_size_bytes < 1:
+            raise ValueError("max_asset_size_bytes must be a positive integer")
         if not 128_000 <= self.compaction_max_tokens <= 800_000:
             raise ValueError("compaction_max_tokens must be between 128000 and 800000")
         if not 32_000 <= self.compaction_keep_recent_tokens <= 256_000:
@@ -83,7 +87,7 @@ class ZettelkastenAgentConfig:
         mcp_config_path = self._resolved_mcp_config_path()
         extensions = [
             SessionPersistenceExtension(storage),
-            AssetExtension(),
+            AssetExtension(max_asset_size_bytes=self.max_asset_size_bytes),
             ZettelkastenExtension(),
             TagExtension(),
             ShellApprovalExtension(self.shell_approval_storage),

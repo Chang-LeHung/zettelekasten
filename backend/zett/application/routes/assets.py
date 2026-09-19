@@ -3,12 +3,12 @@
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse
 
-from ...config import settings
 from ...infra.dao import session_asset_storage, session_storage
 from ...models import SessionAssetListOptions
 from ...schemas import SessionAssetCreate, SessionAssetOut, SessionAssetType
 from ..asset_names import AssetRenameIn, rename_asset
 from ..schemas import DeleteResponse, LinkAssetIn, TextAssetIn
+from ..settings import runtime_settings_service
 
 router = APIRouter(prefix="/agent/{session_id}/assets", tags=["assets"])
 
@@ -82,10 +82,11 @@ async def upload_asset(
 ) -> SessionAssetOut:
     """Store a raw request body as an image or generic file asset."""
     await _require_session(session_id)
+    runtime_settings = await runtime_settings_service.get()
     content = bytearray()
     async for chunk in request.stream():
         content.extend(chunk)
-        if len(content) > settings.max_asset_size_bytes:
+        if len(content) > runtime_settings.max_asset_size_bytes:
             raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "Asset exceeds the configured size limit")
     mime_type = request.headers.get("content-type", "application/octet-stream").split(";", 1)[0]
     asset_type = SessionAssetType.IMAGE if mime_type.startswith("image/") else SessionAssetType.FILE

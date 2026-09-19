@@ -126,6 +126,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'Control local limits applied to new Agent requests.': '控制新 Agent 请求使用的本地限制。',
     'Images per message': '每条消息图片数',
     'Model steps per turn': '每轮模型步数',
+    'Max asset file size': '最大文件大小',
+    'Maximum size for an uploaded image or file in this conversation.': '当前会话中上传图片或文件的最大大小。',
     'Compact context at': '压缩上下文阈值',
     'Keep recent context': '保留最近上下文',
     'Save limits': '保存限制',

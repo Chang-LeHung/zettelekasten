@@ -2,6 +2,7 @@
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from ..config import settings
 from ..infra.dao import KeyValueStorage, key_value_storage
 
 RUNTIME_SETTINGS_KEY = "settings.runtime"
@@ -23,6 +24,12 @@ class RuntimeSettings(BaseModel):
         ge=1,
         le=256,
         description="Maximum number of primary model calls allowed for one turn",
+    )
+    max_asset_size_bytes: int = Field(
+        default=settings.max_asset_size_bytes,
+        ge=1,
+        le=2 * 1024**3,
+        description="Maximum bytes accepted for one asset or message-image collection",
     )
     compaction_max_tokens: int = Field(
         default=128_000,

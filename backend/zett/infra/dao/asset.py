@@ -78,11 +78,6 @@ def _validate_payload(entity: SessionAssetCreate) -> None:
         case SessionAssetType.LINK:
             if not entity.source_url:
                 raise ValueError("Link asset URL is required")
-    payload = (
-        entity.content if entity.content is not None else (entity.text_content or entity.source_url or "").encode()
-    )
-    if len(payload) > settings.max_asset_size_bytes:
-        raise ValueError("Asset exceeds the configured size limit")
 
 
 class SessionAssetStorage(AsyncStorage[SessionAssetCreate, SessionAssetOut, str, SessionAssetListOptions]):

@@ -358,15 +358,16 @@ it('sends pasted images in their position among text segments', async () => {
 
 it('loads and replaces runtime settings through the typed client', async () => {
   const fetchMock = vi.fn()
-    .mockResolvedValueOnce(new Response(JSON.stringify({ max_message_images: 32, max_turn_iterations: 36, compaction_max_tokens: 128000, compaction_keep_recent_tokens: 32000 })))
-    .mockResolvedValueOnce(new Response(JSON.stringify({ max_message_images: 48, max_turn_iterations: 64, compaction_max_tokens: 512000, compaction_keep_recent_tokens: 64000 })))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ max_message_images: 32, max_turn_iterations: 36, max_asset_size_bytes: 262144000, compaction_max_tokens: 128000, compaction_keep_recent_tokens: 32000 })))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ max_message_images: 48, max_turn_iterations: 64, max_asset_size_bytes: 134217728, compaction_max_tokens: 512000, compaction_keep_recent_tokens: 64000 })))
   vi.stubGlobal('fetch', fetchMock)
 
-  expect(await settingsClient.get()).toEqual({ max_message_images: 32, max_turn_iterations: 36, compaction_max_tokens: 128000, compaction_keep_recent_tokens: 32000 })
-  const update = { max_message_images: 48, max_turn_iterations: 64, compaction_max_tokens: 512000, compaction_keep_recent_tokens: 64000 }
+  expect(await settingsClient.get()).toEqual({ max_message_images: 32, max_turn_iterations: 36, max_asset_size_bytes: 262144000, compaction_max_tokens: 128000, compaction_keep_recent_tokens: 32000 })
+  const update = { max_message_images: 48, max_turn_iterations: 64, max_asset_size_bytes: 134217728, compaction_max_tokens: 512000, compaction_keep_recent_tokens: 64000 }
   expect(await settingsClient.update(update)).toEqual({
     max_message_images: 48,
     max_turn_iterations: 64,
+    max_asset_size_bytes: 134217728,
     compaction_max_tokens: 512000,
     compaction_keep_recent_tokens: 64000,
   })

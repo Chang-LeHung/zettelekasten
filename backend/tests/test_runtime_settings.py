@@ -19,6 +19,8 @@ from zett.infra.database import session_scope
 from zett.infra.models import KeyValueModel
 from zett.main import app
 
+DEFAULT_MAX_ASSET_SIZE_BYTES = 250 * 1024 * 1024
+
 
 async def test_key_value_storage_updates_one_record_and_increments_its_version() -> None:
     storage = KeyValueStorage()
@@ -154,6 +156,7 @@ async def test_runtime_settings_http_lifecycle_uses_defaults_and_persists_update
         assert client.get("/api/settings").json() == {
             "max_message_images": 32,
             "max_turn_iterations": 36,
+            "max_asset_size_bytes": DEFAULT_MAX_ASSET_SIZE_BYTES,
             "compaction_max_tokens": 128_000,
             "compaction_keep_recent_tokens": 32_000,
         }
@@ -163,6 +166,7 @@ async def test_runtime_settings_http_lifecycle_uses_defaults_and_persists_update
             json={
                 "max_message_images": 48,
                 "max_turn_iterations": 64,
+                "max_asset_size_bytes": 128 * 1024 * 1024,
                 "compaction_max_tokens": 512_000,
                 "compaction_keep_recent_tokens": 64_000,
             },
@@ -171,12 +175,14 @@ async def test_runtime_settings_http_lifecycle_uses_defaults_and_persists_update
         assert updated.json() == {
             "max_message_images": 48,
             "max_turn_iterations": 64,
+            "max_asset_size_bytes": 128 * 1024 * 1024,
             "compaction_max_tokens": 512_000,
             "compaction_keep_recent_tokens": 64_000,
         }
         assert client.get("/api/settings").json() == {
             "max_message_images": 48,
             "max_turn_iterations": 64,
+            "max_asset_size_bytes": 128 * 1024 * 1024,
             "compaction_max_tokens": 512_000,
             "compaction_keep_recent_tokens": 64_000,
         }
@@ -185,6 +191,8 @@ async def test_runtime_settings_http_lifecycle_uses_defaults_and_persists_update
         assert client.put("/api/settings", json={"max_message_images": 257}).status_code == 422
         assert client.put("/api/settings", json={"max_turn_iterations": 0}).status_code == 422
         assert client.put("/api/settings", json={"max_turn_iterations": 257}).status_code == 422
+        assert client.put("/api/settings", json={"max_asset_size_bytes": 0}).status_code == 422
+        assert client.put("/api/settings", json={"max_asset_size_bytes": 2 * 1024**3 + 1}).status_code == 422
         assert (
             client.put(
                 "/api/settings",
@@ -222,6 +230,7 @@ async def test_runtime_settings_http_lifecycle_uses_defaults_and_persists_update
         assert json.loads(revisions[0].value) == {
             "max_message_images": 48,
             "max_turn_iterations": 64,
+            "max_asset_size_bytes": 128 * 1024 * 1024,
             "compaction_max_tokens": 512_000,
             "compaction_keep_recent_tokens": 64_000,
         }

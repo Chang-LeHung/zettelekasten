@@ -27,7 +27,6 @@ from zett_agent import (
 
 from ...agent import ZettelkastenAgent, ZettelkastenAgentConfig, ZettelkastenEventDispatcher, encode_sse
 from ...agent.model_factory import ProviderAdapter, create_model
-from ...config import settings
 from ...infra.agent_runtime import get_agent_runtime_storage
 from ...infra.dao import model_usage_activity_storage, provider_storage, session_storage
 from ...infra.log import get_logger
@@ -135,7 +134,7 @@ async def _remember_context_composition(session_id: str, ratios: dict[str, float
         logger.exception("Could not persist context composition; session_id=%s", session_id)
 
 
-def _user_message(payload: UserMessageIn, *, max_images: int) -> UserMessage:
+def _user_message(payload: UserMessageIn, *, max_images: int, max_asset_size_bytes: int) -> UserMessage:
     """Decode bounded browser images into one provider-neutral multimodal turn."""
     parts: list[TextContent | ImageContent] = []
     total_size = 0
@@ -162,7 +161,7 @@ def _user_message(payload: UserMessageIn, *, max_images: int) -> UserMessage:
                 if not content:
                     raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"Image is empty: {image.name}")
                 total_size += len(content)
-                if total_size > settings.max_asset_size_bytes:
+                if total_size > max_asset_size_bytes:
                     raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "Message images exceed the configured limit")
                 parts.append(ImageContent(source=ImageBytesSource(content, image.mime_type), alt_text=image.name))
     return UserMessage(content=parts)
@@ -181,7 +180,11 @@ async def _prepare_agent_request(session_id: str, payload: AnalyzeRequest) -> _P
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Unsupported reasoning effort") from error
 
     runtime_settings = await runtime_settings_service.get()
-    message = _user_message(payload, max_images=runtime_settings.max_message_images)
+    message = _user_message(
+        payload,
+        max_images=runtime_settings.max_message_images,
+        max_asset_size_bytes=runtime_settings.max_asset_size_bytes,
+    )
     await shell_approval_storage.set_session_mode(session_id, ShellApprovalMode(payload.shell_approval_mode))
     config = AgentRunConfig(session_id=session_id)
     await active_requests.reserve(config)
@@ -199,6 +202,7 @@ async def _prepare_agent_request(session_id: str, payload: AnalyzeRequest) -> _P
         agent = await ZettelkastenAgentConfig(
             session_id=session_id,
             max_iterations=runtime_settings.max_turn_iterations,
+            max_asset_size_bytes=runtime_settings.max_asset_size_bytes,
             compaction_max_tokens=runtime_settings.compaction_max_tokens,
             compaction_keep_recent_tokens=runtime_settings.compaction_keep_recent_tokens,
             usage_activity_storage=model_usage_activity_storage,
@@ -300,7 +304,11 @@ async def emit_external_event(session_id: str, payload: ExternalEventIn) -> Exte
 async def steer_active_request(session_id: str, payload: SteerRequest) -> ExternalEventOut:
     """Route one urgent user message to the active Agent request."""
     runtime_settings = await runtime_settings_service.get()
-    message = _user_message(payload, max_images=runtime_settings.max_message_images)
+    message = _user_message(
+        payload,
+        max_images=runtime_settings.max_message_images,
+        max_asset_size_bytes=runtime_settings.max_asset_size_bytes,
+    )
     accepted_by = await active_requests.emit(
         session_id,
         ExternalEvent(

@@ -97,6 +97,7 @@ export type ShellApprovalMode = 'review' | 'allow_all'
 export interface RuntimeSettings {
   max_message_images: number
   max_turn_iterations: number
+  max_asset_size_bytes: number
   compaction_max_tokens: number
   compaction_keep_recent_tokens: number
 }

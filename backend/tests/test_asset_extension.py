@@ -250,3 +250,47 @@ async def test_asset_extension_rejects_invalid_base64_without_creating_an_asset(
 
     assert result.content == "Rejected invalid content."
     assert await session_asset_storage.list(SessionAssetListOptions(session_id=session_id)) == []
+
+
+async def test_asset_extension_rejects_payloads_above_the_configured_limit() -> None:
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
+
+    class OversizedBinaryModel:
+        def __init__(self) -> None:
+            self.step = 0
+
+        async def stream(self, request: ModelRequest) -> AsyncIterator[ModelEvent]:
+            if self.step == 0:
+                message = AssistantMessage(
+                    tool_calls=(
+                        ToolCall(
+                            "oversized-binary",
+                            "create_asset",
+                            {
+                                "asset": {
+                                    "asset_type": "file",
+                                    "name": "large.bin",
+                                    "content_base64": base64.b64encode(b"1234").decode("ascii"),
+                                }
+                            },
+                        ),
+                    )
+                )
+            else:
+                tool_result = request.messages[-1]
+                assert isinstance(tool_result, ToolMessage)
+                assert not tool_result.success
+                assert "3 byte size limit" in tool_result.content
+                message = AssistantMessage(content="Rejected oversized content.")
+            self.step += 1
+            yield ModelEvent.completed(ModelResponse(message))
+
+    agent = await Agent.create(
+        OversizedBinaryModel(),
+        config=AgentRunConfig(session_id=session_id),
+        extensions=[AssetExtension(max_asset_size_bytes=3)],
+    )
+    result = await agent.run("Create an oversized file")
+
+    assert result.content == "Rejected oversized content."
+    assert await session_asset_storage.list(SessionAssetListOptions(session_id=session_id)) == []
