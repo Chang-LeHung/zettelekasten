@@ -13,6 +13,7 @@ from ..presentation import message_out, session_out
 from ..schemas import AgentStartOut, DeleteResponse, PersistedMessageOut, SessionOut
 from ..session_context import SessionContextComposition, session_context_composition_service
 from ..session_preferences import SessionModelPreference, session_model_preference_service
+from ..session_titles import DEFAULT_SESSION_TITLE
 
 router = APIRouter(prefix="/agent", tags=["sessions"])
 
@@ -36,7 +37,7 @@ async def _session_detail(session_id: str) -> SessionOut:
 @router.post("/start", response_model=AgentStartOut, status_code=status.HTTP_201_CREATED)
 async def start_session() -> AgentStartOut:
     """Create an empty root conversation before its first streamed turn."""
-    session = await session_storage.create(AgentSessionCreate())
+    session = await session_storage.create(AgentSessionCreate(title=DEFAULT_SESSION_TITLE))
     return AgentStartOut(conversation_id=session.session_id)
 
 

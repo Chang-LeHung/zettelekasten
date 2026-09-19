@@ -39,6 +39,7 @@ type View = 'library' | 'search' | 'new' | 'settings'
 type NoticeKind = 'success' | 'error'
 type AssetEditorMode = 'closed' | 'text' | 'link'
 type AssetFilter = 'all' | 'documents' | 'images' | 'links' | 'notes' | 'code'
+const DEFAULT_SESSION_TITLE = '新会话'
 type AgentMessageTimelineEntry = Extract<AgentTimelineEntry, { type: 'message' }>
 interface ConfirmationState {
   open: boolean
@@ -205,7 +206,7 @@ const searchInput = ref<HTMLInputElement | null>(null)
 const agentThread = ref<HTMLElement | null>(null)
 const agentTurnStack = ref<HTMLElement | null>(null)
 const assetFileInput = ref<HTMLInputElement | null>(null)
-const titleRefreshTimers: number[] = []
+let titleRefreshTimer: number | null = null
 let turnStartedAt = 0
 let turnClock: number | null = null
 let modelStartedAt = 0
@@ -280,7 +281,7 @@ function libraryExcerpt(item: LibraryItem): string {
 }
 const visibleSessions = computed(() => sessions.value.filter((session) => (
   session.message_count > 0
-  || (session.id === conversationId.value && (artifacts.value.length > 0 || assets.value.length > 0))
+  || session.id === conversationId.value
 )))
 const filteredAssets = computed(() => {
   const normalizedQuery = assetQuery.value.trim().toLowerCase()
@@ -873,10 +874,30 @@ function scrollAgentThread(force = false): void {
   })
 }
 
-function scheduleSessionTitleRefresh(): void {
-  for (const delay of [1500, 4000, 8000]) {
-    titleRefreshTimers.push(window.setTimeout(() => void loadSessions(true), delay))
-  }
+function clearSessionTitleRefresh(): void {
+  if (titleRefreshTimer !== null) window.clearTimeout(titleRefreshTimer)
+  titleRefreshTimer = null
+}
+
+async function refreshSessionTitleUntilResolved(sessionId: string, deadline: number): Promise<void> {
+  if (conversationId.value !== sessionId) return
+  await loadSessions(true)
+  const session = sessions.value.find((candidate) => candidate.id === sessionId)
+  if (session?.title && session.title !== DEFAULT_SESSION_TITLE) return
+  if (Date.now() >= deadline) return
+  titleRefreshTimer = window.setTimeout(
+    () => void refreshSessionTitleUntilResolved(sessionId, deadline),
+    1_000,
+  )
+}
+
+function scheduleSessionTitleRefresh(sessionId: string): void {
+  clearSessionTitleRefresh()
+  const deadline = Date.now() + 30_000
+  titleRefreshTimer = window.setTimeout(
+    () => void refreshSessionTitleUntilResolved(sessionId, deadline),
+    800,
+  )
 }
 
 watch(
@@ -1205,7 +1226,7 @@ async function analyze(): Promise<void> {
     await restoreSessionContextComposition(activeConversationId)
     await refreshArtifacts(true)
     await loadSessions(true)
-    scheduleSessionTitleRefresh()
+    scheduleSessionTitleRefresh(activeConversationId)
   } catch (error) {
     if (controller.signal.aborted || isAbortError(error)) {
       if (hasStreamedResponse()) commitStreamedResponse(requestHistory)
@@ -1268,6 +1289,7 @@ async function refine(queued?: QueuedFollowUp): Promise<void> {
     await restoreSessionContextComposition(activeConversationId)
     await refreshArtifacts(true)
     await loadSessions(true)
+    scheduleSessionTitleRefresh(activeConversationId)
   } catch (error) {
     if (controller.signal.aborted || isAbortError(error)) {
       if (hasStreamedResponse()) commitStreamedResponse(history)
@@ -1482,7 +1504,7 @@ async function openArtifactSession(item: LibraryItem): Promise<void> {
 
 function startSessionTitleEdit(session: AgentSession): void {
   editingSessionId.value = session.id
-  sessionTitleDraft.value = session.title || 'New conversation'
+  sessionTitleDraft.value = session.title || '新会话'
 }
 
 function cancelSessionTitleEdit(): void {
@@ -1511,7 +1533,7 @@ async function saveSessionTitle(sessionId: string): Promise<void> {
 }
 
 async function deleteSession(session: AgentSession): Promise<void> {
-  const title = session.title || 'New conversation'
+  const title = session.title || '新会话'
   const confirmed = await requestConfirmation(
     'Delete this conversation?',
     `“${title}” and all of its messages, draft artifacts, and session assets will be permanently removed.`,
@@ -1609,7 +1631,16 @@ async function resetWorkspace(): Promise<void> {
   resetStreamState()
   streamingStatus.value = 'idle'
   window.localStorage.removeItem(activeSessionKey)
-  await loadSessions(true)
+  try {
+    const started = await aiClient.startAgent()
+    conversationId.value = started.conversation_id
+    window.localStorage.setItem(activeSessionKey, started.conversation_id)
+    applyArtifacts(started.artifacts)
+    assets.value = started.assets
+    await loadSessions(true)
+  } catch (error) {
+    showNotice(errorMessage(error), 'error')
+  }
 }
 
 function showAssetEditor(mode: Exclude<AssetEditorMode, 'closed'>): void {
@@ -2029,7 +2060,7 @@ onBeforeUnmount(() => {
   agentContentResizeObserver?.disconnect()
   agentContentResizeObserver = null
   window.removeEventListener('keydown', handleShortcut)
-  for (const timer of titleRefreshTimers) window.clearTimeout(timer)
+  clearSessionTitleRefresh()
 })
 </script>
 
@@ -2079,7 +2110,7 @@ onBeforeUnmount(() => {
               <button type="button" aria-label="Cancel title edit" @click="cancelSessionTitleEdit">Cancel</button>
             </form>
             <button v-else class="session-open-button" type="button" @click="openSession(session.id)">
-              <span><strong title="Click to rename" @click.stop="startSessionTitleEdit(session)">{{ session.title || 'New conversation' }}</strong><small>{{ formatDateTime(session.created_at) }}</small></span>
+              <span><strong title="Click to rename" @click.stop="startSessionTitleEdit(session)">{{ session.title || '新会话' }}</strong><small>{{ formatDateTime(session.created_at) }}</small></span>
               <small>{{ session.message_count }}</small>
             </button>
             <button v-if="editingSessionId !== session.id" class="session-delete-button" type="button" :aria-label="`Delete ${session.title || 'conversation'}`" title="Delete conversation" @click.stop="deleteSession(session)"><svg><use href="#icon-trash" /></svg></button>

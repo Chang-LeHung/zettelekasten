@@ -694,6 +694,7 @@ async def test_first_successful_turn_generates_the_session_title_once(monkeypatc
     monkeypatch.setattr("zett.application.session_titles.create_model", model_factory)
     with TestClient(app) as client:
         session_id = client.post("/api/agent/start").json()["conversation_id"]
+        assert client.get(f"/api/agent/sessions/{session_id}").json()["title"] == "新会话"
         provider_id = client.post("/api/ai/providers", json=_provider_payload()).json()["id"]
         payload = {
             "raw_content": "Help me design a knowledge card editor",
