@@ -2525,7 +2525,7 @@ onBeforeUnmount(() => {
                   <button v-if="item.item_type !== 'latex_pdf'" class="card-action-button" type="button" :aria-label="`Edit ${item.title}`" title="Edit and preview" @click.stop="openLibraryEditor(item)" @keydown.stop>
                     <svg><use href="#icon-edit" /></svg>
                   </button>
-                  <button class="card-action-button" type="button" :aria-label="`Copy ID for ${item.title}`" title="Copy artifact ID" @click.stop="copyLibraryItemId(item)" @keydown.stop>
+                  <button class="card-action-button card-copy-action" type="button" :aria-label="`Copy ID for ${item.title}`" title="Copy artifact ID" @click.stop="copyLibraryItemId(item)" @keydown.stop>
                     <svg><use href="#icon-copy" /></svg>
                   </button>
                   <button class="card-action-button danger" :disabled="deletingLibraryItemId !== null" type="button" :aria-label="`Delete ${item.title}`" :title="deletingLibraryItemId === item.id ? 'Deleting…' : `Delete ${item.item_type}`" @click.stop="deleteLibraryItem(item)" @keydown.stop>
@@ -2615,36 +2615,38 @@ onBeforeUnmount(() => {
                 <div><button :disabled="assetUploading || !assetName.trim() || !assetValue.trim()" type="submit">{{ $t('Add asset') }}</button><button type="button" @click="assetEditorMode = 'closed'">{{ $t('Cancel') }}</button></div>
               </form>
 
-              <div class="asset-browser-list">
-                <article v-for="asset in filteredAssets" :key="asset.id" class="asset-row">
-                  <button class="asset-row-main" type="button" @click="openAsset(asset)">
-                    <span class="asset-thumbnail" :class="classifyAsset(asset)">
-                      <img v-if="asset.asset_type === 'image' && asset.content_url" :src="asset.content_url" alt="" />
-                      <PdfThumbnail v-else-if="isPdfAsset(asset)" :asset="asset" />
-                      <svg v-else><use :href="asset.asset_type === 'link' ? '#icon-link' : asset.asset_type === 'text' ? '#icon-text' : '#icon-attachment'" /></svg>
-                      <small>{{ assetExtension(asset) }}</small>
-                    </span>
-                    <span class="asset-row-copy">
-                      <strong>{{ asset.name }}</strong>
-                      <small>{{ assetTypeLabel(asset) }} · {{ assetSourceLabel(asset) || formatBytes(asset.size_bytes) }}</small>
-                      <time>{{ formatAssetDate(asset.created_at) }}</time>
-                    </span>
-                  </button>
-                  <button class="asset-delete" type="button" :aria-label="`Delete ${asset.name}`" @click="removeAsset(asset)"><svg><use href="#icon-trash" /></svg></button>
-                  <AssetRename :name="asset.name" :save="name => renameAsset(asset, name)" />
-                </article>
-                <div v-if="!filteredAssets.length" class="asset-empty">
-                  <svg><use :href="assets.length ? '#icon-search' : '#icon-attachment'" /></svg>
-                  <strong>{{ assets.length ? $t('No matching assets') : $t('No assets yet') }}</strong>
-                  <small>{{ assets.length ? $t('Try another search or filter.') : $t('Add reference material for this conversation.') }}</small>
+              <div class="asset-browser">
+                <div class="asset-browser-list">
+                  <article v-for="asset in filteredAssets" :key="asset.id" class="asset-row">
+                    <button class="asset-row-main" type="button" @click="openAsset(asset)">
+                      <span class="asset-thumbnail" :class="classifyAsset(asset)">
+                        <img v-if="asset.asset_type === 'image' && asset.content_url" :src="asset.content_url" alt="" />
+                        <PdfThumbnail v-else-if="isPdfAsset(asset)" :asset="asset" />
+                        <svg v-else><use :href="asset.asset_type === 'link' ? '#icon-link' : asset.asset_type === 'text' ? '#icon-text' : '#icon-attachment'" /></svg>
+                        <small>{{ assetExtension(asset) }}</small>
+                      </span>
+                      <span class="asset-row-copy">
+                        <strong>{{ asset.name }}</strong>
+                        <small>{{ assetTypeLabel(asset) }} · {{ assetSourceLabel(asset) || formatBytes(asset.size_bytes) }}</small>
+                        <time>{{ formatAssetDate(asset.created_at) }}</time>
+                      </span>
+                    </button>
+                    <button class="asset-delete" type="button" :aria-label="`Delete ${asset.name}`" @click="removeAsset(asset)"><svg><use href="#icon-trash" /></svg></button>
+                    <AssetRename :name="asset.name" :save="name => renameAsset(asset, name)" />
+                  </article>
+                  <div v-if="!filteredAssets.length" class="asset-empty">
+                    <svg><use :href="assets.length ? '#icon-search' : '#icon-attachment'" /></svg>
+                    <strong>{{ assets.length ? $t('No matching assets') : $t('No assets yet') }}</strong>
+                    <small>{{ assets.length ? $t('Try another search or filter.') : $t('Add reference material for this conversation.') }}</small>
+                  </div>
                 </div>
-              </div>
 
-              <button class="asset-drop-zone" :class="{ dragging: assetDragging }" type="button" @click="assetFileInput?.click()" @dragenter.prevent="assetDragging = true" @dragover.prevent="assetDragging = true" @dragleave.prevent="assetDragging = false" @drop.prevent="dropAssets">
-                <svg><use href="#icon-attachment" /></svg>
-                <strong>{{ assetUploading ? 'Uploading…' : $t('Drop or paste assets here') }}</strong>
-                <small>{{ $t('Click this area, then press Ctrl/⌘ + V') }}</small>
-              </button>
+                <button class="asset-drop-zone" :class="{ dragging: assetDragging }" type="button" @click="assetFileInput?.click()" @dragenter.prevent="assetDragging = true" @dragover.prevent="assetDragging = true" @dragleave.prevent="assetDragging = false" @drop.prevent="dropAssets">
+                  <svg><use href="#icon-attachment" /></svg>
+                  <strong>{{ assetUploading ? 'Uploading…' : $t('Drop or paste assets here') }}</strong>
+                  <small>{{ $t('Click this area, then press Ctrl/⌘ + V') }}</small>
+                </button>
+              </div>
               <input ref="assetFileInput" type="file" multiple hidden @change="uploadAssets" />
             </aside>
 
@@ -3171,7 +3173,7 @@ svg { width: 1.25rem; height: 1.25rem; fill: none; stroke: currentColor; stroke-
 .icon-library { position: absolute; width: 0; height: 0; overflow: hidden; }
 
 .app-shell { min-height: 100vh; display: grid; grid-template-columns: 16.5rem minmax(0, 1fr); }
-.sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; padding: 1.25rem 0.85rem 0.9rem; overflow: hidden; background: var(--sidebar); border-right: 1px solid rgba(255, 255, 255, 0.62); box-shadow: inset -1px 0 rgba(29, 29, 31, 0.06); backdrop-filter: blur(28px) saturate(150%); -webkit-backdrop-filter: blur(28px) saturate(150%); z-index: 10; }
+.sidebar { position: fixed; inset: 0 auto 0 0; width: 16.5rem; display: flex; flex-direction: column; padding: 1.25rem 0.85rem 0; overflow: hidden; background: var(--sidebar); border-right: 1px solid rgba(255, 255, 255, 0.62); box-shadow: inset -1px 0 rgba(29, 29, 31, 0.06); backdrop-filter: blur(28px) saturate(150%); -webkit-backdrop-filter: blur(28px) saturate(150%); z-index: 10; }
 .brand { display: flex; align-items: center; gap: 0.72rem; width: 100%; padding: 0.35rem 0.55rem 1.35rem; border: 0; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
 .brand-mark { display: grid; place-items: center; width: 2.15rem; height: 2.15rem; flex: 0 0 auto; }
 .brand-mark img { display: block; width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 4px 5px rgba(53, 83, 67, 0.18)); }
@@ -3233,13 +3235,13 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .load-more-sessions { min-height: 2rem; margin: .25rem .45rem 0; border: 1px solid var(--line); border-radius: .55rem; color: var(--accent-dark); background: rgba(255,255,255,.5); cursor: pointer; font-size: .65rem; font-weight: 620; }
 .load-more-sessions:disabled { opacity: .55; cursor: wait; }
 .sidebar-empty { padding: .55rem; color: var(--tertiary); font-size: .72rem; }
-.sidebar-footer { padding-top: .65rem; border-top: 1px solid rgba(29,29,31,.07); }
+.sidebar-footer { padding: .65rem 0 .15rem; border-top: 1px solid rgba(29,29,31,.07); }
 .locale-control { display: flex; align-items: center; justify-content: space-between; gap: .45rem; margin-bottom: .3rem; padding: 0 .55rem; color: #77777c; font-size: .64rem; }
 .locale-control select { min-width: 5.4rem; height: 1.8rem; padding: 0 1.65rem 0 .55rem; border: 1px solid rgba(29,29,31,.1); border-radius: .5rem; color: #4e5651; background: rgba(255,255,255,.65); cursor: pointer; font-size: .65rem; }
 .status-dot { margin-left: auto; width: .43rem; height: .43rem; border-radius: 50%; background: #aaa; box-shadow: 0 0 0 3px rgba(0,0,0,.03); }
 .status-dot.online { background: #49a369; box-shadow: 0 0 0 3px rgba(73,163,105,.12); }
 
-.workspace { min-width: 0; min-height: 100vh; }
+.workspace { min-width: 0; min-height: 100vh; grid-column: 2; }
 .topbar { position: sticky; top: 0; z-index: 8; min-height: 5rem; display: flex; align-items: center; gap: 1rem; padding: 1rem clamp(1.5rem, 4vw, 4rem); background: rgba(245,245,247,.72); backdrop-filter: blur(22px) saturate(160%); -webkit-backdrop-filter: blur(22px) saturate(160%); }
 .topbar::after { content: ""; position: absolute; left: 0; right: 0; bottom: -0.8rem; height: .8rem; background: linear-gradient(rgba(245,245,247,.55), transparent); pointer-events: none; }
 .topbar.compact { justify-content: space-between; }
@@ -3280,17 +3282,23 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .library-type-filters button:hover { color: #435449; background: rgba(255,255,255,.6); }
 .library-type-filters button.active { border-color: rgba(78,111,91,.12); color: #3f604c; background: #edf3ef; box-shadow: inset 0 0 0 1px rgba(255,255,255,.55); }
 .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr)); gap: 1rem; }
-.card { min-width: 0; height: 18rem; box-sizing: border-box; display: flex; flex-direction: column; padding: 1.1rem 1.2rem; overflow: hidden; border: 1px solid rgba(29,29,31,.075); border-radius: 1rem; background: var(--surface); box-shadow: 0 1px 2px rgba(0,0,0,.025); backdrop-filter: blur(14px); transition: transform 260ms cubic-bezier(.2,.8,.2,1), box-shadow 260ms cubic-bezier(.2,.8,.2,1), background 180ms ease; }
+.card { container-type: inline-size; container-name: artifact-card; min-width: 0; height: 18rem; box-sizing: border-box; display: flex; flex-direction: column; padding: 1.1rem 1.2rem; overflow: hidden; border: 1px solid rgba(29,29,31,.075); border-radius: 1rem; background: var(--surface); box-shadow: 0 1px 2px rgba(0,0,0,.025); backdrop-filter: blur(14px); transition: transform 260ms cubic-bezier(.2,.8,.2,1), box-shadow 260ms cubic-bezier(.2,.8,.2,1), background 180ms ease; }
 .card[role="button"] { cursor: pointer; }
 .card:hover { transform: translateY(-3px); background: rgba(255,255,255,.96); box-shadow: var(--shadow); }
 .card:active { transform: scale(.985); transition-duration: 100ms; }
-.card-topline { display: flex; align-items: center; justify-content: space-between; }
+.card-topline { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: .45rem; }
+.card-topline .card-type { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-topline-actions { display: flex; align-items: center; gap: .16rem; }
 .card-action-button { display: grid; place-items: center; width: 1.75rem; height: 1.75rem; padding: 0; border: 0; border-radius: .5rem; color: #8b918d; background: transparent; cursor: pointer; transition: color 160ms ease, background 160ms ease, transform 160ms ease; }
 .card-action-button:hover, .card-action-button:focus-visible { color: #365845; background: #e9f0ec; outline: none; transform: scale(1.04); }
 .card-action-button.danger:hover, .card-action-button.danger:focus-visible { color: #a33e3e; background: #f8eded; }
 .card-action-button:disabled { opacity: .4; cursor: wait; transform: none; }
 .card-action-button svg { width: .86rem; height: .86rem; }
+@container artifact-card (max-width: 15rem) {
+  .card-topline-actions { gap: .05rem; }
+  .card-action-button { width: 1.55rem; height: 1.55rem; }
+  .card-copy-action { display: none; }
+}
 .card-type { padding: .25rem .5rem; border-radius: 2rem; color: var(--accent-dark); background: var(--accent-soft); font-size: .62rem; font-weight: 680; letter-spacing: .04em; text-transform: uppercase; }
 .card time { color: var(--tertiary); font-size: .65rem; }
 .card h2 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; flex-shrink: 0; max-height: 2.8em; margin: 1rem 0 .65rem; overflow: hidden; overflow-wrap: anywhere; font-size: 1.05rem; line-height: 1.4; letter-spacing: -.017em; }
@@ -3318,7 +3326,7 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .create-view { width: min(100%, 124rem); max-width: 124rem; padding-right: clamp(.55rem, 1vw, 1rem); padding-left: clamp(.55rem, 1vw, 1rem); }
 .agent-workspace { height: calc(100vh - 8.2rem); min-height: 39rem; display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 5fr) minmax(0, 3fr); gap: .72rem; }
 .trace-workspace { height: calc(100vh - 8.2rem); min-height: 39rem; }
-.assets-pane, .agent-chat, .artifact-pane { min-height: 0; overflow: hidden; border: 1px solid rgba(29,29,31,.08); border-radius: 1.15rem; background: rgba(255,255,255,.84); box-shadow: var(--shadow); backdrop-filter: blur(18px); transition: opacity 180ms ease, transform 240ms cubic-bezier(.2,.8,.2,1); }
+.assets-pane, .agent-chat, .artifact-pane { min-width: 0; min-height: 0; overflow: hidden; border: 1px solid rgba(29,29,31,.08); border-radius: 1.15rem; background: rgba(255,255,255,.97); box-shadow: var(--shadow); backdrop-filter: blur(18px); transition: opacity 180ms ease, transform 240ms cubic-bezier(.2,.8,.2,1); }
 .agent-workspace.session-switching .assets-pane, .agent-workspace.session-switching .artifact-pane { opacity: .48; transform: translateY(4px); pointer-events: none; }
 .agent-chat { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
 .agent-chat-header { min-height: 4.4rem; display: flex; align-items: center; gap: 1rem; padding: .75rem 1rem; border-bottom: 1px solid var(--line); }
@@ -3330,7 +3338,7 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .agent-chat-header .provider-picker { margin-left: auto; }
 .streaming-status { display: inline-flex; align-items: center; gap: .4rem; margin-left: auto; color: var(--tertiary); font-size: .6rem; }
 .streaming-status i { width: .4rem; height: .4rem; border-radius: 50%; background: #49a369; box-shadow: 0 0 0 3px rgba(73,163,105,.12); }
-.assets-pane { display: flex; flex-direction: column; background: rgba(249,250,249,.92); }
+.assets-pane { display: flex; flex-direction: column; background: rgba(249,250,249,.98); }
 .assets-pane:focus { outline: none; }
 .assets-pane:focus-visible { border-color: rgba(71,105,87,.4); box-shadow: 0 0 0 3px rgba(71,105,87,.1), var(--shadow); }
 .assets-header { min-height: 4.4rem; display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .8rem .85rem; border-bottom: 1px solid var(--line); }
@@ -3360,6 +3368,7 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .asset-editor button { min-height: 1.75rem; padding: 0 .55rem; border: 0; border-radius: .48rem; color: #fff; background: var(--accent); cursor: pointer; font-size: .6rem; font-weight: 620; }
 .asset-editor button:last-child { color: #676b68; background: #eceeed; }
 .asset-editor button:disabled { opacity: .45; cursor: not-allowed; }
+.asset-browser { min-height: 0; flex: 1; display: flex; flex-direction: column; }
 .asset-browser-list { min-height: 0; flex: 1; padding: 0 .65rem; overflow-y: auto; scrollbar-width: thin; }
 .asset-row { position: relative; display: flex; align-items: center; margin-bottom: .38rem; overflow: hidden; border: 1px solid #e1e5e2; border-radius: .7rem; background: rgba(255,255,255,.88); transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease; }
 .asset-row:hover { border-color: #cdd8d1; box-shadow: 0 4px 12px rgba(32,49,39,.06); transform: translateY(-1px); }
@@ -3383,12 +3392,12 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .asset-empty svg { width: 1.2rem; height: 1.2rem; }
 .asset-empty strong { color: #666f69; font-size: .68rem; }
 .asset-empty small { max-width: 11rem; font-size: .56rem; line-height: 1.45; }
-.asset-drop-zone { min-height: 5.2rem; display: grid; place-items: center; align-content: center; gap: .24rem; margin: .65rem; border: 1px dashed #bfcac3; border-radius: .75rem; color: #718078; background: rgba(255,255,255,.58); cursor: pointer; }
+.asset-drop-zone { min-height: 5.2rem; flex: 0 0 auto; display: grid; place-items: center; align-content: center; gap: .24rem; margin: .65rem; border: 1px dashed #bfcac3; border-radius: .75rem; color: #718078; background: rgba(255,255,255,.58); cursor: pointer; }
 .asset-drop-zone:hover, .asset-drop-zone.dragging { border-color: #668873; color: #42604f; background: #edf4ef; }
 .asset-drop-zone svg { width: 1rem; height: 1rem; }
 .asset-drop-zone strong { font-size: .62rem; }
 .asset-drop-zone small { color: #989e9a; font-size: .48rem; }
-.agent-thread { position: relative; min-height: 0; padding: 1.2rem; overflow-y: auto; overscroll-behavior: contain; scroll-behavior: auto; scrollbar-width: thin; scrollbar-gutter: stable; overflow-anchor: none; }
+.agent-thread { position: relative; min-width: 0; min-height: 0; padding: 1.2rem; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scroll-behavior: auto; scrollbar-width: thin; scrollbar-gutter: stable; overflow-anchor: none; }
 .agent-thread.empty { display: grid; place-items: center; }
 .session-switch-state { min-height: 100%; display: grid; place-items: center; align-content: center; gap: .52rem; color: #66736b; text-align: center; }
 .session-switch-state strong { color: #405247; font-size: .82rem; }
@@ -3398,9 +3407,9 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .session-content-enter-active, .session-content-leave-active { transition: opacity 160ms ease, transform 220ms cubic-bezier(.2,.8,.2,1), filter 180ms ease; }
 .session-content-enter-from { opacity: 0; transform: translateY(8px); filter: blur(4px); }
 .session-content-leave-to { opacity: 0; transform: translateY(-6px); filter: blur(4px); }
-.turn-stack { --conversation-font-size: .94rem; width: min(100%, 46rem); margin: 0 auto; }
-.conversation-turn { display: grid; gap: .5rem; margin-bottom: .72rem; }
-.turn-content { display: grid; gap: .68rem; padding: .12rem 0 .68rem; }
+.turn-stack { --conversation-font-size: .94rem; width: min(100%, 46rem); min-width: 0; max-width: 100%; margin: 0 auto; }
+.conversation-turn { min-width: 0; max-width: 100%; display: grid; gap: .5rem; margin-bottom: .72rem; }
+.turn-content { min-width: 0; max-width: 100%; display: grid; gap: .68rem; padding: .12rem 0 .68rem; }
 .turn-prompt { display: flex; justify-content: flex-end; padding-left: 18%; }
 /* Keep bubble spacing on its DOM container: MarkdownContent has multiple roots. */
 .turn-prompt-content { box-sizing: border-box; display: grid; gap: .5rem; width: fit-content; min-width: 0; max-width: 100%; padding: .68rem 1rem; overflow: hidden; border-radius: 1rem 1rem .3rem 1rem; color: #34483d; background: #eef1ef; }
@@ -3428,8 +3437,8 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .turn-execution[open] > summary .turn-chevron { transform: rotate(90deg); }
 .turn-execution-details { display: grid; gap: .28rem; padding: .48rem 0 .2rem; animation: turn-reveal 160ms ease-out; }
 .turn-empty-detail { margin: 0; color: #979e99; font-size: .62rem; }
-.turn-response { min-width: 0; padding-right: 7%; }
-.agent-response-content { min-width: 0; padding-top: .1rem; }
+.turn-response { min-width: 0; max-width: 100%; padding-right: 7%; }
+.agent-response-content { min-width: 0; max-width: 100%; padding-top: .1rem; }
 .turn-prompt .message-content, .agent-response-content { font-size: var(--conversation-font-size); line-height: 1.65; }
 .agent-response-content .final-response { margin: 0; padding: 0; border: 0; border-radius: 0; color: #303632; background: transparent; box-shadow: none; }
 .turn-task-list { margin: .1rem 0 .55rem; padding: .25rem 0 .45rem; border-bottom: 1px solid #e8ebe9; }
@@ -3482,7 +3491,7 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .queued-followup-remove { flex: 0 0 auto; width: 1.45rem; height: 1.45rem; display: grid; place-items: center; padding: 0; border: 0; border-radius: .4rem; color: #8b958e; background: transparent; cursor: pointer; }
 .queued-followup-remove svg { width: .78rem; height: .78rem; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .queued-followup-remove:hover, .queued-followup-remove:focus-visible { color: #6d453f; background: #f5eae8; outline: none; }
-.agent-input { margin: .8rem; padding: .25rem; border: 1px solid rgba(29,29,31,.11); border-radius: .9rem; background: white; box-shadow: 0 3px 16px rgba(0,0,0,.055); }
+.agent-input { container-type: inline-size; container-name: composer-footer; margin: .8rem; padding: .25rem; border: 1px solid rgba(29,29,31,.11); border-radius: .9rem; background: white; box-shadow: 0 3px 16px rgba(0,0,0,.055); }
 .message-image-drafts { display: flex; gap: .42rem; padding: .55rem .58rem .1rem; overflow-x: auto; }
 .message-image-drafts figure { position: relative; width: 3.5rem; height: 3.5rem; flex: 0 0 auto; margin: 0; }
 .message-image-preview { display: block; width: 100%; height: 100%; padding: 0; border: 0; border-radius: .66rem; background: transparent; cursor: zoom-in; }
@@ -3492,13 +3501,21 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .message-image-drafts .message-image-remove { position: absolute; top: -.28rem; right: -.28rem; width: 1rem; height: 1rem; display: grid; place-items: center; padding: 0; border: 2px solid #fff; border-radius: 50%; color: #fff; background: #59645d; box-shadow: 0 1px 4px rgba(31,39,34,.18); cursor: pointer; font-size: .67rem; line-height: 1; }
 .agent-input:focus-within { border-color: rgba(71,105,87,.4); box-shadow: 0 0 0 3px rgba(71,105,87,.1), 0 5px 20px rgba(0,0,0,.06); }
 .agent-input textarea { display: block; width: 100%; min-height: 4rem; padding: .7rem .8rem .25rem; resize: none; border: 0; outline: 0; color: var(--text); background: transparent; font-size: .78rem; line-height: 1.5; }
-.agent-input-footer { display: flex; align-items: center; justify-content: space-between; gap: .5rem; min-height: 2.45rem; padding: 0 .3rem .1rem .45rem; }
+.agent-input-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; min-height: 2.45rem; padding: 0 .3rem .1rem .45rem; }
 .agent-input-footer small { color: var(--tertiary); font-size: .55rem; }
 .agent-input .send-button { position: static; }
-.agent-input-footer > :first-child { min-width: 0; flex: 1; }
-.composer-leading { min-width: 0; display: flex; align-items: center; gap: .35rem; }
+.agent-input-footer > :first-child { min-width: 0; flex: 1 1 auto; }
+.composer-leading { min-width: 0; flex: 1 1 auto; display: flex; align-items: center; gap: .35rem; }
 .composer-submit { min-width: 0; flex: 0 0 auto; display: flex; align-items: center; gap: .35rem; }
-.artifact-pane { overflow: hidden; background: #f3f4f1; }
+@container composer-footer (max-width: 420px) {
+  .agent-input-footer { align-items: flex-start; }
+  .composer-leading { flex-basis: 100%; }
+  .composer-submit { width: 100%; justify-content: flex-end; margin-top: .15rem; }
+}
+@container composer-footer (max-width: 760px) {
+  .composer-submit > small { display: none; }
+}
+.artifact-pane { container-type: inline-size; container-name: artifact-pane; overflow: hidden; background: #f3f4f1; }
 .artifact-workspace { display: flex; flex-direction: column; }
 .artifact-collection-header { display: flex; align-items: center; justify-content: space-between; gap: .7rem; padding: .85rem 1rem .72rem; border-bottom: 1px solid #e4e8e5; background: rgba(255,255,255,.92); }
 .artifact-collection-header strong, .artifact-collection-header small { display: block; }

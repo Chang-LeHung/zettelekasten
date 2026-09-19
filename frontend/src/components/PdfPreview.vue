@@ -432,22 +432,26 @@ onBeforeUnmount(() => {
   <div ref="previewRoot" class="pdf-preview" tabindex="-1" :role="expanded ? 'dialog' : undefined" :aria-modal="expanded ? true : undefined" :aria-label="expanded ? 'Expanded PDF preview' : undefined" :class="{ 'outline-open': outlineOpen, 'artifact-pdf': artifact, 'resizing-outline': resizingOutline, 'pdf-expanded': expanded }" :style="{ '--outline-width': `${outlineWidth}px` }" @keydown="handleExpandedKey">
     <div class="pdf-toolbar" aria-label="PDF controls">
       <button class="outline-toggle" type="button" :aria-expanded="outlineOpen" aria-label="Toggle document outline" @click="outlineOpen = !outlineOpen">☰</button>
-      <button class="expand-toggle" type="button" :aria-label="expanded ? 'Close expanded PDF preview' : 'Expand PDF preview'" :title="expanded ? 'Close (Esc)' : 'Expand preview'" @click="toggleExpanded">
-        <svg v-if="expanded" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
-        <svg v-else viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6" /></svg>
-      </button>
-      <button class="presentation-toggle" type="button" :disabled="!documentProxy || loading" aria-label="Start PDF presentation" title="Present PDF" @click="startPresentation">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M12 17v4m-4 0h8M10 8l5 2.5-5 2.5Z" /></svg>
-      </button>
-      <div>
-        <button type="button" :disabled="currentPage <= 1 || loading" aria-label="Previous page" @click="changePage(-1)">‹</button>
-        <span>{{ currentPage }} / {{ pageCount || '—' }}</span>
-        <button type="button" :disabled="currentPage >= pageCount || loading" aria-label="Next page" @click="changePage(1)">›</button>
+      <div class="pdf-toolbar-center">
+        <div class="pdf-page-controls">
+          <button type="button" :disabled="currentPage <= 1 || loading" aria-label="Previous page" @click="changePage(-1)">‹</button>
+          <span>{{ currentPage }} / {{ pageCount || '—' }}</span>
+          <button type="button" :disabled="currentPage >= pageCount || loading" aria-label="Next page" @click="changePage(1)">›</button>
+        </div>
+        <div class="pdf-zoom-controls">
+          <button type="button" :disabled="scale <= 0.5 || loading" aria-label="Zoom out" @click="changeScale(-0.25)">−</button>
+          <button class="scale-value" type="button" :disabled="loading" aria-label="Reset zoom" @click="resetScale">{{ Math.round(scale * 100) }}%</button>
+          <button type="button" :disabled="scale >= 2.5 || loading" aria-label="Zoom in" @click="changeScale(0.25)">+</button>
+        </div>
       </div>
-      <div>
-        <button type="button" :disabled="scale <= 0.5 || loading" aria-label="Zoom out" @click="changeScale(-0.25)">−</button>
-        <button class="scale-value" type="button" :disabled="loading" aria-label="Reset zoom" @click="resetScale">{{ Math.round(scale * 100) }}%</button>
-        <button type="button" :disabled="scale >= 2.5 || loading" aria-label="Zoom in" @click="changeScale(0.25)">+</button>
+      <div class="pdf-toolbar-actions">
+        <button class="presentation-toggle" type="button" :disabled="!documentProxy || loading" aria-label="Start PDF presentation" title="Present PDF" @click="startPresentation">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M12 17v4m-4 0h8M10 8l5 2.5-5 2.5Z" /></svg>
+        </button>
+        <button class="expand-toggle" type="button" :aria-label="expanded ? 'Close expanded PDF preview' : 'Expand PDF preview'" :title="expanded ? 'Close (Esc)' : 'Expand preview'" @click="toggleExpanded">
+          <svg v-if="expanded" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+          <svg v-else viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6" /></svg>
+        </button>
       </div>
     </div>
 
@@ -516,19 +520,19 @@ onBeforeUnmount(() => {
 .pdf-preview.resizing-outline { user-select: none; cursor: col-resize; }
 .pdf-preview.artifact-pdf { height: 65vh; min-height: 24rem; }
 .pdf-inline-host { display: contents; }
-.pdf-expanded-backdrop { position: fixed; inset: 0; z-index: 1600; display: grid; place-items: center; padding: 2vh 2vw; background: rgba(31,38,34,.4); }
+.pdf-expanded-backdrop { position: fixed; inset: 0; z-index: 1600; container-type: inline-size; display: grid; place-items: center; padding: 2vh 2vw; background: rgba(31,38,34,.4); }
 .pdf-preview.pdf-expanded { width: 96vw; height: 96vh; height: 96dvh; min-height: 0; overflow: hidden; border-radius: .9rem; background: #fafbfa; box-shadow: 0 24px 90px rgba(25,36,29,.25); outline: none; }
-.pdf-toolbar .expand-toggle { position: absolute; right: .65rem; top: 50%; transform: translateY(-50%); width: 2.5rem; height: 2.5rem; border-radius: .65rem; }
-.pdf-toolbar .presentation-toggle { position: absolute; right: 3.45rem; top: 50%; transform: translateY(-50%); }
 .pdf-expanded .expand-toggle { background: #e8eeea; color: #3d5145; }
-.pdf-toolbar { position: relative; z-index: 2; grid-column: 1 / -1; display: flex; align-items: center; justify-content: center; gap: 1.5rem; min-height: 2.85rem; padding: .4rem .75rem; border-bottom: 1px solid rgba(55,70,61,.12); background: rgba(250,251,250,.96); box-shadow: 0 2px 10px rgba(33,42,36,.04); }
-.pdf-toolbar > div { display: flex; align-items: center; gap: .34rem; }
+.pdf-toolbar { position: relative; z-index: 2; grid-column: 1 / -1; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: .65rem; min-height: 2.85rem; padding: .4rem .75rem; border-bottom: 1px solid rgba(55,70,61,.12); background: rgba(250,251,250,.96); box-shadow: 0 2px 10px rgba(33,42,36,.04); }
+.pdf-toolbar > div, .pdf-page-controls, .pdf-zoom-controls, .pdf-toolbar-actions { display: flex; align-items: center; gap: .34rem; }
+.pdf-toolbar-center { min-width: 0; justify-content: center; gap: .75rem; }
+.pdf-toolbar-actions { justify-self: end; }
 .pdf-toolbar span { min-width: 3.8rem; color: #747d77; font-size: .7rem; font-variant-numeric: tabular-nums; text-align: center; }
 .pdf-toolbar button, .pdf-state button, .pdf-outline button { border: 0; color: #4d5a52; background: transparent; cursor: pointer; }
 .pdf-toolbar button { display: grid; place-items: center; width: 1.9rem; height: 1.9rem; border-radius: .55rem; font-size: 1.1rem; }
 .pdf-toolbar button:hover:not(:disabled) { color: #294d3b; background: #e8efeb; }
 .pdf-toolbar button:disabled { opacity: .3; cursor: default; }
-.pdf-toolbar .outline-toggle { position: absolute; left: .75rem; font-size: .9rem; }
+.pdf-toolbar .outline-toggle { font-size: .9rem; }
 .pdf-toolbar .scale-value { width: 3.8rem; color: #747d77; font-size: .7rem; font-variant-numeric: tabular-nums; }
 .pdf-outline { min-width: 0; min-height: 0; overflow: auto; background: #f6f8f7; }
 .pdf-outline header { display: flex; align-items: center; justify-content: space-between; min-height: auto; padding: 1rem .9rem .75rem; border-bottom: 1px solid rgba(55,70,61,.08); background: transparent; }
@@ -563,8 +567,14 @@ onBeforeUnmount(() => {
 .spinner { width: .9rem; height: .9rem; border: 2px solid #cbd5cf; border-top-color: #527460; border-radius: 50%; animation: spin .75s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (max-width: 760px) {
-  .pdf-toolbar { justify-content: center; gap: .35rem; padding-inline: 2.75rem; }
   .pdf-pages { padding: .75rem; }
+}
+@container (max-width: 380px) {
+  .pdf-toolbar { gap: .3rem; padding-inline: .45rem; }
+  .pdf-toolbar-center { gap: .2rem; }
+  .pdf-toolbar span { min-width: 2.8rem; font-size: .64rem; }
+  .pdf-toolbar .scale-value { display: none; }
+  .pdf-toolbar .presentation-toggle { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 1.5s; } }
 </style>

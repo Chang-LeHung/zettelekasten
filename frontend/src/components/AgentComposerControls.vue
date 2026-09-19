@@ -206,6 +206,19 @@ onBeforeUnmount(() => {
       <div title="Cached input tokens divided by all input tokens"><dt>{{ t('composer.cache') }}</dt><dd>{{ usage.cache_hit_rate === null ? '—' : `${(usage.cache_hit_rate * 100).toFixed(1)}%` }}</dd></div>
       <div title="Output tokens per second of model generation"><dt>{{ t('composer.speed') }}</dt><dd>{{ usage.tokens_per_second === null ? '—' : `${usage.tokens_per_second.toFixed(1)} tok/s` }}</dd></div>
     </dl>
+    <span v-if="usage" class="compact-cache" tabindex="0" :aria-label="t('composer.cache')">
+      <span class="compact-stat">{{ t('composer.cache') }} <strong>{{ usage.cache_hit_rate === null ? '—' : `${(usage.cache_hit_rate * 100).toFixed(1)}%` }}</strong></span>
+      <span class="compact-stat compact-speed">{{ t('composer.speed') }} <strong>{{ usage.tokens_per_second === null ? '—' : `${usage.tokens_per_second.toFixed(1)} tok/s` }}</strong></span>
+      <span class="cache-popover" role="tooltip">
+        <strong>{{ t('composer.cache') }}</strong>
+        <span><small>{{ t('Input') }}</small><em>{{ formatTokenCount(usage.input_tokens) }}</em></span>
+        <span><small>{{ t('Output') }}</small><em>{{ formatTokenCount(usage.output_tokens) }}</em></span>
+        <span><small>{{ t('Cache read') }}</small><em>{{ formatTokenCount(usage.cache_read_tokens) }}</em></span>
+        <span><small>{{ t('Cache write') }}</small><em>{{ formatTokenCount(usage.cache_write_tokens) }}</em></span>
+        <span><small>{{ t('Cache hit rate') }}</small><em>{{ usage.cache_hit_rate === null ? '—' : `${(usage.cache_hit_rate * 100).toFixed(2)}%` }}</em></span>
+        <span><small>{{ t('composer.speed') }}</small><em>{{ usage.tokens_per_second === null ? '—' : `${usage.tokens_per_second.toFixed(1)} tok/s` }}</em></span>
+      </span>
+    </span>
     <ContextCompositionRing
       :composition="contextComposition"
       :current-tokens="currentContextTokens"
@@ -262,19 +275,43 @@ onBeforeUnmount(() => {
 .usage-strip dt, .usage-strip dd { margin: 0; white-space: nowrap; }
 .usage-strip dt { color: #a0a6a2; font-size: .48rem; font-weight: 580; line-height: 1.1; }
 .usage-strip dd { color: #657069; font-size: .57rem; font-weight: 630; line-height: 1.25; }
+.compact-cache { display: none; }
 @keyframes popover-enter { from { opacity: 0; transform: translateY(.3rem) scale(.985); } }
-@media (max-width: 1180px) {
+@container composer-footer (max-width: 860px) {
   .agent-composer-controls { flex-wrap: wrap; }
-  .usage-strip { order: 3; width: 100%; margin: .15rem 0 0; padding: .38rem 0 0; border-top: 1px solid #edf0ee; border-left: 0; }
-  .usage-strip div { flex: 1; padding: 0 .45rem; }
-  .usage-strip div:first-child { padding-left: .15rem; }
+  .usage-strip { display: none; }
+  .compact-cache { position: relative; order: 1; display: inline-flex; align-items: baseline; gap: .48rem; margin-left: auto; color: #7b857f; white-space: nowrap; font-size: .54rem; cursor: default; }
+  .compact-stat { display: inline-flex; gap: .22rem; }
+  .compact-cache strong { color: #4f5a53; font-variant-numeric: tabular-nums; }
+  .context-ring-control { order: 2; margin-left: auto; }
 }
-@media (max-width: 520px) {
-  .model-trigger { width: min(46vw, 11rem); }
-  .effort-trigger { width: 6.4rem; }
-  .usage-strip div { min-width: 0; padding: 0 .3rem; }
-  .usage-strip dd { font-size: .52rem; }
+@container composer-footer (max-width: 760px) {
+  .agent-composer-controls { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, 1.08fr) auto auto; align-items: center; column-gap: .25rem; row-gap: .25rem; }
+  .control-menu { min-width: 0; }
+  .model-trigger, .effort-trigger, .shell-trigger { width: 100%; }
+  .control-icon { display: none; }
+  .compact-cache { grid-column: 4; margin-left: 0; }
+  .context-ring-control { grid-column: 5; margin-left: 0; }
 }
+@container composer-footer (max-width: 560px) {
+  .control-trigger { gap: .2rem; padding: .2rem .3rem; }
+  .control-copy small, .control-chevron { display: none; }
+  .context-ring { width: 1.9rem; height: 1.9rem; }
+}
+@container composer-footer (max-width: 430px) {
+  .agent-composer-controls { grid-template-columns: repeat(2, minmax(0, 1fr)) auto; }
+  .model-menu { grid-column: 1 / 3; }
+  .effort-menu { grid-column: 1; }
+  .shell-menu { grid-column: 2; }
+  .compact-cache { grid-column: 1 / 3; grid-row: 3; justify-self: start; }
+  .context-ring-control { grid-column: 3; grid-row: 1 / span 3; align-self: center; }
+}
+.cache-popover { position: absolute; right: 0; bottom: calc(100% + .45rem); z-index: 35; width: 12.5rem; display: grid; gap: .3rem; padding: .55rem .62rem; border: 1px solid rgba(52, 70, 60, .12); border-radius: .72rem; color: #4f5a53; background: rgba(255, 255, 255, .98); box-shadow: 0 12px 34px rgba(35, 49, 41, .14); opacity: 0; visibility: hidden; transform: translateY(.2rem); transition: 140ms ease; pointer-events: none; }
+.compact-cache:hover .cache-popover, .compact-cache:focus .cache-popover, .compact-cache:focus-within .cache-popover { opacity: 1; visibility: visible; transform: none; }
+.cache-popover > strong { color: #3f4a43; font-size: .6rem; }
+.cache-popover > span { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.cache-popover small { color: #8d9590; font-size: .5rem; font-weight: 500; }
+.cache-popover em { color: #4f5a53; font-size: .54rem; font-style: normal; font-weight: 680; font-variant-numeric: tabular-nums; }
 @media (prefers-reduced-motion: reduce) {
   .control-popover { animation-duration: 1ms; }
 }

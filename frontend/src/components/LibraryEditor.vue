@@ -224,6 +224,14 @@ onBeforeUnmount(() => {
   .preview-pane { border-top: 1px solid #dfe3e0; border-left: 0; }
   .preview-document { padding: 1.5rem; }
 }
+@media (max-width: 560px) {
+  .editor-toolbar { gap: .4rem; padding: 0 .5rem; }
+  .resource-heading strong { font-size: .82rem; }
+  .metadata-fields { grid-template-columns: 1fr; padding: .75rem; }
+  .metadata-fields label:last-child { grid-column: auto; }
+  .pane-heading { padding: 0 .8rem; }
+  .preview-document { padding: 1rem; }
+}
 </style>
 
 <style>
