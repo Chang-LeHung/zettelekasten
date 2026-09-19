@@ -499,6 +499,9 @@ async def test_agent_stream_uses_provider_neutral_events_and_persists_messages(m
             "user",
             "assistant",
         ]
+        activity = client.get("/api/settings/usage-activity?days=1").json()
+        assert activity[0]["requests"] == 1
+        assert activity[0]["total_tokens"] == 0
         assistant = next(message for message in detail["messages"] if message["role"] == "assistant")
         assert assistant["reasoning_content"] == "checking"
     assert model.closed

@@ -28,7 +28,7 @@ from ...agent import ZettelkastenAgent, ZettelkastenAgentConfig, ZettelkastenEve
 from ...agent.model_factory import ProviderAdapter, create_model
 from ...config import settings
 from ...infra.agent_runtime import get_agent_runtime_storage
-from ...infra.dao import provider_storage, session_storage
+from ...infra.dao import model_usage_activity_storage, provider_storage, session_storage
 from ...infra.log import get_logger
 from ...schemas import ProviderConnection
 from ..schemas import (
@@ -198,6 +198,7 @@ async def _prepare_agent_request(session_id: str, payload: AnalyzeRequest) -> _P
             max_iterations=runtime_settings.max_turn_iterations,
             compaction_max_tokens=runtime_settings.compaction_max_tokens,
             compaction_keep_recent_tokens=runtime_settings.compaction_keep_recent_tokens,
+            usage_activity_storage=model_usage_activity_storage,
             context_composition_recorder=_remember_context_composition,
         ).create(storage)
         await active_requests.bind(config, agent)

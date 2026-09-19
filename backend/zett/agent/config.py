@@ -14,11 +14,13 @@ from zett_agent import (
     McpExtension,
     McpServer,
     ModelRequestTraceExtension,
+    ModelUsageActivityStorage,
     SessionPersistenceExtension,
     SkillExtension,
     SQLiteSessionStorage,
     TodoWriteExtension,
     ToolGuidelinesExtension,
+    UsageActivityExtension,
 )
 
 from .assets import AssetExtension
@@ -54,6 +56,7 @@ class ZettelkastenAgentConfig:
     max_iterations: int = 36
     compaction_max_tokens: int = 128_000
     compaction_keep_recent_tokens: int = 32_000
+    usage_activity_storage: ModelUsageActivityStorage | None = None
     context_composition_recorder: Callable[[str, dict[str, float]], Awaitable[None]] | None = None
     skill_roots: tuple[str | Path, ...] = ("~/.zett/skills",)
     mcp_servers: tuple[McpServer, ...] = ()
@@ -75,31 +78,34 @@ class ZettelkastenAgentConfig:
     async def create(self, storage: SQLiteSessionStorage) -> ZettelkastenAgent:
         """Build a fresh Agent whose persistence extension restores the session."""
         mcp_config_path = self._resolved_mcp_config_path()
+        extensions = [
+            SessionPersistenceExtension(storage),
+            AssetExtension(),
+            ZettelkastenExtension(),
+            TagExtension(),
+            CodingExtension(),
+            AskUserExtension(),
+            TodoWriteExtension(),
+            CompactionExtension(
+                max_tokens=self.compaction_max_tokens,
+                keep_recent_tokens=self.compaction_keep_recent_tokens,
+            ),
+            SkillExtension(self.skill_roots),
+            McpExtension(
+                servers=self.mcp_servers,
+                config_path=mcp_config_path,
+                server_keys=self.mcp_server_keys,
+            ),
+            ToolGuidelinesExtension(),
+            ContextCompositionExtension(self.context_composition_recorder),
+            ModelRequestTraceExtension(),
+        ]
+        if self.usage_activity_storage is not None:
+            extensions.append(UsageActivityExtension(self.usage_activity_storage))
         return await ZettelkastenAgent.create(
             config=AgentRunConfig(session_id=self.session_id),
             system_prompt=SYSTEM_PROMPT,
-            extensions=(
-                SessionPersistenceExtension(storage),
-                AssetExtension(),
-                ZettelkastenExtension(),
-                TagExtension(),
-                CodingExtension(),
-                AskUserExtension(),
-                TodoWriteExtension(),
-                CompactionExtension(
-                    max_tokens=self.compaction_max_tokens,
-                    keep_recent_tokens=self.compaction_keep_recent_tokens,
-                ),
-                SkillExtension(self.skill_roots),
-                McpExtension(
-                    servers=self.mcp_servers,
-                    config_path=mcp_config_path,
-                    server_keys=self.mcp_server_keys,
-                ),
-                ToolGuidelinesExtension(),
-                ContextCompositionExtension(self.context_composition_recorder),
-                ModelRequestTraceExtension(),
-            ),
+            extensions=tuple(extensions),
             max_iterations=self.max_iterations,
         )
 

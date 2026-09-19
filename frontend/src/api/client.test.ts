@@ -365,6 +365,24 @@ it('loads and replaces runtime settings through the typed client', async () => {
   })
 })
 
+it('loads model usage activity for the settings chart', async () => {
+  const days = [{
+    date: '2026-09-19',
+    requests: 2,
+    input_tokens: 100,
+    output_tokens: 20,
+    cache_read_tokens: 80,
+    cache_write_tokens: 0,
+    reasoning_tokens: 5,
+    total_tokens: 120,
+  }]
+  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(days)))
+  vi.stubGlobal('fetch', fetchMock)
+
+  expect(await settingsClient.getUsageActivity(30)).toEqual(days)
+  expect(fetchMock).toHaveBeenCalledWith('/api/settings/usage-activity?days=30', expect.any(Object))
+})
+
 it('loads the model most recently used by one session', async () => {
   const preference = {
     provider_id: 'provider-7',

@@ -1,6 +1,6 @@
 """HTTP application request and response models."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -19,6 +19,19 @@ class DeleteResponse(BaseModel):
     """Result of an idempotent HTTP deletion."""
 
     ok: bool
+
+
+class UsageActivityDayOut(BaseModel):
+    """One UTC day in the model usage activity chart."""
+
+    date: date
+    requests: int
+    input_tokens: int
+    output_tokens: int
+    cache_read_tokens: int
+    cache_write_tokens: int
+    reasoning_tokens: int
+    total_tokens: int
 
 
 class PersistedToolCallOut(BaseModel):

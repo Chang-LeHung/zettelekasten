@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ApiError, aiClient, libraryClient, settingsClient, tagClient } from './api/client'
-import type { AgentArtifact, AgentCompactionActivity, AgentContextComposition, AgentCustomEvent, AgentModelUsage, AgentPersistedMessage, AgentServerToolActivity, AgentSession, AgentSteeringMessage, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageContentPart, MessagePartInput, ReasoningEffort, RuntimeSettings, SessionAsset, Tag } from './api/types'
+import type { AgentArtifact, AgentCompactionActivity, AgentContextComposition, AgentCustomEvent, AgentModelUsage, AgentPersistedMessage, AgentServerToolActivity, AgentSession, AgentSteeringMessage, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AgentUsageActivityDay, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageContentPart, MessagePartInput, ReasoningEffort, RuntimeSettings, SessionAsset, Tag } from './api/types'
 import AgentComposerControls from './components/AgentComposerControls.vue'
 import CacheHitRate from './components/CacheHitRate.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
@@ -10,6 +10,7 @@ import AssetPreviewDialog from './components/AssetPreviewDialog.vue'
 import AssetRename from './components/AssetRename.vue'
 import AskUserPrompt from './components/AskUserPrompt.vue'
 import ToolResult from './components/ToolResult.vue'
+import UsageActivityGraph from './components/UsageActivityGraph.vue'
 import { addAgentUsage, latestAgentUsage, summarizeAgentUsage } from './utils/agentUsage'
 import { assetOpenAction, isPdfAsset } from './utils/assetOpen'
 import { createAsyncRefreshScheduler } from './utils/asyncRefresh'
@@ -198,6 +199,8 @@ const runtimeSettings = ref<RuntimeSettings>({
   compaction_keep_recent_tokens: 32_000,
 })
 const runtimeSettingsSaving = ref(false)
+const usageActivity = ref<AgentUsageActivityDay[]>([])
+const usageActivityLoading = ref(false)
 const searchInput = ref<HTMLInputElement | null>(null)
 const agentThread = ref<HTMLElement | null>(null)
 const agentTurnStack = ref<HTMLElement | null>(null)
@@ -1003,17 +1006,20 @@ async function loadLibrary(): Promise<void> {
 }
 
 async function loadInitialData(): Promise<void> {
+  usageActivityLoading.value = true
   try {
-    const [tagData, libraryData, providerData, runtimeSettingsData] = await Promise.all([
+    const [tagData, libraryData, providerData, runtimeSettingsData, usageActivityData] = await Promise.all([
       tagClient.list(),
       libraryClient.list(),
       aiClient.listProviders(),
       settingsClient.get(),
+      settingsClient.getUsageActivity().catch(() => []),
     ])
     tags.value = tagData
     libraryItems.value = libraryData
     providers.value = providerData
     runtimeSettings.value = runtimeSettingsData
+    usageActivity.value = usageActivityData
     const firstProvider = providerData.find((provider) => provider.enabled)
     if (firstProvider) {
       selectedProviderId.value = firstProvider.id
@@ -1021,6 +1027,8 @@ async function loadInitialData(): Promise<void> {
     }
   } catch (error) {
     showNotice(errorMessage(error), 'error')
+  } finally {
+    usageActivityLoading.value = false
   }
 }
 
@@ -2655,6 +2663,14 @@ onBeforeUnmount(() => {
             </div>
           </form>
 
+          <div class="settings-intro runtime-settings-heading">
+            <div><h2>Model activity</h2><p>Daily token requests recorded from completed LLM calls.</p></div>
+          </div>
+          <div class="settings-card">
+            <div v-if="usageActivityLoading" class="settings-activity-state">Loading activity…</div>
+            <UsageActivityGraph v-else :days="usageActivity" />
+          </div>
+
         </section>
       </template>
 
@@ -3217,6 +3233,7 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .provider-list strong { max-width: 9rem; overflow: hidden; font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
 .provider-list small { margin-top: .18rem; color: var(--secondary); font-size: .58rem; }
 .settings-card .form-grid { margin-top: 0; }
+.settings-activity-state { min-height: 8rem; display: grid; place-items: center; color: var(--tertiary); font-size: .68rem; }
 .settings-actions { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 1.4rem; padding-top: 1rem; border-top: 1px solid var(--line); }
 .settings-actions > span { color: var(--tertiary); font-size: .68rem; }
 .settings-actions > div { display: flex; align-items: center; gap: 1rem; margin-left: auto; }

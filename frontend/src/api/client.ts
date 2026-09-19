@@ -3,6 +3,7 @@ import type {
   AgentArtifact,
   AgentContextComposition,
   AgentModelUsage,
+  AgentUsageActivityDay,
   AgentServerToolActivity,
   AgentSteeringMessage,
   AgentStreamCallbacks,
@@ -462,6 +463,10 @@ export const settingsClient = {
 
   update(payload: RuntimeSettings): Promise<RuntimeSettings> {
     return request<RuntimeSettings>('/settings', { method: 'PUT', body: JSON.stringify(payload) })
+  },
+
+  getUsageActivity(days = 365): Promise<AgentUsageActivityDay[]> {
+    return request<AgentUsageActivityDay[]>(`/settings/usage-activity?days=${days}`)
   },
 }
 

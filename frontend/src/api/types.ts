@@ -100,6 +100,17 @@ export interface RuntimeSettings {
   compaction_keep_recent_tokens: number
 }
 
+export interface AgentUsageActivityDay {
+  date: string
+  requests: number
+  input_tokens: number
+  output_tokens: number
+  cache_read_tokens: number
+  cache_write_tokens: number
+  reasoning_tokens: number
+  total_tokens: number
+}
+
 export interface AgentContextComposition {
   system_prompt: number
   tool_prompt: number
