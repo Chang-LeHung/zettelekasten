@@ -300,6 +300,7 @@ class AnalyzeRequest(UserMessageIn):
 
     provider_id: str
     reasoning_effort: str = "medium"
+    shell_approval_mode: Literal["review", "allow_all"] = "review"
     messages: list[dict[str, Any]] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
     tags: dict[str, Any] = Field(default_factory=dict)
@@ -317,6 +318,12 @@ class ExternalEventOut(BaseModel):
 
     accepted: bool
     accepted_by: list[str] = Field(default_factory=list)
+
+
+class ShellApprovalSettings(BaseModel):
+    """Persisted shell approval policy for one Agent session."""
+
+    mode: Literal["review", "allow_all"] = "review"
 
 
 class SteerRequest(UserMessageIn):

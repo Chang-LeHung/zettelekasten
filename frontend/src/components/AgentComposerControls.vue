@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import type { AgentContextComposition, AgentModelUsage, AIProvider, ReasoningEffort } from '../api/types'
+import type { AgentContextComposition, AgentModelUsage, AIProvider, ReasoningEffort, ShellApprovalMode } from '../api/types'
 import { formatTokenCount, type AgentUsageSummary } from '../utils/agentUsage'
 import ContextCompositionRing from './ContextCompositionRing.vue'
 
@@ -8,6 +8,7 @@ const props = defineProps<{
   providers: AIProvider[]
   selectedProviderId: string | null
   effort: ReasoningEffort
+  shellApproval: ShellApprovalMode
   disabled: boolean
   usage: AgentUsageSummary | null
   currentUsage: AgentModelUsage | null
@@ -18,11 +19,12 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:selectedProviderId': [value: string]
   'update:effort': [value: ReasoningEffort]
+  'update:shellApproval': [value: ShellApprovalMode]
   addProvider: []
 }>()
 
 const root = ref<HTMLElement | null>(null)
-const openMenu = ref<'model' | 'effort' | null>(null)
+const openMenu = ref<'model' | 'effort' | 'shell' | null>(null)
 const enabledProviders = computed(() => props.providers.filter((provider) => provider.enabled))
 const selectedProvider = computed(() => (
   enabledProviders.value.find((provider) => provider.id === props.selectedProviderId) || enabledProviders.value[0] || null
@@ -41,8 +43,15 @@ const effortOptions: Array<{ value: ReasoningEffort; label: string; description:
 ]
 
 const selectedEffort = computed(() => effortOptions.find((option) => option.value === props.effort) || effortOptions[2])
+const shellApprovalOptions: Array<{ value: ShellApprovalMode; label: string; description: string }> = [
+  { value: 'review', label: 'Review', description: 'Approve shell commands' },
+  { value: 'allow_all', label: 'Allow all', description: 'Run shell commands directly' },
+]
+const selectedShellApproval = computed(() => (
+  shellApprovalOptions.find((option) => option.value === props.shellApproval) || shellApprovalOptions[0]
+))
 
-function toggleMenu(menu: 'model' | 'effort'): void {
+function toggleMenu(menu: 'model' | 'effort' | 'shell'): void {
   if (props.disabled) return
   openMenu.value = openMenu.value === menu ? null : menu
 }
@@ -54,6 +63,11 @@ function selectProvider(id: string): void {
 
 function selectEffort(effort: ReasoningEffort): void {
   emit('update:effort', effort)
+  openMenu.value = null
+}
+
+function selectShellApproval(value: ShellApprovalMode): void {
+  emit('update:shellApproval', value)
   openMenu.value = null
 }
 
@@ -150,6 +164,41 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
+    <div class="control-menu shell-menu">
+      <button
+        class="control-trigger shell-trigger"
+        type="button"
+        :disabled="disabled"
+        :aria-expanded="openMenu === 'shell'"
+        aria-haspopup="listbox"
+        @click="toggleMenu('shell')"
+      >
+        <span class="control-icon shell-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.4 2.8 8.3 7 10 4.2-1.7 7-5.6 7-10V6z" /><path d="m9 12 2 2 4-4" /></svg>
+        </span>
+        <span class="control-copy"><small>Shell</small><strong>{{ selectedShellApproval.label }}</strong></span>
+        <svg class="control-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m6 8 4 4 4-4" /></svg>
+      </button>
+
+      <div v-if="openMenu === 'shell'" class="control-popover shell-popover" role="listbox" aria-label="Shell approval">
+        <header><strong>Shell approval</strong><small>For the next message</small></header>
+        <button
+          v-for="option in shellApprovalOptions"
+          :key="option.value"
+          class="shell-option"
+          :class="{ selected: option.value === shellApproval }"
+          type="button"
+          role="option"
+          :aria-selected="option.value === shellApproval"
+          @click="selectShellApproval(option.value)"
+        >
+          <span class="shell-mode-mark" :class="option.value" aria-hidden="true" />
+          <span><strong>{{ option.label }}</strong><small>{{ option.description }}</small></span>
+          <svg v-if="option.value === shellApproval" viewBox="0 0 20 20" aria-hidden="true"><path d="m5 10 3 3 7-7" /></svg>
+        </button>
+      </div>
+    </div>
+
     <dl v-if="usage" class="usage-strip" aria-label="Conversation token usage">
       <div title="Input tokens accumulated across every model step"><dt>Total in</dt><dd>{{ formatTokenCount(usage.input_tokens) }}</dd></div>
       <div title="Output tokens accumulated across every model step"><dt>Total out</dt><dd>{{ formatTokenCount(usage.output_tokens) }}</dd></div>
@@ -174,6 +223,7 @@ onBeforeUnmount(() => {
 .control-trigger:disabled { opacity: .6; cursor: default; }
 .model-trigger { width: clamp(10rem, 15vw, 13rem); }
 .effort-trigger { width: 7.2rem; }
+.shell-trigger { width: 7.2rem; }
 .control-icon { width: 1.65rem; height: 1.65rem; flex: 0 0 auto; display: grid; place-items: center; border-radius: .52rem; color: #42614f; background: #e9f0eb; }
 .control-icon svg { width: .88rem; height: .88rem; fill: none; stroke: currentColor; stroke-width: 1.65; stroke-linecap: round; stroke-linejoin: round; }
 .control-copy { min-width: 0; flex: 1; display: grid; gap: .05rem; }
@@ -189,6 +239,7 @@ onBeforeUnmount(() => {
 .control-popover { position: absolute; left: 0; bottom: calc(100% + .55rem); z-index: 30; padding: .42rem; border: 1px solid rgba(52, 70, 60, .12); border-radius: .86rem; background: rgba(255, 255, 255, .98); box-shadow: 0 16px 42px rgba(35, 49, 41, .14), 0 2px 8px rgba(35, 49, 41, .06); backdrop-filter: blur(18px); animation: popover-enter 150ms ease-out; }
 .model-popover { width: min(19rem, calc(100vw - 2rem)); }
 .effort-popover { width: 14rem; }
+.shell-popover { width: 15rem; }
 .control-popover header { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; padding: .45rem .52rem .52rem; }
 .control-popover header strong { color: #38423c; font-size: .66rem; }
 .control-popover header small { color: #969d98; font-size: .53rem; }
@@ -201,6 +252,8 @@ onBeforeUnmount(() => {
 .control-popover button small { margin-top: .1rem; color: #8d9590; font-size: .53rem; text-transform: capitalize; }
 .control-popover button > svg { width: .8rem; height: .8rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .provider-mark { width: 1.65rem; height: 1.65rem; display: grid; place-items: center; border-radius: .5rem; color: #3d624c; background: #e5eee8; font-size: .62rem; font-weight: 720; }
+.shell-mode-mark { width: .5rem; height: .5rem; border-radius: 50%; background: #d6a36d; box-shadow: 0 0 0 .2rem #f7efe6; }
+.shell-mode-mark.allow_all { background: #5e8f70; box-shadow: 0 0 0 .2rem #e5efe8; }
 .empty-provider { grid-template-columns: 1fr !important; color: #42614f !important; text-align: center !important; }
 .usage-strip { min-width: 0; display: flex; align-items: stretch; margin: 0 0 0 .35rem; padding: .15rem 0 .15rem .48rem; border-left: 1px solid #e4e8e5; font-variant-numeric: tabular-nums; }
 .usage-strip div { min-width: 3.25rem; display: grid; align-content: center; gap: .04rem; padding: 0 .52rem; }

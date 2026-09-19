@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ApiError, aiClient, libraryClient, settingsClient, tagClient } from './api/client'
-import type { AgentArtifact, AgentCompactionActivity, AgentContextComposition, AgentCustomEvent, AgentModelUsage, AgentModelUsageActivitySeries, AgentPersistedMessage, AgentServerToolActivity, AgentSession, AgentSteeringMessage, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AgentUsageActivityDay, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageContentPart, MessagePartInput, ReasoningEffort, RuntimeSettings, SessionAsset, Tag } from './api/types'
+import type { AgentArtifact, AgentCompactionActivity, AgentContextComposition, AgentCustomEvent, AgentModelUsage, AgentModelUsageActivitySeries, AgentPersistedMessage, AgentServerToolActivity, AgentSession, AgentSteeringMessage, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AgentUsageActivityDay, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageContentPart, MessagePartInput, ReasoningEffort, RuntimeSettings, SessionAsset, ShellApprovalMode, Tag } from './api/types'
 import AgentComposerControls from './components/AgentComposerControls.vue'
 import CacheHitRate from './components/CacheHitRate.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
@@ -9,6 +9,7 @@ import TagManagerDialog from './components/TagManagerDialog.vue'
 import AssetPreviewDialog from './components/AssetPreviewDialog.vue'
 import AssetRename from './components/AssetRename.vue'
 import AskUserPrompt from './components/AskUserPrompt.vue'
+import ShellApprovalPrompt from './components/ShellApprovalPrompt.vue'
 import ToolResult from './components/ToolResult.vue'
 import UsageActivityGraph from './components/UsageActivityGraph.vue'
 import { addAgentUsage, latestAgentUsage, summarizeAgentUsage } from './utils/agentUsage'
@@ -56,11 +57,19 @@ interface AskUserState {
   allowMultiple: boolean
   responseEvent: string
 }
+interface ShellApprovalState {
+  toolCallId: string
+  command: string
+  timeoutSeconds: number
+  responseEvent: string
+  rememberSupported: boolean
+}
 interface QueuedFollowUp {
   id: number
   content: string
   parts: MessagePartInput[]
   visibleParts: MessageContentPart[]
+  shellApprovalMode: ShellApprovalMode
 }
 interface PendingSteeringEcho {
   message: AgentSteeringMessage
@@ -144,6 +153,8 @@ const currentContextUsage = ref<AgentModelUsage | null>(null)
 const contextComposition = ref<AgentContextComposition | null>(null)
 const streamingGenerationDurationMs = ref(0)
 const pendingQuestion = ref<AskUserState | null>(null)
+const pendingShellApprovals = ref<ShellApprovalState[]>([])
+const shellApprovalSubmittingIds = ref<string[]>([])
 const queuedQuestions = ref<AskUserState[]>([])
 const askAnswer = ref('')
 const askUserImages = ref<PositionedMessageImage[]>([])
@@ -186,6 +197,7 @@ const selectedSuggestions = ref<string[]>([])
 const providers = ref<AIProvider[]>([])
 const selectedProviderId = ref<string | null>(null)
 const reasoningEffort = ref<ReasoningEffort>('medium')
+const shellApprovalMode = ref<ShellApprovalMode>('review')
 const editingProviderId = ref<string | null>(null)
 const providerLoading = ref(false)
 const providerSaving = ref(false)
@@ -315,6 +327,8 @@ function resetStreamState(): void {
   streamingGenerationDurationMs.value = 0
   modelStartedAt = 0
   pendingQuestion.value = null
+  pendingShellApprovals.value = []
+  shellApprovalSubmittingIds.value = []
   queuedQuestions.value = []
   askUserImages.value = []
   activeTodos.value = null
@@ -757,6 +771,20 @@ function handleCustomAgentEvent(event: AgentCustomEvent): void {
     contextComposition.value = asContextComposition(event.payload)
     return
   }
+  if (event.name === 'shell_approval_requested') {
+    const payload = event.payload
+    if (typeof payload.tool_call_id !== 'string' || typeof payload.command !== 'string') return
+    if (pendingShellApprovals.value.some(item => item.toolCallId === payload.tool_call_id)) return
+    pendingShellApprovals.value.push({
+      toolCallId: payload.tool_call_id,
+      command: payload.command,
+      timeoutSeconds: typeof payload.timeout_seconds === 'number' ? payload.timeout_seconds : 30,
+      responseEvent: typeof payload.response_event === 'string' ? payload.response_event : 'shell_approval_response',
+      rememberSupported: payload.remember_supported === true,
+    })
+    streamingStatus.value = 'waiting_for_user'
+    return
+  }
   if (event.name !== 'ask_user') return
   const payload = event.payload
   if (typeof payload.tool_call_id !== 'string' || typeof payload.question !== 'string') return
@@ -830,6 +858,35 @@ async function answerAgentQuestion(): Promise<void> {
     showNotice(errorMessage(error), 'error')
   } finally {
     answeringQuestion.value = false
+  }
+}
+
+async function respondToShellApproval(
+  toolCallId: string,
+  decision: 'execute' | 'abort',
+  remember = false,
+): Promise<void> {
+  const approval = pendingShellApprovals.value.find(item => item.toolCallId === toolCallId)
+  const activeConversationId = conversationId.value
+  if (!approval || !activeConversationId) return
+  shellApprovalSubmittingIds.value = [...shellApprovalSubmittingIds.value, approval.toolCallId]
+  try {
+    const response = await aiClient.emitAgentEvent(activeConversationId, approval.responseEvent, {
+      session_id: activeConversationId,
+      tool_call_id: approval.toolCallId,
+      decision,
+      remember: decision === 'execute' && remember,
+    })
+    if (!response.accepted) {
+      showNotice('The shell approval request is no longer active', 'error')
+      return
+    }
+    pendingShellApprovals.value = pendingShellApprovals.value.filter(item => item.toolCallId !== approval.toolCallId)
+    streamingStatus.value = pendingShellApprovals.value.length ? 'waiting_for_user' : 'resuming'
+  } catch (error) {
+    showNotice(errorMessage(error), 'error')
+  } finally {
+    shellApprovalSubmittingIds.value = shellApprovalSubmittingIds.value.filter(id => id !== approval.toolCallId)
   }
 }
 
@@ -1258,6 +1315,7 @@ async function analyze(): Promise<void> {
       callbacks,
       controller.signal,
       requestParts,
+      shellApprovalMode.value,
     )
     commitStreamedResponse(requestHistory, {
       fallbackContent: result ? 'The artifact is ready.' : 'How would you like to continue?',
@@ -1321,6 +1379,7 @@ async function refine(queued?: QueuedFollowUp): Promise<void> {
       callbacks,
       controller.signal,
       requestParts,
+      queued?.shellApprovalMode ?? shellApprovalMode.value,
     )
     commitStreamedResponse(history, {
       fallbackContent: result ? 'The artifact is ready.' : 'How would you like to continue?',
@@ -1358,6 +1417,7 @@ function queueFollowUp(): void {
     content,
     parts,
     visibleParts: displayMessageParts(parts, pendingMessageImages.value),
+    shellApprovalMode: shellApprovalMode.value,
   })
   followUp.value = ''
   pendingMessageImages.value = []
@@ -1427,6 +1487,8 @@ function handleComposerEnter(event: KeyboardEvent): void {
 
 function stopGeneration(): void {
   pendingQuestion.value = null
+  pendingShellApprovals.value = []
+  shellApprovalSubmittingIds.value = []
   queuedQuestions.value = []
   queuedFollowUps.value = []
   activeTodos.value = null
@@ -1479,6 +1541,9 @@ function applySession(session: AgentSession): void {
   traceLoading.value = false
   currentContextUsage.value = latestAgentUsage(restored.messages)
   contextComposition.value = null
+  shellApprovalMode.value = 'review'
+  pendingShellApprovals.value = []
+  shellApprovalSubmittingIds.value = []
   followUp.value = ''
   followAgentOutput = true
   void nextTick(() => scrollAgentThread(true))
@@ -1506,10 +1571,33 @@ async function restoreSessionContextComposition(sessionId: string): Promise<void
   }
 }
 
+async function restoreSessionShellApproval(sessionId: string): Promise<void> {
+  try {
+    const settings = await aiClient.getAgentSessionShellApproval(sessionId)
+    if (conversationId.value === sessionId) shellApprovalMode.value = settings.mode
+  } catch {
+    if (conversationId.value === sessionId) shellApprovalMode.value = 'review'
+  }
+}
+
+async function updateShellApprovalMode(mode: ShellApprovalMode): Promise<void> {
+  const previous = shellApprovalMode.value
+  shellApprovalMode.value = mode
+  const activeConversationId = conversationId.value
+  if (!activeConversationId) return
+  try {
+    await aiClient.updateAgentSessionShellApproval(activeConversationId, mode)
+  } catch (error) {
+    shellApprovalMode.value = previous
+    showNotice(errorMessage(error), 'error')
+  }
+}
+
 async function restoreSessionRuntime(sessionId: string): Promise<void> {
   await Promise.all([
     restoreSessionModel(sessionId),
     restoreSessionContextComposition(sessionId),
+    restoreSessionShellApproval(sessionId),
   ])
 }
 
@@ -1689,6 +1777,7 @@ async function resetWorkspace(): Promise<void> {
   clearTraceHash()
   currentContextUsage.value = null
   contextComposition.value = null
+  shellApprovalMode.value = 'review'
   resetStreamState()
   streamingStatus.value = 'idle'
   window.localStorage.removeItem(activeSessionKey)
@@ -2592,6 +2681,17 @@ onBeforeUnmount(() => {
                 @submit="answerAgentQuestion"
               />
 
+              <ShellApprovalPrompt
+                v-for="approval in pendingShellApprovals"
+                :key="approval.toolCallId"
+                :command="approval.command"
+                :timeout-seconds="approval.timeoutSeconds"
+                :remember-supported="approval.rememberSupported"
+                :submitting="shellApprovalSubmittingIds.includes(approval.toolCallId)"
+                @execute="remember => respondToShellApproval(approval.toolCallId, 'execute', remember)"
+                @abort="respondToShellApproval(approval.toolCallId, 'abort')"
+              />
+
               <div class="agent-composer-stack">
                 <div v-if="queuedFollowUps.length" class="queued-followup-list" aria-label="Queued follow-up messages" aria-live="polite">
                   <article v-for="item in queuedFollowUps" :key="item.id" class="queued-followup">
@@ -2640,6 +2740,7 @@ onBeforeUnmount(() => {
                         :providers="providers"
                         :selected-provider-id="selectedProviderId"
                         :effort="reasoningEffort"
+                        :shell-approval="shellApprovalMode"
                         :disabled="loading"
                         :usage="conversationUsage"
                         :current-usage="currentContextUsage"
@@ -2647,6 +2748,7 @@ onBeforeUnmount(() => {
                         :compaction-max-tokens="runtimeSettings.compaction_max_tokens"
                         @update:selected-provider-id="selectedProviderId = $event"
                         @update:effort="reasoningEffort = $event"
+                        @update:shell-approval="updateShellApprovalMode"
                         @add-provider="navigate('settings')"
                       />
                     </div>

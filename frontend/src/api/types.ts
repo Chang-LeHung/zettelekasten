@@ -92,6 +92,7 @@ export type ArtifactType = 'card' | 'article' | 'image' | 'slides' | 'latex_pdf'
 export type ArtifactStatus = 'draft' | 'saved'
 export type SessionAssetType = 'text' | 'image' | 'link' | 'file'
 export type ReasoningEffort = 'off' | 'low' | 'medium' | 'high'
+export type ShellApprovalMode = 'review' | 'allow_all'
 
 export interface RuntimeSettings {
   max_message_images: number
@@ -392,6 +393,10 @@ export interface SessionModelPreference {
   provider_id: string
   provider: AIProviderKind
   model: string
+}
+
+export interface ShellApprovalSettings {
+  mode: ShellApprovalMode
 }
 
 export type AIProviderKind =

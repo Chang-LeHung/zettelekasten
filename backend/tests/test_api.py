@@ -495,6 +495,25 @@ class FakeModel:
         self.closed = True
 
 
+class ShellFakeModel:
+    """Request one harmless shell command, then answer with its result."""
+
+    def __init__(self) -> None:
+        self.requests: list[ModelRequest] = []
+
+    async def stream(self, request: ModelRequest) -> AsyncIterator[ModelEvent]:
+        self.requests.append(request)
+        message = (
+            AssistantMessage(tool_calls=(ToolCall("shell-1", "run_shell", {"command": "printf approved"}),))
+            if len(self.requests) == 1
+            else AssistantMessage(content="shell complete")
+        )
+        yield ModelEvent.completed(ModelResponse(message))
+
+    async def aclose(self) -> None:
+        return None
+
+
 async def test_agent_stream_uses_provider_neutral_events_and_persists_messages(monkeypatch):
     model = FakeModel()
     monkeypatch.setattr(agent_routes, "create_model", lambda _connection: model)
@@ -529,7 +548,6 @@ async def test_agent_stream_uses_provider_neutral_events_and_persists_messages(m
         assistant = next(message for message in detail["messages"] if message["role"] == "assistant")
         assert assistant["reasoning_content"] == "checking"
     assert model.closed
-
     async with session_scope() as session:
         record = await session.scalar(
             select(KeyValueModel).where(KeyValueModel.key == f"{SESSION_CONTEXT_KEY_PREFIX}{session_id}")
@@ -538,6 +556,46 @@ async def test_agent_stream_uses_provider_neutral_events_and_persists_messages(m
     ratios = json.loads(record.value)
     assert set(ratios) == {"system_prompt", "tool_prompt", "tool_output", "user", "assistant"}
     assert sum(ratios.values()) == pytest.approx(1)
+
+
+def test_agent_shell_allow_all_skips_approval_events(monkeypatch):
+    model = ShellFakeModel()
+    monkeypatch.setattr(agent_routes, "create_model", lambda _connection: model)
+    with TestClient(app) as client:
+        session_id = client.post("/api/agent/start").json()["conversation_id"]
+        provider_id = client.post("/api/ai/providers", json=_provider_payload()).json()["id"]
+        response = client.post(
+            f"/api/agent/{session_id}/messages",
+            json={
+                "raw_content": "run a command",
+                "provider_id": provider_id,
+                "reasoning_effort": "off",
+                "shell_approval_mode": "allow_all",
+                "messages": [],
+            },
+        )
+        approval = client.get(f"/api/agent/sessions/{session_id}/shell-approval")
+
+    assert response.status_code == 200
+    assert "event: shell_approval_requested\n" not in response.text
+    assert "event: tool_completed\n" in response.text
+    assert "approved" in response.text
+    assert approval.json() == {"mode": "allow_all"}
+
+
+def test_session_shell_approval_settings_round_trip():
+    with TestClient(app) as client:
+        session_id = client.post("/api/agent/start").json()["conversation_id"]
+        assert client.get(f"/api/agent/sessions/{session_id}/shell-approval").json() == {"mode": "review"}
+
+        updated = client.put(
+            f"/api/agent/sessions/{session_id}/shell-approval",
+            json={"mode": "allow_all"},
+        )
+
+        assert updated.status_code == 200
+        assert updated.json() == {"mode": "allow_all"}
+        assert client.get(f"/api/agent/sessions/{session_id}/shell-approval").json() == {"mode": "allow_all"}
 
 
 def test_pasted_image_is_persisted_in_the_user_message_not_session_assets(monkeypatch):

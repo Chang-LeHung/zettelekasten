@@ -163,6 +163,18 @@ it('awaits ordinary tool callbacks before delivering later text', async () => {
   expect(result).toBeNull()
 })
 
+it('sends the selected shell approval mode with an Agent request', async () => {
+  const fetchMock = vi.fn().mockResolvedValue(new Response(
+    'event: run_completed\ndata: {"session_id":"session","phase":"completed"}\n\n',
+  ))
+  vi.stubGlobal('fetch', fetchMock)
+
+  await aiClient.analyzeStream('session', 'hello', 'provider', 'medium', [], {}, undefined, [], 'allow_all')
+
+  const body = JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit).body))
+  expect(body.shell_approval_mode).toBe('allow_all')
+})
+
 it('delivers steering message parts to the active stream callback', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
     'event: steering_started\n'
@@ -416,6 +428,21 @@ it('loads the model most recently used by one session', async () => {
 
   expect(await aiClient.getAgentSessionModel('session-7')).toEqual(preference)
   expect(fetchMock).toHaveBeenCalledWith('/api/agent/sessions/session-7/model', expect.any(Object))
+})
+
+it('loads and updates the persisted shell approval mode for one session', async () => {
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify({ mode: 'review' })))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ mode: 'allow_all' })))
+  vi.stubGlobal('fetch', fetchMock)
+
+  expect(await aiClient.getAgentSessionShellApproval('session-7')).toEqual({ mode: 'review' })
+  expect(await aiClient.updateAgentSessionShellApproval('session-7', 'allow_all')).toEqual({ mode: 'allow_all' })
+  expect(fetchMock).toHaveBeenNthCalledWith(
+    2,
+    '/api/agent/sessions/session-7/shell-approval',
+    expect.objectContaining({ method: 'PUT', body: JSON.stringify({ mode: 'allow_all' }) }),
+  )
 })
 
 it('loads the latest context composition for a historical session', async () => {

@@ -3,14 +3,16 @@
 import asyncio
 
 from fastapi import APIRouter, HTTPException, Query, status
+from zett_agent import ShellApprovalMode
 
 from ...agent.config import SYSTEM_PROMPT
 from ...infra.agent_runtime import get_agent_runtime_storage
 from ...infra.dao import artifact_storage, session_asset_storage, session_storage
+from ...infra.shell_approval import shell_approval_storage
 from ...models import ArtifactListOptions, SessionAssetListOptions, SessionListOptions
 from ...schemas import AgentSessionCreate
 from ..presentation import message_out, session_out
-from ..schemas import AgentStartOut, DeleteResponse, PersistedMessageOut, SessionOut
+from ..schemas import AgentStartOut, DeleteResponse, PersistedMessageOut, SessionOut, ShellApprovalSettings
 from ..session_context import SessionContextComposition, session_context_composition_service
 from ..session_preferences import SessionModelPreference, session_model_preference_service
 from ..session_titles import DEFAULT_SESSION_TITLE
@@ -74,6 +76,27 @@ async def get_session_context_composition(session_id: str) -> SessionContextComp
     return await session_context_composition_service.get_or_estimate(session_id, storage, SYSTEM_PROMPT)
 
 
+@router.get("/sessions/{session_id}/shell-approval", response_model=ShellApprovalSettings)
+async def get_session_shell_approval(session_id: str) -> ShellApprovalSettings:
+    """Return the persisted shell approval policy for one session."""
+    if await session_storage.get(session_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+    return ShellApprovalSettings(mode=(await shell_approval_storage.get_session_mode(session_id)).value)
+
+
+@router.put("/sessions/{session_id}/shell-approval", response_model=ShellApprovalSettings)
+async def update_session_shell_approval(
+    session_id: str,
+    payload: ShellApprovalSettings,
+) -> ShellApprovalSettings:
+    """Persist the shell approval policy for one session."""
+    if await session_storage.get(session_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+    mode = ShellApprovalMode(payload.mode)
+    await shell_approval_storage.set_session_mode(session_id, mode)
+    return ShellApprovalSettings(mode=mode.value)
+
+
 @router.get("/sessions/{session_id}/messages", response_model=list[PersistedMessageOut])
 async def list_session_messages(
     session_id: str,
@@ -105,5 +128,6 @@ async def delete_session(session_id: str) -> DeleteResponse:
         await asyncio.gather(
             session_model_preference_service.delete(session_id),
             session_context_composition_service.delete(session_id),
+            shell_approval_storage.clear_session_mode(session_id),
         )
     return DeleteResponse(ok=deleted)

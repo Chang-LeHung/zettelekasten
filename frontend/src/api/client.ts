@@ -22,6 +22,8 @@ import type {
   ReasoningEffort,
   RuntimeSettings,
   SessionModelPreference,
+  ShellApprovalSettings,
+  ShellApprovalMode,
   Tag,
   TagCreateInput,
   TagRecord,
@@ -212,6 +214,7 @@ export const aiClient = {
     callbacks: AgentStreamCallbacks = {},
     signal?: AbortSignal,
     parts: MessagePartInput[] = [],
+    shellApprovalMode: ShellApprovalMode = 'review',
   ): Promise<AgentArtifact | null> {
     const response = await fetch(`${API_URL}/agent/${conversationId}/messages`, {
       method: 'POST',
@@ -222,6 +225,7 @@ export const aiClient = {
         reasoning_effort: reasoningEffort,
         messages,
         parts,
+        shell_approval_mode: shellApprovalMode,
       }),
       signal,
     })
@@ -329,6 +333,20 @@ export const aiClient = {
 
   getAgentSessionContextComposition(conversationId: string): Promise<AgentContextComposition> {
     return request<AgentContextComposition>(`/agent/sessions/${conversationId}/context-composition`)
+  },
+
+  getAgentSessionShellApproval(conversationId: string): Promise<ShellApprovalSettings> {
+    return request<ShellApprovalSettings>(`/agent/sessions/${conversationId}/shell-approval`)
+  },
+
+  updateAgentSessionShellApproval(
+    conversationId: string,
+    mode: ShellApprovalMode,
+  ): Promise<ShellApprovalSettings> {
+    return request<ShellApprovalSettings>(`/agent/sessions/${conversationId}/shell-approval`, {
+      method: 'PUT',
+      body: JSON.stringify({ mode }),
+    })
   },
 
   updateAgentSessionTitle(conversationId: string, title: string): Promise<AgentSession> {

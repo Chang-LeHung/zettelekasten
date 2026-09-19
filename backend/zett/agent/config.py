@@ -16,6 +16,8 @@ from zett_agent import (
     ModelRequestTraceExtension,
     ModelUsageActivityStorage,
     SessionPersistenceExtension,
+    ShellApprovalExtension,
+    ShellApprovalStorage,
     SkillExtension,
     SQLiteSessionStorage,
     TodoWriteExtension,
@@ -57,6 +59,7 @@ class ZettelkastenAgentConfig:
     compaction_max_tokens: int = 128_000
     compaction_keep_recent_tokens: int = 32_000
     usage_activity_storage: ModelUsageActivityStorage | None = None
+    shell_approval_storage: ShellApprovalStorage | None = None
     context_composition_recorder: Callable[[str, dict[str, float]], Awaitable[None]] | None = None
     skill_roots: tuple[str | Path, ...] = ("~/.zett/skills",)
     mcp_servers: tuple[McpServer, ...] = ()
@@ -83,6 +86,7 @@ class ZettelkastenAgentConfig:
             AssetExtension(),
             ZettelkastenExtension(),
             TagExtension(),
+            ShellApprovalExtension(self.shell_approval_storage),
             CodingExtension(),
             AskUserExtension(),
             TodoWriteExtension(),

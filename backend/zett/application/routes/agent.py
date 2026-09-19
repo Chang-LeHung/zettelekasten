@@ -20,6 +20,7 @@ from zett_agent import (
     ImageBytesSource,
     ImageContent,
     ReasoningEffort,
+    ShellApprovalMode,
     TextContent,
     UserMessage,
 )
@@ -30,6 +31,7 @@ from ...config import settings
 from ...infra.agent_runtime import get_agent_runtime_storage
 from ...infra.dao import model_usage_activity_storage, provider_storage, session_storage
 from ...infra.log import get_logger
+from ...infra.shell_approval import shell_approval_storage
 from ...schemas import ProviderConnection
 from ..schemas import (
     AnalyzeRequest,
@@ -180,6 +182,7 @@ async def _prepare_agent_request(session_id: str, payload: AnalyzeRequest) -> _P
 
     runtime_settings = await runtime_settings_service.get()
     message = _user_message(payload, max_images=runtime_settings.max_message_images)
+    await shell_approval_storage.set_session_mode(session_id, ShellApprovalMode(payload.shell_approval_mode))
     config = AgentRunConfig(session_id=session_id)
     await active_requests.reserve(config)
     model: ProviderAdapter | None = None
@@ -199,6 +202,7 @@ async def _prepare_agent_request(session_id: str, payload: AnalyzeRequest) -> _P
             compaction_max_tokens=runtime_settings.compaction_max_tokens,
             compaction_keep_recent_tokens=runtime_settings.compaction_keep_recent_tokens,
             usage_activity_storage=model_usage_activity_storage,
+            shell_approval_storage=shell_approval_storage,
             context_composition_recorder=_remember_context_composition,
         ).create(storage)
         await active_requests.bind(config, agent)
