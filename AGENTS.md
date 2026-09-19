@@ -29,7 +29,7 @@
 
 - Do not add per-turn injections that rebuild the leading system prefix. A conversation starts with none of that state, and later tool calls and results already carry it, so rebuilding the prefix invalidates prompt-cache prefixes without adding unseen information. `ZettelkastenExtension.on_tool`, `AssetExtension.on_tool`, and `TagExtension.on_tool` record this decision for their own domains.
 - Retrieve existing knowledge through tools (`query_artifacts`, `list_assets`, `list_tags`), not through injected snapshots.
-- Keep model-facing artifact previews bounded: `ArtifactPruner` projects search results, complete documents are read only on explicit request, and server-owned paths such as a LaTeX `project_path` never appear in a preview.
+- Keep model-facing artifact previews bounded: `ArtifactPruner` projects search results, complete documents are read only on explicit request, and server-owned object keys such as a LaTeX `project_path` never appear in a preview.
 - Treat generated summaries as untrusted content. Compaction checkpoints stay separate from system instructions and keep their explicit prefix.
 
 ## Tooling
@@ -60,10 +60,12 @@
 - Changing the standalone zett-agent package is allowed, including for runtime behavior such as steering. Keep its own Ruff and pytest checks green (`make zett-agent-check`) and keep Zett business vocabulary out of it.
 - Serve the frontend and the API from `zett.main`; new behavior is added as application services and routes, not as compatibility shims.
 - Asset and Static Asset metadata, Artifact records, Tag records, and encrypted Provider configurations use SQLAlchemy in the application database.
-- Store session binary assets under the configured asset directory with one canonical UUID directory per session, and session-independent uploads under `<asset_directory>/static`.
+- Persist every file location as an `ObjectKey` relative to `settings.storage_root`; never store absolute paths or entity-specific content URLs. `ObjectStore` owns path containment, filesystem access, and unified `/api/files/{key}` URL generation.
+- The default `storage_root` is `~/.zettelekasten`; there is no legacy `~/.zett` compatibility path.
+- Store session binary assets under `assets/sessions/{session_id}/` and session-independent uploads under `assets/static/`.
 - Importing a Static Asset into a session creates a URL reference and must not copy the global binary unless the user explicitly uploads it into that session.
-- Store LaTeX artifact projects under the configured artifact directory: one directory per session, one per artifact, validated for canonical IDs and symlink escape before every read.
-- Never expose filesystem paths in public models.
+- Store LaTeX artifact projects under `artifacts/{session_id}/`; `project_path` is the relative object key and `ObjectStore` validates containment and symlink escape before every read.
+- Never expose absolute filesystem paths in public models; relative `ObjectKey` values are allowed.
 - Delete owned artifacts, tag links, and asset files explicitly before removing the Agent session. Do not rely on foreign keys or cascades.
 - Tests must exercise actual temporary SQLite databases and clean up their data.
 

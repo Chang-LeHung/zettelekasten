@@ -77,7 +77,7 @@ onBeforeUnmount(() => {
         <header>
           <div>
             <strong>{{ t('Import static asset') }}</strong>
-            <small>{{ t('Files are referenced by URL and are not copied.') }}</small>
+            <small>{{ t('Files are linked by storage path and are not copied.') }}</small>
           </div>
           <button ref="closeButton" type="button" :aria-label="t('Close')" @click="close">×</button>
         </header>

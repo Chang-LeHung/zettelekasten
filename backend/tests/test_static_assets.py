@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from zett.config import settings
 from zett.infra.dao import static_asset_storage
+from zett.infra.object_store import get_object_store
 from zett.main import app
 from zett.models import StaticAssetListOptions
 from zett.schemas import StaticAssetCreate
@@ -17,10 +18,11 @@ async def test_static_asset_storage_updates_files_and_removes_owned_content():
     )
 
     assert UUID(created.id).version == 7
-    assert created.content_url == f"/api/assets/{created.id}/content"
+    assert created.storage_path == f"assets/static/{created.id}.txt"
+    assert created.content_url == f"/api/files/{created.storage_path}"
     first_path = await static_asset_storage.content_path(created.id)
     assert first_path is not None
-    assert first_path.parent == settings.asset_directory / "static"
+    assert first_path.parent == settings.storage_root / "assets" / "static"
     assert first_path.read_bytes() == b"first"
     assert [asset.id for asset in await static_asset_storage.list(StaticAssetListOptions(query="reference"))] == [
         created.id
@@ -61,7 +63,7 @@ def test_static_asset_http_lifecycle_uses_runtime_upload_limit():
         )
         assert uploaded.status_code == 201
         asset = uploaded.json()
-        assert asset["content_url"].startswith("/api/assets/")
+        assert asset["content_url"].startswith("/api/files/assets/static/")
         listed = client.get("/api/assets").json()
         assert len(listed) == 1
         assert listed[0]["id"] == asset["id"]
@@ -77,7 +79,7 @@ def test_static_asset_http_lifecycle_uses_runtime_upload_limit():
         assert client.get("/api/assets").json() == []
 
 
-def test_importing_static_asset_into_session_keeps_url_reference_without_copying_file():
+def test_importing_static_asset_into_session_keeps_object_reference_without_copying_file():
     with TestClient(app) as client:
         owner = client.post("/api/agent/start").json()["conversation_id"]
         static_asset = client.post(
@@ -95,13 +97,14 @@ def test_importing_static_asset_into_session_keeps_url_reference_without_copying
         assert asset["asset_type"] == "link"
         assert asset["name"] == "reference.png"
         assert asset["mime_type"] == "image/png"
-        assert asset["source_url"] == static_asset["content_url"]
-        assert asset["content_url"] is None
+        assert asset["source_url"] is None
+        assert asset["source_path"] == static_asset["storage_path"]
+        assert asset["content_url"] == static_asset["content_url"]
         assert asset["metadata"] == {
-            "import_mode": "url",
+            "import_mode": "object",
             "static_asset_id": static_asset["id"],
             "static_asset_size_bytes": 3,
             "static_asset_sha256": static_asset["sha256"],
         }
-        assert client.get(f"/api/agent/{owner}/assets/{asset['id']}/content").status_code == 404
+        assert get_object_store().resolve(asset["source_path"]).read_bytes() == b"png"
         assert client.get(static_asset["content_url"]).content == b"png"

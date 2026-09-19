@@ -23,8 +23,9 @@ class StaticAssetModel(Base):
     size_bytes: Mapped[int] = mapped_column(Integer, default=0)
     # SHA-256 digest of the uploaded payload.
     sha256: Mapped[str] = mapped_column(String(64), index=True)
-    # Relative filename under <asset_directory>/static.
-    storage_name: Mapped[str] = mapped_column(String(128))
+    # Relative ObjectKey for bytes owned by this global asset.
+    # Example: "assets/static/<static_asset_id>.pdf". Never absolute.
+    storage_path: Mapped[str] = mapped_column(String(1_000))
     # JSON-encoded extensible metadata stored with the physical column name "metadata".
     metadata_value: Mapped[str] = mapped_column("metadata", Text, default="{}")
     # UTC timestamp when the asset record was created.

@@ -2,19 +2,15 @@
 import { createApp, h, nextTick, ref } from 'vue'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { getDocument } from 'pdfjs-dist'
-import { aiClient, assetClient } from '../api/client'
+import { assetClient } from '../api/client'
 import PdfThumbnail from './PdfThumbnail.vue'
 import appSource from '../App.vue?raw'
 import thumbnailSource from './PdfThumbnail.vue?raw'
 
 vi.mock('pdfjs-dist', () => ({ GlobalWorkerOptions: {}, getDocument: vi.fn() }))
 vi.mock('../api/client', () => ({
-  aiClient: {
-    getArtifactPdfContent: vi.fn(),
-    getSessionAssetContent: vi.fn(),
-  },
   assetClient: {
-    getContent: vi.fn(),
+    getUrlContent: vi.fn(),
   },
 }))
 
@@ -29,7 +25,7 @@ afterEach(() => {
 it('fits an artifact PDF first page inside both card dimensions', async () => {
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(240)
   vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(120)
-  vi.mocked(aiClient.getArtifactPdfContent).mockResolvedValue(new ArrayBuffer(8))
+  vi.mocked(assetClient.getUrlContent).mockResolvedValue(new ArrayBuffer(8))
   const render = vi.fn(() => ({ promise: Promise.resolve(), cancel: vi.fn() }))
   vi.mocked(getDocument).mockReturnValue({
     promise: Promise.resolve({
@@ -44,7 +40,11 @@ it('fits an artifact PDF first page inside both card dimensions', async () => {
   const host = document.createElement('div')
   const app = createApp({
     render: () => h(PdfThumbnail, {
-      asset: { id: 'artifact-1', session_id: 'session-1' },
+      asset: {
+        id: 'artifact-1',
+        session_id: 'session-1',
+        content_url: '/api/files/artifacts/session-1/paper/paper.pdf',
+      },
       artifact: true,
       fit: 'contain',
     }),
@@ -56,8 +56,10 @@ it('fits an artifact PDF first page inside both card dimensions', async () => {
     await Promise.resolve()
     await nextTick()
     const canvas = host.querySelector('canvas')!
-    expect(aiClient.getArtifactPdfContent).toHaveBeenCalledWith('session-1', 'artifact-1', expect.any(AbortSignal))
-    expect(aiClient.getSessionAssetContent).not.toHaveBeenCalled()
+    expect(assetClient.getUrlContent).toHaveBeenCalledWith(
+      '/api/files/artifacts/session-1/paper/paper.pdf',
+      expect.any(AbortSignal),
+    )
     expect(canvas.style.width).toBe('90px')
     expect(canvas.style.height).toBe('120px')
     expect(Number.parseFloat(canvas.style.width)).toBeLessThanOrEqual(240)
@@ -77,7 +79,7 @@ it('keeps the PDF preview constrained by both the thumbnail and card containers'
 it('renders the first page of a global static PDF', async () => {
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(240)
   vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(120)
-  vi.mocked(assetClient.getContent).mockResolvedValue(new ArrayBuffer(8))
+  vi.mocked(assetClient.getUrlContent).mockResolvedValue(new ArrayBuffer(8))
   vi.mocked(getDocument).mockReturnValue({
     promise: Promise.resolve({
       getPage: vi.fn().mockResolvedValue({
@@ -97,7 +99,8 @@ it('renders the first page of a global static PDF', async () => {
         mime_type: 'application/pdf',
         size_bytes: 8,
         sha256: 'hash',
-        content_url: '/api/assets/static-1/content',
+        storage_path: 'assets/static/static-1.pdf',
+        content_url: '/api/files/assets/static/static-1.pdf',
         metadata: {},
         created_at: '',
         updated_at: '',
@@ -110,8 +113,10 @@ it('renders the first page of a global static PDF', async () => {
     await Promise.resolve()
     await Promise.resolve()
     await nextTick()
-    expect(assetClient.getContent).toHaveBeenCalledWith('static-1', expect.any(AbortSignal))
-    expect(aiClient.getSessionAssetContent).not.toHaveBeenCalled()
+    expect(assetClient.getUrlContent).toHaveBeenCalledWith(
+      '/api/files/assets/static/static-1.pdf',
+      expect.any(AbortSignal),
+    )
     expect(host.querySelector('canvas')).not.toBeNull()
   } finally {
     app.unmount()
@@ -119,7 +124,7 @@ it('renders the first page of a global static PDF', async () => {
 })
 
 it('does not reload when the parent rerenders with an equivalent asset object', async () => {
-  vi.mocked(aiClient.getArtifactPdfContent).mockResolvedValue(new ArrayBuffer(8))
+  vi.mocked(assetClient.getUrlContent).mockResolvedValue(new ArrayBuffer(8))
   vi.mocked(getDocument).mockReturnValue({
     promise: Promise.resolve({
       getPage: vi.fn().mockResolvedValue({
@@ -134,7 +139,11 @@ it('does not reload when the parent rerenders with an equivalent asset object', 
   const app = createApp({
     render: () => h('div', [
       h(PdfThumbnail, {
-        asset: { id: 'artifact-1', session_id: 'session-1' },
+        asset: {
+          id: 'artifact-1',
+          session_id: 'session-1',
+          content_url: '/api/files/artifacts/session-1/paper/paper.pdf',
+        },
         artifact: true,
       }),
       h('span', String(unrelated.value)),
@@ -146,9 +155,9 @@ it('does not reload when the parent rerenders with an equivalent asset object', 
   await nextTick()
   await Promise.resolve()
   await Promise.resolve()
-  expect(aiClient.getArtifactPdfContent).toHaveBeenCalledTimes(1)
+  expect(assetClient.getUrlContent).toHaveBeenCalledTimes(1)
 
   unrelated.value += 1
   await nextTick()
-  expect(aiClient.getArtifactPdfContent).toHaveBeenCalledTimes(1)
+  expect(assetClient.getUrlContent).toHaveBeenCalledTimes(1)
 })

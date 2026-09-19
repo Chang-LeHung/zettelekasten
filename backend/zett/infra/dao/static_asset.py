@@ -9,11 +9,12 @@ from pathlib import Path
 from sqlalchemy import select
 from zett_agent import new_uuid7
 
-from ...config import settings
+from ...application.object_store import static_asset_key
 from ...models import StaticAssetListOptions
 from ...schemas import StaticAssetCreate, StaticAssetOut
 from ..database import session_scope
 from ..models import StaticAssetModel
+from ..object_store import get_object_store
 from ..storage import AsyncStorage
 
 
@@ -25,13 +26,15 @@ def _safe_suffix(name: str) -> str:
 
 def _asset_out(model: StaticAssetModel) -> StaticAssetOut:
     """Convert one persisted row into its public typed representation."""
+    object_store = get_object_store()
     return StaticAssetOut(
         id=model.id,
         name=model.name,
         mime_type=model.mime_type,
         size_bytes=model.size_bytes,
         sha256=model.sha256,
-        content_url=f"/api/assets/{model.id}/content",
+        storage_path=model.storage_path,
+        content_url=object_store.url(model.storage_path),
         metadata=json.loads(model.metadata_value),
         created_at=model.created_at,
         updated_at=model.updated_at,
@@ -45,9 +48,9 @@ class StaticAssetStorage(AsyncStorage[StaticAssetCreate, StaticAssetOut, str, St
         """Store one uploaded file and its typed metadata."""
         asset_id = new_uuid7()
         now = datetime.now(UTC)
-        storage_name = f"{asset_id}{_safe_suffix(entity.name)}"
-        written_path = self._directory() / storage_name
-        written_path.write_bytes(entity.content)
+        key = static_asset_key(asset_id, _safe_suffix(entity.name))
+        object_store = get_object_store()
+        stored = await object_store.write(key, entity.content)
         try:
             async with session_scope() as session:
                 model = StaticAssetModel(
@@ -56,7 +59,7 @@ class StaticAssetStorage(AsyncStorage[StaticAssetCreate, StaticAssetOut, str, St
                     mime_type=entity.mime_type,
                     size_bytes=len(entity.content),
                     sha256=hashlib.sha256(entity.content).hexdigest(),
-                    storage_name=storage_name,
+                    storage_path=str(stored.key),
                     metadata_value=json.dumps(entity.metadata, ensure_ascii=False),
                     created_at=now,
                     updated_at=now,
@@ -65,7 +68,7 @@ class StaticAssetStorage(AsyncStorage[StaticAssetCreate, StaticAssetOut, str, St
                 await session.flush()
                 return _asset_out(model)
         except Exception:
-            written_path.unlink(missing_ok=True)
+            await object_store.delete(stored.key)
             raise
 
     async def get(self, entity_id: str) -> StaticAssetOut | None:
@@ -75,46 +78,47 @@ class StaticAssetStorage(AsyncStorage[StaticAssetCreate, StaticAssetOut, str, St
 
     async def update(self, entity_id: str, entity: StaticAssetCreate) -> StaticAssetOut:
         """Replace file content and editable metadata while retaining identity."""
-        replacement_path: Path | None = None
-        old_path: Path | None = None
+        replacement_key: str | None = None
+        old_storage_path: str | None = None
+        object_store = get_object_store()
         try:
             async with session_scope() as session:
                 model = await session.get(StaticAssetModel, entity_id)
                 if model is None:
                     raise KeyError(f"Static asset not found: {entity_id}")
-                old_path = self._directory() / model.storage_name
+                old_storage_path = model.storage_path
                 revision = new_uuid7()
-                storage_name = f"{entity_id}-{revision}{_safe_suffix(entity.name)}"
-                replacement_path = self._directory() / storage_name
-                replacement_path.write_bytes(entity.content)
+                key = static_asset_key(f"{entity_id}-{revision}", _safe_suffix(entity.name))
+                stored = await object_store.write(key, entity.content)
+                replacement_key = str(stored.key)
                 model.name = entity.name
                 model.mime_type = entity.mime_type
                 model.size_bytes = len(entity.content)
                 model.sha256 = hashlib.sha256(entity.content).hexdigest()
-                model.storage_name = storage_name
+                model.storage_path = replacement_key
                 model.metadata_value = json.dumps(entity.metadata, ensure_ascii=False)
                 model.updated_at = datetime.now(UTC)
                 await session.flush()
                 result = _asset_out(model)
         except Exception:
-            if replacement_path is not None:
-                replacement_path.unlink(missing_ok=True)
+            if replacement_key is not None:
+                await object_store.delete(replacement_key)
             raise
-        if old_path is not None and old_path != replacement_path:
-            old_path.unlink(missing_ok=True)
+        if old_storage_path is not None and old_storage_path != replacement_key:
+            await object_store.delete(old_storage_path)
         return result
 
     async def delete(self, entity_id: str) -> bool:
         """Delete metadata first, then explicitly remove the owned file."""
-        stored_path: Path | None = None
+        storage_path: str | None = None
         async with session_scope() as session:
             model = await session.get(StaticAssetModel, entity_id)
             if model is None:
                 return False
-            stored_path = self._directory() / model.storage_name
+            storage_path = model.storage_path
             await session.delete(model)
-        if stored_path is not None:
-            stored_path.unlink(missing_ok=True)
+        if storage_path is not None:
+            await get_object_store().delete(storage_path)
         return True
 
     async def list(self, options: StaticAssetListOptions | None = None) -> list[StaticAssetOut]:
@@ -136,14 +140,8 @@ class StaticAssetStorage(AsyncStorage[StaticAssetCreate, StaticAssetOut, str, St
             model = await session.get(StaticAssetModel, entity_id)
             if model is None:
                 return None
-            path = self._directory() / model.storage_name
+            path = get_object_store().resolve(model.storage_path)
             return path if path.is_file() else None
-
-    @staticmethod
-    def _directory() -> Path:
-        directory = settings.asset_directory / "static"
-        directory.mkdir(parents=True, exist_ok=True)
-        return directory
 
 
 static_asset_storage = StaticAssetStorage()

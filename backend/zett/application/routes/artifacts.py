@@ -1,37 +1,14 @@
 """Asynchronous endpoints for card, article, image, and slide artifacts."""
 
 from fastapi import APIRouter, HTTPException, Query, status
-from fastapi.responses import FileResponse, Response
 
 from ...infra.dao import artifact_storage, session_storage
 from ...models import ArtifactListOptions
 from ...schemas import AgentArtifact, AgentArtifactWrite, ArtifactStatus, ArtifactType
-from ..latex_artifacts import get_latex_pdf
 from ..schemas import ArtifactCreateIn, ArtifactUpdateIn, DeleteResponse
 from ..tagging import tag_service
 
 router = APIRouter(tags=["artifacts"])
-
-
-@router.get("/agent/{session_id}/artifacts/{artifact_id}/content", response_class=FileResponse)
-async def get_artifact_pdf(session_id: str, artifact_id: str) -> Response:
-    """Resolve a session-owned compiled PDF for inline preview."""
-    try:
-        path = await get_latex_pdf(session_id, artifact_id)
-    except (FileNotFoundError, ValueError) as error:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Artifact PDF not found") from error
-    if path is None:
-        return Response(status_code=status.HTTP_204_NO_CONTENT, headers={"Cache-Control": "no-store"})
-    return FileResponse(
-        path,
-        media_type="application/pdf",
-        filename=path.name,
-        content_disposition_type="inline",
-        headers={
-            "X-Content-Type-Options": "nosniff",
-            "Content-Security-Policy": "sandbox; default-src 'none'",
-        },
-    )
 
 
 @router.get("/artifacts", response_model=list[AgentArtifact])

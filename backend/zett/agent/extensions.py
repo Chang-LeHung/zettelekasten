@@ -44,8 +44,8 @@ class ZettelkastenExtension(AgentExtension):
             Guidelines:
                 - Create an artifact only when it is a useful output of the conversation.
                 - To start a LaTeX project, call create_artifact(content={"artifact_type": "latex_pdf", "pdf_name": "paper.pdf"}). Do not supply project_path, title, summary, or source text.
-                - Creation allocates a project directory and returns content.project_path. Treat that returned path as authoritative: never guess it, hard-code a root, or reconstruct it from the session ID or PDF name.
-                - After creation, use filesystem/shell tools to write all project sources and dependencies inside the returned project_path. Compile there and produce the returned pdf_name directly inside that directory.
+                - Creation allocates a project directory and returns content.project_path as an object key relative to ZETT_STORAGE_ROOT. Treat that returned key as authoritative: never guess it or reconstruct it from the session ID or PDF name.
+                - Filesystem/shell tools run from the repository directory, so resolve the returned key under `Path.home() / ".zettelekasten"` before writing project sources and compiling the returned pdf_name.
                 - Creation, metadata updates, and saving do not require an existing PDF and do not compile automatically. Preserve the returned project_path when updating. Preview becomes available after compilation; deleting the artifact record preserves the project files.
                 - Keep newly generated artifacts in draft state until the user asks to save them.
                 - A card contains one idea; use the fewest words that preserve its meaning.

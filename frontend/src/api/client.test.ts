@@ -10,7 +10,8 @@ it('loads, uploads, and deletes global assets through the typed client', async (
     mime_type: 'image/png',
     size_bytes: 5,
     sha256: 'hash',
-    content_url: '/api/assets/asset-1/content',
+    storage_path: 'assets/static/asset-1.png',
+    content_url: '/api/files/assets/static/asset-1.png',
     metadata: {},
     created_at: '',
     updated_at: '',
@@ -24,11 +25,11 @@ it('loads, uploads, and deletes global assets through the typed client', async (
 
   expect(await assetClient.list()).toEqual([asset])
   expect(await assetClient.upload(new File(['image'], 'diagram.png', { type: 'image/png' }))).toEqual(asset)
-  expect(new Uint8Array(await assetClient.getContent('asset-1'))).toEqual(new Uint8Array([1, 2]))
+  expect(new Uint8Array(await assetClient.getUrlContent(asset.content_url))).toEqual(new Uint8Array([1, 2]))
   expect(await assetClient.delete('asset-1')).toEqual({ ok: true })
   expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/assets?limit=500&offset=0', expect.any(Object))
   expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/assets/upload?name=diagram.png')
-  expect(fetchMock.mock.calls[2]?.[0]).toBe('/api/assets/asset-1/content')
+  expect(fetchMock.mock.calls[2]?.[0]).toBe('/api/files/assets/static/asset-1.png')
   expect(fetchMock.mock.calls[3]?.[0]).toBe('/api/assets/asset-1')
 })
 
@@ -120,19 +121,12 @@ it('replaces an artifact tag set through the persistent tag endpoint', async () 
   }))
 })
 
-it('treats an uncompiled artifact PDF as pending, while preserving real request errors', async () => {
-  vi.stubGlobal('fetch', vi.fn()
-    .mockResolvedValueOnce(new Response(null, { status: 204 }))
-    .mockResolvedValueOnce(new Response(JSON.stringify({ detail: 'Artifact PDF not found' }), { status: 404 })))
-  expect(await aiClient.getArtifactPdfContent('session', 'draft')).toBeNull()
-  await expect(aiClient.getArtifactPdfContent('session', 'unknown')).rejects.toThrow('Artifact PDF not found')
-})
-
 it('loads minimal LaTeX references without expecting Markdown metadata', async () => {
   const artifact = {
     id: 'latex-1', session_id: 'session-1', artifact_type: 'latex_pdf', status: 'saved',
-    content: { artifact_type: 'latex_pdf', project_path: '/projects/paper', pdf_name: 'paper.pdf' },
+    content: { artifact_type: 'latex_pdf', project_path: 'artifacts/session-1/paper', pdf_name: 'paper.pdf' },
     raw_content: null, version: 1, metadata: {}, created_at: '', updated_at: '',
+    content_url: '/api/files/artifacts/session-1/paper/paper.pdf',
   }
   const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify([artifact])))
     .mockResolvedValueOnce(new Response('%PDF-1.4'))
@@ -140,11 +134,15 @@ it('loads minimal LaTeX references without expecting Markdown metadata', async (
   const [item] = await libraryClient.list()
   expect(item).toMatchObject({ session_id: 'session-1', item_type: 'latex_pdf', title: 'paper', content: '', tags: [] })
   expect(String(fetchMock.mock.calls[0]?.[0])).toContain('artifact_types=latex_pdf')
-  expect(libraryClient.documentReference(item.id)).toEqual({ id: 'latex-1', session_id: 'session-1' })
+  expect(libraryClient.documentReference(item.id)).toEqual({
+    id: 'latex-1',
+    session_id: 'session-1',
+    content_url: '/api/files/artifacts/session-1/paper/paper.pdf',
+  })
   const controller = new AbortController()
-  const bytes = await aiClient.getArtifactPdfContent('session-1', item.id, controller.signal)
+  const bytes = await assetClient.getUrlContent(artifact.content_url, controller.signal)
   expect(new TextDecoder().decode(bytes!)).toBe('%PDF-1.4')
-  expect(String(fetchMock.mock.calls[1]?.[0])).toContain('/agent/session-1/artifacts/latex-1/content')
+  expect(String(fetchMock.mock.calls[1]?.[0])).toContain('/api/files/artifacts/session-1/paper/paper.pdf')
   expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ signal: controller.signal })
   await expect(libraryClient.update('latex_pdf', item.id, {
     title: 'Changed', subtitle: null, summary: null, content: 'Not LaTeX',
@@ -161,7 +159,7 @@ it('renames an asset through a metadata-only request', async () => {
   expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: 'PATCH', body: JSON.stringify({ name: 'Logo' }) })
 })
 
-it('imports a static asset into a session as a URL reference', async () => {
+it('imports a static asset into a session as an object reference', async () => {
   const imported = {
     id: 'session-asset-1',
     session_id: 'session-1',
@@ -171,8 +169,10 @@ it('imports a static asset into a session as a URL reference', async () => {
     size_bytes: 17,
     sha256: 'url-hash',
     text_content: null,
-    source_url: '/api/assets/static-1/content',
-    content_url: null,
+    source_url: null,
+    storage_path: null,
+    source_path: 'assets/static/static-1.png',
+    content_url: '/api/files/assets/static/static-1.png',
     metadata: { static_asset_id: 'static-1' },
     created_at: '',
     updated_at: '',
@@ -409,15 +409,15 @@ it('exposes the backend error detail instead of discarding it', async () => {
     .rejects.toThrow('The selected provider is unavailable')
 })
 
-it('loads binary asset content through the typed API client', async () => {
+it('loads object content through the unified file URL', async () => {
   const payload = new Uint8Array([37, 80, 68, 70])
   const fetchMock = vi.fn().mockResolvedValue(new Response(payload))
   vi.stubGlobal('fetch', fetchMock)
 
-  const result = await aiClient.getSessionAssetContent('session-1', 'asset-1')
+  const result = await assetClient.getUrlContent('/api/files/assets/static/asset-1.pdf')
 
   expect(new Uint8Array(result)).toEqual(payload)
-  expect(fetchMock).toHaveBeenCalledWith('/api/agent/session-1/assets/asset-1/content', { signal: undefined })
+  expect(fetchMock).toHaveBeenCalledWith('/api/files/assets/static/asset-1.pdf', { signal: undefined })
 })
 
 it('sends pasted images in their position among text segments', async () => {

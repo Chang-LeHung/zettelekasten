@@ -5,7 +5,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from zett_agent import (
-    DEFAULT_MCP_CONFIG_PATH,
     DEFAULT_MCP_SERVER_KEYS,
     McpServer,
     ModelUsageActivityStorage,
@@ -14,6 +13,8 @@ from zett_agent import (
 )
 
 from ..config import settings
+
+DEFAULT_ZETT_MCP_CONFIG_PATH = Path("~/.zettelekasten/mcp.json")
 
 SYSTEM_PROMPT = """You are the Zettelkasten Agent, an assistant for developing ideas into durable knowledge.
 Use the conversation and attached assets as source material. Create or update artifacts only when useful; ordinary
@@ -32,8 +33,8 @@ class ZettelkastenAgentConfig:
     """Complete construction settings for one request-scoped Agent.
 
     Defaults are explicit: Zett discovers skills only below
-    ``~/.zett/skills``, while MCP servers are loaded from
-    ``~/.zett/mcp.json`` when that file exists. Explicit servers are merged
+    ``~/.zettelekasten/skills``, while MCP servers are loaded from
+    ``~/.zettelekasten/mcp.json`` when that file exists. Explicit servers are merged
     with the configured file. Set ``mcp_config_path`` to ``None`` to disable
     file loading; ``mcp_server_keys`` controls which JSON root names are valid.
     """
@@ -47,9 +48,9 @@ class ZettelkastenAgentConfig:
     shell_approval_storage: ShellApprovalStorage | None = None
     storage: SQLiteSessionStorage | None = field(default=None, repr=False, compare=False)
     context_composition_recorder: Callable[[str, dict[str, float]], Awaitable[None]] | None = None
-    skill_roots: tuple[str | Path, ...] = ("~/.zett/skills",)
+    skill_roots: tuple[str | Path, ...] = ("~/.zettelekasten/skills",)
     mcp_servers: tuple[McpServer, ...] = ()
-    mcp_config_path: str | Path | None = DEFAULT_MCP_CONFIG_PATH
+    mcp_config_path: str | Path | None = DEFAULT_ZETT_MCP_CONFIG_PATH
     mcp_server_keys: tuple[str, ...] = DEFAULT_MCP_SERVER_KEYS
 
     def __post_init__(self) -> None:
@@ -71,7 +72,7 @@ class ZettelkastenAgentConfig:
         if self.mcp_config_path is None:
             return None
         configured = Path(self.mcp_config_path).expanduser().resolve()
-        default = DEFAULT_MCP_CONFIG_PATH.expanduser().resolve()
+        default = DEFAULT_ZETT_MCP_CONFIG_PATH.expanduser().resolve()
         if configured == default and not configured.is_file():
             return None
         return self.mcp_config_path

@@ -4,10 +4,10 @@ import asyncio
 import json
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from zett_agent import (
-    DEFAULT_MCP_CONFIG_PATH,
     DEFAULT_MCP_SERVER_KEYS,
     Agent,
     AgentEvent,
@@ -225,9 +225,9 @@ async def test_factory_builds_a_fresh_agent_for_every_message_request() -> None:
 def test_factory_configuration_exposes_skill_and_mcp_defaults() -> None:
     config = ZettelkastenAgentConfig("defaults")
 
-    assert config.skill_roots == ("~/.zett/skills",)
+    assert config.skill_roots == ("~/.zettelekasten/skills",)
     assert config.mcp_servers == ()
-    assert config.mcp_config_path == DEFAULT_MCP_CONFIG_PATH
+    assert config.mcp_config_path == Path("~/.zettelekasten/mcp.json")
     assert config.mcp_server_keys == DEFAULT_MCP_SERVER_KEYS
     assert config.compaction_max_tokens == 128_000
     assert config.compaction_keep_recent_tokens == 32_000
@@ -347,13 +347,13 @@ async def test_context_composition_streams_every_model_step_and_includes_tool_ou
 
 async def test_factory_loads_default_user_skills_and_mcp_configuration(tmp_path, monkeypatch) -> None:
     home = tmp_path / "home"
-    skill_path = home / ".zett" / "skills" / "zett-review" / "SKILL.md"
+    skill_path = home / ".zettelekasten" / "skills" / "zett-review" / "SKILL.md"
     skill_path.parent.mkdir(parents=True)
     skill_path.write_text(
         "---\nname: zett-review\ndescription: Review Zett changes.\n---\nRun focused checks.",
         encoding="utf-8",
     )
-    mcp_path = home / ".zett" / "mcp.json"
+    mcp_path = home / ".zettelekasten" / "mcp.json"
     mcp_path.write_text(
         json.dumps(
             {

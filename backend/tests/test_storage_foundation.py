@@ -62,7 +62,7 @@ async def test_asset_crud_is_typed_and_session_scoped(kind, payload):
     assert await session_asset_storage.list(SessionAssetListOptions(session_id=other)) == []
     path = await session_asset_storage.content_path(owner, asset.id)
     if kind in {"file", "image"}:
-        assert path.parent == settings.asset_directory / owner
+        assert path.parent == settings.storage_root / "assets" / "sessions" / owner
         assert path.read_bytes() == payload["content"]
     updated = await session_asset_storage.update(asset.id, entity.model_copy(update={"name": "Renamed"}))
     assert updated.id == asset.id and updated.name == "Renamed"
@@ -89,11 +89,13 @@ async def test_session_deletion_explicitly_cleans_owned_assets_and_artifacts():
     assert await session_storage.delete(owner)
     assert not await session_storage.delete(owner)
     assert await session_storage.get(owner) is None
-    assert not (settings.asset_directory / owner).exists()
+    assert not (settings.storage_root / "assets" / "sessions" / owner).exists()
     assert await artifact_storage.list(ArtifactListOptions(session_id=owner)) == []
     assert await session_asset_storage.list(SessionAssetListOptions(session_id=owner)) == []
     assert len(await artifact_storage.list(ArtifactListOptions(session_id=other))) == 1
-    assert (settings.asset_directory / other).is_dir()
+    other_assets = await session_asset_storage.list(SessionAssetListOptions(session_id=other))
+    other_path = await session_asset_storage.content_path(other, other_assets[0].id)
+    assert other_path is not None and other_path.is_file()
 
 
 @pytest.mark.parametrize("kind", ["text", "link", "file", "image"])
@@ -102,7 +104,7 @@ async def test_missing_asset_payload_does_not_mutate_storage(kind):
     with pytest.raises(ValueError):
         await session_asset_storage.create(SessionAssetCreate(session_id=owner, asset_type=kind, name="Empty"))
     assert await session_asset_storage.list() == []
-    assert not (settings.asset_directory / owner).exists()
+    assert not (settings.storage_root / "assets" / "sessions" / owner).exists()
 
 
 def test_schema_and_http_surface_contain_no_retired_business_logic(isolated_database):
@@ -143,6 +145,7 @@ def test_schema_and_http_surface_contain_no_retired_business_logic(isolated_data
         assert "/api/ai/providers" in paths
         assert "/api/artifacts" in paths
         assert "/api/assets" in paths
+        assert "/api/files/{key}" in paths
         assert "/api/library/tags" in paths
         assert "/api/settings" in paths
         for path in ("/api/cards", "/api/tags", "/api/library", "/api/ai/providers"):

@@ -326,7 +326,7 @@ def test_session_asset_and_artifact_http_lifecycle():
         assert uploaded.status_code == 201
         asset_id = uploaded.json()["id"]
         assert uploaded.json()["asset_type"] == "image"
-        image_content = client.get(f"/api/agent/{session_id}/assets/{asset_id}/content")
+        image_content = client.get(uploaded.json()["content_url"])
         assert image_content.content == b"png-content"
         assert image_content.headers["content-disposition"].startswith("inline;")
         assert image_content.headers["x-content-type-options"] == "nosniff"
@@ -338,7 +338,7 @@ def test_session_asset_and_artifact_http_lifecycle():
             content=b"download me",
             headers={"content-type": "application/octet-stream"},
         )
-        file_content = client.get(f"/api/agent/{session_id}/assets/{uploaded_file.json()['id']}/content")
+        file_content = client.get(uploaded_file.json()["content_url"])
         assert file_content.headers["content-disposition"].startswith("attachment;")
 
         uploaded_pdf = client.post(
@@ -346,7 +346,7 @@ def test_session_asset_and_artifact_http_lifecycle():
             content=b"%PDF-1.7\n",
             headers={"content-type": "application/pdf"},
         )
-        pdf_content = client.get(f"/api/agent/{session_id}/assets/{uploaded_pdf.json()['id']}/content")
+        pdf_content = client.get(uploaded_pdf.json()["content_url"])
         assert pdf_content.content == b"%PDF-1.7\n"
         assert pdf_content.headers["content-disposition"].startswith("inline;")
 

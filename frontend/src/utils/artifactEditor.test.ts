@@ -88,7 +88,7 @@ it('leaves image and PDF artifacts in their specialized inline editors', () => {
     prompt: '',
     alt_text: '',
     source_url: null,
-    asset_id: null,
+    asset_path: null,
     suggested_tags: [],
     keywords: [],
   }

@@ -27,13 +27,19 @@ class SessionAssetModel(Base):
     size_bytes: Mapped[int] = mapped_column(Integer, default=0)
     # SHA-256 digest of the same payload used to calculate size_bytes.
     sha256: Mapped[str | None] = mapped_column(String(64), index=True)
-    # Relative filename under <asset_directory>/<session_id> for image/file assets.
-    # Text and link assets keep this null because they have no binary file.
-    storage_name: Mapped[str | None] = mapped_column(String(100))
-    # Inline content for text assets; null for image, link, and file assets.
+    # Relative ObjectKey for bytes owned by this row.
+    # Example: "assets/sessions/<session_id>/<asset_id>.png".
+    # Text assets, external links, and object references keep this null.
+    storage_path: Mapped[str | None] = mapped_column(String(1_000))
+    # Inline content for text assets; null for image, link, file, and reference assets.
     text_content: Mapped[str | None] = mapped_column(Text)
-    # External URL for link assets; null for text and binary assets.
+    # External URL for links to resources outside this application. This is not
+    # an ObjectKey and is never rewritten into an /api/files URL.
     source_url: Mapped[str | None] = mapped_column(Text)
+    # Relative ObjectKey when this row references another stored object without
+    # owning its bytes. Example: importing a StaticAsset stores
+    # "assets/static/<static_asset_id>.pdf" here.
+    source_path: Mapped[str | None] = mapped_column(String(1_000))
     # JSON-encoded extensible metadata stored with the physical column name "metadata".
     metadata_value: Mapped[str] = mapped_column("metadata", Text, default="{}")
     # UTC timestamp when the asset record was created.

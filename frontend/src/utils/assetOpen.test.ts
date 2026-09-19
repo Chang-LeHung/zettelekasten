@@ -13,7 +13,7 @@ function asset(overrides: Partial<SessionAsset>): SessionAsset {
     sha256: null,
     text_content: null,
     source_url: null,
-    content_url: '/api/assets/asset-1/content',
+    content_url: '/api/files/assets/static/asset-1.pdf',
     metadata: {},
     created_at: '2026-09-10T00:00:00Z',
     updated_at: '2026-09-10T00:00:00Z',
@@ -26,7 +26,7 @@ describe('asset open action', () => {
     expect(assetOpenAction(asset({ asset_type: 'image', mime_type: 'image/png' }))).toEqual({
       kind: 'preview',
       preview: 'image',
-      url: '/api/assets/asset-1/content',
+      url: '/api/files/assets/static/asset-1.pdf',
     })
   })
 
@@ -42,7 +42,7 @@ describe('asset open action', () => {
     expect(assetOpenAction(asset({ name: 'paper', mime_type: 'application/pdf' }))).toEqual({
       kind: 'preview',
       preview: 'pdf',
-      url: '/api/assets/asset-1/content',
+      url: '/api/files/assets/static/asset-1.pdf',
     })
     expect(assetOpenAction(asset({ name: 'paper.PDF', mime_type: 'application/octet-stream' }))?.kind).toBe(
       'preview',

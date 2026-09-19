@@ -54,7 +54,7 @@ def test_artifact_pruner_returns_bounded_type_specific_previews() -> None:
                 prompt="prompt-long",
                 alt_text="alt-long",
                 source_url="data:image/png;base64,abcdefghijklm",
-                asset_id="asset",
+                    asset_path="assets/sessions/session/asset.png",
             ),
             "image",
         ),
@@ -79,7 +79,7 @@ def test_artifact_pruner_returns_bounded_type_specific_previews() -> None:
     assert image.alt_text_preview == "alt-lo"
     assert image.source_url_preview == "data:im"
     assert image.source_url_truncated is True
-    assert image.asset_id == "asset"
+    assert image.asset_path == "assets/sessions/session/asset.png"
 
     latex = previews[3].content
     assert isinstance(latex, LatexPdfArtifactPreviewContent)

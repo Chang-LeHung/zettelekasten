@@ -1,7 +1,6 @@
 """Asynchronous endpoints for session-owned text, link, image, and file assets."""
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
-from fastapi.responses import FileResponse
 
 from ...infra.dao import session_asset_storage, session_storage
 from ...models import SessionAssetListOptions
@@ -79,7 +78,7 @@ async def create_link_asset(session_id: str, payload: LinkAssetIn) -> SessionAss
 
 @router.post("/import/static/{static_asset_id}", response_model=SessionAssetOut, status_code=status.HTTP_201_CREATED)
 async def import_static_asset(session_id: str, static_asset_id: str) -> SessionAssetOut:
-    """Reference one global static asset from a session without copying its file."""
+    """Reference one global static asset by object key without copying its file."""
     await _require_session(session_id)
     static_asset = await static_asset_service.get(static_asset_id)
     if static_asset is None:
@@ -89,9 +88,9 @@ async def import_static_asset(session_id: str, static_asset_id: str) -> SessionA
         asset_type=SessionAssetType.LINK,
         name=static_asset.name,
         mime_type=static_asset.mime_type,
-        source_url=static_asset.content_url,
+        source_path=static_asset.storage_path,
         metadata={
-            "import_mode": "url",
+            "import_mode": "object",
             "static_asset_id": static_asset.id,
             "static_asset_size_bytes": static_asset.size_bytes,
             "static_asset_sha256": static_asset.sha256,
@@ -125,26 +124,6 @@ async def upload_asset(
         return await session_asset_storage.create(entity)
     except ValueError as error:
         raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, str(error)) from error
-
-
-@router.get("/{asset_id}/content", response_class=FileResponse)
-async def get_asset_content(session_id: str, asset_id: str) -> FileResponse:
-    """Preview images and PDFs inline and download other files after verifying ownership."""
-    asset = await session_asset_storage.get_for_session(session_id, asset_id)
-    path = await session_asset_storage.content_path(session_id, asset_id)
-    if asset is None or path is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset content not found")
-    inline = asset.asset_type == SessionAssetType.IMAGE or asset.mime_type == "application/pdf"
-    headers = {"X-Content-Type-Options": "nosniff"}
-    if inline:
-        headers["Content-Security-Policy"] = "sandbox; default-src 'none'"
-    return FileResponse(
-        path,
-        media_type=asset.mime_type,
-        filename=asset.name,
-        content_disposition_type="inline" if inline else "attachment",
-        headers=headers,
-    )
 
 
 @router.delete("/{asset_id}", response_model=DeleteResponse)

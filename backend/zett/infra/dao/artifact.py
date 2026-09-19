@@ -8,6 +8,7 @@ from sqlalchemy import Float, String, or_, select, text
 from sqlalchemy import delete as sql_delete
 from zett_agent import new_uuid7
 
+from ...application.object_store import ObjectKey
 from ...models import ArtifactListOptions
 from ...schemas import (
     AgentArtifact,
@@ -16,6 +17,7 @@ from ...schemas import (
     ArtifactStatus,
     ArtifactTagOut,
     ArtifactType,
+    ImageArtifactContent,
     LatexPdfArtifactContent,
     LatexPdfArtifactCreate,
 )
@@ -28,6 +30,7 @@ from ..artifact_search import (
 from ..database import session_scope
 from ..latex_projects import create_latex_project, validate_latex_project_path
 from ..models import ArtifactTagModel, SessionArtifactModel
+from ..object_store import get_object_store
 from ..storage import AsyncStorage
 
 
@@ -70,18 +73,25 @@ def _json_load[JSONValueT](value: str | None, fallback: JSONValueT) -> JSONValue
 
 def _artifact_out(model: SessionArtifactModel, *, tags: list[ArtifactTagOut] | None = None) -> AgentArtifact:
     """Hydrate a typed artifact from its ORM record and discriminated JSON content."""
+    content = CONTENT_ADAPTER.validate_python(_json_load(model.content_json, {}))
+    content_url: str | None = None
+    if isinstance(content, LatexPdfArtifactContent):
+        content_url = get_object_store().url(ObjectKey(f"{content.project_path}/{content.pdf_name}"))
+    elif isinstance(content, ImageArtifactContent) and content.asset_path:
+        content_url = get_object_store().url(content.asset_path)
     return AgentArtifact(
         id=model.id,
         session_id=model.session_id,
         artifact_type=CODE_TO_TYPE[model.artifact_type],
         status=CODE_TO_STATUS[model.status],
-        content=CONTENT_ADAPTER.validate_python(_json_load(model.content_json, {})),
+        content=content,
         raw_content=model.raw_content,
         version=model.version,
         metadata=_json_load(model.metadata_value, {}),
         created_at=model.created_at,
         updated_at=model.updated_at,
         tags=tags or [],
+        content_url=content_url,
     )
 
 

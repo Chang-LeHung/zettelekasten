@@ -1,7 +1,6 @@
 """HTTP endpoints for files that are shared across Agent sessions."""
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
-from fastapi.responses import FileResponse
 
 from ...models import StaticAssetListOptions
 from ...schemas import StaticAssetOut
@@ -47,26 +46,6 @@ async def get_asset(asset_id: str) -> StaticAssetOut:
     if asset is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset not found")
     return asset
-
-
-@router.get("/{asset_id}/content", response_class=FileResponse)
-async def get_asset_content(asset_id: str) -> FileResponse:
-    """Preview images and PDFs inline and download other global files."""
-    asset = await static_asset_service.get(asset_id)
-    path = await static_asset_service.content_path(asset_id)
-    if asset is None or path is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Asset content not found")
-    inline = bool(asset.mime_type and (asset.mime_type.startswith("image/") or asset.mime_type == "application/pdf"))
-    headers = {"X-Content-Type-Options": "nosniff"}
-    if inline:
-        headers["Content-Security-Policy"] = "sandbox; default-src 'none'"
-    return FileResponse(
-        path,
-        media_type=asset.mime_type,
-        filename=asset.name,
-        content_disposition_type="inline" if inline else "attachment",
-        headers=headers,
-    )
 
 
 @router.delete("/{asset_id}", response_model=DeleteResponse)

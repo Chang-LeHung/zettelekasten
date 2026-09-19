@@ -9,8 +9,8 @@ when a build exists.
 | Path | Contents |
 | --- | --- |
 | `zett/agent/` | Composition root for conversations: extension stack, model factory, SSE dispatcher, session title agent |
-| `zett/application/` | Routes and use-case services (artifacts, assets, tags, sessions, presentation, runtime settings) |
-| `zett/infra/` | SQLAlchemy models and DAOs, agent runtime storage, LaTeX project paths, logging |
+| `zett/application/` | Routes, use-case services, and the framework-neutral `ObjectStore` contract |
+| `zett/infra/` | SQLAlchemy models and DAOs, local ObjectStore adapter, agent runtime storage, logging |
 | `zett/schemas.py`, `zett/models/` | Write and read models shared by routes and storage |
 | `zett/main.py`, `zett/cli.py` | ASGI entry point and the packaged `zett` command |
 
@@ -23,8 +23,8 @@ Domain rules currently live in `schemas.py`, storage contracts in
 | Boundary | Owner | Tables and files |
 | --- | --- | --- |
 | Session | `zett-agent` | `agent_sessions`, `raw_messages`, `session_snapshots` |
-| Asset | Zett | `session_assets` plus binary files under the asset directory |
-| Static asset | Zett | `static_assets` plus uploaded files under `<asset_directory>/static` |
+| Asset | Zett | `session_assets` plus binary files stored by relative object key |
+| Static asset | Zett | `static_assets` plus uploaded files stored by relative object key |
 | Artifact | Zett | `session_artifacts`: card, article, image, slides, latex_pdf |
 | Tag | Zett | `tags`, `artifact_tags` |
 | Provider | Zett | `providers`, with credentials encrypted by the local provider key |
@@ -39,10 +39,11 @@ owned files explicitly. Deleting a session therefore spans two SQLite
 databases and the filesystem, so cleanup is idempotent and retryable rather
 than one transaction.
 
-Importing a Static Asset into a session creates a link-style session asset
-whose `source_url` points at the global asset content endpoint. The import
-does not copy the binary payload; deleting the global asset invalidates that
-reference.
+Every persisted file location is a relative `ObjectKey` below
+`settings.storage_root` (`~/.zettelekasten` by default). `ObjectStore` owns path
+validation, writes, reads, deletion, and public-URL generation; DAOs never
+construct filesystem paths directly. Importing a Static Asset into a session
+stores the target object key in `source_path` and does not copy the binary.
 
 ## HTTP surface
 
@@ -57,10 +58,11 @@ Everything is mounted under `/api`.
 | `POST /api/agent/{id}/messages` | Run one turn and stream zett-agent events as SSE |
 | `POST /api/agent/{id}/events` | Deliver one UI answer, such as an `ask_user` choice, to the active request |
 | `POST /api/agent/{id}/steer` | Insert an urgent user message into the active request |
-| `/api/agent/{id}/assets*` | Session asset CRUD, upload, content download, rename, and URL-only Static Asset imports |
-| `/api/assets*` | Session-independent file listing, upload, content download, and deletion |
+| `/api/files/{key}` | The only binary content endpoint; streams one ObjectStore key |
+| `/api/agent/{id}/assets*` | Session asset CRUD, upload, rename, and Static Asset object references |
+| `/api/assets*` | Session-independent file listing, upload, metadata, and deletion |
 | `/api/agent/{id}/artifacts*`, `GET /api/artifacts` | Artifact CRUD, save, per-session listing, and library-wide search |
-| `/api/agent/{id}/artifacts/{artifact}/content` | Compiled file for a LaTeX artifact |
+| `/api/agent/{id}/artifacts/{artifact}` | Artifact metadata; `content_url` addresses its unified file key |
 | `/api/ai/providers*` | Model endpoint configuration |
 | `/api/settings` | Read or replace runtime limits |
 | `/api/library/tags*` | Tag tree CRUD and artifact tag assignment |
@@ -84,10 +86,10 @@ the leading system prefix stays stable.
 ## Local data
 
 ```
-~/.zett/
+~/.zettelekasten/
 ├── zett.db         application records: artifacts, assets, tags, providers, settings
 ├── agent.db        sessions, immutable raw messages, context snapshots
-├── assets/         session UUID directories and the shared `static/` upload directory
+├── assets/         `sessions/<session-id>/` binaries and `static/` uploads
 ├── artifacts/      one directory per session and LaTeX artifact project
 ├── provider.key    local key encrypting provider credentials
 └── logs/           rotating log files
@@ -100,7 +102,7 @@ the leading system prefix stays stable.
 | `ZETT_HOST`, `ZETT_PORT` | Bind address and port, default `127.0.0.1:6280` |
 | `ZETT_DATABASE_PATH` | Application database file |
 | `ZETT_AGENT_DATABASE_PATH` | zett-agent session database file |
-| `ZETT_ASSET_DIR` | Session asset directory |
+| `ZETT_STORAGE_ROOT` | Root for every persisted object key, default `~/.zettelekasten` |
 | `ZETT_PROVIDER_KEY_PATH` | Local provider secret encryption key |
 | `ZETT_MAX_ASSET_SIZE_BYTES` | Maximum binary asset and pasted-image size |
 | `ZETT_LOG_DIR`, `ZETT_LOG_LEVEL` | Log directory and level |
@@ -121,7 +123,7 @@ checks, the Sphinx documentation check, frontend tests, TypeScript
 typechecking, and the production frontend build.
 
 Tests create temporary SQLite databases and asset directories and remove them
-afterwards; they never touch the data under `~/.zett`.
+afterwards; they never touch the data under `~/.zettelekasten`.
 
 ## Frontend
 

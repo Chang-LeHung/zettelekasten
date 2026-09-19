@@ -2,24 +2,29 @@
 import { createApp, h, nextTick } from 'vue'
 import { afterEach, expect, it, vi } from 'vitest'
 import { getDocument } from 'pdfjs-dist'
-import { aiClient } from '../api/client'
+import { assetClient } from '../api/client'
 import PdfPreview from './PdfPreview.vue'
 
 vi.mock('pdfjs-dist', () => ({ GlobalWorkerOptions: {}, getDocument: vi.fn() }))
 vi.mock('./PdfPage.vue', () => ({ default: { template: '<div />' } }))
-vi.mock('../api/client', () => ({ aiClient: { getArtifactPdfContent: vi.fn().mockResolvedValue(null) } }))
+vi.mock('../api/client', () => ({ assetClient: { getUrlContent: vi.fn().mockResolvedValue(null) } }))
 
 const cleanups: (() => void)[] = []
 afterEach(() => {
   cleanups.splice(0).forEach(cleanup => cleanup())
-  vi.mocked(aiClient.getArtifactPdfContent).mockResolvedValue(null)
+  vi.mocked(assetClient.getUrlContent).mockResolvedValue(null as never)
   vi.mocked(getDocument).mockReset()
 })
 
-async function mountPreview() {
+async function mountPreview(contentUrl: string | null = null) {
   const host = document.createElement('div')
   document.body.append(host)
-  const app = createApp({ render: () => h(PdfPreview, { asset: { id: 'pdf', session_id: 'session' }, artifact: true }) })
+  const app = createApp({
+    render: () => h(PdfPreview, {
+      asset: { id: 'pdf', session_id: 'session', content_url: contentUrl },
+      artifact: true,
+    }),
+  })
   app.mount(host)
   cleanups.push(() => { app.unmount(); host.remove() })
   await nextTick()
@@ -60,7 +65,7 @@ it('shows a centered compilation state before the PDF exists', async () => {
 })
 
 it('fits the inline PDF width to a narrow artifact pane by default', async () => {
-  vi.mocked(aiClient.getArtifactPdfContent).mockResolvedValue(new ArrayBuffer(8))
+  vi.mocked(assetClient.getUrlContent).mockResolvedValue(new ArrayBuffer(8))
   vi.mocked(getDocument).mockReturnValue({
     promise: Promise.resolve({
       numPages: 1,
@@ -74,7 +79,12 @@ it('fits the inline PDF width to a narrow artifact pane by default', async () =>
   try {
     const host = document.createElement('div')
     document.body.append(host)
-    const app = createApp({ render: () => h(PdfPreview, { asset: { id: 'pdf', session_id: 'session' }, artifact: true }) })
+    const app = createApp({
+      render: () => h(PdfPreview, {
+        asset: { id: 'pdf', session_id: 'session', content_url: '/api/files/artifacts/session/paper/paper.pdf' },
+        artifact: true,
+      }),
+    })
     app.mount(host)
     cleanups.push(() => { app.unmount(); host.remove() })
     await vi.waitFor(() => {
@@ -165,7 +175,7 @@ it('opens directly in expanded mode and notifies its launcher when closed', asyn
 })
 
 it('loads an artifact and enters presentation mode directly', async () => {
-  vi.mocked(aiClient.getArtifactPdfContent).mockResolvedValue(new ArrayBuffer(8))
+  vi.mocked(assetClient.getUrlContent).mockResolvedValue(new ArrayBuffer(8))
   vi.mocked(getDocument).mockReturnValue({
     promise: Promise.resolve({
       numPages: 2,
@@ -179,7 +189,11 @@ it('loads an artifact and enters presentation mode directly', async () => {
   document.body.append(host)
   const app = createApp({
     render: () => h(PdfPreview, {
-      asset: { id: 'pdf', session_id: 'session' },
+      asset: {
+        id: 'pdf',
+        session_id: 'session',
+        content_url: '/api/files/artifacts/session/paper/paper.pdf',
+      },
       artifact: true,
       initialMode: 'presentation',
       onClose: closed,
@@ -258,14 +272,14 @@ it('remembers independent zoom levels for inline and expanded previews', async (
 })
 
 it('presents one fitted page and navigates without changing the regular preview page', async () => {
-  vi.mocked(aiClient.getArtifactPdfContent).mockResolvedValue(new ArrayBuffer(8))
+  vi.mocked(assetClient.getUrlContent).mockResolvedValue(new ArrayBuffer(8))
   const document = {
     numPages: 3,
     getPage: vi.fn().mockResolvedValue({ getViewport: () => ({ width: 600, height: 800 }) }),
     getOutline: vi.fn().mockResolvedValue([]),
   }
   vi.mocked(getDocument).mockReturnValue({ promise: Promise.resolve(document) } as never)
-  const { root } = await mountPreview()
+  const { root } = await mountPreview('/api/files/artifacts/session/paper/paper.pdf')
   await Promise.resolve()
   await Promise.resolve()
   await nextTick()

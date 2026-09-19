@@ -80,7 +80,7 @@ class ImageArtifactPreviewContent(ArtifactPreviewContentBase):
     alt_text_truncated: bool
     source_url_preview: str | None = None
     source_url_truncated: bool = False
-    asset_id: str | None = None
+    asset_path: str | None = None
 
 
 class SlidesArtifactPreviewContent(ArtifactPreviewContentBase):
@@ -184,7 +184,7 @@ class ArtifactPruner:
                     alt_text_truncated=alt_text_truncated,
                     source_url_preview=source_url,
                     source_url_truncated=source_url_truncated,
-                    asset_id=content.asset_id,
+                    asset_path=content.asset_path,
                 )
             case SlidesArtifactContent() as content:
                 preview, truncated = self._clip(content.content, self.slides_chars)

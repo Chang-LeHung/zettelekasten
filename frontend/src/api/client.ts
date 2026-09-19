@@ -111,16 +111,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return response.json() as Promise<T>
 }
 
-async function requestBinary(path: string, signal?: AbortSignal): Promise<ArrayBuffer> {
-  const response = await fetch(`${API_URL}${path}`, { signal })
-  if (!response.ok) throw new ApiError(response.status, await response.text())
-  return response.arrayBuffer()
-}
-
 export const libraryClient = {
-  documentReference(itemId: string): Pick<AgentArtifact, 'id' | 'session_id'> {
-    const { id, session_id } = requireIndexedArtifact(itemId)
-    return { id, session_id }
+  documentReference(itemId: string): Pick<AgentArtifact, 'id' | 'session_id' | 'content_url'> {
+    const { id, session_id, content_url } = requireIndexedArtifact(itemId)
+    return { id, session_id, content_url }
   },
 
   async list(options: CardListOptions = {}): Promise<LibraryItem[]> {
@@ -209,10 +203,6 @@ export const tagClient = {
 }
 
 export const aiClient = {
-  async getArtifactPdfContent(sessionId: string, artifactId: string, signal?: AbortSignal): Promise<ArrayBuffer | null> {
-    const bytes = await requestBinary(`/agent/${sessionId}/artifacts/${artifactId}/content`, signal)
-    return bytes.byteLength ? bytes : null
-  },
   async analyzeStream(
     conversationId: string,
     rawContent: string,
@@ -441,10 +431,6 @@ export const aiClient = {
     return request<{ ok: boolean }>(`/agent/${conversationId}/assets/${assetId}`, { method: 'DELETE' })
   },
 
-  getSessionAssetContent(conversationId: string, assetId: string, signal?: AbortSignal): Promise<ArrayBuffer> {
-    return requestBinary(`/agent/${conversationId}/assets/${assetId}/content`, signal)
-  },
-
   listAgentArtifacts(conversationId: string): Promise<AgentArtifact[]> {
     return request<AgentArtifact[]>(`/agent/${conversationId}/artifacts`)
   },
@@ -510,10 +496,6 @@ export const assetClient = {
     })
     if (!response.ok) throw new ApiError(response.status, await response.text())
     return response.json() as Promise<StaticAsset>
-  },
-
-  getContent(assetId: string, signal?: AbortSignal): Promise<ArrayBuffer> {
-    return requestBinary(`/assets/${assetId}/content`, signal)
   },
 
   async getUrlContent(url: string, signal?: AbortSignal): Promise<ArrayBuffer> {

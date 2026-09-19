@@ -45,7 +45,7 @@ it('lists assets and uploads files pasted into the Assets view', async () => {
     mime_type: 'text/plain',
     size_bytes: 5,
     sha256: 'hash-1',
-    content_url: '/api/assets/asset-1/content',
+    content_url: '/api/files/assets/static/asset-1.png',
     metadata: {},
     created_at: '2026-09-19T00:00:00Z',
     updated_at: '2026-09-19T00:00:00Z',
@@ -56,7 +56,7 @@ it('lists assets and uploads files pasted into the Assets view', async () => {
     name: 'clipboard.png',
     mime_type: 'image/png',
     sha256: 'hash-2',
-    content_url: '/api/assets/asset-2/content',
+    content_url: '/api/files/assets/static/asset-2.png',
   }
   mocks.list.mockResolvedValue([existing])
   mocks.upload.mockResolvedValue(pasted)
@@ -90,7 +90,7 @@ it('renders a PDF first-page thumbnail and uses English dates', async () => {
     mime_type: 'application/pdf',
     size_bytes: 1024,
     sha256: 'hash-pdf',
-    content_url: '/api/assets/asset-pdf/content',
+    content_url: '/api/files/assets/static/asset-pdf.pdf',
     metadata: {},
     created_at: '2026-09-19T12:00:00Z',
     updated_at: '2026-09-19T12:00:00Z',

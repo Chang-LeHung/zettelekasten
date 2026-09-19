@@ -60,13 +60,23 @@ class ArticleArtifactContent(ArtifactContentBase):
 
 
 class ImageArtifactContent(ArtifactContentBase):
-    """Editable description and location for an image artifact."""
+    """Editable description and location for an image artifact.
+
+    Exactly one location form is expected:
+
+    - ``source_url``: image stored outside this application.
+    - ``asset_path``: relative ObjectKey for a locally stored image.
+    """
 
     artifact_type: Literal[ArtifactType.IMAGE] = ArtifactType.IMAGE
     prompt: str = Field(default="", description="Prompt or creative direction used for the image")
     alt_text: str = Field(default="", description="Accessible description of the image")
+    # External URL only. Example: "https://example.com/image.png".
     source_url: str | None = Field(default=None, description="External image URL when the image is remote")
-    asset_id: str | None = Field(default=None, description="Session asset ID when the image is stored locally")
+    # Internal ObjectKey only. Example:
+    # "assets/sessions/<session_id>/<asset_id>.png". It is not an entity ID
+    # and it is never an absolute filesystem path.
+    asset_path: str | None = Field(default=None, description="Relative ObjectKey when the image is stored locally")
 
 
 class SlidesArtifactContent(ArtifactContentBase):
@@ -126,10 +136,21 @@ class LatexPdfArtifactCreate(BaseModel):
 
 
 class LatexPdfArtifactContent(LatexPdfArtifactCreate):
-    """Persisted project reference with a server-assigned directory."""
+    """Persisted project reference with a server-assigned relative directory key.
+
+    The project directory and compiled PDF are addressed as:
+
+    ``project_path + "/" + pdf_name``
+
+    Example:
+        ``project_path = "artifacts/<session_id>/paper"``
+        ``pdf_name = "paper.pdf"``
+        final key = ``"artifacts/<session_id>/paper/paper.pdf"``
+    """
 
     project_path: str = Field(
-        min_length=1, description="Server-assigned directory for all project source files and the PDF"
+        min_length=1,
+        description="Server-assigned object key below storage_root for all project files and the PDF",
     )
 
 
@@ -164,7 +185,11 @@ class AgentArtifactWrite(BaseModel):
 
 
 class AgentArtifact(BaseModel):
-    """One typed output produced inside a persisted agent conversation."""
+    """One typed output produced inside a persisted agent conversation.
+
+    ``content_url`` is not a database column. It is computed for artifacts that
+    own a file, currently LaTeX PDFs and local image artifacts.
+    """
 
     id: str = Field(description="Stable artifact UUID")
     session_id: str = Field(description="Owning agent session UUID")
@@ -175,5 +200,12 @@ class AgentArtifact(BaseModel):
     version: int = Field(default=1, ge=1, description="Monotonic revision number")
     metadata: dict[str, object] = Field(default_factory=dict, description="Extensible artifact metadata")
     tags: list[ArtifactTagOut] = Field(default_factory=list, description="Confirmed persistent library tags")
+    # Response-only ObjectStore URL. Example:
+    # "/api/files/artifacts/<session_id>/<project>/paper.pdf".
+    # Null for card/article/slides and for externally referenced images.
+    content_url: str | None = Field(
+        default=None,
+        description="Unified file endpoint URL when this artifact owns a previewable object",
+    )
     created_at: datetime = Field(description="UTC artifact creation timestamp")
     updated_at: datetime = Field(description="UTC last modification timestamp")

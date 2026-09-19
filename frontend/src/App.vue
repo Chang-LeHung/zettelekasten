@@ -315,7 +315,7 @@ const selectedImageUrl = computed(() => {
   const content = artifactContent.value
   if (content?.artifact_type !== 'image') return null
   if (content.source_url) return content.source_url
-  return assets.value.find((asset) => asset.id === content.asset_id)?.content_url || null
+  return selectedArtifact.value?.content_url || null
 })
 
 function artifactTypeLabel(type: ArtifactContent['artifact_type']): string {
@@ -2196,6 +2196,8 @@ function openImagePreview(image: { name: string; url: string }): void {
     sha256: null,
     text_content: null,
     source_url: null,
+    storage_path: null,
+    source_path: null,
     content_url: image.url,
     metadata: {},
     created_at: '',
@@ -2209,7 +2211,7 @@ function openMessageImage(part: MessageImagePart): void {
 
 async function removeAsset(asset: SessionAsset): Promise<void> {
   if (!conversationId.value) return
-  const message = asset.metadata.import_mode === 'url'
+  const message = asset.metadata.import_mode === 'object'
     ? `“${asset.name}” will be removed from this conversation. The Static Asset itself will remain available.`
     : `“${asset.name}” will be removed from this conversation and its local file will be deleted.`
   const confirmed = await requestConfirmation(
@@ -2244,7 +2246,7 @@ function assetExtension(asset: SessionAsset): string {
 
 function classifyAsset(asset: SessionAsset): Exclude<AssetFilter, 'all'> {
   if (asset.asset_type === 'image' || asset.mime_type?.startsWith('image/')) return 'images'
-  if (asset.metadata.import_mode === 'url' && isPdfAsset(asset)) return 'documents'
+  if (asset.metadata.import_mode === 'object' && isPdfAsset(asset)) return 'documents'
   if (asset.asset_type === 'link') return 'links'
   const extension = asset.name.split('.').pop()?.toLowerCase() || ''
   const codeExtensions = new Set(['py', 'js', 'ts', 'tsx', 'jsx', 'vue', 'json', 'yaml', 'yml', 'toml', 'sh', 'sql', 'html', 'css'])
@@ -2263,8 +2265,8 @@ function assetTypeLabel(asset: SessionAsset): string {
 }
 
 function assetSourceLabel(asset: SessionAsset): string | null {
+  if (asset.metadata.import_mode === 'object') return t('Static asset')
   if (!asset.source_url) return null
-  if (asset.metadata.import_mode === 'url') return t('Static asset')
   try {
     return new URL(asset.source_url).hostname
   } catch {
