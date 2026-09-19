@@ -59,9 +59,12 @@ const COPY_RESET_DELAY_MS = 1600
 const markdownRoot = ref<HTMLElement | null>(null)
 const mermaidDialogClose = ref<HTMLButtonElement | null>(null)
 const mermaidPreview = ref<{ source: string; svg: string } | null>(null)
+const imageDialogClose = ref<HTMLButtonElement | null>(null)
+const imagePreview = ref<{ name: string; url: string } | null>(null)
 const mermaidZoom = ref(1)
 const renderedMermaidSvgs = new Map<string, string>()
 let mermaidPreviewTrigger: HTMLElement | null = null
+let imagePreviewTrigger: HTMLElement | null = null
 let renderGeneration = 0
 
 hljs.registerLanguage('bash', bash)
@@ -198,6 +201,13 @@ async function handleMarkdownClick(event: MouseEvent): Promise<void> {
   const target = event.target
   if (!(target instanceof Element)) return
 
+  const image = target.closest<HTMLImageElement>('img')
+  if (image) {
+    event.preventDefault()
+    openImagePreview(image)
+    return
+  }
+
   const expandButton = target.closest<HTMLButtonElement>('[data-mermaid-open]')
   if (expandButton) {
     const block = expandButton.closest('.mermaid-block')
@@ -235,6 +245,23 @@ async function handleMarkdownClick(event: MouseEvent): Promise<void> {
   }
 }
 
+function openImagePreview(image: HTMLImageElement): void {
+  const url = image.currentSrc || image.src
+  if (!url) return
+  imagePreviewTrigger = image
+  imagePreview.value = {
+    name: image.alt.trim() || 'Markdown image',
+    url,
+  }
+  void nextTick(() => imageDialogClose.value?.focus())
+}
+
+function closeImagePreview(): void {
+  imagePreview.value = null
+  imagePreviewTrigger?.focus()
+  imagePreviewTrigger = null
+}
+
 function openMermaidPreview(source: string, svg: string, trigger: HTMLElement): void {
   mermaidPreviewTrigger = trigger
   mermaidZoom.value = 1
@@ -260,6 +287,7 @@ function handleMermaidWheel(event: WheelEvent): void {
 }
 
 function handlePreviewKeydown(event: KeyboardEvent): void {
+  if (imagePreview.value && event.key === 'Escape') closeImagePreview()
   if (mermaidPreview.value && event.key === 'Escape') closeMermaidPreview()
 }
 
@@ -343,6 +371,17 @@ onBeforeUnmount(() => {
 <template>
   <div ref="markdownRoot" class="markdown-body" :class="{ 'presentation-markdown': presentation }" @click="handleMarkdownClick" v-html="html" />
   <Teleport to="body">
+    <div v-if="imagePreview" class="markdown-image-preview-backdrop" @click.self="closeImagePreview">
+      <section class="markdown-image-preview-dialog" role="dialog" aria-modal="true" :aria-label="`Preview ${imagePreview.name}`">
+        <header class="markdown-image-preview-header">
+          <strong>{{ imagePreview.name }}</strong>
+          <button ref="imageDialogClose" type="button" aria-label="Close image preview" title="Close" @click="closeImagePreview">×</button>
+        </header>
+        <div class="markdown-image-preview-stage">
+          <img :src="imagePreview.url" :alt="imagePreview.name" />
+        </div>
+      </section>
+    </div>
     <div v-if="mermaidPreview" class="mermaid-preview-backdrop" @click.self="closeMermaidPreview">
       <section class="mermaid-preview-dialog" role="dialog" aria-modal="true" aria-label="Mermaid diagram preview">
         <header class="mermaid-preview-header">
@@ -432,8 +471,18 @@ onBeforeUnmount(() => {
 .markdown-body :deep(th), .markdown-body :deep(td) { padding: .45em .65em; border: 1px solid #dfe4e0; text-align: left; }
 .markdown-body :deep(th) { background: #f3f6f4; font-weight: 650; }
 .markdown-body :deep(hr) { margin: 1.2em 0; border: 0; border-top: 1px solid #e1e5e2; }
-.markdown-body :deep(img) { max-width: 100%; height: auto; border-radius: .65rem; }
+.markdown-body :deep(img) { max-width: 100%; height: auto; border-radius: .65rem; cursor: zoom-in; }
 .markdown-body :deep(.katex-display) { max-width: 100%; margin: .8em 0; padding: .35em 0; overflow-x: auto; overflow-y: hidden; }
+
+.markdown-image-preview-backdrop { position: fixed; z-index: 1250; inset: 0; display: grid; place-items: center; padding: clamp(.75rem, 2.5vw, 2rem); background: rgba(29, 36, 32, .38); backdrop-filter: blur(12px) saturate(110%); }
+.markdown-image-preview-dialog { display: grid; grid-template-rows: auto minmax(0, 1fr); width: min(94vw, 92rem); height: min(92vh, 64rem); overflow: hidden; border: 1px solid rgba(55, 70, 61, .16); border-radius: 1.05rem; background: rgba(250, 251, 250, .98); box-shadow: 0 1.5rem 4rem rgba(25, 36, 29, .26); }
+.markdown-image-preview-header { display: flex; min-height: 3.65rem; padding: .65rem .75rem .65rem 1.1rem; align-items: center; justify-content: space-between; gap: 1rem; border-bottom: 1px solid #e1e6e3; background: rgba(255, 255, 255, .92); }
+.markdown-image-preview-header strong { min-width: 0; overflow: hidden; color: #2d3932; font-size: .82rem; font-weight: 660; text-overflow: ellipsis; white-space: nowrap; }
+.markdown-image-preview-header button { display: grid; width: 2.25rem; height: 2.25rem; flex: 0 0 auto; place-items: center; padding: 0; border: 0; border-radius: .62rem; color: #68716b; background: transparent; font: inherit; font-size: 1.35rem; font-weight: 300; line-height: 1; cursor: pointer; }
+.markdown-image-preview-header button:hover { color: #30483a; background: #edf2ef; }
+.markdown-image-preview-header button:focus-visible { outline: 3px solid rgba(71, 105, 87, .2); outline-offset: 2px; }
+.markdown-image-preview-stage { display: grid; min-width: 0; min-height: 0; padding: clamp(1rem, 3vw, 2.5rem); place-items: center; overflow: auto; background-color: #f1f3f1; background-image: linear-gradient(45deg, rgba(77, 96, 85, .035) 25%, transparent 25%), linear-gradient(-45deg, rgba(77, 96, 85, .035) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(77, 96, 85, .035) 75%), linear-gradient(-45deg, transparent 75%, rgba(77, 96, 85, .035) 75%); background-position: 0 0, 0 8px, 8px -8px, -8px 0; background-size: 16px 16px; }
+.markdown-image-preview-stage img { display: block; max-width: 100%; max-height: 100%; border-radius: .3rem; object-fit: contain; box-shadow: 0 12px 38px rgba(33, 42, 36, .12); }
 
 .mermaid-preview-backdrop { position: fixed; z-index: 1200; inset: 0; display: grid; place-items: center; padding: 2rem; background: rgba(35, 43, 38, .32); }
 .mermaid-preview-dialog { display: grid; grid-template-rows: auto minmax(0, 1fr); width: min(94vw, 92rem); height: min(90vh, 64rem); overflow: hidden; border: 1px solid #d9e0dc; border-radius: 1.1rem; background: #fbfcfb; box-shadow: 0 1.5rem 4rem rgba(35, 48, 40, .2); }
@@ -452,6 +501,8 @@ onBeforeUnmount(() => {
 .mermaid-preview-diagram :deep(> svg) { display: block; width: 100% !important; max-width: none !important; height: auto !important; margin: auto; fill: initial; stroke: initial; stroke-width: initial; stroke-linecap: initial; stroke-linejoin: initial; user-select: text; }
 
 @media (max-width: 700px) {
+  .markdown-image-preview-backdrop { padding: .5rem; }
+  .markdown-image-preview-dialog { width: 100%; height: 96vh; border-radius: .85rem; }
   .mermaid-preview-backdrop { padding: .65rem; }
   .mermaid-preview-dialog { width: 100%; height: 94vh; border-radius: .85rem; }
   .mermaid-preview-header { padding: .65rem .7rem .65rem .9rem; }

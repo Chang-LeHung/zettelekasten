@@ -51,6 +51,25 @@ it('renders Mermaid after the Markdown DOM is committed', async () => {
   expect(host.querySelector('[data-mermaid-canvas]')?.textContent).toContain('diagram')
 })
 
+it('opens Markdown images in a preview dialog', async () => {
+  const host = await mount(MarkdownContent, {
+    content: '![Architecture diagram](data:image/png;base64,aW1hZ2U=)',
+  })
+  const image = host.querySelector<HTMLImageElement>('.markdown-body img')
+  expect(image).not.toBeNull()
+
+  image?.click()
+  await nextTick()
+
+  const dialog = document.body.querySelector('.markdown-image-preview-dialog')
+  expect(dialog?.getAttribute('aria-label')).toBe('Preview Architecture diagram')
+  expect(dialog?.querySelector<HTMLImageElement>('img')?.src).toBe('data:image/png;base64,aW1hZ2U=')
+
+  dialog?.querySelector<HTMLButtonElement>('[aria-label="Close image preview"]')?.click()
+  await nextTick()
+  expect(document.body.querySelector('.markdown-image-preview-dialog')).toBeNull()
+})
+
 it('isolates Mermaid diagrams from the application icon SVG stroke', () => {
   const { descriptor } = parse(source)
   const { code, errors } = compileStyle({ source: descriptor.styles[0].content, filename: 'MarkdownContent.vue', id: 'data-v-test', scoped: true })
