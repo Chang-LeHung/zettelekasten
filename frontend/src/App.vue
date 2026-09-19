@@ -142,6 +142,7 @@ const streamingGenerationDurationMs = ref(0)
 const pendingQuestion = ref<AskUserState | null>(null)
 const queuedQuestions = ref<AskUserState[]>([])
 const askAnswer = ref('')
+const askUserImages = ref<PositionedMessageImage[]>([])
 const selectedAskOptions = ref<string[]>([])
 const answeringQuestion = ref(false)
 const activeTodos = ref<AgentTodoState | null>(null)
@@ -300,6 +301,7 @@ function resetStreamState(): void {
   modelStartedAt = 0
   pendingQuestion.value = null
   queuedQuestions.value = []
+  askUserImages.value = []
   activeTodos.value = null
   steeringResponseStarted = false
   streamingStatus.value = 'starting'
@@ -756,6 +758,7 @@ function handleCustomAgentEvent(event: AgentCustomEvent): void {
   } else {
     pendingQuestion.value = question
     askAnswer.value = ''
+    askUserImages.value = []
     selectedAskOptions.value = []
   }
   streamingStatus.value = 'waiting_for_user'
@@ -764,6 +767,7 @@ function handleCustomAgentEvent(event: AgentCustomEvent): void {
 function showNextAskQuestion(): void {
   pendingQuestion.value = queuedQuestions.value.shift() || null
   askAnswer.value = ''
+  askUserImages.value = []
   selectedAskOptions.value = []
   streamingStatus.value = pendingQuestion.value ? 'waiting_for_user' : 'resuming'
 }
@@ -794,20 +798,42 @@ async function answerAgentQuestion(): Promise<void> {
   const answer = question.allowMultiple
     ? [...selectedAskOptions.value, ...(typedAnswer ? [typedAnswer] : [])]
     : typedAnswer || selectedAskOptions.value[0]
-  if (!answer || (Array.isArray(answer) && !answer.length)) return
+  if ((!answer || (Array.isArray(answer) && !answer.length)) && !askUserImages.value.length) return
+  const answerText = Array.isArray(answer) ? answer.join('\n') : answer || ''
+  const parts = askUserImages.value.length ? buildMessageParts(answerText, askUserImages.value) : []
   answeringQuestion.value = true
   try {
     await aiClient.emitAgentEvent(activeConversationId, question.responseEvent, {
       session_id: activeConversationId,
       tool_call_id: question.toolCallId,
       answer,
+      parts,
     })
+    askUserImages.value = []
     showNextAskQuestion()
   } catch (error) {
     showNotice(errorMessage(error), 'error')
   } finally {
     answeringQuestion.value = false
   }
+}
+
+async function attachAskUserImages(files: File[]): Promise<void> {
+  const available = Math.max(0, runtimeSettings.value.max_message_images - askUserImages.value.length)
+  const images = files.filter((file) => file.type.startsWith('image/')).slice(0, available)
+  if (!images.length) return
+  try {
+    askUserImages.value.push(...await Promise.all(images.map((file) => readMessageImage(file, askAnswer.value.length))))
+    if (images.length < files.filter((file) => file.type.startsWith('image/')).length) {
+      showNotice(`An answer can contain up to ${runtimeSettings.value.max_message_images} images`, 'error')
+    }
+  } catch (error) {
+    showNotice(errorMessage(error), 'error')
+  }
+}
+
+function removeAskUserImage(id: string): void {
+  askUserImages.value = askUserImages.value.filter((image) => image.id !== id)
 }
 
 function handleAgentThreadScroll(): void {
@@ -2425,10 +2451,13 @@ onBeforeUnmount(() => {
                 :allow-multiple="pendingQuestion.allowMultiple"
                 :selected-options="selectedAskOptions"
                 :answer="askAnswer"
+                :images="askUserImages"
                 :queued-count="queuedQuestions.length"
                 :submitting="answeringQuestion"
                 @toggle="toggleAskOption"
                 @update:answer="updateAskAnswer"
+                @add-images="attachAskUserImages"
+                @remove-image="removeAskUserImage"
                 @submit="answerAgentQuestion"
               />
 

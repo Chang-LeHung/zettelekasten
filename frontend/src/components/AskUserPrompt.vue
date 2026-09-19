@@ -1,10 +1,14 @@
 <script setup lang="ts">
+import { ref } from 'vue'
+import type { PositionedMessageImage } from '../utils/messageParts'
+
 const props = defineProps<{
   question: string
   options: string[]
   allowMultiple: boolean
   selectedOptions: string[]
   answer: string
+  images: PositionedMessageImage[]
   queuedCount?: number
   submitting: boolean
 }>()
@@ -12,8 +16,12 @@ const props = defineProps<{
 const emit = defineEmits<{
   toggle: [option: string]
   'update:answer': [value: string]
+  addImages: [files: File[]]
+  removeImage: [id: string]
   submit: []
 }>()
+
+const imageInput = ref<HTMLInputElement | null>(null)
 
 function optionLetter(index: number): string {
   return String.fromCharCode('A'.charCodeAt(0) + index)
@@ -21,6 +29,24 @@ function optionLetter(index: number): string {
 
 function updateAnswer(event: Event): void {
   emit('update:answer', (event.target as HTMLInputElement).value)
+}
+
+function addImages(event: Event): void {
+  const input = event.target as HTMLInputElement
+  const files = Array.from(input.files || []).filter((file) => file.type.startsWith('image/'))
+  if (files.length) emit('addImages', files)
+  input.value = ''
+}
+
+function pasteImages(event: ClipboardEvent): void {
+  const files = Array.from(event.clipboardData?.items || [])
+    .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => file !== null)
+  if (files.length) {
+    event.preventDefault()
+    emit('addImages', files)
+  }
 }
 </script>
 
@@ -39,7 +65,13 @@ function updateAnswer(event: Event): void {
 
     <h3>{{ question }}</h3>
 
-    <form @submit.prevent="emit('submit')">
+    <form @submit.prevent="emit('submit')" @paste="pasteImages">
+      <div v-if="images.length" class="ask-images">
+        <figure v-for="image in images" :key="image.id">
+          <img :src="image.content_url" :alt="image.name" />
+          <button type="button" :aria-label="`Remove ${image.name}`" @click="emit('removeImage', image.id)">×</button>
+        </figure>
+      </div>
       <fieldset>
         <legend class="sr-only">{{ allowMultiple ? 'Select all that apply' : 'Select one answer' }}</legend>
         <label
@@ -76,8 +108,15 @@ function updateAnswer(event: Event): void {
       </fieldset>
 
       <footer>
-        <small>{{ allowMultiple ? 'You may combine choices with your own answer.' : 'Choose one option or enter your own answer.' }}</small>
-        <button type="submit" :disabled="submitting || (!answer.trim() && !selectedOptions.length)">
+        <div class="ask-attach">
+          <button type="button" title="Attach images" aria-label="Attach images" @click="imageInput?.click()">
+            <svg><use href="#icon-attachment" /></svg>
+            <span>Image</span>
+          </button>
+          <small>{{ allowMultiple ? 'You may combine choices, text, and images.' : 'Choose an option, type an answer, or attach images.' }}</small>
+          <input ref="imageInput" type="file" accept="image/*" multiple hidden @change="addImages" />
+        </div>
+        <button class="ask-submit" type="submit" :disabled="submitting || (!answer.trim() && !selectedOptions.length && !images.length)">
           {{ submitting ? 'Sending…' : 'Continue' }}
         </button>
       </footer>
@@ -113,9 +152,18 @@ fieldset { display: grid; gap: .35rem; min-width: 0; margin: 0; padding: 0; bord
 .custom input { width: 100%; padding: 0; border: 0; outline: 0; color: #252a27; background: transparent; font: inherit; }
 .custom input::placeholder { color: #a1a8a3; }
 footer { justify-content: space-between; gap: 1rem; margin-top: .65rem; }
-footer button { min-height: 2rem; padding: 0 .8rem; border: 0; border-radius: .62rem; color: #fff; background: #476957; cursor: pointer; font-size: .68rem; font-weight: 680; }
-footer button:hover:not(:disabled) { background: #395b48; }
-footer button:disabled { opacity: .42; cursor: default; }
+.ask-images { display: flex; gap: .42rem; margin-bottom: .62rem; overflow-x: auto; scrollbar-width: thin; }
+.ask-images figure { position: relative; width: 3.5rem; height: 3.5rem; flex: 0 0 auto; margin: 0; }
+.ask-images img { width: 100%; height: 100%; display: block; border: 1px solid #dbe3dd; border-radius: .58rem; object-fit: cover; background: #eef1ef; }
+.ask-images button { position: absolute; top: -.28rem; right: -.28rem; width: 1rem; height: 1rem; display: grid; place-items: center; padding: 0; border: 2px solid #fff; border-radius: 50%; color: #fff; background: #59645d; cursor: pointer; font-size: .67rem; line-height: 1; }
+.ask-attach { min-width: 0; display: flex; align-items: center; gap: .48rem; }
+.ask-attach > button { min-height: 2rem; display: inline-flex; align-items: center; gap: .3rem; padding: 0 .55rem; border: 1px solid #d6e0d9; border-radius: .55rem; color: #557062; background: #fff; cursor: pointer; font-size: .63rem; font-weight: 650; }
+.ask-attach > button:hover, .ask-attach > button:focus-visible { border-color: #9db4a5; color: #315541; background: #edf4ef; outline: none; }
+.ask-attach svg { width: .76rem; height: .76rem; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.ask-attach small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ask-submit { min-height: 2rem; padding: 0 .8rem; border: 0; border-radius: .62rem; color: #fff; background: #476957; cursor: pointer; font-size: .68rem; font-weight: 680; }
+.ask-submit:hover:not(:disabled) { background: #395b48; }
+.ask-submit:disabled { opacity: .42; cursor: default; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 @media (max-width: 620px) {
   header { align-items: flex-start; }
