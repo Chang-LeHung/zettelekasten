@@ -163,6 +163,61 @@ it('awaits ordinary tool callbacks before delivering later text', async () => {
   expect(result).toBeNull()
 })
 
+it('delivers steering message parts to the active stream callback', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
+    'event: steering_started\n'
+    + 'data: {"session_id":"session","phase":"generating","steering_message":{"text":"Look here","parts":[{"type":"text","text":"Look here"},{"type":"image","name":"clipboard.png","mime_type":"image/png","content_url":"data:image/png;base64,aW1hZ2U="}],"attributes":{}}}\n\n'
+    + 'event: run_completed\ndata: {"session_id":"session","phase":"completed"}\n\n',
+  )))
+  const steering: Array<{ content: string; parts: unknown[] }> = []
+
+  await aiClient.analyzeStream('session', 'hello', 'provider', 'medium', [], {
+    onSteering: (message) => { steering.push(message) },
+  })
+
+  expect(steering).toEqual([
+    {
+      content: 'Look here',
+      parts: [
+        { type: 'text', text: 'Look here' },
+        {
+          type: 'image',
+          name: 'clipboard.png',
+          mime_type: 'image/png',
+          content_url: 'data:image/png;base64,aW1hZ2U=',
+        },
+      ],
+    },
+  ])
+})
+
+it('sends multimodal steering through the typed endpoint', async () => {
+  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ accepted: true })))
+  vi.stubGlobal('fetch', fetchMock)
+
+  await aiClient.steerAgent('session-id', 'Inspect this', [
+    {
+      type: 'image',
+      name: 'clipboard.png',
+      mime_type: 'image/png',
+      data_base64: 'aW1hZ2U=',
+    },
+  ])
+
+  expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/agent/session-id/steer')
+  expect(JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit).body))).toEqual({
+    raw_content: 'Inspect this',
+    parts: [
+      {
+        type: 'image',
+        name: 'clipboard.png',
+        mime_type: 'image/png',
+        data_base64: 'aW1hZ2U=',
+      },
+    ],
+  })
+})
+
 it('delivers a parallel batch and correlates reverse mixed outcomes by tool-call ID', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
     'event: tool_started\ndata: {"session_id":"session","phase":"running_tool","tool_calls":[{"id":"slow","name":"read_file","arguments":{"path":"slow"}},{"id":"fast","name":"read_file","arguments":{"path":"fast"}},{"id":"bad","name":"read_file","arguments":{"path":"bad"}}]}\n\n'

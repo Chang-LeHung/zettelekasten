@@ -128,6 +128,7 @@ export interface AnalysisMessage {
   role: 'user' | 'assistant'
   content: string
   parts?: MessageContentPart[]
+  steering_status?: 'waiting' | 'responded'
   reasoning?: string
   activities?: AgentToolActivity[]
   timeline?: AgentTimelineEntry[]
@@ -216,6 +217,11 @@ export interface AgentCustomEvent {
   payload: Record<string, unknown>
 }
 
+export interface AgentSteeringMessage {
+  content: string
+  parts: MessageContentPart[]
+}
+
 export interface AgentTodoItem {
   content: string
   status: 'pending' | 'processing' | 'completed'
@@ -234,6 +240,7 @@ export interface AgentStreamCallbacks {
   onUsage?: (usage: AgentModelUsage) => void
   onReasoning?: (content: string) => void
   onMessage?: (content: string) => void
+  onSteering?: (message: AgentSteeringMessage) => void
   onTool?: (activity: AgentToolActivity) => void | Promise<void>
   onServerTool?: (activity: AgentServerToolActivity) => void
   onCompaction?: (activity: AgentCompactionActivity) => void

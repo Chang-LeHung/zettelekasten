@@ -10,10 +10,13 @@ from zett_agent import (
     AgentEvent,
     AgentEventDispatcher,
     AssistantMessage,
+    ImageBytesSource,
     ImageContent,
     ImageUrlSource,
+    TextContent,
     ToolCall,
     ToolMessage,
+    UserMessage,
 )
 
 type SSESend = Callable[[str], Awaitable[None]]
@@ -44,6 +47,32 @@ def _json_default(value: object) -> object:
 
 def _tool_call(call: ToolCall) -> dict[str, object]:
     return {"id": call.id, "name": call.name, "arguments": dict(call.arguments)}
+
+
+def _user_message_parts(message: UserMessage) -> list[dict[str, object]]:
+    """Project ordered user content blocks for browser steering display."""
+    parts: list[dict[str, object]] = []
+    for part in message.parts:
+        if isinstance(part, TextContent):
+            parts.append({"type": "text", "text": part.text})
+        elif isinstance(part, ImageContent):
+            source = part.source
+            if isinstance(source, ImageBytesSource):
+                encoded = base64.b64encode(source.data).decode("ascii")
+                content_url = f"data:{source.media_type};base64,{encoded}"
+                mime_type = source.media_type
+            else:
+                content_url = source.url
+                mime_type = None
+            parts.append(
+                {
+                    "type": "image",
+                    "name": part.alt_text or "Image",
+                    "mime_type": mime_type,
+                    "content_url": content_url,
+                }
+            )
+    return parts
 
 
 def _message(message: AssistantMessage | ToolMessage) -> dict[str, object]:
@@ -113,6 +142,7 @@ def event_payload(event: AgentEvent) -> dict[str, object]:
     if event.steering_message is not None:
         payload["steering_message"] = {
             "text": event.steering_message.text,
+            "parts": _user_message_parts(event.steering_message),
             "attributes": event.steering_message.attributes,
         }
     if event.error is not None:

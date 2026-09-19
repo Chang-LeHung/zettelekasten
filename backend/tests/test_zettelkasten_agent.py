@@ -15,6 +15,8 @@ from zett_agent import (
     AgentMessage,
     AgentRunConfig,
     AssistantMessage,
+    ImageContent,
+    ImageUrlSource,
     McpExtension,
     McpHttpServer,
     ModelEvent,
@@ -25,6 +27,7 @@ from zett_agent import (
     SkillExtension,
     SQLiteSessionStorage,
     SystemMessage,
+    TextContent,
     ToolCall,
     ToolDefinition,
     ToolMessage,
@@ -400,6 +403,31 @@ def test_tool_results_are_forwarded_without_tool_specific_logic(content, expecte
         "output": expected,
         "attributes": {},
     }
+
+
+def test_steering_projection_preserves_ordered_multimodal_parts():
+    payload = event_payload(
+        AgentEvent(
+            AgentEventType.STEERING_STARTED,
+            session_id="session-1",
+            steering_message=UserMessage(
+                content=[
+                    TextContent("Inspect this"),
+                    ImageContent(ImageUrlSource("https://example.com/image.png"), alt_text="preview.png"),
+                ]
+            ),
+        )
+    )
+
+    assert payload["steering_message"]["parts"] == [
+        {"type": "text", "text": "Inspect this"},
+        {
+            "type": "image",
+            "name": "preview.png",
+            "mime_type": None,
+            "content_url": "https://example.com/image.png",
+        },
+    ]
 
 
 def test_server_tool_lifecycle_is_forwarded_without_local_tool_message():

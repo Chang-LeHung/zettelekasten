@@ -4,6 +4,7 @@ import type {
   AgentContextComposition,
   AgentModelUsage,
   AgentServerToolActivity,
+  AgentSteeringMessage,
   AgentStreamCallbacks,
   AgentSession,
   AgentStart,
@@ -253,6 +254,17 @@ export const aiClient = {
         }
         if (event === 'reasoning_delta') callbacks.onReasoning?.(String(payload.delta || ''))
         if (event === 'text_delta') callbacks.onMessage?.(String(payload.delta || ''))
+        if (event === 'steering_started') {
+          const steering = payload.steering_message as Record<string, unknown> | undefined
+          if (steering && typeof steering.text === 'string') {
+            callbacks.onSteering?.({
+              content: steering.text,
+              parts: Array.isArray(steering.parts)
+                ? steering.parts as AgentSteeringMessage['parts']
+                : [],
+            })
+          }
+        }
         if (event === 'tool_started') {
           for (const call of asToolCalls(payload.tool_calls)) await callbacks.onTool?.({ ...call, state: 'started' })
         }
@@ -340,6 +352,17 @@ export const aiClient = {
     return request<{ accepted: boolean }>(`/agent/${conversationId}/events`, {
       method: 'POST',
       body: JSON.stringify({ name, payload }),
+    })
+  },
+
+  steerAgent(
+    conversationId: string,
+    rawContent: string,
+    parts: MessagePartInput[] = [],
+  ): Promise<{ accepted: boolean }> {
+    return request<{ accepted: boolean }>(`/agent/${conversationId}/steer`, {
+      method: 'POST',
+      body: JSON.stringify({ raw_content: rawContent, parts }),
     })
   },
 

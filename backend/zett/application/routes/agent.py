@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
 from zett_agent import (
+    STEERING_MESSAGE_EVENT_NAME,
     AgentClient,
     AgentEventType,
     AgentRunConfig,
@@ -30,7 +31,15 @@ from ...infra.agent_runtime import get_agent_runtime_storage
 from ...infra.dao import provider_storage, session_storage
 from ...infra.log import get_logger
 from ...schemas import ProviderConnection
-from ..schemas import AnalyzeRequest, ExternalEventIn, ExternalEventOut, MessageImagePartIn, MessageTextPartIn
+from ..schemas import (
+    AnalyzeRequest,
+    ExternalEventIn,
+    ExternalEventOut,
+    MessageImagePartIn,
+    MessageTextPartIn,
+    SteerRequest,
+    UserMessageIn,
+)
 from ..session_context import session_context_composition_service
 from ..session_preferences import session_model_preference_service
 from ..session_titles import generate_initial_session_title
@@ -124,7 +133,7 @@ async def _remember_context_composition(session_id: str, ratios: dict[str, float
         logger.exception("Could not persist context composition; session_id=%s", session_id)
 
 
-def _user_message(payload: AnalyzeRequest, *, max_images: int) -> UserMessage:
+def _user_message(payload: UserMessageIn, *, max_images: int) -> UserMessage:
     """Decode bounded browser images into one provider-neutral multimodal turn."""
     parts: list[TextContent | ImageContent] = []
     total_size = 0
@@ -277,6 +286,23 @@ async def stream_message(session_id: str, payload: AnalyzeRequest) -> StreamingR
 async def emit_external_event(session_id: str, payload: ExternalEventIn) -> ExternalEventOut:
     """Broadcast one UI response to extensions of the active session request."""
     accepted_by = await active_requests.emit(session_id, ExternalEvent(name=payload.name, payload=payload.payload))
+    if accepted_by is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Session has no active request")
+    return ExternalEventOut(accepted=bool(accepted_by), accepted_by=accepted_by)
+
+
+@router.post("/{session_id}/steer", response_model=ExternalEventOut)
+async def steer_active_request(session_id: str, payload: SteerRequest) -> ExternalEventOut:
+    """Route one urgent user message to the active Agent request."""
+    runtime_settings = await runtime_settings_service.get()
+    message = _user_message(payload, max_images=runtime_settings.max_message_images)
+    accepted_by = await active_requests.emit(
+        session_id,
+        ExternalEvent(
+            name=STEERING_MESSAGE_EVENT_NAME,
+            payload={"session_id": session_id, "message": message},
+        ),
+    )
     if accepted_by is None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Session has no active request")
     return ExternalEventOut(accepted=bool(accepted_by), accepted_by=accepted_by)

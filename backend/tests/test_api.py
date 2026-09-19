@@ -17,9 +17,11 @@ from zett_agent import (
     AssistantMessage,
     ExternalEvent,
     ImageBytesSource,
+    ImageContent,
     ModelEvent,
     ModelRequest,
     ModelResponse,
+    TextContent,
     ToolCall,
     ToolMessage,
     UserMessage,
@@ -125,6 +127,56 @@ async def test_active_request_registry_routes_only_after_agent_binding() -> None
 
     assert await registry.emit("events", event) == ["ask-user"]
     assert agent.received == [(event, config)]
+
+
+def test_steer_endpoint_routes_typed_external_event(monkeypatch) -> None:
+    captured: list[tuple[str, ExternalEvent]] = []
+
+    async def emit(session_id: str, event: ExternalEvent) -> list[str]:
+        captured.append((session_id, event))
+        return ["SteeringExtension"]
+
+    monkeypatch.setattr(agent_routes.active_requests, "emit", emit)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/agent/session-1/steer",
+            json={
+                "raw_content": "Explain first.",
+                "parts": [
+                    {"type": "text", "text": "Explain first."},
+                    {
+                        "type": "image",
+                        "name": "clipboard.png",
+                        "mime_type": "image/png",
+                        "data_base64": "aW1hZ2U=",
+                    },
+                ],
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"accepted": True, "accepted_by": ["SteeringExtension"]}
+    assert captured == [
+        (
+            "session-1",
+            ExternalEvent(
+                name="steering_message",
+                payload={
+                    "session_id": "session-1",
+                    "message": UserMessage(
+                        content=[
+                            TextContent("Explain first."),
+                            ImageContent(
+                                source=ImageBytesSource(b"image", "image/png"),
+                                alt_text="clipboard.png",
+                            ),
+                        ]
+                    ),
+                },
+            ),
+        )
+    ]
 
 
 async def test_active_request_registry_requires_reservation_before_binding() -> None:

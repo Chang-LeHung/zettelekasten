@@ -241,17 +241,12 @@ class MessageImagePartIn(BaseModel):
 MessagePartIn = Annotated[MessageTextPartIn | MessageImagePartIn, Field(discriminator="type")]
 
 
-class AnalyzeRequest(BaseModel):
-    """One user turn sent to the Zettelkasten Agent."""
+class UserMessageIn(BaseModel):
+    """One multimodal user message shared by starts and active steering."""
 
     raw_content: str = ""
-    provider_id: str
-    reasoning_effort: str = "medium"
-    messages: list[dict[str, Any]] = Field(default_factory=list)
     # Up to 256 configured images may be interleaved with 257 text segments.
     parts: list[MessagePartIn] = Field(default_factory=list, max_length=513)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-    tags: dict[str, Any] = Field(default_factory=dict)
 
     @property
     def current_message(self) -> str:
@@ -269,6 +264,16 @@ class AnalyzeRequest(BaseModel):
         return self
 
 
+class AnalyzeRequest(UserMessageIn):
+    """One user turn sent to the Zettelkasten Agent."""
+
+    provider_id: str
+    reasoning_effort: str = "medium"
+    messages: list[dict[str, Any]] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    tags: dict[str, Any] = Field(default_factory=dict)
+
+
 class ExternalEventIn(BaseModel):
     """External UI event delivered to extensions of one active request."""
 
@@ -281,3 +286,7 @@ class ExternalEventOut(BaseModel):
 
     accepted: bool
     accepted_by: list[str] = Field(default_factory=list)
+
+
+class SteerRequest(UserMessageIn):
+    """One urgent message delivered to the active Agent request."""

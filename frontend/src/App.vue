@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ApiError, aiClient, libraryClient, settingsClient, tagClient } from './api/client'
-import type { AgentArtifact, AgentCompactionActivity, AgentContextComposition, AgentCustomEvent, AgentModelUsage, AgentPersistedMessage, AgentServerToolActivity, AgentSession, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageContentPart, ReasoningEffort, RuntimeSettings, SessionAsset, Tag } from './api/types'
+import type { AgentArtifact, AgentCompactionActivity, AgentContextComposition, AgentCustomEvent, AgentModelUsage, AgentPersistedMessage, AgentServerToolActivity, AgentSession, AgentSteeringMessage, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageContentPart, MessagePartInput, ReasoningEffort, RuntimeSettings, SessionAsset, Tag } from './api/types'
 import AgentComposerControls from './components/AgentComposerControls.vue'
 import CacheHitRate from './components/CacheHitRate.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
@@ -17,7 +17,7 @@ import { buildConversationTurns, formatTurnDuration, splitTurnTimeline, type Con
 import { jsonSnapshot } from './utils/jsonSnapshot'
 import { buildMessageParts, displayMessageParts, rebaseImagePositions, type PositionedMessageImage } from './utils/messageParts'
 import { restorePersistedConversation } from './utils/persistedConversation'
-import { appendStreamedAssistantMessage } from './utils/streamedAssistant'
+import { appendStreamedAssistantMessage, createStreamedAssistantMessage } from './utils/streamedAssistant'
 import { defaultProviderBaseUrl, providerBaseUrlHelp } from './utils/providerDefaults'
 import { todoFromTool } from './utils/toolPresentation'
 import { hasRunningTool, upsertToolActivity } from './utils/toolActivities'
@@ -51,6 +51,16 @@ interface AskUserState {
   options: string[]
   allowMultiple: boolean
   responseEvent: string
+}
+interface QueuedFollowUp {
+  id: number
+  content: string
+  parts: MessagePartInput[]
+  visibleParts: MessageContentPart[]
+}
+interface PendingSteeringEcho {
+  message: AgentSteeringMessage
+  applied: boolean
 }
 const libraryItems = ref<LibraryItem[]>([])
 const selectedLibraryItem = ref<LibraryItem | null>(null)
@@ -106,6 +116,12 @@ const view = ref<View>('new')
 const raw = ref('')
 const artifactContent = ref<ArtifactContent | null>(null)
 const conversation = ref<AnalysisMessage[]>([])
+const queuedFollowUps = ref<QueuedFollowUp[]>([])
+const steeringQueuedFollowUpId = ref<number | null>(null)
+let nextQueuedFollowUpId = 0
+let activeTurnHistory: AnalysisMessage[] | null = null
+let steeringResponseStarted = false
+const pendingSteeringEchoes: PendingSteeringEcho[] = []
 const initialTraceLocation = traceLocationFromHash()
 const workspaceView = ref<'workspace' | 'trace'>(initialTraceLocation ? 'trace' : 'workspace')
 const selectedTraceTurnId = ref<string | null>(initialTraceLocation?.turnId || null)
@@ -285,6 +301,7 @@ function resetStreamState(): void {
   pendingQuestion.value = null
   queuedQuestions.value = []
   activeTodos.value = null
+  steeringResponseStarted = false
   streamingStatus.value = 'starting'
 }
 
@@ -353,7 +370,7 @@ function commitStreamedResponse(
   options: { fallbackContent?: string; error?: string } = {},
 ): void {
   conversation.value = appendStreamedAssistantMessage(
-    messages,
+    settleSteeringMessages(messages),
     {
       content: streamingMessage.value,
       reasoning: streamingReasoning.value || undefined,
@@ -365,6 +382,23 @@ function commitStreamedResponse(
     },
     options,
   )
+}
+
+function settleSteeringMessages(messages: readonly AnalysisMessage[]): AnalysisMessage[] {
+  return messages.map((message) => (
+    message.steering_status === 'waiting'
+      ? { ...message, steering_status: 'responded' as const }
+      : message
+  ))
+}
+
+function markSteeringMessagesResponded(): void {
+  if (activeTurnHistory) {
+    activeTurnHistory.splice(0, activeTurnHistory.length, ...settleSteeringMessages(activeTurnHistory))
+    conversation.value = [...activeTurnHistory]
+    return
+  }
+  conversation.value = settleSteeringMessages(conversation.value)
 }
 
 function hasStreamedResponse(): boolean {
@@ -389,8 +423,16 @@ function stopTurnClock(): number {
   return duration
 }
 
+function currentTurnDurationMs(): number {
+  return turnStartedAt ? performance.now() - turnStartedAt : turnElapsedMs.value
+}
+
 function isRunningTurn(index: number): boolean {
   return loading.value && index === conversationTurns.value.length - 1
+}
+
+function isSteeredTurn(index: number): boolean {
+  return conversationTurns.value[index + 1]?.prompt.steering_status !== undefined
 }
 
 const turnDetails = new TurnDetailsVisibility()
@@ -577,6 +619,72 @@ function formatToolValue(value: unknown): string {
   }
 }
 
+function sameSteeringMessage(left: AgentSteeringMessage, right: AgentSteeringMessage): boolean {
+  return left.content === right.content && JSON.stringify(left.parts) === JSON.stringify(right.parts)
+}
+
+function appendSteeringMessage(message: AgentSteeringMessage): void {
+  const nextMessage: AnalysisMessage = {
+    role: 'user',
+    content: message.content,
+    parts: message.parts,
+    steering_status: 'waiting',
+  }
+  if (activeTurnHistory) {
+    activeTurnHistory.push(nextMessage)
+    conversation.value = [...activeTurnHistory]
+  } else {
+    conversation.value = [...conversation.value, nextMessage]
+  }
+}
+
+function applyPendingSteeringEcho(pending: PendingSteeringEcho): void {
+  if (pending.applied) return
+  pending.applied = true
+  appendSteeringMessage(pending.message)
+}
+
+function applyStreamedSteeringEcho(message: AgentSteeringMessage): void {
+  const pending = (
+    pendingSteeringEchoes.find((candidate) => !candidate.applied && sameSteeringMessage(candidate.message, message))
+    || pendingSteeringEchoes.find((candidate) => sameSteeringMessage(candidate.message, message))
+  )
+  if (pending) {
+    applyPendingSteeringEcho(pending)
+    return
+  }
+  const applied: PendingSteeringEcho = { message, applied: true }
+  pendingSteeringEchoes.push(applied)
+  appendSteeringMessage(message)
+}
+
+function checkpointStreamedResponseForSteering(): void {
+  if (!activeTurnHistory || !hasStreamedResponse()) return
+  activeTurnHistory.push(createStreamedAssistantMessage({
+    content: streamingMessage.value,
+    reasoning: streamingReasoning.value || undefined,
+    activities: streamingActivities.value,
+    timeline: streamingTimeline.value,
+    duration_ms: currentTurnDurationMs(),
+    generation_duration_ms: streamingGenerationDurationMs.value,
+    usage: streamingUsage.value || undefined,
+  }))
+  conversation.value = [...activeTurnHistory]
+  streamingMessage.value = ''
+  streamingReasoning.value = ''
+  streamingActivities.value = []
+  streamingTimeline.value = []
+  streamingUsage.value = null
+  streamingGenerationDurationMs.value = 0
+  modelStartedAt = 0
+}
+
+function handleSteeringStarted(message: AgentSteeringMessage): void {
+  checkpointStreamedResponseForSteering()
+  applyStreamedSteeringEcho(message)
+  steeringResponseStarted = true
+}
+
 function streamCallbacks() {
   const sessionId = conversationId.value
   return {
@@ -593,9 +701,14 @@ function streamCallbacks() {
       updateStreamText('reasoning', content)
     },
     onMessage: (content: string) => {
+      if (steeringResponseStarted) {
+        markSteeringMessagesResponded()
+        steeringResponseStarted = false
+      }
       streamingStatus.value = 'writing'
       updateStreamText('message', content)
     },
+    onSteering: handleSteeringStarted,
     onTool: (activity: AgentToolActivity) => {
       if (conversationId.value !== sessionId) return
       updateToolActivity(activity)
@@ -1036,6 +1149,9 @@ async function analyze(): Promise<void> {
   const requestParts = buildMessageParts(messageText, pendingMessageImages.value)
   initialMessageParts.value = displayMessageParts(requestParts, pendingMessageImages.value)
   pendingMessageImages.value = []
+  const requestHistory: AnalysisMessage[] = []
+  activeTurnHistory = requestHistory
+  const callbacks = streamCallbacks()
   let activeConversationId: string | null = null
   try {
     activeConversationId = await ensureConversation()
@@ -1045,11 +1161,11 @@ async function analyze(): Promise<void> {
       selectedProviderId.value,
       reasoningEffort.value,
       [],
-      streamCallbacks(),
+      callbacks,
       controller.signal,
       requestParts,
     )
-    commitStreamedResponse([], {
+    commitStreamedResponse(requestHistory, {
       fallbackContent: result ? 'The artifact is ready.' : 'How would you like to continue?',
     })
     await restoreSessionContextComposition(activeConversationId)
@@ -1058,39 +1174,46 @@ async function analyze(): Promise<void> {
     scheduleSessionTitleRefresh()
   } catch (error) {
     if (controller.signal.aborted || isAbortError(error)) {
-      if (hasStreamedResponse()) commitStreamedResponse([])
+      if (hasStreamedResponse()) commitStreamedResponse(requestHistory)
       streamingStatus.value = 'cancelled'
       await loadSessions(true)
     } else {
-      commitStreamedResponse([], { error: errorMessage(error) })
+      commitStreamedResponse(requestHistory, { error: errorMessage(error) })
     }
   } finally {
     stopTurnClock()
     if (activeStreamController.value === controller) activeStreamController.value = null
     loading.value = false
+    if (activeTurnHistory === requestHistory) activeTurnHistory = null
+    pendingSteeringEchoes.length = 0
     if (streamingStatus.value !== 'cancelled') streamingStatus.value = 'idle'
     if (workspaceView.value === 'trace' && activeConversationId) void loadInteractionTrace(activeConversationId)
+    drainQueuedFollowUps()
   }
 }
 
-async function refine(): Promise<void> {
-  const content = followUp.value
-  if (!content.trim() && !pendingMessageImages.value.length) return
+async function refine(queued?: QueuedFollowUp): Promise<void> {
+  const content = queued?.content ?? followUp.value
+  if (!content.trim() && !(queued?.parts.length || pendingMessageImages.value.length)) return
   if (selectedProviderId.value === null) {
     showNotice('Select an AI provider first', 'error')
     return
   }
-  const requestParts = buildMessageParts(content, pendingMessageImages.value)
-  const visibleParts = displayMessageParts(requestParts, pendingMessageImages.value)
+  const requestParts = queued?.parts ?? buildMessageParts(content, pendingMessageImages.value)
+  const visibleParts = queued?.visibleParts ?? displayMessageParts(requestParts, pendingMessageImages.value)
   const history: AnalysisMessage[] = [...conversation.value, { role: 'user', content, parts: visibleParts }]
   conversation.value = history
-  followUp.value = ''
-  pendingMessageImages.value = []
+  if (!queued) {
+    followUp.value = ''
+    pendingMessageImages.value = []
+  }
   loading.value = true
   const controller = new AbortController()
   activeStreamController.value = controller
   resetStreamState()
   startTurnClock()
+  activeTurnHistory = history
+  const callbacks = streamCallbacks()
   let activeConversationId: string | null = null
   try {
     activeConversationId = await ensureConversation()
@@ -1101,7 +1224,7 @@ async function refine(): Promise<void> {
       selectedProviderId.value,
       reasoningEffort.value,
       history,
-      streamCallbacks(),
+      callbacks,
       controller.signal,
       requestParts,
     )
@@ -1123,19 +1246,86 @@ async function refine(): Promise<void> {
     stopTurnClock()
     if (activeStreamController.value === controller) activeStreamController.value = null
     loading.value = false
+    if (activeTurnHistory === history) activeTurnHistory = null
+    pendingSteeringEchoes.length = 0
     if (streamingStatus.value !== 'cancelled') streamingStatus.value = 'idle'
     if (workspaceView.value === 'trace' && activeConversationId) void loadInteractionTrace(activeConversationId)
+    drainQueuedFollowUps()
+  }
+}
+
+function queueFollowUp(): void {
+  const content = followUp.value
+  if (!content.trim() && !pendingMessageImages.value.length) return
+  const parts = buildMessageParts(content, pendingMessageImages.value)
+  queuedFollowUps.value.push({
+    id: nextQueuedFollowUpId++,
+    content,
+    parts,
+    visibleParts: displayMessageParts(parts, pendingMessageImages.value),
+  })
+  followUp.value = ''
+  pendingMessageImages.value = []
+}
+
+function drainQueuedFollowUps(): void {
+  if (loading.value || !queuedFollowUps.value.length) return
+  const [next, ...remaining] = queuedFollowUps.value
+  queuedFollowUps.value = remaining
+  if (next) void refine(next)
+}
+
+function queuedFollowUpText(item: QueuedFollowUp): string {
+  const text = item.content.trim()
+  if (text) return text
+  const imageCount = item.visibleParts.filter((part) => part.type === 'image').length
+  return imageCount === 1 ? 'Image attachment' : `${imageCount} image attachments`
+}
+
+function removeQueuedFollowUp(item: QueuedFollowUp): void {
+  queuedFollowUps.value = queuedFollowUps.value.filter((queued) => queued.id !== item.id)
+}
+
+async function steerQueuedFollowUp(item: QueuedFollowUp): Promise<void> {
+  const activeConversationId = conversationId.value
+  if (!activeConversationId || !loading.value) return
+  const steeringMessage: AgentSteeringMessage = {
+    content: item.content,
+    parts: item.visibleParts,
+  }
+  const pendingEcho: PendingSteeringEcho = { message: steeringMessage, applied: false }
+  pendingSteeringEchoes.push(pendingEcho)
+  steeringQueuedFollowUpId.value = item.id
+  try {
+    const result = await aiClient.steerAgent(activeConversationId, item.content, item.parts)
+    if (!result.accepted) {
+      pendingSteeringEchoes.splice(pendingSteeringEchoes.indexOf(pendingEcho), 1)
+      showNotice('The agent is not accepting steering right now', 'error')
+      return
+    }
+    checkpointStreamedResponseForSteering()
+    applyPendingSteeringEcho(pendingEcho)
+    queuedFollowUps.value = queuedFollowUps.value.filter((queued) => queued.id !== item.id)
+    streamingStatus.value = 'generating'
+  } catch (error) {
+    const index = pendingSteeringEchoes.indexOf(pendingEcho)
+    if (index >= 0) pendingSteeringEchoes.splice(index, 1)
+    showNotice(errorMessage(error), 'error')
+  } finally {
+    if (steeringQueuedFollowUpId.value === item.id) steeringQueuedFollowUpId.value = null
   }
 }
 
 function submitConversation(): void {
-  if (loading.value) return
+  if (loading.value) {
+    queueFollowUp()
+    return
+  }
   if (conversationStarted.value) void refine()
   else void analyze()
 }
 
 function handleComposerEnter(event: KeyboardEvent): void {
-  if (loading.value) return
   event.preventDefault()
   submitConversation()
 }
@@ -1143,6 +1333,7 @@ function handleComposerEnter(event: KeyboardEvent): void {
 function stopGeneration(): void {
   pendingQuestion.value = null
   queuedQuestions.value = []
+  queuedFollowUps.value = []
   activeTodos.value = null
   activeStreamController.value?.abort()
 }
@@ -2124,6 +2315,10 @@ onBeforeUnmount(() => {
                   >
                     <section class="turn-prompt" aria-label="User message">
                       <div class="turn-prompt-content">
+                        <div v-if="turn.prompt.steering_status === 'waiting'" class="turn-steering-status">
+                          <i aria-hidden="true" />
+                          <span>Will respond immediately after the current tool call or turn finishes.</span>
+                        </div>
                         <template v-if="turn.prompt.parts?.length">
                           <template v-for="(part, partIndex) in turn.prompt.parts" :key="`${turn.id}-part-${partIndex}`">
                             <div
@@ -2210,6 +2405,7 @@ onBeforeUnmount(() => {
                             <MarkdownContent class="final-response" :content="entry.content" />
                           </template>
                           <span v-if="isRunningTurn(index)" class="streaming-dots compact" aria-label="Generating"><i /><i /><i /></span>
+                          <p v-else-if="isSteeredTurn(index)" class="turn-steered-note">This turn was steered by a follow-up message.</p>
                           <p v-else-if="!turnAnswerTimeline(turn, index).length && !turn.response?.error" class="turn-empty-response">No response was recorded for this turn.</p>
                           <div v-if="turn.response?.error" class="turn-error" role="alert">
                             <strong>Request failed</strong>
@@ -2236,32 +2432,72 @@ onBeforeUnmount(() => {
                 @submit="answerAgentQuestion"
               />
 
-              <form class="agent-input" @submit.prevent="submitConversation">
-                <div v-if="pendingMessageImages.length" class="message-image-drafts" aria-label="Images attached to this message">
-                  <figure v-for="image in pendingMessageImages" :key="image.id">
-                    <img :src="image.content_url" :alt="image.name" />
-                    <button type="button" :aria-label="`Remove ${image.name}`" @click="removeMessageImage(image.id)">×</button>
-                  </figure>
+              <div class="agent-composer-stack">
+                <div v-if="queuedFollowUps.length" class="queued-followup-list" aria-label="Queued follow-up messages" aria-live="polite">
+                  <article v-for="item in queuedFollowUps" :key="item.id" class="queued-followup">
+                    <span class="queued-followup-icon" aria-hidden="true"><svg><use href="#icon-conversation" /></svg></span>
+                    <div class="queued-followup-copy">
+                      <p>{{ queuedFollowUpText(item) }}</p>
+                      <div v-if="item.visibleParts.some((part) => part.type === 'image')" class="queued-followup-images">
+                        <template v-for="(part, partIndex) in item.visibleParts" :key="`${item.id}-${partIndex}`">
+                          <img v-if="part.type === 'image'" :src="part.content_url" :alt="part.name" />
+                        </template>
+                      </div>
+                    </div>
+                    <button
+                      class="queued-followup-steer"
+                      type="button"
+                      :disabled="steeringQueuedFollowUpId === item.id"
+                      :aria-label="`Steer with ${queuedFollowUpText(item)}`"
+                      title="Apply this follow-up to the active run now"
+                      @click="steerQueuedFollowUp(item)"
+                    >
+                      <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m9 7-5 5 5 5M5 12h8a6 6 0 0 1 6 6" /></svg>
+                      <span>{{ steeringQueuedFollowUpId === item.id ? 'Sending…' : 'Steer' }}</span>
+                    </button>
+                    <button
+                      class="queued-followup-remove"
+                      type="button"
+                      :aria-label="`Remove ${queuedFollowUpText(item)}`"
+                      @click="removeQueuedFollowUp(item)"
+                    >
+                      <svg aria-hidden="true"><use href="#icon-trash" /></svg>
+                    </button>
+                  </article>
                 </div>
-                <textarea v-if="!conversationStarted" :value="raw" rows="3" autofocus placeholder="Message Zett Agent…" @input="updateComposerText($event, 'initial')" @keydown.enter.exact="handleComposerEnter" />
-                <textarea v-else :value="followUp" rows="3" placeholder="Continue the conversation…" @input="updateComposerText($event, 'follow-up')" @keydown.enter.exact="handleComposerEnter" />
-                <div class="agent-input-footer">
-                  <AgentComposerControls
-                    :providers="providers"
-                    :selected-provider-id="selectedProviderId"
-                    :effort="reasoningEffort"
-                    :disabled="loading"
-                    :usage="conversationUsage"
-                    :current-usage="currentContextUsage"
-                    :context-composition="contextComposition"
-                    :compaction-max-tokens="runtimeSettings.compaction_max_tokens"
-                    @update:selected-provider-id="selectedProviderId = $event"
-                    @update:effort="reasoningEffort = $event"
-                    @add-provider="navigate('settings')"
-                  />
-                  <div class="composer-submit"><small>{{ loading ? 'Enter for a new line' : 'Enter to send' }}</small><button class="send-button" :class="{ stop: loading }" :disabled="!loading && !canSubmitMessage" type="button" :aria-label="loading ? 'Stop generating' : 'Send message'" @click="loading ? stopGeneration() : submitConversation()"><svg><use :href="loading ? '#icon-stop' : '#icon-arrow'" /></svg></button></div>
-                </div>
-              </form>
+                <form class="agent-input" @submit.prevent="submitConversation">
+                  <div v-if="pendingMessageImages.length" class="message-image-drafts" aria-label="Images attached to this message">
+                    <figure v-for="image in pendingMessageImages" :key="image.id">
+                      <img :src="image.content_url" :alt="image.name" />
+                      <button type="button" :aria-label="`Remove ${image.name}`" @click="removeMessageImage(image.id)">×</button>
+                    </figure>
+                  </div>
+                  <textarea v-if="!conversationStarted" :value="raw" rows="3" autofocus placeholder="Message Zett Agent…" @input="updateComposerText($event, 'initial')" @keydown.enter.exact="handleComposerEnter" />
+                  <textarea v-else :value="followUp" rows="3" placeholder="Continue the conversation…" @input="updateComposerText($event, 'follow-up')" @keydown.enter.exact="handleComposerEnter" />
+                  <div class="agent-input-footer">
+                    <div class="composer-leading">
+                      <AgentComposerControls
+                        :providers="providers"
+                        :selected-provider-id="selectedProviderId"
+                        :effort="reasoningEffort"
+                        :disabled="loading"
+                        :usage="conversationUsage"
+                        :current-usage="currentContextUsage"
+                        :context-composition="contextComposition"
+                        :compaction-max-tokens="runtimeSettings.compaction_max_tokens"
+                        @update:selected-provider-id="selectedProviderId = $event"
+                        @update:effort="reasoningEffort = $event"
+                        @add-provider="navigate('settings')"
+                      />
+                    </div>
+                    <div class="composer-submit">
+                      <small>{{ loading ? 'Enter to queue' : 'Enter to send' }}</small>
+                      <button v-if="loading" class="send-button stop" type="button" aria-label="Stop generating" @click="stopGeneration"><svg><use href="#icon-stop" /></svg></button>
+                      <button class="send-button" :disabled="!canSubmitMessage" type="button" aria-label="Send message" @click="submitConversation"><svg><use href="#icon-arrow" /></svg></button>
+                    </div>
+                  </div>
+                </form>
+              </div>
             </section>
 
             <aside class="artifact-pane artifact-workspace">
@@ -2692,6 +2928,8 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .turn-prompt { display: flex; justify-content: flex-end; padding-left: 18%; }
 /* Keep bubble spacing on its DOM container: MarkdownContent has multiple roots. */
 .turn-prompt-content { box-sizing: border-box; display: grid; gap: .5rem; width: fit-content; min-width: 0; max-width: 100%; padding: .68rem 1rem; overflow: hidden; border-radius: 1rem 1rem .3rem 1rem; color: #34483d; background: #eef1ef; }
+.turn-steering-status { display: inline-flex; align-items: center; gap: .38rem; width: fit-content; padding: .24rem .45rem; border-radius: .4rem; color: #4c6857; background: #e3eee7; font-size: .56rem; font-weight: 570; line-height: 1.35; }
+.turn-steering-status i { width: .38rem; height: .38rem; flex: 0 0 auto; border-radius: 50%; background: #6f927b; animation: activity-pulse 1.1s ease-in-out infinite; }
 .turn-prompt .message-content { width: auto; min-width: 0; max-width: 100%; padding: 0; border: 0; border-radius: 0; color: inherit; background: transparent; box-shadow: none; }
 .turn-prompt-image { display: block; width: min(100%, 22rem); max-height: 18rem; margin: 0; border-radius: .75rem; object-fit: contain; background: #e2e7e4; }
 .turn-execution { margin-right: 7%; }
@@ -2727,6 +2965,7 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .turn-task-list li.completed { color: #969d98; text-decoration: line-through; }
 .turn-task-list li.completed i { border-color: #789383; color: white; background: #789383; }
 .turn-empty-response { margin: 0; padding: .55rem .7rem; color: #949b97; font-size: .66rem; font-style: italic; }
+.turn-steered-note { margin: 0; padding: .55rem .7rem; color: #718078; font-size: .66rem; font-style: italic; }
 .turn-error { display: grid; gap: .2rem; margin-top: .7rem; padding: .58rem .72rem; border-left: 2px solid #c46c66; border-radius: 0 .55rem .55rem 0; color: #774541; background: #fbf3f2; font-size: .64rem; line-height: 1.45; }
 .turn-error strong { font-size: .66rem; font-weight: 650; }
 .turn-error span { overflow-wrap: anywhere; color: #8a5752; }
@@ -2737,6 +2976,24 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .agent-welcome > p { margin: 0 auto; color: var(--secondary); font-size: .76rem; line-height: 1.6; }
 .prompt-hints { display: flex; justify-content: center; gap: .45rem; margin-top: 1.1rem; }
 .prompt-hints button { padding: .48rem .65rem; border: 1px solid var(--line); border-radius: .58rem; color: #606065; background: rgba(247,247,248,.8); cursor: pointer; font-size: .64rem; }
+.agent-composer-stack { min-width: 0; }
+.queued-followup-list { max-height: 10rem; display: grid; margin: .8rem .8rem .35rem; padding: .25rem .35rem; overflow-y: auto; border: 1px solid rgba(29,29,31,.11); border-radius: .82rem; background: #f3f6f4; box-shadow: 0 2px 9px rgba(33,48,39,.045); scrollbar-width: thin; }
+.queued-followup-list + .agent-input { margin-top: 0; }
+.queued-followup { min-width: 0; min-height: 2.6rem; display: flex; align-items: center; gap: .52rem; padding: .34rem .25rem; border-radius: .55rem; }
+.queued-followup + .queued-followup { border-top: 1px solid rgba(54,73,61,.1); border-radius: 0; }
+.queued-followup-icon { width: 1.42rem; height: 1.42rem; flex: 0 0 auto; display: grid; place-items: center; color: #67776c; }
+.queued-followup-icon svg { width: .82rem; height: .82rem; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.queued-followup-copy { min-width: 0; flex: 1; }
+.queued-followup-copy p { margin: 0; overflow: hidden; color: #48534d; font-size: .65rem; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+.queued-followup-images { display: flex; gap: .28rem; margin-top: .32rem; }
+.queued-followup-images img { width: 1.7rem; height: 1.7rem; border: 1px solid #d8e0da; border-radius: .36rem; object-fit: cover; background: #eef2ef; }
+.queued-followup-steer { flex: 0 0 auto; min-height: 1.72rem; display: inline-flex; align-items: center; gap: .28rem; padding: 0 .42rem; border: 0; border-radius: .42rem; color: #54655b; background: transparent; cursor: pointer; font-size: .59rem; font-weight: 620; }
+.queued-followup-steer svg { width: .76rem; height: .76rem; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+.queued-followup-steer:hover, .queued-followup-steer:focus-visible { color: #355b44; background: #e3ebe6; outline: none; }
+.queued-followup-steer:disabled { opacity: .55; cursor: wait; }
+.queued-followup-remove { flex: 0 0 auto; width: 1.45rem; height: 1.45rem; display: grid; place-items: center; padding: 0; border: 0; border-radius: .4rem; color: #8b958e; background: transparent; cursor: pointer; }
+.queued-followup-remove svg { width: .78rem; height: .78rem; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.queued-followup-remove:hover, .queued-followup-remove:focus-visible { color: #6d453f; background: #f5eae8; outline: none; }
 .agent-input { margin: .8rem; padding: .25rem; border: 1px solid rgba(29,29,31,.11); border-radius: .9rem; background: white; box-shadow: 0 3px 16px rgba(0,0,0,.055); }
 .message-image-drafts { display: flex; gap: .42rem; padding: .55rem .58rem .1rem; overflow-x: auto; }
 .message-image-drafts figure { position: relative; width: 3.5rem; height: 3.5rem; flex: 0 0 auto; margin: 0; }
@@ -2748,6 +3005,7 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .agent-input-footer small { color: var(--tertiary); font-size: .55rem; }
 .agent-input .send-button { position: static; }
 .agent-input-footer > :first-child { min-width: 0; flex: 1; }
+.composer-leading { min-width: 0; display: flex; align-items: center; gap: .35rem; }
 .composer-submit { min-width: 0; flex: 0 0 auto; display: flex; align-items: center; gap: .35rem; }
 .artifact-pane { overflow: hidden; background: #f3f4f1; }
 .artifact-workspace { display: flex; flex-direction: column; }
