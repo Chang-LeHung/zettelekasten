@@ -13,6 +13,7 @@ import ShellApprovalPrompt from './components/ShellApprovalPrompt.vue'
 import ToolResult from './components/ToolResult.vue'
 import UsageActivityGraph from './components/UsageActivityGraph.vue'
 import { addAgentUsage, latestAgentUsage, summarizeAgentUsage } from './utils/agentUsage'
+import { artifactListsEquivalent, sameArtifactRevision, stabilizeArtifactReferences } from './utils/artifactStability'
 import { assetOpenAction, isPdfAsset } from './utils/assetOpen'
 import { createAsyncRefreshScheduler } from './utils/asyncRefresh'
 import { buildConversationTurns, formatTurnDuration, splitTurnTimeline, type ConversationTurn } from './utils/conversationTurns'
@@ -1733,6 +1734,8 @@ async function loadSessions(reset = false): Promise<void> {
 
 function selectArtifact(artifact: AgentArtifact): void {
   const artifactChanged = selectedArtifactId.value !== artifact.id
+  const current = selectedArtifact.value
+  if (!artifactChanged && current && artifactContent.value && sameArtifactRevision(current, artifact)) return
   selectedArtifactId.value = artifact.id
   artifactContent.value = jsonSnapshot(artifact.content)
   selectedSuggestions.value = artifact.content.artifact_type === 'latex_pdf' ? [] : artifact.content.suggested_tags.map((tag) => tag.path)
@@ -1740,16 +1743,18 @@ function selectArtifact(artifact: AgentArtifact): void {
 }
 
 function applyArtifacts(nextArtifacts: AgentArtifact[], preferLatest = true): void {
-  artifacts.value = nextArtifacts
-  if (!nextArtifacts.length) {
+  const stableArtifacts = stabilizeArtifactReferences(artifacts.value, nextArtifacts)
+  if (artifactListsEquivalent(artifacts.value, stableArtifacts)) return
+  artifacts.value = stableArtifacts
+  if (!stableArtifacts.length) {
     selectedArtifactId.value = null
     artifactContent.value = null
     return
   }
-  const current = nextArtifacts.find((artifact) => artifact.id === selectedArtifactId.value)
+  const current = stableArtifacts.find((artifact) => artifact.id === selectedArtifactId.value)
   const target = preferLatest
-    ? [...nextArtifacts].sort((left, right) => right.updated_at.localeCompare(left.updated_at))[0]
-    : current || nextArtifacts[0]
+    ? [...stableArtifacts].sort((left, right) => right.updated_at.localeCompare(left.updated_at))[0]
+    : current || stableArtifacts[0]
   if (target) selectArtifact(target)
 }
 
