@@ -26,6 +26,7 @@ import { appendStreamedAssistantMessage, createStreamedAssistantMessage } from '
 import { defaultProviderBaseUrl, providerBaseUrlHelp } from './utils/providerDefaults'
 import { todoFromTool } from './utils/toolPresentation'
 import { hasRunningTool, upsertToolActivity } from './utils/toolActivities'
+import { TurnDetailsVisibility } from './utils/turnDetails'
 import { presentationSections } from './utils/slides'
 import { libraryExcerptText } from './utils/libraryExcerpt'
 import { asContextComposition } from './utils/contextComposition'
@@ -497,6 +498,12 @@ function isSteeredTurn(index: number): boolean {
   return conversationTurns.value[index + 1]?.prompt.steering_status !== undefined
 }
 
+const turnDetails = new TurnDetailsVisibility()
+
+function isTurnDetailsOpen(turn: ConversationTurn, index: number): boolean {
+  return turnDetails.isOpen(turn.id, isRunningTurn(index))
+}
+
 function turnTimeline(turn: ConversationTurn, index: number): AgentTimelineEntry[] {
   if (isRunningTurn(index)) return streamingTimeline.value
   return turn.responses.flatMap((response) => historicalTimeline(response))
@@ -957,7 +964,7 @@ function scrollAgentThread(force = false): void {
   })
 }
 
-function toggleTurnExecution(event: MouseEvent): void {
+function toggleTurnExecution(turn: ConversationTurn, event: MouseEvent): void {
   const details = (event.currentTarget as HTMLElement | null)?.closest('details')
   const thread = agentThread.value
   if (!(details instanceof HTMLDetailsElement) || !thread) return
@@ -972,6 +979,7 @@ function toggleTurnExecution(event: MouseEvent): void {
     agentScrollFrame = null
   }
   details.open = !details.open
+  turnDetails.setOpen(turn.id, details.open)
   void nextTick(() => {
     if (!details.isConnected) return
     const offset = summary.getBoundingClientRect().top - previousTop
@@ -1688,6 +1696,7 @@ async function ensureConversation(): Promise<string> {
 
 function applySession(session: AgentSession): void {
   conversationId.value = session.id
+  turnDetails.clear()
   const traceLocation = traceLocationFromHash()
   const restoreTrace = traceLocation?.sessionId === session.id
   if (!restoreTrace) clearTraceHash()
@@ -1941,6 +1950,7 @@ async function syncSelectedArtifact(): Promise<void> {
 
 function clearWorkspaceState(): void {
   sessionSwitchGeneration += 1
+  turnDetails.clear()
   switchingSessionId.value = null
   sessionDetailRequests.clear()
   raw.value = ''
@@ -2890,8 +2900,8 @@ onBeforeUnmount(() => {
                     </section>
 
                     <div class="turn-content">
-                      <details class="turn-execution">
-                        <summary @click="toggleTurnExecution">
+                      <details class="turn-execution" :open="isTurnDetailsOpen(turn, index)">
+                        <summary @click="toggleTurnExecution(turn, $event)">
                           <span class="turn-state-icon" aria-hidden="true"><i /></span>
                           <span class="turn-execution-copy">
                             <strong>{{ isRunningTurn(index) ? turnTask(index) : `Processed in ${turnDuration(turn, index)}` }}</strong>
