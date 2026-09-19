@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from ...infra.dao import provider_storage
 from ...models import ProviderListOptions
 from ...schemas import ProviderOut, ProviderWrite
-from ..schemas import DeleteResponse, ProviderIn, ProviderResponse
+from ..schemas import DeleteResponse, ProviderDetailResponse, ProviderIn, ProviderResponse
 
 router = APIRouter(prefix="/ai/providers", tags=["providers"])
 
@@ -26,6 +26,11 @@ def _response(provider: ProviderOut) -> ProviderResponse:
         created_at=provider.created_at,
         updated_at=provider.updated_at,
     )
+
+
+def _detail_response(provider: ProviderOut, api_key: str | None) -> ProviderDetailResponse:
+    """Add the decrypted credential only for the selected settings row."""
+    return ProviderDetailResponse(**_response(provider).model_dump(), api_key=api_key)
 
 
 async def _write(payload: ProviderIn, *, existing_id: str | None = None) -> ProviderWrite:
@@ -69,13 +74,17 @@ async def create_provider(payload: ProviderIn) -> ProviderResponse:
     return _response(await provider_storage.create(await _write(payload)))
 
 
-@router.get("/{provider_id}", response_model=ProviderResponse)
-async def get_provider(provider_id: str) -> ProviderResponse:
-    """Read one safe provider configuration without decrypting its key."""
+@router.get("/{provider_id}", response_model=ProviderDetailResponse)
+async def get_provider(provider_id: str) -> ProviderDetailResponse:
+    """Read one provider configuration and decrypt its key for local editing."""
     provider = await provider_storage.get(provider_id)
     if provider is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Provider not found")
-    return _response(provider)
+    connection = await provider_storage.resolve_connection(provider_id, enabled_only=False)
+    api_key = (
+        connection.api_key.get_secret_value() if connection is not None and connection.api_key is not None else None
+    )
+    return _detail_response(provider, api_key)
 
 
 @router.put("/{provider_id}", response_model=ProviderResponse)

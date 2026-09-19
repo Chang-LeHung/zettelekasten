@@ -416,6 +416,10 @@ export interface AIProvider extends Omit<AIProviderInput, 'api_key' | 'base_url'
   updated_at: string
 }
 
+export interface AIProviderDetail extends AIProvider {
+  api_key: string | null
+}
+
 export interface TagCreateRequest {
   name: string
   parent_id: number | null

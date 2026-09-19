@@ -10,6 +10,7 @@ import type {
   AgentSession,
   AgentStart,
   AIProvider,
+  AIProviderDetail,
   AIProviderInput,
   ArtifactContent,
   CardListOptions,
@@ -440,6 +441,10 @@ export const aiClient = {
 
   listProviders(): Promise<AIProvider[]> {
     return request<AIProvider[]>('/ai/providers')
+  },
+
+  getProvider(providerId: string): Promise<AIProviderDetail> {
+    return request<AIProviderDetail>(`/ai/providers/${providerId}`)
   },
 
   createProvider(payload: AIProviderInput): Promise<AIProvider> {

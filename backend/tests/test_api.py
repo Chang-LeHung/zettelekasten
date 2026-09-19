@@ -411,6 +411,13 @@ async def test_provider_http_lifecycle_preserves_blank_update_key():
         assert created.json()["temperature"] == 0.3
         assert created.json()["response"] is True
         assert "api_key" not in created.json()
+        listed = client.get("/api/ai/providers").json()
+        listed_provider = [provider for provider in listed if provider["id"] == provider_id][0]
+        assert "api_key" not in listed_provider
+
+        detail = client.get(f"/api/ai/providers/{provider_id}")
+        assert detail.status_code == 200
+        assert detail.json()["api_key"] == "secret"
 
         updated = client.put(
             f"/api/ai/providers/{provider_id}",
@@ -422,7 +429,9 @@ async def test_provider_http_lifecycle_preserves_blank_update_key():
         assert connection is not None and connection.api_key is not None
         assert connection.api_key.get_secret_value() == "secret"
         assert connection.metadata["response"] is True
-        assert client.get(f"/api/ai/providers/{provider_id}").json()["id"] == provider_id
+        updated_detail = client.get(f"/api/ai/providers/{provider_id}").json()
+        assert updated_detail["id"] == provider_id
+        assert updated_detail["api_key"] == "secret"
         assert client.delete(f"/api/ai/providers/{provider_id}").json() == {"ok": True}
         assert client.get(f"/api/ai/providers/{provider_id}").status_code == 404
 

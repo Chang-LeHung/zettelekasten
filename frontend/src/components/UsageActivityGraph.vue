@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { AgentUsageActivityDay } from '../api/types'
-import { formatTokenCount } from '../utils/agentUsage'
+import { calculateCacheHitRate, formatTokenCount } from '../utils/agentUsage'
 
 const props = defineProps<{
   days: AgentUsageActivityDay[]
@@ -19,6 +19,7 @@ interface DayCell {
   cacheReadTokens: number
   cacheWriteTokens: number
   reasoningTokens: number
+  cacheHitRate: number | null
   totalTokens: number
   level: number
 }
@@ -38,6 +39,7 @@ const cells = computed<Array<DayCell | null>>(() => {
       cacheReadTokens: day.cache_read_tokens,
       cacheWriteTokens: day.cache_write_tokens,
       reasoningTokens: day.reasoning_tokens,
+      cacheHitRate: calculateCacheHitRate(day),
       totalTokens: day.total_tokens,
       level: activityLevel(day.total_tokens, maxTokens),
     })),
@@ -76,20 +78,6 @@ function activityLevel(tokens: number, maximum: number): number {
   return 4
 }
 
-function cellTitle(cell: DayCell | null): string {
-  if (!cell) return ''
-  return [
-    cell.date,
-    `${cell.requests} ${cell.requests === 1 ? 'request' : 'requests'}`,
-    `Input: ${formatTokenCount(cell.inputTokens)}`,
-    `Output: ${formatTokenCount(cell.outputTokens)}`,
-    `Total: ${formatTokenCount(cell.totalTokens)}`,
-    `Cache read: ${formatTokenCount(cell.cacheReadTokens)}`,
-    `Cache write: ${formatTokenCount(cell.cacheWriteTokens)}`,
-    `Reasoning: ${formatTokenCount(cell.reasoningTokens)}`,
-  ].join('\n')
-}
-
 function displayDate(value: string): string {
   return new Intl.DateTimeFormat('en-US', {
     weekday: 'short',
@@ -98,6 +86,10 @@ function displayDate(value: string): string {
     day: 'numeric',
     timeZone: 'UTC',
   }).format(new Date(`${value}T00:00:00Z`))
+}
+
+function formatCacheHitRatePercent(rate: number): string {
+  return `${(rate * 100).toFixed(2)}%`
 }
 
 function showTooltip(cell: DayCell | null, event: MouseEvent): void {
@@ -138,7 +130,6 @@ function hideTooltip(): void {
             :key="cell?.date || `${weekIndex}-${dayIndex}`"
             class="activity-cell"
             :class="cell ? `level-${cell.level}` : 'empty'"
-            :title="cellTitle(cell)"
             @mouseenter="showTooltip(cell, $event)"
             @mouseleave="hideTooltip"
           />
@@ -167,6 +158,7 @@ function hideTooltip(): void {
         <div><dt>Output</dt><dd>{{ formatTokenCount(hoveredCell.outputTokens) }}</dd></div>
         <div><dt>Total</dt><dd>{{ formatTokenCount(hoveredCell.totalTokens) }}</dd></div>
         <div><dt>Cache read</dt><dd>{{ formatTokenCount(hoveredCell.cacheReadTokens) }}</dd></div>
+        <div><dt>Cache hit rate</dt><dd>{{ hoveredCell.cacheHitRate === null ? '—' : formatCacheHitRatePercent(hoveredCell.cacheHitRate) }}</dd></div>
         <div><dt>Cache write</dt><dd>{{ formatTokenCount(hoveredCell.cacheWriteTokens) }}</dd></div>
         <div><dt>Reasoning</dt><dd>{{ formatTokenCount(hoveredCell.reasoningTokens) }}</dd></div>
       </dl>

@@ -220,7 +220,7 @@ class ProviderIn(BaseModel):
 
 
 class ProviderResponse(BaseModel):
-    """Safe provider settings; credentials are never returned."""
+    """Safe provider settings for lists and write acknowledgements."""
 
     id: str
     name: str
@@ -233,6 +233,16 @@ class ProviderResponse(BaseModel):
     enabled: bool
     created_at: datetime
     updated_at: datetime
+
+
+class ProviderDetailResponse(ProviderResponse):
+    """One provider configuration with its decrypted key for local editing."""
+
+    api_key: str | None = Field(
+        default=None,
+        repr=False,
+        description="Decrypted API key returned only by the single-provider settings endpoint",
+    )
 
 
 class MessageTextPartIn(BaseModel):

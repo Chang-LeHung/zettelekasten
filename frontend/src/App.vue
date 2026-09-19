@@ -169,6 +169,8 @@ const assetFilter = ref<AssetFilter>('all')
 const assetDragging = ref(false)
 const sessions = ref<AgentSession[]>([])
 const sessionsLoading = ref(false)
+const switchingSessionId = ref<string | null>(null)
+const sessionDetailRequests = new Map<string, Promise<AgentSession>>()
 const sessionsHaveMore = ref(true)
 const sessionPageSize = 20
 const selectedArtifactId = ref<string | null>(null)
@@ -183,6 +185,8 @@ const providers = ref<AIProvider[]>([])
 const selectedProviderId = ref<string | null>(null)
 const reasoningEffort = ref<ReasoningEffort>('medium')
 const editingProviderId = ref<string | null>(null)
+const providerLoading = ref(false)
+const apiKeyVisible = ref(true)
 const ai = ref<AIProviderInput>({
   name: '',
   provider: 'openai_compatible',
@@ -208,6 +212,8 @@ const agentTurnStack = ref<HTMLElement | null>(null)
 const assetFileInput = ref<HTMLInputElement | null>(null)
 let titleRefreshTimer: number | null = null
 let turnStartedAt = 0
+let providerSelectionGeneration = 0
+let sessionSwitchGeneration = 0
 let turnClock: number | null = null
 let modelStartedAt = 0
 let agentContentResizeObserver: ResizeObserver | null = null
@@ -1044,7 +1050,7 @@ async function loadInitialData(): Promise<void> {
     const firstProvider = providerData.find((provider) => provider.enabled)
     if (firstProvider) {
       selectedProviderId.value = firstProvider.id
-      selectProvider(firstProvider)
+      await selectProvider(firstProvider)
     }
   } catch (error) {
     showNotice(errorMessage(error), 'error')
@@ -1442,7 +1448,7 @@ function applySession(session: AgentSession): void {
   contextComposition.value = null
   followUp.value = ''
   followAgentOutput = true
-  scrollAgentThread(true)
+  void nextTick(() => scrollAgentThread(true))
 }
 
 async function restoreSessionModel(sessionId: string): Promise<void> {
@@ -1474,6 +1480,22 @@ async function restoreSessionRuntime(sessionId: string): Promise<void> {
   ])
 }
 
+function loadSessionDetail(sessionId: string): Promise<AgentSession> {
+  const existing = sessionDetailRequests.get(sessionId)
+  if (existing) return existing
+  const request = aiClient.getAgentSession(sessionId)
+  sessionDetailRequests.set(sessionId, request)
+  void request.finally(() => {
+    if (sessionDetailRequests.get(sessionId) === request) sessionDetailRequests.delete(sessionId)
+  }).catch(() => undefined)
+  return request
+}
+
+function prefetchSession(sessionId: string): void {
+  if (sessionId === conversationId.value || loading.value || sessionDetailRequests.has(sessionId)) return
+  void loadSessionDetail(sessionId).catch(() => undefined)
+}
+
 async function openSession(sessionId: string): Promise<void> {
   if (sessionId === conversationId.value) {
     selectedLibraryItem.value = null
@@ -1483,16 +1505,19 @@ async function openSession(sessionId: string): Promise<void> {
     return
   }
   if (loading.value) return
-  sessionsLoading.value = true
+  const generation = ++sessionSwitchGeneration
+  switchingSessionId.value = sessionId
+  view.value = 'new'
   try {
-    const session = await aiClient.getAgentSession(sessionId)
+    const session = await loadSessionDetail(sessionId)
+    if (generation !== sessionSwitchGeneration) return
     applySession(session)
+    switchingSessionId.value = null
     await restoreSessionRuntime(session.id)
-    view.value = 'new'
   } catch (error) {
-    showNotice(errorMessage(error), 'error')
+    if (generation === sessionSwitchGeneration) showNotice(errorMessage(error), 'error')
   } finally {
-    sessionsLoading.value = false
+    if (generation === sessionSwitchGeneration) switchingSessionId.value = null
   }
 }
 
@@ -1606,6 +1631,9 @@ async function syncSelectedArtifact(): Promise<void> {
 }
 
 async function resetWorkspace(): Promise<void> {
+  sessionSwitchGeneration += 1
+  switchingSessionId.value = null
+  sessionDetailRequests.clear()
   raw.value = ''
   artifactContent.value = null
   turnDetails.clear()
@@ -1935,6 +1963,7 @@ async function deleteSelectedArtifact(): Promise<void> {
 }
 
 async function saveAI(): Promise<void> {
+  if (providerLoading.value) return
   saving.value = true
   try {
     const providerId = editingProviderId.value
@@ -1944,7 +1973,7 @@ async function saveAI(): Promise<void> {
       : await aiClient.updateProvider(providerId, ai.value)
     providers.value = await aiClient.listProviders()
     selectedProviderId.value = saved.id
-    selectProvider(saved)
+    await selectProvider(saved)
     showNotice(isNew ? 'Provider added' : 'Provider settings saved')
   } catch (error) {
     showNotice(errorMessage(error), 'error')
@@ -1966,23 +1995,37 @@ async function saveRuntimeSettings(): Promise<void> {
   }
 }
 
-function selectProvider(provider: AIProvider): void {
-  editingProviderId.value = provider.id
-  selectedProviderId.value = provider.id
-  ai.value = {
-    name: provider.name,
-    provider: provider.provider,
-    model: provider.model,
-    base_url: provider.base_url || '',
-    api_key: '',
-    temperature: provider.temperature,
-    response: provider.response,
-    enabled: provider.enabled,
+async function selectProvider(provider: AIProvider): Promise<void> {
+  const generation = ++providerSelectionGeneration
+  providerLoading.value = true
+  try {
+    const detail = await aiClient.getProvider(provider.id)
+    if (generation !== providerSelectionGeneration) return
+    editingProviderId.value = detail.id
+    selectedProviderId.value = detail.id
+    apiKeyVisible.value = true
+    ai.value = {
+      name: detail.name,
+      provider: detail.provider,
+      model: detail.model,
+      base_url: detail.base_url || '',
+      api_key: detail.api_key || '',
+      temperature: detail.temperature,
+      response: detail.response,
+      enabled: detail.enabled,
+    }
+  } catch (error) {
+    if (generation === providerSelectionGeneration) showNotice(errorMessage(error), 'error')
+  } finally {
+    if (generation === providerSelectionGeneration) providerLoading.value = false
   }
 }
 
 function newProvider(): void {
+  providerSelectionGeneration += 1
+  providerLoading.value = false
   editingProviderId.value = null
+  apiKeyVisible.value = true
   ai.value = { name: '', provider: 'openai_compatible', model: '', base_url: '', api_key: '', temperature: 0.2, response: false, enabled: true }
 }
 
@@ -1991,7 +2034,8 @@ function selectProviderKind(): void {
   ai.value.base_url = defaultProviderBaseUrl(ai.value.provider, ai.value.response)
 }
 
-function selectResponseApi(): void {
+function setResponseMode(enabled: boolean): void {
+  ai.value.response = enabled
   ai.value.base_url = defaultProviderBaseUrl(ai.value.provider, ai.value.response)
 }
 
@@ -2007,7 +2051,7 @@ async function removeProvider(): Promise<void> {
   providers.value = await aiClient.listProviders()
   const next = providers.value[0]
   selectedProviderId.value = next?.id ?? null
-  if (next) selectProvider(next)
+  if (next) await selectProvider(next)
   else newProvider()
   showNotice('Provider removed')
 }
@@ -2083,6 +2127,8 @@ onBeforeUnmount(() => {
       <symbol id="icon-edit" viewBox="0 0 24 24"><path d="m4 20 4.2-1 10.7-10.7a2.1 2.1 0 0 0-3-3L5.2 16zM14.7 6.5l3 3"/></symbol>
       <symbol id="icon-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
       <symbol id="icon-conversation" viewBox="0 0 24 24"><path d="M5 5.5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H10l-5 3v-3H5a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2Z"/><path d="M8 10h8M8 13h5"/></symbol>
+      <symbol id="icon-eye" viewBox="0 0 24 24"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/></symbol>
+      <symbol id="icon-eye-off" viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 6.1A9.8 9.8 0 0 1 12 6c6 0 9.5 6 9.5 6a16.4 16.4 0 0 1-2.1 3M6.2 6.2C3.8 7.8 2.5 12 2.5 12s3.5 6 9.5 6c1.2 0 2.3-.3 3.3-.7M10.2 10.2a2.5 2.5 0 0 0 3.6 3.6"/></symbol>
     </svg>
 
     <aside class="sidebar">
@@ -2103,13 +2149,19 @@ onBeforeUnmount(() => {
       <div v-if="view === 'new'" class="sidebar-section session-section">
         <div class="sidebar-heading"><span>Conversations</span><button type="button" aria-label="Start a new session" @click="resetWorkspace"><svg><use href="#icon-add" /></svg></button></div>
         <div class="session-history-list">
-          <div v-for="session in visibleSessions" :key="session.id" class="session-history-item" :class="{ active: conversationId === session.id }">
+          <div
+            v-for="session in visibleSessions"
+            :key="session.id"
+            class="session-history-item"
+            :class="{ active: conversationId === session.id || switchingSessionId === session.id, switching: switchingSessionId === session.id }"
+            :aria-current="conversationId === session.id ? 'page' : undefined"
+          >
             <form v-if="editingSessionId === session.id" class="session-title-editor" @submit.prevent="saveSessionTitle(session.id)" @focusout="handleSessionTitleFocusOut">
               <input v-model="sessionTitleDraft" maxlength="100" aria-label="Conversation title" autofocus @keydown.esc.prevent="cancelSessionTitleEdit" />
               <button type="submit" aria-label="Save title">Save</button>
               <button type="button" aria-label="Cancel title edit" @click="cancelSessionTitleEdit">Cancel</button>
             </form>
-            <button v-else class="session-open-button" type="button" @click="openSession(session.id)">
+            <button v-else class="session-open-button" type="button" @mouseenter="prefetchSession(session.id)" @focus="prefetchSession(session.id)" @click="openSession(session.id)">
               <span><strong title="Click to rename" @click.stop="startSessionTitleEdit(session)">{{ session.title || '新会话' }}</strong><small>{{ formatDateTime(session.created_at) }}</small></span>
               <small>{{ session.message_count }}</small>
             </button>
@@ -2293,7 +2345,7 @@ onBeforeUnmount(() => {
               @update:selected-turn-id="updateTraceTurn"
             />
           </div>
-          <div v-else class="agent-workspace" @paste="pasteAssets">
+          <div v-else class="agent-workspace" :class="{ 'session-switching': switchingSessionId !== null }" @paste="pasteAssets">
             <aside class="assets-pane" aria-label="Session assets" tabindex="0">
               <header class="assets-header">
                 <div><strong>Assets</strong><small>Session resources</small></div>
@@ -2358,20 +2410,26 @@ onBeforeUnmount(() => {
               <input ref="assetFileInput" type="file" multiple hidden @change="uploadAssets" />
             </aside>
 
-            <section class="agent-chat" aria-label="Knowledge card conversation">
+            <section class="agent-chat" :class="{ 'session-switching': switchingSessionId !== null }" aria-label="Knowledge card conversation" :aria-busy="switchingSessionId !== null">
               <div class="agent-chat-header">
                 <div class="agent-identity"><img src="/logo.png" alt="" /><div><strong>Zettelkasten Agent</strong><small>Turn a conversation into knowledge</small></div></div>
                 <span class="streaming-status"><i />Zettelkasten Agent online</span>
               </div>
 
-              <div ref="agentThread" class="agent-thread" :class="{ empty: !conversationStarted }" aria-live="polite" @scroll.passive="handleAgentThreadScroll" @wheel.passive="handleAgentThreadWheel">
-                <div v-if="!conversationStarted" class="agent-welcome">
-                  <span class="feature-icon"><svg><use href="#icon-spark" /></svg></span>
-                  <h2>What should we remember?</h2>
-                  <p>Share a rough thought, excerpt, or question. You can refine the result through conversation before saving it.</p>
-                  <div class="prompt-hints"><button type="button" @click="raw = 'I have an idea: '">Capture an idea</button><button type="button" @click="raw = 'Key point from what I just read: '">Summarize a note</button></div>
-                </div>
-                <div v-else ref="agentTurnStack" class="turn-stack">
+              <div ref="agentThread" class="agent-thread" :class="{ empty: !conversationStarted && switchingSessionId === null }" aria-live="polite" @scroll.passive="handleAgentThreadScroll" @wheel.passive="handleAgentThreadWheel">
+                <Transition name="session-content" mode="out-in">
+                  <div v-if="switchingSessionId" key="switching" class="session-switch-state" aria-live="polite">
+                    <span class="session-switch-spinner" aria-hidden="true" />
+                    <strong>Switching conversation</strong>
+                    <small>Loading messages and workspace…</small>
+                  </div>
+                  <div v-else-if="!conversationStarted" key="welcome" class="agent-welcome">
+                    <span class="feature-icon"><svg><use href="#icon-spark" /></svg></span>
+                    <h2>What should we remember?</h2>
+                    <p>Share a rough thought, excerpt, or question. You can refine the result through conversation before saving it.</p>
+                    <div class="prompt-hints"><button type="button" @click="raw = 'I have an idea: '">Capture an idea</button><button type="button" @click="raw = 'Key point from what I just read: '">Summarize a note</button></div>
+                  </div>
+                  <div v-else ref="agentTurnStack" :key="conversationId || 'conversation'" class="turn-stack">
                   <article
                     v-for="(turn, index) in conversationTurns"
                     :key="turn.id"
@@ -2480,7 +2538,8 @@ onBeforeUnmount(() => {
                       </section>
                     </div>
                   </article>
-                </div>
+                  </div>
+                </Transition>
               </div>
 
               <AskUserPrompt
@@ -2654,12 +2713,12 @@ onBeforeUnmount(() => {
               <label class="field"><span>Provider</span><select v-model="ai.provider" @change="selectProviderKind"><option value="openai_compatible">OpenAI compatible</option><option value="responses_compatible">Responses compatible</option><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="anthropic">Anthropic</option><option value="google">Google Gemini</option><option value="ollama">Ollama</option></select><small>The API format used for model requests.</small></label>
               <label class="field"><span>Model</span><input v-model="ai.model" placeholder="e.g. gpt-4.1-mini" /><small>Use the exact model identifier from your provider.</small></label>
               <label class="field full"><span>Base URL <em>{{ ['openai_compatible', 'responses_compatible'].includes(ai.provider) ? 'Custom' : 'Auto-filled' }}</em></span><input v-model="ai.base_url" :placeholder="ai.provider === 'responses_compatible' ? 'https://api.example.com' : 'https://api.example.com/v1'" /><small>{{ providerBaseUrlHelp(ai.provider) }}</small></label>
-              <label class="field full"><span>API key</span><input v-model="ai.api_key" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved key" /><small>Your key is encrypted locally and never returned by the API.</small></label>
+              <label class="field full"><span>API key <em>{{ providerLoading ? 'Loading…' : editingProviderId === null ? 'New' : ai.api_key ? 'Loaded' : 'Not set' }}</em></span><div class="secret-input"><input v-model="ai.api_key" :type="apiKeyVisible ? 'text' : 'password'" autocomplete="off" placeholder="Leave blank to keep the saved key" /><button type="button" :aria-label="apiKeyVisible ? 'Hide API key' : 'Show API key'" :title="apiKeyVisible ? 'Hide API key' : 'Show API key'" @click="apiKeyVisible = !apiKeyVisible"><svg aria-hidden="true"><use :href="apiKeyVisible ? '#icon-eye-off' : '#icon-eye'" /></svg></button></div><small>Stored encrypted locally. Saving a blank value keeps the existing key.</small></label>
               <label class="field temperature-field"><span>Temperature <output>{{ ai.temperature.toFixed(1) }}</output></span><input v-model.number="ai.temperature" type="range" min="0" max="2" step="0.1" /></label>
-              <label v-if="ai.provider === 'responses_compatible'" class="field"><span>API mode</span><strong>Responses API</strong><small>This compatible connection always uses the Responses protocol.</small></label>
-              <label v-else-if="['openai', 'openai_compatible', 'deepseek'].includes(ai.provider)" class="field"><span>API mode</span><span class="switch"><input v-model="ai.response" type="checkbox" @change="selectResponseApi" /><span /><small>{{ ai.response ? 'Responses API' : 'Chat Completions' }}</small></span><small>Responses mode enables provider-hosted tools such as web search.</small></label>
+              <div v-if="ai.provider === 'responses_compatible'" class="field"><span>API mode</span><strong>Responses API</strong><small>This compatible connection always uses the Responses protocol.</small></div>
+              <div v-else-if="['openai', 'openai_compatible', 'deepseek'].includes(ai.provider)" class="field"><span>API mode</span><div class="mode-options" role="group" aria-label="API mode"><button type="button" :class="{ active: !ai.response }" @click="setResponseMode(false)">Chat Completions</button><button type="button" :class="{ active: ai.response }" @click="setResponseMode(true)">Responses API</button></div><small>Responses mode enables provider-hosted tools such as web search.</small></div>
             </div>
-            <div class="settings-actions"><button v-if="editingProviderId !== null" class="danger-button" type="button" @click="removeProvider">Delete provider</button><span v-else>Credentials are encrypted in your local database.</span><div><label class="switch"><input v-model="ai.enabled" type="checkbox" /><span /><small>{{ ai.enabled ? 'Enabled' : 'Disabled' }}</small></label><button class="primary-action" :disabled="saving || !ai.name || !ai.model" type="submit">{{ saving ? 'Saving…' : editingProviderId === null ? 'Add provider' : 'Save provider' }}</button></div></div>
+            <div class="settings-actions"><button v-if="editingProviderId !== null" class="danger-button" type="button" @click="removeProvider">Delete provider</button><span v-else>Credentials are encrypted in your local database.</span><div><label class="switch"><input v-model="ai.enabled" type="checkbox" /><span /><small>{{ ai.enabled ? 'Enabled' : 'Disabled' }}</small></label><button class="primary-action" :disabled="saving || providerLoading || !ai.name || !ai.model" type="submit">{{ saving ? 'Saving…' : editingProviderId === null ? 'Add provider' : 'Save provider' }}</button></div></div>
           </form>
 
           <div class="settings-intro runtime-settings-heading">
@@ -2824,9 +2883,11 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .tag-delete:disabled { cursor: default; opacity: .35; }
 .session-section { overflow: hidden; }
 .session-history-list { min-height: 0; display: grid; flex: 1; align-content: start; gap: .18rem; overflow-y: auto; padding-bottom: .7rem; scrollbar-width: thin; }
-.session-history-item { position: relative; min-width: 0; border-radius: .58rem; }
+.session-history-item { position: relative; min-width: 0; border-radius: .58rem; transition: background 180ms ease, box-shadow 180ms ease, opacity 180ms ease; }
 .session-history-item:hover { background: rgba(255,255,255,.5); }
 .session-history-item.active { background: rgba(255,255,255,.86); box-shadow: 0 1px 5px rgba(0,0,0,.05); }
+.session-history-item.switching { background: rgba(255,255,255,.72); }
+.session-history-item.switching .session-open-button { opacity: .72; }
 .session-open-button { min-width: 0; width: 100%; display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .55rem 2.15rem .55rem .6rem; border: 0; border-radius: inherit; color: var(--text); background: transparent; cursor: pointer; text-align: left; }
 .session-open-button > span { min-width: 0; }
 .session-history-list strong, .session-history-list small { display: block; }
@@ -2927,7 +2988,8 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .create-view { width: min(100%, 124rem); max-width: 124rem; padding-right: clamp(.55rem, 1vw, 1rem); padding-left: clamp(.55rem, 1vw, 1rem); }
 .agent-workspace { height: calc(100vh - 8.2rem); min-height: 39rem; display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 5fr) minmax(0, 3fr); gap: .72rem; }
 .trace-workspace { height: calc(100vh - 8.2rem); min-height: 39rem; }
-.assets-pane, .agent-chat, .artifact-pane { min-height: 0; overflow: hidden; border: 1px solid rgba(29,29,31,.08); border-radius: 1.15rem; background: rgba(255,255,255,.84); box-shadow: var(--shadow); backdrop-filter: blur(18px); }
+.assets-pane, .agent-chat, .artifact-pane { min-height: 0; overflow: hidden; border: 1px solid rgba(29,29,31,.08); border-radius: 1.15rem; background: rgba(255,255,255,.84); box-shadow: var(--shadow); backdrop-filter: blur(18px); transition: opacity 180ms ease, transform 240ms cubic-bezier(.2,.8,.2,1); }
+.agent-workspace.session-switching .assets-pane, .agent-workspace.session-switching .artifact-pane { opacity: .48; transform: translateY(4px); pointer-events: none; }
 .agent-chat { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
 .agent-chat-header { min-height: 4.4rem; display: flex; align-items: center; gap: 1rem; padding: .75rem 1rem; border-bottom: 1px solid var(--line); }
 .agent-identity { display: flex; align-items: center; gap: .65rem; }
@@ -2996,8 +3058,16 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .asset-drop-zone svg { width: 1rem; height: 1rem; }
 .asset-drop-zone strong { font-size: .62rem; }
 .asset-drop-zone small { color: #989e9a; font-size: .48rem; }
-.agent-thread { min-height: 0; padding: 1.2rem; overflow-y: auto; overscroll-behavior: contain; scroll-behavior: auto; scrollbar-width: thin; scrollbar-gutter: stable; overflow-anchor: none; }
+.agent-thread { position: relative; min-height: 0; padding: 1.2rem; overflow-y: auto; overscroll-behavior: contain; scroll-behavior: auto; scrollbar-width: thin; scrollbar-gutter: stable; overflow-anchor: none; }
 .agent-thread.empty { display: grid; place-items: center; }
+.session-switch-state { min-height: 100%; display: grid; place-items: center; align-content: center; gap: .52rem; color: #66736b; text-align: center; }
+.session-switch-state strong { color: #405247; font-size: .82rem; }
+.session-switch-state small { color: #8b958f; font-size: .62rem; }
+.session-switch-spinner { width: 1.35rem; height: 1.35rem; border: 2px solid rgba(91,124,104,.18); border-top-color: #5b7c68; border-radius: 50%; animation: session-spin 720ms linear infinite; }
+@keyframes session-spin { to { transform: rotate(360deg); } }
+.session-content-enter-active, .session-content-leave-active { transition: opacity 160ms ease, transform 220ms cubic-bezier(.2,.8,.2,1), filter 180ms ease; }
+.session-content-enter-from { opacity: 0; transform: translateY(8px); filter: blur(4px); }
+.session-content-leave-to { opacity: 0; transform: translateY(-6px); filter: blur(4px); }
 .turn-stack { --conversation-font-size: .94rem; width: min(100%, 46rem); margin: 0 auto; }
 .conversation-turn { display: grid; gap: .5rem; margin-bottom: .72rem; }
 .turn-content { display: grid; gap: .68rem; padding: .12rem 0 .68rem; }
@@ -3052,7 +3122,8 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .agent-welcome > p { margin: 0 auto; color: var(--secondary); font-size: .76rem; line-height: 1.6; }
 .prompt-hints { display: flex; justify-content: center; gap: .45rem; margin-top: 1.1rem; }
 .prompt-hints button { padding: .48rem .65rem; border: 1px solid var(--line); border-radius: .58rem; color: #606065; background: rgba(247,247,248,.8); cursor: pointer; font-size: .64rem; }
-.agent-composer-stack { min-width: 0; }
+.agent-composer-stack { min-width: 0; transition: opacity 180ms ease; }
+.agent-chat.session-switching .agent-composer-stack { opacity: .48; pointer-events: none; }
 .queued-followup-list { max-height: 10rem; display: grid; margin: .8rem .8rem .35rem; padding: .25rem .35rem; overflow-y: auto; border: 1px solid rgba(29,29,31,.11); border-radius: .82rem; background: #f3f6f4; box-shadow: 0 2px 9px rgba(33,48,39,.045); scrollbar-width: thin; }
 .queued-followup-list + .agent-input { margin-top: 0; }
 .queued-followup { min-width: 0; min-height: 2.6rem; display: flex; align-items: center; gap: .52rem; padding: .34rem .25rem; border-radius: .55rem; }
@@ -3241,6 +3312,15 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .field textarea { min-height: 9rem; padding: .75rem; resize: vertical; line-height: 1.55; }
 .field input:focus, .field select:focus, .field textarea:focus { border-color: rgba(71,105,87,.48); background: white; box-shadow: 0 0 0 3px rgba(71,105,87,.1); }
 .field > small { color: var(--tertiary); font-size: .65rem; font-weight: 430; line-height: 1.45; }
+.secret-input { position: relative; }
+.secret-input input { padding-right: 2.75rem; }
+.secret-input button { position: absolute; top: 50%; right: .35rem; display: grid; place-items: center; width: 2rem; height: 2rem; padding: 0; border: 0; border-radius: .5rem; color: #7d8781; background: transparent; cursor: pointer; transform: translateY(-50%); }
+.secret-input button:hover { color: var(--accent-dark); background: var(--accent-soft); }
+.secret-input button svg { width: 1rem; height: 1rem; }
+.mode-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .28rem; padding: .2rem; border: 1px solid rgba(29,29,31,.1); border-radius: .68rem; background: #f3f4f3; }
+.mode-options button { min-height: 2.2rem; padding: 0 .6rem; border: 0; border-radius: .52rem; color: #6f7772; background: transparent; cursor: pointer; font-size: .7rem; font-weight: 580; transition: color 150ms ease, background 150ms ease, box-shadow 150ms ease; }
+.mode-options button:hover { color: #455d50; }
+.mode-options button.active { color: #2f5a43; background: #fff; box-shadow: 0 1px 4px rgba(42,65,52,.1); }
 .suggestions { margin-top: 1.25rem; }
 .suggestions > span { color: #4c4c51; font-size: .72rem; font-weight: 620; }
 .suggestion-list { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: .55rem; }

@@ -40,15 +40,14 @@ it('renders daily model activity cells', async () => {
   expect(host.textContent).toContain('2 requests · 1 active day')
   expect(host.textContent).toContain('120 tokens')
   expect(host.querySelectorAll('.activity-cell.level-4')).toHaveLength(1)
-  expect(host.querySelector('.activity-cell.level-4')?.getAttribute('title')).toContain('Input: 100')
-  expect(host.querySelector('.activity-cell.level-4')?.getAttribute('title')).toContain('Output: 20')
-  expect(host.querySelector('.activity-cell.level-4')?.getAttribute('title')).toContain('Total: 120')
+  expect(host.querySelector('.activity-cell.level-4')?.hasAttribute('title')).toBe(false)
 
   host.querySelector('.activity-cell.level-4')?.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }))
   await nextTick()
   expect(host.querySelector('.activity-tooltip')?.textContent).toContain('Mon, Sep 14, 2026')
   expect(host.querySelector('.activity-tooltip')?.textContent).toContain('Input100')
   expect(host.querySelector('.activity-tooltip')?.textContent).toContain('Total120')
+  expect(host.querySelector('.activity-tooltip')?.textContent).toContain('Cache hit rate80.00%')
 })
 
 it('renders English month labels when the month changes', async () => {
