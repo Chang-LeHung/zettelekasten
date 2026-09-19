@@ -114,6 +114,13 @@ def test_schema_and_http_surface_contain_no_retired_business_logic(isolated_data
         "session_assets",
         "tags",
     }
+    expected_indexes = {
+        "ix_artifacts_created",
+        "ix_artifacts_session_created",
+        "ix_artifact_tags_tag_artifact",
+        "ix_assets_created",
+        "ix_assets_session_created",
+    }
     assert set(Base.metadata.tables) == expected_tables
     with sqlite3.connect(isolated_database) as connection:
         table_names = {
@@ -121,7 +128,11 @@ def test_schema_and_http_surface_contain_no_retired_business_logic(isolated_data
             for row in connection.execute("select name from sqlite_master where type = 'table'")
             if not row[0].startswith("sqlite_")
         }
+        index_names = {
+            row[0] for row in connection.execute("select name from sqlite_master where type = 'index'") if row[0]
+        }
     assert table_names == expected_tables
+    assert expected_indexes <= index_names
     assert all(not column.foreign_keys for table in Base.metadata.tables.values() for column in table.columns)
     with TestClient(app) as client:
         assert client.get("/api/health").json() == {"ok": True}

@@ -6,12 +6,13 @@ database. Both are asynchronous, so routes await one engine each instead of
 hopping through a worker thread per DAO call.
 """
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from sqlalchemy.engine import URL
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
+from sqlalchemy.schema import CreateIndex
 
 from ..config import settings
 from .models import Base
@@ -25,15 +26,23 @@ engine = create_async_engine(
 session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
 
+async def ensure_indexes(connection: AsyncConnection) -> None:
+    """Add indexes missing from databases created by an older application version."""
+    for table in Base.metadata.sorted_tables:
+        for index in table.indexes:
+            await connection.execute(CreateIndex(index, if_not_exists=True))
+
+
 async def init_db() -> None:
     """Create the current schema; do not migrate retired application tables."""
     settings.database_path.parent.mkdir(parents=True, exist_ok=True)
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
+        await ensure_indexes(connection)
 
 
 @asynccontextmanager
-async def session_scope() -> AsyncIterator[AsyncSession]:
+async def session_scope() -> AsyncGenerator[AsyncSession]:
     """Commit successful operations and roll back failed ones."""
     async with session_factory() as session, session.begin():
         yield session

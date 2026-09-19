@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -12,6 +12,10 @@ class SessionArtifactModel(Base):
     """Typed, versioned output produced within an agent session."""
 
     __tablename__ = "session_artifacts"
+    __table_args__ = (
+        Index("ix_artifacts_created", "created_at", "id"),
+        Index("ix_artifacts_session_created", "session_id", "created_at", "id"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     session_id: Mapped[str] = mapped_column(String(36), index=True)
@@ -30,6 +34,10 @@ class SessionAssetModel(Base):
     """Metadata for text, link, image, or file assets owned by one session."""
 
     __tablename__ = "session_assets"
+    __table_args__ = (
+        Index("ix_assets_created", "created_at", "id"),
+        Index("ix_assets_session_created", "session_id", "created_at", "id"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     session_id: Mapped[str] = mapped_column(String(36), index=True)
@@ -96,7 +104,10 @@ class ArtifactTagModel(Base):
     """Explicit association between an artifact and a confirmed tag."""
 
     __tablename__ = "artifact_tags"
-    __table_args__ = (UniqueConstraint("artifact_id", "tag_id", name="uq_artifact_tag"),)
+    __table_args__ = (
+        UniqueConstraint("artifact_id", "tag_id", name="uq_artifact_tag"),
+        Index("ix_artifact_tags_tag_artifact", "tag_id", "artifact_id"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     artifact_id: Mapped[str] = mapped_column(String(36), index=True)
