@@ -1,7 +1,36 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { aiClient, libraryClient, settingsClient, tagClient } from './client'
+import { aiClient, assetClient, libraryClient, settingsClient, tagClient } from './client'
 
 afterEach(() => vi.unstubAllGlobals())
+
+it('loads, uploads, and deletes global assets through the typed client', async () => {
+  const asset = {
+    id: 'asset-1',
+    name: 'diagram.png',
+    mime_type: 'image/png',
+    size_bytes: 5,
+    sha256: 'hash',
+    content_url: '/api/assets/asset-1/content',
+    metadata: {},
+    created_at: '',
+    updated_at: '',
+  }
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify([asset])))
+    .mockResolvedValueOnce(new Response(JSON.stringify(asset)))
+    .mockResolvedValueOnce(new Response(new Uint8Array([1, 2])))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true })))
+  vi.stubGlobal('fetch', fetchMock)
+
+  expect(await assetClient.list()).toEqual([asset])
+  expect(await assetClient.upload(new File(['image'], 'diagram.png', { type: 'image/png' }))).toEqual(asset)
+  expect(new Uint8Array(await assetClient.getContent('asset-1'))).toEqual(new Uint8Array([1, 2]))
+  expect(await assetClient.delete('asset-1')).toEqual({ ok: true })
+  expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/assets?limit=500&offset=0', expect.any(Object))
+  expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/assets/upload?name=diagram.png')
+  expect(fetchMock.mock.calls[2]?.[0]).toBe('/api/assets/asset-1/content')
+  expect(fetchMock.mock.calls[3]?.[0]).toBe('/api/assets/asset-1')
+})
 
 it('loads the persistent tag tree and delegates subtree filtering to the backend', async () => {
   const tree = [{

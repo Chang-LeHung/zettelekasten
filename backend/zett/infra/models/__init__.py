@@ -7,6 +7,7 @@ from .model_usage_activity import ModelUsageActivityModel
 from .provider import ProviderModel
 from .session_artifact import SessionArtifactModel
 from .session_asset import SessionAssetModel
+from .static_asset import StaticAssetModel
 from .tag import TagModel
 
 __all__ = [
@@ -17,5 +18,6 @@ __all__ = [
     "ProviderModel",
     "SessionArtifactModel",
     "SessionAssetModel",
+    "StaticAssetModel",
     "TagModel",
 ]

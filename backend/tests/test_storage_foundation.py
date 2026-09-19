@@ -113,6 +113,7 @@ def test_schema_and_http_surface_contain_no_retired_business_logic(isolated_data
         "providers",
         "session_artifacts",
         "session_assets",
+        "static_assets",
         "tags",
     }
     expected_indexes = {
@@ -141,6 +142,7 @@ def test_schema_and_http_surface_contain_no_retired_business_logic(isolated_data
         assert "/api/agent/{session_id}/artifacts" in paths
         assert "/api/ai/providers" in paths
         assert "/api/artifacts" in paths
+        assert "/api/assets" in paths
         assert "/api/library/tags" in paths
         assert "/api/settings" in paths
         for path in ("/api/cards", "/api/tags", "/api/library", "/api/ai/providers"):

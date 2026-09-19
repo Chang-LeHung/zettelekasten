@@ -47,6 +47,16 @@ class SessionAssetListOptions(BaseModel):
     offset: int = Field(default=0, ge=0, description="Number of assets skipped")
 
 
+class StaticAssetListOptions(BaseModel):
+    """Filtering and pagination for files stored outside any session."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    query: str | None = Field(default=None, description="Text matched against asset names")
+    limit: int = Field(default=100, ge=1, le=500, description="Maximum assets returned")
+    offset: int = Field(default=0, ge=0, description="Number of assets skipped")
+
+
 class ProviderListOptions(BaseModel):
     """Filtering and pagination for locally configured model providers."""
 

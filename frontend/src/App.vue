@@ -39,8 +39,9 @@ const SlidesPreview = defineAsyncComponent(() => import('./components/SlidesPrev
 const PdfPreview = defineAsyncComponent(() => import('./components/PdfPreview.vue'))
 const InteractionTrace = defineAsyncComponent(() => import('./components/InteractionTrace.vue'))
 const ModelUsageTrend = defineAsyncComponent(() => import('./components/ModelUsageTrend.vue'))
+const StaticAssetsView = defineAsyncComponent(() => import('./components/StaticAssetsView.vue'))
 
-type View = 'library' | 'search' | 'new' | 'settings'
+type View = 'library' | 'search' | 'new' | 'assets' | 'settings'
 type NoticeKind = 'success' | 'error'
 type AssetEditorMode = 'closed' | 'text' | 'link'
 type AssetFilter = 'all' | 'documents' | 'images' | 'links' | 'notes' | 'code'
@@ -1047,11 +1048,11 @@ async function deleteTag(tag: Tag): Promise<void> {
     ? `This also deletes ${childCount} nested ${childCount === 1 ? 'tag' : 'tags'}`
     : 'This deletes the tag'
   const assignments = itemCount
-    ? ` and removes it from ${itemCount} library ${itemCount === 1 ? 'item' : 'items'}.`
+    ? ` and removes it from ${itemCount} ${itemCount === 1 ? 'artifact' : 'artifacts'}.`
     : '.'
   const confirmed = await requestConfirmation(
     `Delete “${tag.path}”?`,
-    `${scope}${assignments} The library items themselves will remain.`,
+    `${scope}${assignments} The artifacts themselves will remain.`,
     childCount ? 'Delete tag tree' : 'Delete tag',
   )
   if (!confirmed) return
@@ -1263,7 +1264,7 @@ async function deleteLibraryItem(item: LibraryItem): Promise<void> {
   if (deletingLibraryItemId.value !== null) return
   const confirmed = await requestConfirmation(
     `Delete this ${item.item_type}?`,
-    `“${item.title}” will be permanently removed from your library. This action cannot be undone.`,
+    `“${item.title}” will be permanently removed from artifacts. This action cannot be undone.`,
     `Delete ${item.item_type}`,
   )
   if (!confirmed) return
@@ -2155,7 +2156,7 @@ async function saveSelectedArtifact(): Promise<void> {
     showNotice(
       artifactContent.value.artifact_type === 'image'
         ? 'Image changes saved'
-        : `${artifactTypeLabel(artifactContent.value.artifact_type)} saved to your library`,
+        : `${artifactTypeLabel(artifactContent.value.artifact_type)} saved to artifacts`,
     )
   } catch (error) {
     showNotice(errorMessage(error), 'error')
@@ -2171,7 +2172,7 @@ async function deleteSelectedArtifact(): Promise<void> {
     : artifactContent.value?.title || 'Untitled artifact'
   const confirmed = await requestConfirmation(
     'Delete this artifact?',
-    `“${artifactTitle}” will be permanently removed from this conversation. A linked library resource will also be deleted.`,
+    `“${artifactTitle}” will be permanently removed from this conversation. A linked artifact will also be deleted.`,
     'Delete artifact',
   )
   if (!confirmed) return
@@ -2358,7 +2359,7 @@ onBeforeUnmount(() => {
     </svg>
 
     <aside class="sidebar">
-      <button class="brand" type="button" aria-label="Open library" @click="navigate('library')">
+      <button class="brand" type="button" aria-label="Open artifacts" @click="navigate('library')">
         <span class="brand-mark"><img src="/logo.png" alt="" /></span>
         <span><strong>Commonplace</strong><small>{{ $t('brand.subtitle') }}</small></span>
       </button>
@@ -2368,7 +2369,10 @@ onBeforeUnmount(() => {
           <svg><use href="#icon-spark" /></svg><span>{{ $t('nav.workspace') }}</span>
         </button>
         <button :class="{ active: view === 'search' || (view === 'library' && selectedTag === null) }" type="button" @click="navigate('library')">
-          <svg><use href="#icon-cards" /></svg><span>{{ $t('nav.library') }}</span><small>{{ libraryItems.length }}</small>
+          <svg><use href="#icon-cards" /></svg><span>{{ $t('nav.artifacts') }}</span><small>{{ libraryItems.length }}</small>
+        </button>
+        <button :class="{ active: view === 'assets' }" type="button" @click="navigate('assets')">
+          <svg><use href="#icon-attachment" /></svg><span>{{ $t('nav.assets') }}</span>
         </button>
       </nav>
 
@@ -2498,7 +2502,7 @@ onBeforeUnmount(() => {
             >{{ $t(filter.label) }}</button>
           </div>
 
-          <div v-if="libraryLoading" class="card-grid" aria-label="Loading library">
+          <div v-if="libraryLoading" class="card-grid" aria-label="Loading artifacts">
             <div v-for="index in 6" :key="index" class="card skeleton" />
           </div>
           <div v-else-if="libraryItems.length" class="card-grid">
@@ -2521,7 +2525,7 @@ onBeforeUnmount(() => {
                   <button v-if="item.item_type !== 'latex_pdf'" class="card-action-button" type="button" :aria-label="`Edit ${item.title}`" title="Edit and preview" @click.stop="openLibraryEditor(item)" @keydown.stop>
                     <svg><use href="#icon-edit" /></svg>
                   </button>
-                  <button class="card-action-button" type="button" :aria-label="`Copy ID for ${item.title}`" title="Copy resource ID" @click.stop="copyLibraryItemId(item)" @keydown.stop>
+                  <button class="card-action-button" type="button" :aria-label="`Copy ID for ${item.title}`" title="Copy artifact ID" @click.stop="copyLibraryItemId(item)" @keydown.stop>
                     <svg><use href="#icon-copy" /></svg>
                   </button>
                   <button class="card-action-button danger" :disabled="deletingLibraryItemId !== null" type="button" :aria-label="`Delete ${item.title}`" :title="deletingLibraryItemId === item.id ? 'Deleting…' : `Delete ${item.item_type}`" @click.stop="deleteLibraryItem(item)" @keydown.stop>
@@ -2983,11 +2987,15 @@ onBeforeUnmount(() => {
                   </article>
                   <div v-if="artifactContent.artifact_type !== 'latex_pdf' && artifactContent.suggested_tags.length" class="suggestions card-tags-editor"><span>Classification</span><div class="suggestion-list"><label v-for="tag in artifactContent.suggested_tags" :key="tag.path" :class="{ selected: selectedSuggestions.includes(tag.path) }"><input v-model="selectedSuggestions" type="checkbox" :value="tag.path" /><span>{{ tag.path }}</span><small>{{ Math.round(tag.confidence * 100) }}%</small></label></div></div>
                 </div>
-                <footer class="panel-actions artifact-editor-actions"><button class="danger-button" type="button" @click="deleteSelectedArtifact">Delete</button><button class="primary-action" :disabled="saving || !artifactTitle(artifactContent).trim()" type="button" @click="saveSelectedArtifact">{{ saving ? 'Saving…' : artifactContent.artifact_type === 'image' ? 'Save changes' : selectedArtifact?.status === 'saved' ? `Update library ${artifactTypeLabel(artifactContent.artifact_type).toLowerCase()}` : 'Save to library' }}<svg><use href="#icon-arrow" /></svg></button></footer>
+                <footer class="panel-actions artifact-editor-actions"><button class="danger-button" type="button" @click="deleteSelectedArtifact">Delete</button><button class="primary-action" :disabled="saving || !artifactTitle(artifactContent).trim()" type="button" @click="saveSelectedArtifact">{{ saving ? 'Saving…' : artifactContent.artifact_type === 'image' ? 'Save changes' : selectedArtifact?.status === 'saved' ? `Update artifact ${artifactTypeLabel(artifactContent.artifact_type).toLowerCase()}` : 'Save artifact' }}<svg><use href="#icon-arrow" /></svg></button></footer>
               </div>
             </aside>
           </div>
         </section>
+      </template>
+
+      <template v-else-if="view === 'assets'">
+        <StaticAssetsView />
       </template>
 
       <template v-else>
@@ -3124,7 +3132,7 @@ onBeforeUnmount(() => {
                 <div><dt>Status</dt><dd>{{ selectedLibraryItem.status }}</dd></div>
                 <div><dt>Created</dt><dd>{{ formatDateTime(selectedLibraryItem.created_at) }}</dd></div>
                 <div><dt>Updated</dt><dd>{{ formatDateTime(selectedLibraryItem.updated_at) }}</dd></div>
-                <div><dt>Resource ID</dt><dd>{{ selectedLibraryItem.id }}</dd></div>
+                <div><dt>Artifact ID</dt><dd>{{ selectedLibraryItem.id }}</dd></div>
               </dl>
             </div>
           </aside>

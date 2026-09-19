@@ -24,6 +24,7 @@ Domain rules currently live in `schemas.py`, storage contracts in
 | --- | --- | --- |
 | Session | `zett-agent` | `agent_sessions`, `raw_messages`, `session_snapshots` |
 | Asset | Zett | `session_assets` plus binary files under the asset directory |
+| Static asset | Zett | `static_assets` plus uploaded files under `<asset_directory>/static` |
 | Artifact | Zett | `session_artifacts`: card, article, image, slides, latex_pdf |
 | Tag | Zett | `tags`, `artifact_tags` |
 | Provider | Zett | `providers`, with credentials encrypted by the local provider key |
@@ -52,6 +53,7 @@ Everything is mounted under `/api`.
 | `POST /api/agent/{id}/events` | Deliver one UI answer, such as an `ask_user` choice, to the active request |
 | `POST /api/agent/{id}/steer` | Insert an urgent user message into the active request |
 | `/api/agent/{id}/assets*` | Session asset CRUD, upload, content download, rename |
+| `/api/assets*` | Session-independent file listing, upload, content download, and deletion |
 | `/api/agent/{id}/artifacts*`, `GET /api/artifacts` | Artifact CRUD, save, per-session listing, and library-wide search |
 | `/api/agent/{id}/artifacts/{artifact}/content` | Compiled file for a LaTeX artifact |
 | `/api/ai/providers*` | Model endpoint configuration |
@@ -80,7 +82,7 @@ the leading system prefix stays stable.
 ~/.zett/
 ├── zett.db         application records: artifacts, assets, tags, providers, settings
 ├── agent.db        sessions, immutable raw messages, context snapshots
-├── assets/         one canonical UUID directory per session
+├── assets/         session UUID directories and the shared `static/` upload directory
 ├── artifacts/      one directory per session and LaTeX artifact project
 ├── provider.key    local key encrypting provider credentials
 └── logs/           rotating log files

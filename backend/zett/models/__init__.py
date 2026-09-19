@@ -5,6 +5,7 @@ from .list_options import (
     ProviderListOptions,
     SessionAssetListOptions,
     SessionListOptions,
+    StaticAssetListOptions,
     TagListOptions,
 )
 
@@ -13,5 +14,6 @@ __all__ = [
     "ProviderListOptions",
     "SessionAssetListOptions",
     "SessionListOptions",
+    "StaticAssetListOptions",
     "TagListOptions",
 ]

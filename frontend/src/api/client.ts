@@ -24,6 +24,7 @@ import type {
   SessionModelPreference,
   ShellApprovalSettings,
   ShellApprovalMode,
+  StaticAsset,
   Tag,
   TagCreateInput,
   TagRecord,
@@ -478,6 +479,33 @@ export const aiClient = {
     return request<{ ok: boolean }>(`/ai/providers/${providerId}`, { method: 'DELETE' })
   },
 
+}
+
+export const assetClient = {
+  list(query = '', limit = 500, offset = 0): Promise<StaticAsset[]> {
+    const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+    if (query) params.set('query', query)
+    return request<StaticAsset[]>(`/assets?${params}`)
+  },
+
+  async upload(file: File): Promise<StaticAsset> {
+    const params = new URLSearchParams({ name: file.name || 'asset.bin' })
+    const response = await fetch(`${API_URL}/assets/upload?${params}`, {
+      method: 'POST',
+      headers: { 'Content-Type': file.type || 'application/octet-stream' },
+      body: file,
+    })
+    if (!response.ok) throw new ApiError(response.status, await response.text())
+    return response.json() as Promise<StaticAsset>
+  },
+
+  getContent(assetId: string, signal?: AbortSignal): Promise<ArrayBuffer> {
+    return requestBinary(`/assets/${assetId}/content`, signal)
+  },
+
+  delete(assetId: string): Promise<{ ok: boolean }> {
+    return request<{ ok: boolean }>(`/assets/${assetId}`, { method: 'DELETE' })
+  },
 }
 
 export const settingsClient = {

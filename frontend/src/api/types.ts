@@ -143,6 +143,18 @@ export interface SessionAsset {
   updated_at: string
 }
 
+export interface StaticAsset {
+  id: string
+  name: string
+  mime_type: string | null
+  size_bytes: number
+  sha256: string
+  content_url: string
+  metadata: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
 export interface AnalysisMessage {
   role: 'user' | 'assistant'
   content: string

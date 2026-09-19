@@ -43,7 +43,7 @@ function submit(): void {
         <section class="tag-manager-panel" role="dialog" aria-modal="true" aria-labelledby="tag-manager-title">
           <header>
             <div>
-              <span>Library taxonomy</span>
+              <span>Artifact taxonomy</span>
               <h2 id="tag-manager-title">Manage collections</h2>
               <p>Create a path with <strong>/</strong> to build nested tags.</p>
             </div>

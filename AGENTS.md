@@ -52,15 +52,15 @@
 
 ## Current Scope
 
-- Retain the Session, Asset, Artifact, Tag, and Provider storage boundaries.
+- Retain the Session, Asset, Static Asset, Artifact, Tag, and Provider storage boundaries.
 - Session records, immutable raw messages, and versioned context snapshots belong to zett-agent; do not duplicate their tables in Zett.
 - Cards, articles, images, slide decks, and LaTeX PDFs are Artifact content variants, not separate library resources.
 - Tag taxonomy is a first-class boundary again: write through `TagService` so paths stay normalized and missing ancestors are created, and remove `artifact_tags` rows explicitly when an artifact is deleted. Suggested tags stay proposals until a save confirms them.
 - Do not reintroduce Workspace or permanent Resource adapters, legacy APIs, or migration code without a new requirement.
 - Changing the standalone zett-agent package is allowed, including for runtime behavior such as steering. Keep its own Ruff and pytest checks green (`make zett-agent-check`) and keep Zett business vocabulary out of it.
 - Serve the frontend and the API from `zett.main`; new behavior is added as application services and routes, not as compatibility shims.
-- Asset metadata, Artifact records, Tag records, and encrypted Provider configurations use SQLAlchemy in the application database.
-- Store binary assets under the configured asset directory, with one canonical UUID directory per session.
+- Asset and Static Asset metadata, Artifact records, Tag records, and encrypted Provider configurations use SQLAlchemy in the application database.
+- Store session binary assets under the configured asset directory with one canonical UUID directory per session, and session-independent uploads under `<asset_directory>/static`.
 - Store LaTeX artifact projects under the configured artifact directory: one directory per session, one per artifact, validated for canonical IDs and symlink escape before every read.
 - Never expose filesystem paths in public models.
 - Delete owned artifacts, tag links, and asset files explicitly before removing the Agent session. Do not rely on foreign keys or cascades.
