@@ -56,6 +56,8 @@ it('isolates Mermaid diagrams from the application icon SVG stroke', () => {
   const { code, errors } = compileStyle({ source: descriptor.styles[0].content, filename: 'MarkdownContent.vue', id: 'data-v-test', scoped: true })
   expect(errors).toEqual([])
   expect(code).toMatch(/\.markdown-body\[data-v-test\]\s+\.mermaid-canvas\s*>\s*svg\s*\{/u)
+  expect(code).toMatch(/width:\s*auto\s*!important/u)
+  expect(code).toMatch(/max-height:\s*32rem/u)
   expect(code).toContain('stroke: initial')
   expect(code).toContain('stroke-width: initial')
 })

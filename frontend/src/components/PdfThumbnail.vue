@@ -89,7 +89,16 @@ async function renderFirstPage(): Promise<void> {
   }
 }
 
-watch(() => [props.asset.session_id, props.asset.id, props.artifact, props.fit], () => void renderFirstPage(), { immediate: true })
+watch(
+  [
+    () => props.asset.session_id,
+    () => props.asset.id,
+    () => props.artifact,
+    () => props.fit,
+  ],
+  () => void renderFirstPage(),
+  { immediate: true },
+)
 onBeforeUnmount(() => {
   loadVersion += 1
   void dispose().catch(() => undefined)

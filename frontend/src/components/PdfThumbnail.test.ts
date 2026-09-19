@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { createApp, h, nextTick } from 'vue'
-import { afterEach, expect, it, vi } from 'vitest'
+import { createApp, h, nextTick, ref } from 'vue'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { getDocument } from 'pdfjs-dist'
 import { aiClient } from '../api/client'
 import PdfThumbnail from './PdfThumbnail.vue'
@@ -15,7 +15,13 @@ vi.mock('../api/client', () => ({
   },
 }))
 
-afterEach(() => vi.restoreAllMocks())
+const cleanups: Array<() => void> = []
+
+beforeEach(() => vi.clearAllMocks())
+afterEach(() => {
+  cleanups.splice(0).forEach(cleanup => cleanup())
+  vi.restoreAllMocks()
+})
 
 it('fits an artifact PDF first page inside both card dimensions', async () => {
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(240)
@@ -63,4 +69,39 @@ it('keeps the PDF preview constrained by both the thumbnail and card containers'
   expect(thumbnailSource).toContain('max-height: 100%')
   expect(appSource).toContain('class="library-pdf-thumbnail"')
   expect(appSource).toMatch(/\.library-pdf-thumbnail\s*\{[^}]*flex:\s*1 1 0;[^}]*min-height:\s*0;[^}]*overflow:\s*hidden;/u)
+})
+
+it('does not reload when the parent rerenders with an equivalent asset object', async () => {
+  vi.mocked(aiClient.getArtifactPdfContent).mockResolvedValue(new ArrayBuffer(8))
+  vi.mocked(getDocument).mockReturnValue({
+    promise: Promise.resolve({
+      getPage: vi.fn().mockResolvedValue({
+        getViewport: ({ scale }: { scale: number }) => ({ width: 60 * scale, height: 80 * scale }),
+        render: vi.fn(() => ({ promise: Promise.resolve(), cancel: vi.fn() })),
+      }),
+    }),
+    destroy: vi.fn().mockResolvedValue(undefined),
+  } as never)
+  const unrelated = ref(0)
+  const host = document.createElement('div')
+  const app = createApp({
+    render: () => h('div', [
+      h(PdfThumbnail, {
+        asset: { id: 'artifact-1', session_id: 'session-1' },
+        artifact: true,
+      }),
+      h('span', String(unrelated.value)),
+    ]),
+  })
+  app.mount(host)
+  cleanups.push(() => { app.unmount(); host.remove() })
+
+  await nextTick()
+  await Promise.resolve()
+  await Promise.resolve()
+  expect(aiClient.getArtifactPdfContent).toHaveBeenCalledTimes(1)
+
+  unrelated.value += 1
+  await nextTick()
+  expect(aiClient.getArtifactPdfContent).toHaveBeenCalledTimes(1)
 })

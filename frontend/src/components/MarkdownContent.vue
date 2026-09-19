@@ -408,9 +408,11 @@ onBeforeUnmount(() => {
 .markdown-body :deep(.mermaid-canvas) { display: flex; width: 100%; min-height: 6rem; padding: 1rem; overflow: auto; align-items: center; justify-content: center; }
 .markdown-body :deep(.mermaid-canvas > svg) {
   display: block;
-  width: 100% !important;
-  max-width: none !important;
-  height: auto;
+  width: auto !important;
+  max-width: 100% !important;
+  height: auto !important;
+  max-height: 32rem;
+  margin: auto;
   /* App.vue gives ordinary icon SVGs a default stroke. Mermaid owns the
      complete SVG and must start from SVG defaults or sequence lines vanish. */
   fill: initial;
