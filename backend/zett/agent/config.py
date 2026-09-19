@@ -40,10 +40,10 @@ class ZettelkastenAgentConfig:
     """
 
     session_id: str
-    max_iterations: int = 36
+    max_iterations: int = 128
     max_asset_size_bytes: int = settings.max_asset_size_bytes
-    compaction_max_tokens: int = 128_000
-    compaction_keep_recent_tokens: int = 32_000
+    compaction_max_tokens: int = 800_000
+    compaction_keep_recent_tokens: int = 64_000
     usage_activity_storage: ModelUsageActivityStorage | None = None
     shell_approval_storage: ShellApprovalStorage | None = None
     storage: SQLiteSessionStorage | None = field(default=None, repr=False, compare=False)

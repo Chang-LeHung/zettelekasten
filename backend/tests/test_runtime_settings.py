@@ -155,10 +155,10 @@ async def test_runtime_settings_http_lifecycle_uses_defaults_and_persists_update
     with TestClient(app) as client:
         assert client.get("/api/settings").json() == {
             "max_message_images": 32,
-            "max_turn_iterations": 36,
+            "max_turn_iterations": 128,
             "max_asset_size_bytes": DEFAULT_MAX_ASSET_SIZE_BYTES,
-            "compaction_max_tokens": 128_000,
-            "compaction_keep_recent_tokens": 32_000,
+            "compaction_max_tokens": 800_000,
+            "compaction_keep_recent_tokens": 64_000,
         }
 
         updated = client.put(

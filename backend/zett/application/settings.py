@@ -20,7 +20,7 @@ class RuntimeSettings(BaseModel):
         description="Maximum number of pasted images accepted in one user message",
     )
     max_turn_iterations: int = Field(
-        default=36,
+        default=128,
         ge=1,
         le=256,
         description="Maximum number of primary model calls allowed for one turn",
@@ -32,13 +32,13 @@ class RuntimeSettings(BaseModel):
         description="Maximum bytes accepted for one asset or message-image collection",
     )
     compaction_max_tokens: int = Field(
-        default=128_000,
+        default=800_000,
         ge=128_000,
         le=800_000,
         description="Estimated active-context tokens that trigger compaction",
     )
     compaction_keep_recent_tokens: int = Field(
-        default=32_000,
+        default=64_000,
         ge=32_000,
         le=256_000,
         description="Recent estimated tokens retained after compaction",

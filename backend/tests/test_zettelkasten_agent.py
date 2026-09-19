@@ -229,8 +229,8 @@ def test_factory_configuration_exposes_skill_and_mcp_defaults() -> None:
     assert config.mcp_servers == ()
     assert config.mcp_config_path == Path("~/.zettelekasten/mcp.json")
     assert config.mcp_server_keys == DEFAULT_MCP_SERVER_KEYS
-    assert config.compaction_max_tokens == 128_000
-    assert config.compaction_keep_recent_tokens == 32_000
+    assert config.compaction_max_tokens == 800_000
+    assert config.compaction_keep_recent_tokens == 64_000
 
 
 def test_context_composition_returns_only_normalized_semantic_ratios() -> None:

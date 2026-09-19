@@ -229,10 +229,10 @@ const ai = ref<AIProviderInput>({
 })
 const runtimeSettings = ref<RuntimeSettings>({
   max_message_images: 32,
-  max_turn_iterations: 36,
+  max_turn_iterations: 128,
   max_asset_size_bytes: 250 * 1024 * 1024,
-  compaction_max_tokens: 128_000,
-  compaction_keep_recent_tokens: 32_000,
+  compaction_max_tokens: 800_000,
+  compaction_keep_recent_tokens: 64_000,
 })
 const maxAssetSizeMb = computed<number>({
   get: () => Math.round(runtimeSettings.value.max_asset_size_bytes / (1024 * 1024)),

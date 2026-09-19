@@ -817,7 +817,7 @@ async def test_first_successful_turn_generates_the_session_title_once(monkeypatc
     assert len(models) == 3
     assert len(request_agents) == 2
     assert request_agents[0] is not request_agents[1]
-    assert [agent.agent.max_iterations for agent in request_agents] == [36, 9]
+    assert [agent.agent.max_iterations for agent in request_agents] == [128, 9]
     assert sum(model.title_requests > 0 for model in models) == 1
     assert all(model.closed for model in models)
 
