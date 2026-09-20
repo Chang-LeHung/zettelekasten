@@ -117,11 +117,8 @@ class ArtifactQueryModel:
                             "update_artifact",
                             {
                                 "artifact_id": self.first_id,
-                                "content": {
-                                    "artifact_type": "card",
-                                    "title": "Python process",
-                                    "content": "Updated idea",
-                                },
+                                # Partial edit: only the body changes.
+                                "patch": {"artifact_type": "card", "content": "Updated idea"},
                             },
                         ),
                     )
@@ -134,6 +131,7 @@ class ArtifactQueryModel:
                 latest = _tool_payload(request)
                 assert latest["content"] is None
                 assert latest["draft_content"]["content"] == "Updated idea"
+                assert latest["draft_content"]["title"] == "Python process"
                 assert latest["version"] == 2
                 message = AssistantMessage(
                     tool_calls=(ToolCall("query-saved", "query_artifacts", {"statuses": ["saved"]}),)

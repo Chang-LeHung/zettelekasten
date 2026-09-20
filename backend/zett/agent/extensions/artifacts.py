@@ -11,9 +11,10 @@ from ...infra.dao import artifact_storage
 from ...schemas import (
     AgentArtifactEntity,
     AgentArtifactWrite,
-    ArtifactContent,
+    ArtifactContentPatch,
     ArtifactCreateContent,
     ArtifactListOptions,
+    apply_artifact_patch,
 )
 
 artifact_pruner = ArtifactPruner()
@@ -152,19 +153,28 @@ class ArtifactExtension(AgentExtension):
             return artifact_pruner.prune(artifacts)
 
         @tool
-        async def update_artifact(artifact_id: str, content: ArtifactContent) -> AgentArtifactEntity:
-            """Replace the draft content of an existing conversation artifact.
+        async def update_artifact(artifact_id: str, patch: ArtifactContentPatch) -> AgentArtifactEntity:
+            """Change part of one conversation artifact's draft.
 
             Args:
                 artifact_id: Stable ID of an artifact in this conversation.
-                content: Complete replacement draft content.
+                patch: Fields to change, selected by artifact_type. Omitted or null fields keep their
+                    current value; send an empty string or empty list to clear one. Send content_edits
+                    with old_text/new_text pairs to change part of a body instead of resending it, or
+                    content to replace the whole body. Each edit must match exactly once unless it sets
+                    replace_all. Changing artifact_type replaces the whole content, so include every
+                    required field of the new type.
 
             Snippet:
-                update_artifact(artifact_id="...", content={"artifact_type": "article", "title": "..."})
-                update_artifact(artifact_id="...", content={"artifact_type": "slides", "title": "Processes", "content": "<!-- slide:cover -->\\n# Processes\\n\\n## Optional subtitle\\n\\nAuthor name\\n\\n---\\n# Overview\\n\\n--\\n## Details\\n\\n- One idea"})
+                update_artifact(artifact_id="...", patch={"artifact_type": "card", "title": "Sharper title"})
+                update_artifact(artifact_id="...", patch={"artifact_type": "article", "content_edits": [{"old_text": "Old paragraph", "new_text": "Sharper paragraph"}]})
+                update_artifact(artifact_id="...", patch={"artifact_type": "article", "content_edits": [{"old_text": "Zettelkasten", "new_text": "Zettelkasten Agent", "replace_all": True}]})
+                update_artifact(artifact_id="...", patch={"artifact_type": "slides", "content": "<!-- slide:cover -->\\n# Processes\\n\\n## Optional subtitle\\n\\n---\\n# Overview\\n\\n--\\n## Details"})
 
             Guidelines:
-                - Call get_artifact to read the complete artifact before replacing its draft.
+                - Send only the fields you change; untouched fields keep their current value.
+                - Fix a paragraph with content_edits instead of resending a long body; old_text must appear exactly once, so include enough surrounding words, or set replace_all when every occurrence should change.
+                - Send either content or content_edits for one update, never both.
                 - Updates write draft content only. The published artifact is untouched until the user saves.
                 - Keep cards focused on one idea and remove every word that does not add meaning.
                 - Markdown and sanitized raw HTML with inline Grid/Flex styles are supported; no scripts, global style tags or fixed overlays. HTML code fences display source only.
@@ -188,12 +198,15 @@ class ArtifactExtension(AgentExtension):
                 - Slide separators must be exact unpadded lines; never use standalone '--' or '---' as decoration or code inside a deck.
             """
             current = await self._artifact(session_id, artifact_id)
+            base = current.editable_content
+            if base is None:
+                raise ValueError(f"Artifact has no content to update: {artifact_id}")
             updated = await artifact_storage.update(
                 artifact_id,
                 AgentArtifactWrite(
                     session_id=session_id,
                     content=current.content,
-                    draft_content=content,
+                    draft_content=apply_artifact_patch(base, patch),
                     raw_content=current.raw_content,
                     status=current.status,
                     metadata=current.metadata,

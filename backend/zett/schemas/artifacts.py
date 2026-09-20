@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator, model_validator
 
 from .cards import CardType, normalize_card_type
 from .tags import ArtifactTagEntity, SuggestedTag
@@ -172,6 +172,164 @@ ArtifactContent = Annotated[
     | LatexPdfArtifactContent,
     Field(discriminator="artifact_type"),
 ]
+
+
+class ArtifactTextEdit(BaseModel):
+    """One exact-text edit inside an artifact body.
+
+    By default ``old_text`` must appear exactly once in the current body, so
+    include the surrounding words that make it unique. Set ``replace_all`` when
+    every occurrence should change, such as renaming a term. ``new_text`` may be
+    empty to delete the matched text.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    old_text: str = Field(min_length=1, description="Exact text to find in the current body")
+    new_text: str = Field(default="", description="Replacement text; an empty value deletes the match")
+    replace_all: bool = Field(default=False, description="Whether every exact match should be replaced")
+
+
+class ArtifactContentPatchBase(BaseModel):
+    """Fields one partial draft edit may change on every artifact kind.
+
+    Only supplied fields are applied: an omitted or null field keeps its current
+    value, while an empty string or empty list clears the field.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | None = None
+    summary: str | None = None
+    suggested_tags: list[SuggestedTag] | None = None
+    keywords: list[str] | None = None
+
+
+class ArtifactBodyPatchBase(ArtifactContentPatchBase):
+    """Partial edit of an artifact whose content is Markdown body text.
+
+    A body changes one of two ways: ``content`` replaces it completely, while
+    ``content_edits`` replaces exact snippets inside it. The second form keeps a
+    long article or deck from being sent back in full for a small change.
+    """
+
+    content: str | None = None
+    content_edits: list[ArtifactTextEdit] | None = None
+
+
+class CardArtifactPatch(ArtifactBodyPatchBase):
+    """Partial edit of a knowledge card."""
+
+    # Required: the patch selects its field set through the artifact type.
+    artifact_type: Literal[ArtifactType.CARD]
+    card_type: CardType | None = None
+
+    @field_validator("card_type", mode="before")
+    @classmethod
+    def normalize_type(cls, value: object) -> object:
+        """Normalize a supplied card type while leaving an omitted field alone."""
+        return value if value is None else normalize_card_type(value)
+
+
+class ArticleArtifactPatch(ArtifactBodyPatchBase):
+    """Partial edit of a long-form article."""
+
+    artifact_type: Literal[ArtifactType.ARTICLE]
+    subtitle: str | None = None
+
+
+class SlidesArtifactPatch(ArtifactBodyPatchBase):
+    """Partial edit of a slide deck."""
+
+    artifact_type: Literal[ArtifactType.SLIDES]
+    subtitle: str | None = None
+
+
+class ImageArtifactPatch(ArtifactContentPatchBase):
+    """Partial edit of an image artifact's description or location."""
+
+    artifact_type: Literal[ArtifactType.IMAGE]
+    prompt: str | None = None
+    alt_text: str | None = None
+    source_url: str | None = None
+    asset_path: str | None = None
+
+
+class LatexPdfArtifactPatch(BaseModel):
+    """Partial edit of a LaTeX PDF reference.
+
+    ``project_path`` is server-assigned, so a new ``pdf_name`` must be paired
+    with the matching canonical project key.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    artifact_type: Literal[ArtifactType.LATEX_PDF]
+    pdf_name: str | None = None
+    project_path: str | None = None
+
+
+ArtifactContentPatch = Annotated[
+    CardArtifactPatch | ArticleArtifactPatch | ImageArtifactPatch | SlidesArtifactPatch | LatexPdfArtifactPatch,
+    Field(discriminator="artifact_type"),
+]
+
+_CONTENT_ADAPTER = TypeAdapter(ArtifactContent)
+
+
+def apply_artifact_patch(content: ArtifactContent, patch: ArtifactContentPatch) -> ArtifactContent:
+    """Merge one partial edit into existing artifact content.
+
+    The patch describes an editing step, not the whole document:
+
+    - Fields it does not send keep their current value, so changing a title never
+      resends a long body.
+    - ``content_edits`` replaces exact body snippets, so fixing one paragraph
+      costs a paragraph instead of the whole article.
+    - A different ``artifact_type`` cannot merge field by field, because the
+      variants share only part of their fields, so such a patch must carry the
+      complete content of the new type.
+
+    The merged result is validated through the content models, so a patch can
+    never store a deck with broken separators or an unknown card type.
+    """
+    supplied = {
+        name: value
+        for name, value in patch.model_dump().items()
+        if name not in {"artifact_type", "content_edits"} and value is not None
+    }
+    # Edits stay as models so each pair keeps its validated shape.
+    edits = getattr(patch, "content_edits", None)
+    if content.artifact_type != patch.artifact_type:
+        if edits is not None:
+            raise ValueError("content_edits cannot change the artifact type; send the complete content instead")
+        return _CONTENT_ADAPTER.validate_python({"artifact_type": patch.artifact_type, **supplied})
+    if edits is not None and "content" in supplied:
+        raise ValueError("Send either content or content_edits, not both")
+
+    merged = _CONTENT_ADAPTER.validate_python({**content.model_dump(), **supplied})
+    if not edits:
+        return merged
+    body = getattr(merged, "content", None)
+    if body is None:
+        raise ValueError(f"{merged.artifact_type} artifacts have no body text to edit")
+    for edit in edits:
+        matches = body.count(edit.old_text)
+        if matches == 0:
+            raise ValueError(f"content_edits old_text was not found: {_excerpt(edit.old_text)}")
+        if matches > 1 and not edit.replace_all:
+            raise ValueError(
+                "content_edits old_text is not unique; found "
+                f"{matches} matches (set replace_all to change every one): {_excerpt(edit.old_text)}"
+            )
+        body = body.replace(edit.old_text, edit.new_text, -1 if edit.replace_all else 1)
+    return _CONTENT_ADAPTER.validate_python({**merged.model_dump(), "content": body})
+
+
+def _excerpt(value: str, *, limit: int = 60) -> str:
+    """Shorten one matched snippet for an error message."""
+    collapsed = " ".join(value.split())
+    return repr(f"{collapsed[:limit]}…" if len(collapsed) > limit else collapsed)
 
 
 class AgentArtifactWrite(BaseModel):

@@ -51,7 +51,11 @@ stores the target object key in `source_path` and does not copy the binary.
 Artifact content is user-published. Model tools write `draft_content_json` and
 the tool list has no save operation, and the conversation's editing surfaces
 (panel, inline editor, and full editor) stage their edits through the draft
-endpoint. `content_json` changes only when the user publishes a draft with the
+endpoint. `update_artifact` takes a `patch`: fields it omits keep their current
+value, an empty string or list clears a field, `content_edits` replaces exact
+body snippets (`old_text`/`new_text`, unique match required unless `replace_all` is set) so a long article
+never travels back in full for one paragraph, and only a changed
+`artifact_type` replaces the whole content. `content_json` changes only when the user publishes a draft with the
 save endpoint or edits a library document from the Library view; both writes
 mirror the published content into `draft_content_json`, so the draft is always
 the working copy and matches `content_json` right after a save. An empty
