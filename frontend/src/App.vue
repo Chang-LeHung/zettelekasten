@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ApiError, aiClient, assetClient, libraryClient, settingsClient, tagClient } from './api/client'
-import type { AgentArtifact, AgentCompactionActivity, AgentContextComposition, AgentCustomEvent, AgentModelUsage, AgentModelUsageActivitySeries, AgentPersistedMessage, AgentServerToolActivity, AgentSession, AgentSteeringMessage, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AgentUsageActivityDay, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageContentPart, MessageImagePart, MessagePartInput, ReasoningEffort, RuntimeSettings, SessionAsset, ShellApprovalMode, StaticAsset, Tag } from './api/types'
+import type { AgentArtifact, AgentCompactionActivity, AgentContextComposition, AgentCustomEvent, AgentModelUsage, AgentModelUsageActivitySeries, AgentPersistedMessage, AgentServerToolActivity, AgentSession, AgentSlashCommand, AgentSteeringMessage, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AgentUsageActivityDay, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageImagePart, MessagePart, ReasoningEffort, RuntimeSettings, SessionAsset, ShellApprovalMode, StaticAsset, Tag } from './api/types'
 import AgentComposerControls from './components/AgentComposerControls.vue'
+import ComposerSlashMenu from './components/ComposerSlashMenu.vue'
 import CacheHitRate from './components/CacheHitRate.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import TagManagerDialog from './components/TagManagerDialog.vue'
@@ -17,9 +18,10 @@ import { artifactContentFromLibraryUpdate, libraryItemFromArtifact } from './uti
 import { artifactListsEquivalent, sameArtifactRevision, stabilizeArtifactReferences } from './utils/artifactStability'
 import { assetOpenAction, isPdfAsset } from './utils/assetOpen'
 import { createAsyncRefreshScheduler } from './utils/asyncRefresh'
+import { SlashCommandInput, type SlashCommandMatch } from './utils/slashCommand'
 import { buildConversationTurns, formatTurnDuration, splitTurnTimeline, type ConversationTurn } from './utils/conversationTurns'
 import { jsonSnapshot } from './utils/jsonSnapshot'
-import { buildMessageParts, displayMessageParts, rebaseImagePositions, type PositionedMessageImage } from './utils/messageParts'
+import { buildMessageParts, rebaseImagePositions, type PositionedMessageImage } from './utils/messageParts'
 import { restorePersistedConversation } from './utils/persistedConversation'
 import { moveItemBeforeOrAfter } from './utils/reorder'
 import { appendStreamedAssistantMessage, createStreamedAssistantMessage } from './utils/streamedAssistant'
@@ -48,6 +50,7 @@ type NoticeKind = 'success' | 'error'
 type AssetEditorMode = 'closed' | 'text' | 'link'
 type AssetFilter = 'all' | 'documents' | 'images' | 'links' | 'notes' | 'code'
 type SettingsSection = 'usage' | 'providers'
+type ComposerTarget = 'initial' | 'follow-up'
 const DEFAULT_SESSION_TITLE = '新会话'
 const { locale, setLocale, t } = useI18n()
 type AgentMessageTimelineEntry = Extract<AgentTimelineEntry, { type: 'message' }>
@@ -74,13 +77,18 @@ interface ShellApprovalState {
 interface QueuedFollowUp {
   id: number
   content: string
-  parts: MessagePartInput[]
-  visibleParts: MessageContentPart[]
+  parts: MessagePart[]
   shellApprovalMode: ShellApprovalMode
+  slashCommandId: string | null
 }
 interface PendingSteeringEcho {
   message: AgentSteeringMessage
   applied: boolean
+}
+interface ActiveSlashMenu {
+  target: ComposerTarget
+  match: SlashCommandMatch
+  activeIndex: number
 }
 const libraryItems = ref<LibraryItem[]>([])
 const selectedLibraryItem = ref<LibraryItem | null>(null)
@@ -154,7 +162,17 @@ const traceMessages = ref<AgentPersistedMessage[]>([])
 const traceLoading = ref(false)
 const traceError = ref('')
 const followUp = ref('')
-const initialMessageParts = ref<MessageContentPart[]>([])
+const slashCommands = ref<AgentSlashCommand[]>([])
+const slashCommandsLoaded = ref(false)
+const slashCommandsLoading = ref(false)
+const slashMenu = ref<ActiveSlashMenu | null>(null)
+const selectedSlashCommand = ref<AgentSlashCommand | null>(null)
+const initialComposerInput = ref<HTMLTextAreaElement | null>(null)
+const followUpComposerInput = ref<HTMLTextAreaElement | null>(null)
+const initialComposerHighlight = ref<HTMLElement | null>(null)
+const followUpComposerHighlight = ref<HTMLElement | null>(null)
+const composerComposing = ref(false)
+const initialMessageParts = ref<MessagePart[]>([])
 const pendingMessageImages = ref<PositionedMessageImage[]>([])
 const streamingMessage = ref('')
 const streamingReasoning = ref('')
@@ -298,6 +316,22 @@ const conversationTurns = computed(() => buildConversationTurns(raw.value, conve
 const canSubmitMessage = computed(() => (
   (conversationStarted.value ? followUp.value : raw.value).trim().length > 0 || pendingMessageImages.value.length > 0
 ))
+const slashMenuCommands = computed(() => {
+  const query = slashMenu.value?.match.query.trim().toLowerCase()
+  if (!query) return slashCommands.value
+  return slashCommands.value.filter((command) => (
+    command.name.toLowerCase().includes(query)
+    || command.description.toLowerCase().includes(query)
+    || command.type.toLowerCase().includes(query)
+  ))
+})
+const slashMenuActiveIndex = computed(() => {
+  const menu = slashMenu.value
+  if (!menu || !slashMenuCommands.value.length) return 0
+  return Math.min(menu.activeIndex, slashMenuCommands.value.length - 1)
+})
+const initialSlashHighlight = computed(() => slashHighlightParts('initial'))
+const followUpSlashHighlight = computed(() => slashHighlightParts('follow-up'))
 const conversationUsage = computed(() => {
   const messages = conversationTurns.value.flatMap((turn) => turn.responses)
   const activeTurn = conversationTurns.value.at(-1)
@@ -1442,26 +1476,41 @@ async function analyze(): Promise<void> {
   resetStreamState()
   startTurnClock()
   const messageText = raw.value
+  const slashCommandId = slashCommandIdFor(messageText)
   const requestParts = buildMessageParts(messageText, pendingMessageImages.value)
-  initialMessageParts.value = displayMessageParts(requestParts, pendingMessageImages.value)
+  initialMessageParts.value = requestParts
   pendingMessageImages.value = []
+  clearSlashCommand()
   const requestHistory: AnalysisMessage[] = []
   activeTurnHistory = requestHistory
   const callbacks = streamCallbacks()
   let activeConversationId: string | null = null
   try {
     activeConversationId = await ensureConversation()
-    const result = await aiClient.analyzeStream(
-      activeConversationId,
-      messageText,
-      selectedProviderId.value,
-      reasoningEffort.value,
-      [],
-      callbacks,
-      controller.signal,
-      requestParts,
-      shellApprovalMode.value,
-    )
+    const result = slashCommandId
+      ? await aiClient.slashCommandStream(
+          activeConversationId,
+          slashCommandId,
+          messageText,
+          selectedProviderId.value,
+          reasoningEffort.value,
+          [],
+          callbacks,
+          controller.signal,
+          requestParts,
+          shellApprovalMode.value,
+        )
+      : await aiClient.analyzeStream(
+          activeConversationId,
+          messageText,
+          selectedProviderId.value,
+          reasoningEffort.value,
+          [],
+          callbacks,
+          controller.signal,
+          requestParts,
+          shellApprovalMode.value,
+        )
     commitStreamedResponse(requestHistory, {
       fallbackContent: result ? 'The artifact is ready.' : 'How would you like to continue?',
     })
@@ -1497,12 +1546,13 @@ async function refine(queued?: QueuedFollowUp): Promise<void> {
     return
   }
   const requestParts = queued?.parts ?? buildMessageParts(content, pendingMessageImages.value)
-  const visibleParts = queued?.visibleParts ?? displayMessageParts(requestParts, pendingMessageImages.value)
-  const history: AnalysisMessage[] = [...conversation.value, { role: 'user', content, parts: visibleParts }]
+  const slashCommandId = queued?.slashCommandId ?? slashCommandIdFor(content)
+  const history: AnalysisMessage[] = [...conversation.value, { role: 'user', content, parts: requestParts }]
   conversation.value = history
   if (!queued) {
     followUp.value = ''
     pendingMessageImages.value = []
+    clearSlashCommand()
   }
   loading.value = true
   const controller = new AbortController()
@@ -1515,17 +1565,30 @@ async function refine(queued?: QueuedFollowUp): Promise<void> {
   try {
     activeConversationId = await ensureConversation()
     await syncSelectedArtifact()
-    const result = await aiClient.analyzeStream(
-      activeConversationId,
-      content,
-      selectedProviderId.value,
-      reasoningEffort.value,
-      history,
-      callbacks,
-      controller.signal,
-      requestParts,
-      queued?.shellApprovalMode ?? shellApprovalMode.value,
-    )
+    const result = slashCommandId
+      ? await aiClient.slashCommandStream(
+          activeConversationId,
+          slashCommandId,
+          content,
+          selectedProviderId.value,
+          reasoningEffort.value,
+          history,
+          callbacks,
+          controller.signal,
+          requestParts,
+          queued?.shellApprovalMode ?? shellApprovalMode.value,
+        )
+      : await aiClient.analyzeStream(
+          activeConversationId,
+          content,
+          selectedProviderId.value,
+          reasoningEffort.value,
+          history,
+          callbacks,
+          controller.signal,
+          requestParts,
+          queued?.shellApprovalMode ?? shellApprovalMode.value,
+        )
     commitStreamedResponse(history, {
       fallbackContent: result ? 'The artifact is ready.' : 'How would you like to continue?',
     })
@@ -1557,15 +1620,17 @@ function queueFollowUp(): void {
   const content = followUp.value
   if (!content.trim() && !pendingMessageImages.value.length) return
   const parts = buildMessageParts(content, pendingMessageImages.value)
+  const slashCommandId = slashCommandIdFor(content)
   queuedFollowUps.value.push({
     id: nextQueuedFollowUpId++,
     content,
     parts,
-    visibleParts: displayMessageParts(parts, pendingMessageImages.value),
     shellApprovalMode: shellApprovalMode.value,
+    slashCommandId,
   })
   followUp.value = ''
   pendingMessageImages.value = []
+  clearSlashCommand()
 }
 
 function drainQueuedFollowUps(): void {
@@ -1578,7 +1643,7 @@ function drainQueuedFollowUps(): void {
 function queuedFollowUpText(item: QueuedFollowUp): string {
   const text = item.content.trim()
   if (text) return text
-  const imageCount = item.visibleParts.filter((part) => part.type === 'image').length
+  const imageCount = item.parts.filter((part) => part.type === 'image').length
   return imageCount === 1 ? 'Image attachment' : `${imageCount} image attachments`
 }
 
@@ -1618,9 +1683,13 @@ function endQueuedFollowUpDrag(): void {
 async function steerQueuedFollowUp(item: QueuedFollowUp): Promise<void> {
   const activeConversationId = conversationId.value
   if (!activeConversationId || !loading.value) return
+  if (item.slashCommandId) {
+    showNotice('Slash commands cannot be used as steering messages', 'error')
+    return
+  }
   const steeringMessage: AgentSteeringMessage = {
     content: item.content,
-    parts: item.visibleParts,
+    parts: item.parts,
   }
   const pendingEcho: PendingSteeringEcho = { message: steeringMessage, applied: false }
   pendingSteeringEchoes.push(pendingEcho)
@@ -1652,11 +1721,6 @@ function submitConversation(): void {
   }
   if (conversationStarted.value) void refine()
   else void analyze()
-}
-
-function handleComposerEnter(event: KeyboardEvent): void {
-  event.preventDefault()
-  submitConversation()
 }
 
 function stopGeneration(): void {
@@ -1691,6 +1755,9 @@ async function ensureConversation(): Promise<string> {
   window.localStorage.setItem(activeSessionKey, started.conversation_id)
   applyArtifacts(started.artifacts)
   assets.value = started.assets
+  slashCommands.value = []
+  slashCommandsLoaded.value = false
+  clearSlashCommand()
   return started.conversation_id
 }
 
@@ -1709,6 +1776,9 @@ function applySession(session: AgentSession): void {
   raw.value = restored.initialPrompt
   initialMessageParts.value = restored.initialParts
   pendingMessageImages.value = []
+  slashCommands.value = []
+  slashCommandsLoaded.value = false
+  clearSlashCommand()
   conversation.value = restored.messages
   traceMessages.value = session.messages
   traceError.value = ''
@@ -1959,6 +2029,9 @@ function clearWorkspaceState(): void {
   followUp.value = ''
   initialMessageParts.value = []
   pendingMessageImages.value = []
+  slashCommands.value = []
+  slashCommandsLoaded.value = false
+  clearSlashCommand()
   selectedSuggestions.value = []
   artifacts.value = []
   assets.value = []
@@ -2087,7 +2160,6 @@ function readMessageImage(file: File, position: number): Promise<PositionedMessa
         type: 'image',
         name: file.name || 'Pasted image',
         mime_type: file.type,
-        data_base64: contentUrl.slice(separator + 1),
         content_url: contentUrl,
         position,
       })
@@ -2118,12 +2190,214 @@ function rebaseMessageImagePositions(previous: string, next: string): void {
   pendingMessageImages.value = rebaseImagePositions(pendingMessageImages.value, previous, next)
 }
 
+function composerTextarea(target: ComposerTarget): HTMLTextAreaElement | null {
+  return target === 'initial' ? initialComposerInput.value : followUpComposerInput.value
+}
+
+function composerTextValue(target: ComposerTarget): string {
+  return target === 'initial' ? raw.value : followUp.value
+}
+
+function composerHighlight(target: ComposerTarget): HTMLElement | null {
+  return target === 'initial' ? initialComposerHighlight.value : followUpComposerHighlight.value
+}
+
+function slashHighlightParts(target: ComposerTarget): { before: string; token: string; after: string } | null {
+  const value = composerTextValue(target)
+  const detected = detectedSlashCommand(value)
+  if (!detected) return null
+  const { range } = detected
+  return {
+    before: value.slice(0, range.start),
+    token: value.slice(range.start, range.end),
+    after: value.slice(range.end),
+  }
+}
+
+function detectedSlashCommand(value: string): { command: AgentSlashCommand; range: { start: number; end: number } } | null {
+  const selected = selectedSlashCommand.value
+  if (selected) {
+    const range = SlashCommandInput.range(value, selected.name)
+    if (range) return { command: selected, range }
+  }
+  for (const token of SlashCommandInput.tokens(value)) {
+    const command = slashCommands.value.find(item => item.name === token.name)
+    if (command) return { command, range: { start: token.start, end: token.end } }
+  }
+  return null
+}
+
+function slashCommandIdFor(value: string): string | null {
+  return detectedSlashCommand(value)?.command.id ?? null
+}
+
+function syncComposerHighlight(target: ComposerTarget): void {
+  const textarea = composerTextarea(target)
+  const highlight = composerHighlight(target)
+  if (!textarea || !highlight) return
+  highlight.scrollTop = textarea.scrollTop
+  highlight.scrollLeft = textarea.scrollLeft
+}
+
+function finishComposerComposition(): void {
+  window.requestAnimationFrame(() => {
+    composerComposing.value = false
+    syncComposerHighlight(conversationStarted.value ? 'follow-up' : 'initial')
+  })
+}
+
+function setComposerTextValue(target: ComposerTarget, value: string): void {
+  if (target === 'initial') raw.value = value
+  else followUp.value = value
+}
+
+function clearSlashCommand(): void {
+  selectedSlashCommand.value = null
+  slashMenu.value = null
+  composerComposing.value = false
+}
+
+async function loadSlashCommands(force = false): Promise<void> {
+  const sessionId = conversationId.value
+  if (!sessionId) {
+    slashCommands.value = []
+    slashCommandsLoaded.value = true
+    return
+  }
+  if (slashCommandsLoaded.value && !force) return
+  slashCommandsLoading.value = true
+  try {
+    const commands = await aiClient.listSlashCommands(sessionId)
+    if (conversationId.value === sessionId) {
+      slashCommands.value = commands
+      slashCommandsLoaded.value = true
+    }
+  } catch (error) {
+    showNotice(errorMessage(error), 'error')
+  } finally {
+    if (conversationId.value === sessionId) slashCommandsLoading.value = false
+  }
+}
+
+function refreshSlashMenu(target: ComposerTarget, value: string, caret: number): void {
+  if (!slashCommandsLoaded.value && !slashCommandsLoading.value && SlashCommandInput.tokenNames(value).length) {
+    void loadSlashCommands()
+  }
+  if (selectedSlashCommand.value) {
+    if (SlashCommandInput.contains(value, selectedSlashCommand.value.name)) {
+      slashMenu.value = null
+      return
+    }
+    selectedSlashCommand.value = null
+  }
+  const match = SlashCommandInput.match(value, caret)
+  if (!match) {
+    if (slashMenu.value?.target === target) slashMenu.value = null
+    return
+  }
+  const current = slashMenu.value
+  const sameRange = current?.target === target
+    && current.match.start === match.start
+  slashMenu.value = {
+    target,
+    match,
+    activeIndex: sameRange ? current.activeIndex : 0,
+  }
+  if (!slashCommandsLoading.value) void loadSlashCommands(!sameRange)
+}
+
+function selectSlashCommand(index: number): void {
+  const menu = slashMenu.value
+  const command = slashMenuCommands.value[index]
+  if (!menu || !command) return
+  const textarea = composerTextarea(menu.target)
+  const insertion = SlashCommandInput.insert(composerTextValue(menu.target), menu.match, command.name)
+  setComposerTextValue(menu.target, insertion.value)
+  selectedSlashCommand.value = command
+  slashMenu.value = null
+  composerComposing.value = false
+  void nextTick(() => {
+    textarea?.focus()
+    textarea?.setSelectionRange(insertion.caret, insertion.caret)
+    syncComposerHighlight(menu.target)
+  })
+}
+
+function deleteSelectedSlashCommand(event: KeyboardEvent, target: ComposerTarget): boolean {
+  if (event.key !== 'Backspace' && event.key !== 'Delete') return false
+  const command = selectedSlashCommand.value
+  const textarea = composerTextarea(target)
+  if (!command || !textarea) return false
+  const deletion = SlashCommandInput.deleteAtomically(
+    textarea.value,
+    command.name,
+    textarea.selectionStart ?? 0,
+    textarea.selectionEnd ?? 0,
+    event.key,
+  )
+  if (!deletion) return false
+  event.preventDefault()
+  setComposerTextValue(target, deletion.value)
+  clearSlashCommand()
+  void nextTick(() => {
+    textarea.focus()
+    textarea.setSelectionRange(deletion.caret, deletion.caret)
+    syncComposerHighlight(target)
+  })
+  return true
+}
+
+function handleComposerKeydown(event: KeyboardEvent, target: ComposerTarget): void {
+  if (event.isComposing) return
+  if (deleteSelectedSlashCommand(event, target)) return
+  const menu = slashMenu.value
+  if (menu?.target === target) {
+    if (slashCommandsLoading.value && (event.key === 'Enter' || event.key === 'Tab')) {
+      event.preventDefault()
+      return
+    }
+  }
+  if (menu?.target === target && slashMenuCommands.value.length) {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      const delta = event.key === 'ArrowDown' ? 1 : -1
+      const count = slashMenuCommands.value.length
+      slashMenu.value = {
+        ...menu,
+        activeIndex: (slashMenuActiveIndex.value + delta + count) % count,
+      }
+      return
+    }
+    if (event.key === 'Enter' || event.key === 'Tab') {
+      event.preventDefault()
+      selectSlashCommand(slashMenuActiveIndex.value)
+      return
+    }
+  }
+  if (event.key === 'Escape') {
+    slashMenu.value = null
+    return
+  }
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault()
+    submitConversation()
+  }
+}
+
+function handleComposerSelection(target: ComposerTarget, event: MouseEvent): void {
+  const textarea = event.currentTarget
+  if (!(textarea instanceof HTMLTextAreaElement)) return
+  refreshSlashMenu(target, textarea.value, textarea.selectionStart ?? textarea.value.length)
+}
+
 function updateComposerText(event: Event, target: 'initial' | 'follow-up'): void {
-  const next = (event.target as HTMLTextAreaElement).value
+  const textarea = event.target as HTMLTextAreaElement
+  const next = textarea.value
   const previous = target === 'initial' ? raw.value : followUp.value
   rebaseMessageImagePositions(previous, next)
-  if (target === 'initial') raw.value = next
-  else followUp.value = next
+  setComposerTextValue(target, next)
+  refreshSlashMenu(target, next, textarea.selectionStart ?? next.length)
+  void nextTick(() => syncComposerHighlight(target))
 }
 
 async function pasteAssets(event: ClipboardEvent): Promise<void> {
@@ -3030,8 +3304,8 @@ onBeforeUnmount(() => {
                     <span class="queued-followup-icon" aria-hidden="true"><svg><use href="#icon-conversation" /></svg></span>
                     <div class="queued-followup-copy">
                       <p>{{ queuedFollowUpText(item) }}</p>
-                      <div v-if="item.visibleParts.some((part) => part.type === 'image')" class="queued-followup-images">
-                        <template v-for="(part, partIndex) in item.visibleParts" :key="`${item.id}-${partIndex}`">
+                      <div v-if="item.parts.some((part) => part.type === 'image')" class="queued-followup-images">
+                        <template v-for="(part, partIndex) in item.parts" :key="`${item.id}-${partIndex}`">
                           <button
                             v-if="part.type === 'image'"
                             class="queued-followup-image-preview"
@@ -3047,7 +3321,7 @@ onBeforeUnmount(() => {
                     <button
                       class="queued-followup-steer"
                       type="button"
-                      :disabled="steeringQueuedFollowUpId === item.id"
+                      :disabled="steeringQueuedFollowUpId === item.id || item.slashCommandId !== null"
                       :aria-label="`Steer with ${queuedFollowUpText(item)}`"
                       title="Apply this follow-up to the active run now"
                       @click="steerQueuedFollowUp(item)"
@@ -3066,6 +3340,17 @@ onBeforeUnmount(() => {
                   </article>
                 </div>
                 <form class="agent-input" @submit.prevent="submitConversation">
+                  <ComposerSlashMenu
+                    v-if="slashMenu"
+                    :commands="slashMenuCommands"
+                    :active-index="slashMenuActiveIndex"
+                    :loading="slashCommandsLoading && !slashCommandsLoaded"
+                    :heading="$t('composer.slashCommands')"
+                    :hint="$t('composer.selectOneCommand')"
+                    :empty-label="$t('composer.noSlashCommands')"
+                    @select="selectSlashCommand"
+                    @hover="slashMenu = slashMenu ? { ...slashMenu, activeIndex: $event } : null"
+                  />
                   <div v-if="pendingMessageImages.length" class="message-image-drafts" aria-label="Images attached to this message">
                     <figure v-for="image in pendingMessageImages" :key="image.id">
                       <button
@@ -3079,8 +3364,37 @@ onBeforeUnmount(() => {
                       <button class="message-image-remove" type="button" :aria-label="`Remove ${image.name}`" @click="removeMessageImage(image.id)">×</button>
                     </figure>
                   </div>
-                  <textarea v-if="!conversationStarted" :value="raw" rows="3" autofocus :placeholder="$t('composer.messagePlaceholder')" @input="updateComposerText($event, 'initial')" @keydown.enter.exact="handleComposerEnter" />
-                  <textarea v-else :value="followUp" rows="3" :placeholder="$t('composer.continuePlaceholder')" @input="updateComposerText($event, 'follow-up')" @keydown.enter.exact="handleComposerEnter" />
+                  <div v-if="!conversationStarted" class="composer-textarea-wrap" :class="{ 'slash-selected': initialSlashHighlight, composing: composerComposing }">
+                    <div ref="initialComposerHighlight" class="composer-input-mirror" aria-hidden="true"><template v-if="initialSlashHighlight"><span>{{ initialSlashHighlight.before }}</span><mark>{{ initialSlashHighlight.token }}</mark><span>{{ initialSlashHighlight.after }}</span></template><template v-else>{{ raw }}</template></div>
+                    <textarea
+                      ref="initialComposerInput"
+                      :value="raw"
+                      rows="3"
+                      autofocus
+                      :placeholder="$t('composer.messagePlaceholder')"
+                      @input="updateComposerText($event, 'initial')"
+                      @scroll.passive="syncComposerHighlight('initial')"
+                      @compositionstart="composerComposing = true"
+                      @compositionend="finishComposerComposition"
+                      @click="handleComposerSelection('initial', $event)"
+                      @keydown="handleComposerKeydown($event, 'initial')"
+                    />
+                  </div>
+                  <div v-else class="composer-textarea-wrap" :class="{ 'slash-selected': followUpSlashHighlight, composing: composerComposing }">
+                    <div ref="followUpComposerHighlight" class="composer-input-mirror" aria-hidden="true"><template v-if="followUpSlashHighlight"><span>{{ followUpSlashHighlight.before }}</span><mark>{{ followUpSlashHighlight.token }}</mark><span>{{ followUpSlashHighlight.after }}</span></template><template v-else>{{ followUp }}</template></div>
+                    <textarea
+                      ref="followUpComposerInput"
+                      :value="followUp"
+                      rows="3"
+                      :placeholder="$t('composer.continuePlaceholder')"
+                      @input="updateComposerText($event, 'follow-up')"
+                      @scroll.passive="syncComposerHighlight('follow-up')"
+                      @compositionstart="composerComposing = true"
+                      @compositionend="finishComposerComposition"
+                      @click="handleComposerSelection('follow-up', $event)"
+                      @keydown="handleComposerKeydown($event, 'follow-up')"
+                    />
+                  </div>
                   <div class="agent-input-footer">
                     <div class="composer-leading">
                       <AgentComposerControls
@@ -3689,7 +4003,7 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .queued-followup-remove { flex: 0 0 auto; width: 1.45rem; height: 1.45rem; display: grid; place-items: center; padding: 0; border: 0; border-radius: .4rem; color: #8b958e; background: transparent; cursor: pointer; }
 .queued-followup-remove svg { width: .78rem; height: .78rem; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .queued-followup-remove:hover, .queued-followup-remove:focus-visible { color: #6d453f; background: #f5eae8; outline: none; }
-.agent-input { container-type: inline-size; container-name: composer-footer; margin: .8rem; padding: .25rem; border: 1px solid rgba(29,29,31,.11); border-radius: .9rem; background: white; box-shadow: 0 3px 16px rgba(0,0,0,.055); }
+.agent-input { position: relative; container-type: inline-size; container-name: composer-footer; margin: .8rem; padding: .25rem; border: 1px solid rgba(29,29,31,.11); border-radius: .9rem; background: white; box-shadow: 0 3px 16px rgba(0,0,0,.055); }
 .message-image-drafts { display: flex; gap: .42rem; padding: .55rem .58rem .1rem; overflow-x: auto; }
 .message-image-drafts figure { position: relative; width: 3.5rem; height: 3.5rem; flex: 0 0 auto; margin: 0; }
 .message-image-preview { display: block; width: 100%; height: 100%; padding: 0; border: 0; border-radius: .66rem; background: transparent; cursor: zoom-in; }
@@ -3698,7 +4012,17 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .message-image-drafts img { display: block; width: 100%; height: 100%; border: 1px solid #dce3de; border-radius: .66rem; object-fit: cover; background: #f2f4f2; }
 .message-image-drafts .message-image-remove { position: absolute; top: -.28rem; right: -.28rem; width: 1rem; height: 1rem; display: grid; place-items: center; padding: 0; border: 2px solid #fff; border-radius: 50%; color: #fff; background: #59645d; box-shadow: 0 1px 4px rgba(31,39,34,.18); cursor: pointer; font-size: .67rem; line-height: 1; }
 .agent-input:focus-within { border-color: rgba(71,105,87,.4); box-shadow: 0 0 0 3px rgba(71,105,87,.1), 0 5px 20px rgba(0,0,0,.06); }
-.agent-input textarea { display: block; width: 100%; min-height: 4rem; padding: .7rem .8rem .25rem; resize: none; border: 0; outline: 0; color: var(--text); background: transparent; font-size: .78rem; line-height: 1.5; }
+.composer-textarea-wrap { position: relative; min-height: 4rem; overflow: hidden; }
+.composer-input-mirror { position: absolute; inset: 0; z-index: 0; box-sizing: border-box; padding: .7rem .8rem .25rem; overflow: hidden; color: transparent; font: inherit; font-size: .78rem; line-height: 1.5; pointer-events: none; white-space: pre-wrap; overflow-wrap: break-word; }
+.composer-input-mirror mark { padding: 0; border-radius: .36rem; color: transparent; background: transparent; }
+.agent-input textarea { display: block; width: 100%; min-height: 4rem; padding: .7rem .8rem .25rem; resize: none; border: 0; outline: 0; color: var(--text); caret-color: var(--text); background: transparent; font-family: inherit; font-size: .78rem; line-height: 1.5; }
+.composer-textarea-wrap textarea { position: relative; z-index: 1; }
+.composer-textarea-wrap.slash-selected .composer-input-mirror { color: var(--text); }
+.composer-textarea-wrap.slash-selected textarea { color: transparent; }
+.composer-textarea-wrap.slash-selected .composer-input-mirror mark { margin: -.1rem -.34rem; padding: .1rem .34rem; border-radius: .34rem; color: #2f674a; background: #e7eee9; }
+.composer-textarea-wrap.slash-selected.composing .composer-input-mirror { color: transparent; }
+.composer-textarea-wrap.slash-selected.composing .composer-input-mirror mark { color: transparent; }
+.composer-textarea-wrap.slash-selected.composing textarea { color: var(--text); }
 .agent-input-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; min-height: 2.45rem; padding: 0 .3rem .1rem .45rem; }
 .agent-input-footer small { color: var(--tertiary); font-size: .55rem; }
 .agent-input .send-button { position: static; }
@@ -3995,7 +4319,7 @@ kbd, .card-type, .card-tags span { font-size: .69rem; }
 .agent-identity small, .streaming-status { font-size: .66rem; }
 .agent-welcome > p { font-size: .84rem; }
 .prompt-hints button { font-size: .72rem; }
-.agent-input textarea { font-size: .88rem; }
+.agent-input textarea, .composer-input-mirror { font-size: .88rem; }
 .agent-input-footer small { font-size: .63rem; }
 .artifact-placeholder p { font-size: .78rem; }
 .provider-picker { font-size: .68rem; }

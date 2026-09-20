@@ -22,7 +22,6 @@ it('allows an image-only ask_user response and previews the image', async () => 
       type: 'image',
       name: 'clipboard.png',
       mime_type: 'image/png',
-      data_base64: 'aW1hZ2U=',
       content_url: 'data:image/png;base64,aW1hZ2U=',
       position: 0,
     }],

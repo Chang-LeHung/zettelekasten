@@ -56,6 +56,8 @@ Everything is mounted under `/api`.
 | `GET /api/agent/sessions/{id}/messages` | Page the immutable Raw Log for the conversation UI |
 | `GET /api/agent/sessions/{id}/model`, `/context-composition` | Last provider choice and current context ratios |
 | `POST /api/agent/{id}/messages` | Run one turn and stream zett-agent events as SSE |
+| `GET /api/agent/{id}/slash-commands` | List commands registered by configured Zettelkasten extensions |
+| `POST /api/agent/{id}/slash-commands/{command_id}` | Execute one slash command and stream its Agent events |
 | `POST /api/agent/{id}/events` | Deliver one UI answer, such as an `ask_user` choice, to the active request |
 | `POST /api/agent/{id}/steer` | Insert an urgent user message into the active request |
 | `/api/files/{key}` | The only binary content endpoint; streams one ObjectStore key |
@@ -76,12 +78,22 @@ other two return 409 when no request is active.
 `ZettelkastenEventDispatcher` encodes every `AgentEvent` as one SSE frame named
 after the event type, with `session_id` and `phase` always present. Provider
 replay blocks are intentionally not forwarded to the browser. Frames are
-buffered in a deque and yielded only after the event has been consumed, which
-preserves ordering and applies backpressure to the running turn.
+yielded after the event has been consumed, which preserves ordering and applies
+backpressure to the running turn.
 
 Conversation context is restored from the newest snapshot plus the Raw Log
 after its boundary; per-turn workspace and taxonomy injections were removed so
 the leading system prefix stays stable.
+
+The `ZettelkastenAgent` container loads application extensions from its
+configuration. Each `ZettelkastenExt` can register slash commands with a name,
+description, type, and Agent-stream handler. The container assigns a stable ID
+to every command; the frontend lists those IDs and submits at most one command
+ID with an input. The backend resolves that ID and runs the registered handler,
+which may transform the current message before sending it through the Agent. A
+skill command expands the model-facing prompt with the skill instructions and
+records the original browser message as `slash_command.raw_parts`, so the
+conversation UI shows what the user sent instead of the expanded prompt.
 
 ## Local data
 

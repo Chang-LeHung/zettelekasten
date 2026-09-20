@@ -1,8 +1,7 @@
-import type { MessageContentPart, MessageImagePartInput, MessagePartInput } from '../api/types'
+import type { MessageImagePart, MessagePart } from '../api/types'
 
-export interface PositionedMessageImage extends MessageImagePartInput {
+export interface PositionedMessageImage extends MessageImagePart {
   id: string
-  content_url: string
   position: number
 }
 
@@ -10,12 +9,12 @@ export interface PositionedMessageImage extends MessageImagePartInput {
 export function buildMessageParts(
   text: string,
   images: readonly PositionedMessageImage[],
-): MessagePartInput[] {
+): MessagePart[] {
   if (!images.length) return text ? [{ type: 'text', text }] : []
   const ordered = images
     .map((image, index) => ({ image, index }))
     .sort((left, right) => left.image.position - right.image.position || left.index - right.index)
-  const parts: MessagePartInput[] = []
+  const parts: MessagePart[] = []
   let cursor = 0
   for (const { image } of ordered) {
     const position = Math.min(text.length, Math.max(cursor, image.position))
@@ -24,29 +23,12 @@ export function buildMessageParts(
       type: 'image',
       name: image.name,
       mime_type: image.mime_type,
-      data_base64: image.data_base64,
+      content_url: image.content_url,
     })
     cursor = position
   }
   if (cursor < text.length) parts.push({ type: 'text', text: text.slice(cursor) })
   return parts
-}
-
-/** Replace transport-only base64 fields with browser display URLs. */
-export function displayMessageParts(
-  parts: readonly MessagePartInput[],
-  images: readonly PositionedMessageImage[],
-): MessageContentPart[] {
-  return parts.map((part) => {
-    if (part.type === 'text') return part
-    const pending = images.find((image) => image.data_base64 === part.data_base64 && image.name === part.name)
-    return {
-      type: 'image',
-      name: part.name,
-      mime_type: part.mime_type,
-      content_url: pending?.content_url || '',
-    }
-  })
 }
 
 /** Keep image anchors stable when the textarea content changes around them. */

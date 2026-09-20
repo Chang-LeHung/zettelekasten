@@ -4,6 +4,7 @@ import type {
   AgentTimelineEntry,
   AgentToolActivity,
   AnalysisMessage,
+  MessagePart,
 } from '../api/types'
 
 export interface RestoredConversation {
@@ -31,9 +32,42 @@ function toolOutput(content: string): unknown {
   }
 }
 
+/**
+ * Original user message recorded when an application extension rewrote the
+ * model prompt, such as a slash command that loaded a skill. The expanded
+ * prompt stays in `content`, so the UI must not show it back to the user as if
+ * they had typed it. Images travel with the recorded parts.
+ */
+function originalUserParts(record: AgentPersistedMessage): MessagePart[] | null {
+  const slashCommand = record.attributes?.slash_command
+  if (!slashCommand || typeof slashCommand !== 'object') return null
+  const rawParts = (slashCommand as { raw_parts?: unknown }).raw_parts
+  if (!Array.isArray(rawParts)) return null
+  const parts = rawParts.filter(isRecordedPart)
+  return parts.length ? parts : null
+}
+
+function isRecordedPart(part: unknown): part is MessagePart {
+  if (!part || typeof part !== 'object') return false
+  const candidate = part as { type?: unknown; text?: unknown; content_url?: unknown }
+  if (candidate.type === 'text') return typeof candidate.text === 'string'
+  if (candidate.type === 'image') return typeof candidate.content_url === 'string'
+  return false
+}
+
+function userPrompt(record: AgentPersistedMessage): Pick<AgentPersistedMessage, 'content' | 'parts'> {
+  const parts = originalUserParts(record)
+  if (parts === null) return { content: record.content, parts: record.parts }
+  return {
+    content: parts.filter(part => part.type === 'text').map(part => part.text).join('\n'),
+    parts,
+  }
+}
+
 /** Restore visible turns and correlate persisted Tool results with Assistant calls. */
 export function restorePersistedConversation(records: readonly AgentPersistedMessage[]): RestoredConversation {
-  const firstUser = records.find((message) => message.role === 'user')
+  const firstUserRecord = records.find((message) => message.role === 'user')
+  const firstUser = firstUserRecord ? userPrompt(firstUserRecord) : null
   const messages: AnalysisMessage[] = []
   const pendingTools = new Map<string, AgentToolActivity>()
   let skippedFirstUser = false
@@ -44,7 +78,8 @@ export function restorePersistedConversation(records: readonly AgentPersistedMes
         skippedFirstUser = true
         continue
       }
-      messages.push({ role: 'user', content: record.content, parts: record.parts })
+      const prompt = userPrompt(record)
+      messages.push({ role: 'user', content: prompt.content, parts: prompt.parts })
       continue
     }
 

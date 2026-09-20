@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { PositionedMessageImage } from './messageParts'
-import { buildMessageParts, displayMessageParts, rebaseImagePositions } from './messageParts'
+import { buildMessageParts, rebaseImagePositions } from './messageParts'
 
 function image(id: string, position: number): PositionedMessageImage {
   return {
@@ -9,7 +9,6 @@ function image(id: string, position: number): PositionedMessageImage {
     type: 'image',
     name: `${id}.png`,
     mime_type: 'image/png',
-    data_base64: id,
     content_url: `data:image/png;base64,${id}`,
     position,
   }
@@ -19,7 +18,7 @@ describe('message parts', () => {
   it('preserves text-image-text order from the paste caret', () => {
     expect(buildMessageParts('beforeafter', [image('middle', 6)])).toEqual([
       { type: 'text', text: 'before' },
-      { type: 'image', name: 'middle.png', mime_type: 'image/png', data_base64: 'middle' },
+      { type: 'image', name: 'middle.png', mime_type: 'image/png', content_url: 'data:image/png;base64,middle' },
       { type: 'text', text: 'after' },
     ])
   })
@@ -37,10 +36,8 @@ describe('message parts', () => {
     expect(rebaseImagePositions([image('one', 3)], 'abcdef', 'adef')[0]?.position).toBe(1)
   })
 
-  it('creates display parts without changing their order', () => {
-    const pasted = image('one', 1)
-    const request = buildMessageParts('ab', [pasted])
-    expect(displayMessageParts(request, [pasted])).toEqual([
+  it('keeps the pasted data URL on the request part', () => {
+    expect(buildMessageParts('ab', [image('one', 1)])).toEqual([
       { type: 'text', text: 'a' },
       {
         type: 'image',

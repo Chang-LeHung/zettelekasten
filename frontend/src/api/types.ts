@@ -180,7 +180,7 @@ export interface StaticAsset {
 export interface AnalysisMessage {
   role: 'user' | 'assistant'
   content: string
-  parts?: MessageContentPart[]
+  parts?: MessagePart[]
   steering_status?: 'waiting' | 'responded'
   reasoning?: string
   activities?: AgentToolActivity[]
@@ -203,21 +203,7 @@ export interface MessageImagePart {
   content_url: string
 }
 
-export type MessageContentPart = MessageTextPart | MessageImagePart
-
-export interface MessageTextPartInput {
-  type: 'text'
-  text: string
-}
-
-export interface MessageImagePartInput {
-  type: 'image'
-  name: string
-  mime_type: string
-  data_base64: string
-}
-
-export type MessagePartInput = MessageTextPartInput | MessageImagePartInput
+export type MessagePart = MessageTextPart | MessageImagePart
 
 export interface AgentModelUsage {
   input_tokens: number
@@ -290,7 +276,14 @@ export interface AgentCustomEvent {
 
 export interface AgentSteeringMessage {
   content: string
-  parts: MessageContentPart[]
+  parts: MessagePart[]
+}
+
+export interface AgentSlashCommand {
+  id: string
+  name: string
+  description: string
+  type: string
 }
 
 export interface AgentTodoItem {
@@ -402,7 +395,7 @@ export interface AgentPersistedMessage {
   sequence: number
   role: 'system' | 'user' | 'assistant' | 'tool' | 'agent'
   content: string
-  parts: MessageContentPart[]
+  parts: MessagePart[]
   reasoning_content: string | null
   model: string | null
   provider: string | null

@@ -262,6 +262,35 @@ it('sends the selected shell approval mode with an Agent request', async () => {
   expect(body.shell_approval_mode).toBe('allow_all')
 })
 
+it('loads slash commands and streams through the command endpoint', async () => {
+  const command = {
+    id: 'command-1',
+    name: 'zett-review',
+    description: 'Review changes.',
+    type: 'skill',
+  }
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify([command])))
+    .mockResolvedValueOnce(new Response(
+      'event: text_delta\ndata: {"session_id":"session","phase":"generating","delta":"Done"}\n\n'
+      + 'event: run_completed\ndata: {"session_id":"session","phase":"completed"}\n\n',
+    ))
+  vi.stubGlobal('fetch', fetchMock)
+
+  expect(await aiClient.listSlashCommands('session')).toEqual([command])
+  await aiClient.slashCommandStream(
+    'session',
+    'command-1',
+    '/zett-review inspect',
+    'provider',
+    'medium',
+    [],
+  )
+
+  expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/agent/session/slash-commands')
+  expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/agent/session/slash-commands/command-1')
+})
+
 it('delivers steering message parts to the active stream callback', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
     'event: steering_started\n'
@@ -299,7 +328,7 @@ it('sends multimodal steering through the typed endpoint', async () => {
       type: 'image',
       name: 'clipboard.png',
       mime_type: 'image/png',
-      data_base64: 'aW1hZ2U=',
+      content_url: 'data:image/png;base64,aW1hZ2U=',
     },
   ])
 
@@ -311,7 +340,7 @@ it('sends multimodal steering through the typed endpoint', async () => {
         type: 'image',
         name: 'clipboard.png',
         mime_type: 'image/png',
-        data_base64: 'aW1hZ2U=',
+        content_url: 'data:image/png;base64,aW1hZ2U=',
       },
     ],
   })
@@ -428,7 +457,7 @@ it('sends pasted images in their position among text segments', async () => {
 
   await aiClient.analyzeStream('session', 'beforeafter', 'provider', 'medium', [], {}, undefined, [
     { type: 'text', text: 'before' },
-    { type: 'image', name: 'paste.png', mime_type: 'image/png', data_base64: 'AA==' },
+    { type: 'image', name: 'paste.png', mime_type: 'image/png', content_url: 'data:image/png;base64,AA==' },
     { type: 'text', text: 'after' },
   ])
 
@@ -437,7 +466,7 @@ it('sends pasted images in their position among text segments', async () => {
     raw_content: 'beforeafter',
     parts: [
       { type: 'text', text: 'before' },
-      { type: 'image', name: 'paste.png', mime_type: 'image/png', data_base64: 'AA==' },
+      { type: 'image', name: 'paste.png', mime_type: 'image/png', content_url: 'data:image/png;base64,AA==' },
       { type: 'text', text: 'after' },
     ],
   })

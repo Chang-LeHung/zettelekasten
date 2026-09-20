@@ -42,6 +42,46 @@ function record(
 }
 
 describe('restorePersistedConversation', () => {
+  it('shows the original slash command input instead of the expanded skill prompt', () => {
+    const expanded = 'The user invoked the /zett-review slash command.\n\nSkill instructions:\nReview changes.\n\nUser request:\n/zett-review inspect the diff'
+    const image = { type: 'image' as const, name: 'diff.png', mime_type: 'image/png', content_url: 'data:image/png;base64,aW1hZ2U=' }
+    const restored = restorePersistedConversation([
+      record(1, 'user', {
+        content: expanded,
+        parts: [{ type: 'text', text: expanded }, image],
+        attributes: {
+          slash_command: {
+            name: 'zett-review',
+            type: 'skill',
+            raw_parts: [{ type: 'text', text: '/zett-review inspect the diff' }, image],
+          },
+        },
+      }),
+      record(2, 'assistant', { content: 'Reviewing.' }),
+      record(3, 'user', {
+        content: expanded,
+        parts: [{ type: 'text', text: expanded }],
+        attributes: {
+          slash_command: {
+            name: 'zett-review',
+            type: 'skill',
+            raw_parts: [{ type: 'text', text: '/zett-review check this diff' }],
+          },
+        },
+      }),
+    ])
+
+    expect(restored.initialPrompt).toBe('/zett-review inspect the diff')
+    expect(restored.initialParts).toEqual([{ type: 'text', text: '/zett-review inspect the diff' }, image])
+    expect(restored.messages[1]).toMatchObject({
+      role: 'user',
+      content: '/zett-review check this diff',
+      parts: [
+        { type: 'text', text: '/zett-review check this diff' },
+      ],
+    })
+  })
+
   it('restores ordered image tool output in the same shape as live events', () => {
     const restored = restorePersistedConversation([
       record(1, 'user', { content: 'Read the image' }),

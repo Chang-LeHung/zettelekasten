@@ -1,56 +1,28 @@
 """Typed projections from zett-agent persistence records to HTTP models."""
 
-import base64
-
 from zett_agent import (
     AgentMessage,
     AssistantMessage,
-    ImageBytesSource,
-    ImageContent,
-    ImageUrlSource,
     RawMessageRecord,
     SessionSummary,
-    TextContent,
     ToolMessage,
     UserMessage,
 )
 
+from ..messages import FrontMessagePart, MessagePartCodec
 from .schemas import (
-    MessageImagePartOut,
-    MessagePartOut,
-    MessageTextPartOut,
     PersistedMessageOut,
     PersistedToolCallOut,
     SessionOut,
 )
 
+_CODEC = MessagePartCodec()
 
-def _message_parts(message: UserMessage | ToolMessage) -> list[MessagePartOut]:
-    """Expose persisted text and images without losing their semantic order."""
-    parts: list[MessagePartOut] = []
-    content_parts = message.parts if isinstance(message, UserMessage) else message.content
-    if isinstance(content_parts, str):
-        return []
-    for index, part in enumerate(content_parts, start=1):
-        if isinstance(part, TextContent):
-            parts.append(MessageTextPartOut(text=part.text))
-            continue
-        if not isinstance(part, ImageContent):
-            continue
-        name = part.alt_text or f"Pasted image {index}"
-        match part.source:
-            case ImageBytesSource(data=data, media_type=media_type):
-                encoded = base64.b64encode(data).decode("ascii")
-                parts.append(
-                    MessageImagePartOut(
-                        name=name,
-                        mime_type=media_type,
-                        content_url=f"data:{media_type};base64,{encoded}",
-                    )
-                )
-            case ImageUrlSource(url=url):
-                parts.append(MessageImagePartOut(name=name, content_url=url))
-    return parts
+
+def _message_parts(message: UserMessage | ToolMessage) -> list[FrontMessagePart]:
+    """Expose persisted text and images as base64 parts in their stored order."""
+    content = message.parts if isinstance(message, UserMessage) else message.content
+    return _CODEC.to_front_parts(content)
 
 
 def message_out(record: RawMessageRecord) -> PersistedMessageOut:

@@ -1,10 +1,7 @@
 """Asynchronous Zettelkasten Agent streaming and external-event endpoints."""
 
 import asyncio
-import base64
-import binascii
-from collections import deque
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import aclosing
 from dataclasses import dataclass
 
@@ -14,37 +11,42 @@ from starlette.background import BackgroundTask
 from zett_agent import (
     STEERING_MESSAGE_EVENT_NAME,
     AgentClient,
+    AgentEvent,
     AgentEventType,
     AgentRunConfig,
     ExternalEvent,
-    ImageBytesSource,
-    ImageContent,
     ReasoningEffort,
     ShellApprovalMode,
-    TextContent,
     UserMessage,
 )
 
-from ...agent import ZettelkastenAgent, ZettelkastenAgentConfig, ZettelkastenEventDispatcher, encode_sse
+from ...agent import (
+    SlashCommandInvocation,
+    ZettelkastenAgent,
+    ZettelkastenAgentConfig,
+    ZettelkastenEventDispatcher,
+    encode_sse,
+    event_payload,
+)
 from ...agent.model_factory import ProviderAdapter, create_model
 from ...infra.agent_runtime import get_agent_runtime_storage
 from ...infra.dao import model_usage_activity_storage, provider_storage, session_storage
 from ...infra.log import get_logger
 from ...infra.shell_approval import shell_approval_storage
+from ...messages import MessageImageSizeExceeded, MessagePartCodec, MessagePartError
 from ...schemas import ProviderConnection
 from ..schemas import (
     AnalyzeRequest,
     ExternalEventIn,
     ExternalEventOut,
-    MessageImagePartIn,
-    MessageTextPartIn,
+    SlashCommandOut,
     SteerRequest,
     UserMessageIn,
 )
 from ..session_context import session_context_composition_service
 from ..session_preferences import session_model_preference_service
 from ..session_titles import generate_initial_session_title
-from ..settings import runtime_settings_service
+from ..settings import RuntimeSettings, runtime_settings_service
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 logger = get_logger(__name__)
@@ -115,12 +117,12 @@ class _PreparedAgentRequest:
     """Validated request plus every request-owned streaming resource."""
 
     config: AgentRunConfig
+    agent: ZettelkastenAgent
     connection: ProviderConnection
     model: ProviderAdapter
     client: AgentClient
     message: UserMessage
     effort: ReasoningEffort
-    frames: deque[str]
 
 
 active_requests = ActiveRequestRegistry()
@@ -134,37 +136,41 @@ async def _remember_context_composition(session_id: str, ratios: dict[str, float
         logger.exception("Could not persist context composition; session_id=%s", session_id)
 
 
+def _agent_config(session_id: str, runtime_settings: RuntimeSettings) -> ZettelkastenAgentConfig:
+    """Build one request-scoped container configuration."""
+    return ZettelkastenAgentConfig(
+        session_id=session_id,
+        max_iterations=runtime_settings.max_turn_iterations,
+        max_asset_size_bytes=runtime_settings.max_asset_size_bytes,
+        compaction_max_tokens=runtime_settings.compaction_max_tokens,
+        compaction_keep_recent_tokens=runtime_settings.compaction_keep_recent_tokens,
+        usage_activity_storage=model_usage_activity_storage,
+        shell_approval_storage=shell_approval_storage,
+        storage=get_agent_runtime_storage(),
+        context_composition_recorder=_remember_context_composition,
+    )
+
+
+async def _slash_container(session_id: str, runtime_settings: RuntimeSettings) -> ZettelkastenAgent:
+    """Create one initialized container without constructing a provider model."""
+    return await ZettelkastenAgent(_agent_config(session_id, runtime_settings)).initialize()
+
+
+async def _discard_prepared_request(request: _PreparedAgentRequest) -> None:
+    """Release a prepared request when routing fails before streaming starts."""
+    await active_requests.remove(request.config)
+    await request.model.aclose()
+
+
 def _user_message(payload: UserMessageIn, *, max_images: int, max_asset_size_bytes: int) -> UserMessage:
-    """Decode bounded browser images into one provider-neutral multimodal turn."""
-    parts: list[TextContent | ImageContent] = []
-    total_size = 0
-    image_count = 0
-    for part in payload.parts or ([MessageTextPartIn(text=payload.current_message)] if payload.current_message else []):
-        match part:
-            case MessageTextPartIn(text=text):
-                if text:
-                    parts.append(TextContent(text))
-            case MessageImagePartIn() as image:
-                image_count += 1
-                if image_count > max_images:
-                    image_label = "image" if max_images == 1 else "images"
-                    raise HTTPException(
-                        status.HTTP_422_UNPROCESSABLE_CONTENT,
-                        f"A message can contain up to {max_images} {image_label}",
-                    )
-                try:
-                    content = base64.b64decode(image.data_base64, validate=True)
-                except (ValueError, binascii.Error) as error:
-                    raise HTTPException(
-                        status.HTTP_422_UNPROCESSABLE_CONTENT, f"Invalid image data: {image.name}"
-                    ) from error
-                if not content:
-                    raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"Image is empty: {image.name}")
-                total_size += len(content)
-                if total_size > max_asset_size_bytes:
-                    raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "Message images exceed the configured limit")
-                parts.append(ImageContent(source=ImageBytesSource(content, image.mime_type), alt_text=image.name))
-    return UserMessage(content=parts)
+    """Validate one browser turn through the shared message part codec."""
+    codec = MessagePartCodec(max_images=max_images, max_bytes=max_asset_size_bytes)
+    try:
+        return codec.to_user_message(payload)
+    except MessageImageSizeExceeded as error:
+        raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, str(error)) from error
+    except MessagePartError as error:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
 
 
 async def _prepare_agent_request(session_id: str, payload: AnalyzeRequest) -> _PreparedAgentRequest:
@@ -191,26 +197,13 @@ async def _prepare_agent_request(session_id: str, payload: AnalyzeRequest) -> _P
     model: ProviderAdapter | None = None
     try:
         model = create_model(connection)
-        frames: deque[str] = deque()
 
-        async def send(frame: str) -> None:
-            frames.append(frame)
+        async def discard_frame(frame: str) -> None:
+            del frame
 
-        storage = get_agent_runtime_storage()
         # Reserve the session before binding the Agent, allowing each new Agent
         # instance to apply the latest configuration immediately.
-        agent_config = ZettelkastenAgentConfig(
-            session_id=session_id,
-            max_iterations=runtime_settings.max_turn_iterations,
-            max_asset_size_bytes=runtime_settings.max_asset_size_bytes,
-            compaction_max_tokens=runtime_settings.compaction_max_tokens,
-            compaction_keep_recent_tokens=runtime_settings.compaction_keep_recent_tokens,
-            usage_activity_storage=model_usage_activity_storage,
-            shell_approval_storage=shell_approval_storage,
-            storage=storage,
-            context_composition_recorder=_remember_context_composition,
-        )
-        agent = ZettelkastenAgent(agent_config)
+        agent = ZettelkastenAgent(_agent_config(session_id, runtime_settings))
         await agent.initialize()
         await active_requests.bind(config, agent)
         # Remember only a fully prepared request. Validation, Model creation,
@@ -218,12 +211,12 @@ async def _prepare_agent_request(session_id: str, payload: AnalyzeRequest) -> _P
         await session_model_preference_service.remember(session_id, connection)
         return _PreparedAgentRequest(
             config=config,
+            agent=agent,
             connection=connection,
             model=model,
-            client=agent.client(ZettelkastenEventDispatcher(send)),
+            client=agent.client(ZettelkastenEventDispatcher(discard_frame)),
             message=message,
             effort=effort,
-            frames=frames,
         )
     except BaseException:
         # Setup happens before StreamingResponse owns a body iterator, so this
@@ -234,10 +227,12 @@ async def _prepare_agent_request(session_id: str, payload: AnalyzeRequest) -> _P
         raise
 
 
-@router.post("/{session_id}/messages")
-async def stream_message(session_id: str, payload: AnalyzeRequest) -> StreamingResponse:
-    """Run one user turn and stream lossless zett-agent events as SSE."""
-    request = await _prepare_agent_request(session_id, payload)
+def _stream_response(
+    request: _PreparedAgentRequest,
+    session_id: str,
+    event_factory: Callable[[], AsyncIterator[AgentEvent]],
+) -> StreamingResponse:
+    """Stream one prepared Agent event source as the existing SSE protocol."""
     run_completed = False
 
     async def body() -> AsyncIterator[str]:
@@ -246,27 +241,15 @@ async def stream_message(session_id: str, payload: AnalyzeRequest) -> StreamingR
             # Explicit closure matters when Starlette cancels this body because
             # the browser disconnected. AgentClient then closes Agent.stream(),
             # which publishes cancellation and unwinds pending extension waits.
-            async with aclosing(
-                request.client.stream(
-                    request.message,
-                    config=request.config,
-                    model=request.model,
-                    reasoning_effort=request.effort,
-                    metadata=payload.metadata,
-                    tags=payload.tags,
-                )
-            ) as events:
+            async with aclosing(event_factory()) as events:
                 async for event in events:
                     if event.type is AgentEventType.RUN_COMPLETED:
                         run_completed = True
                         # Agent persistence and terminal hooks are complete before
                         # this event. Release now rather than waiting for the HTTP
-                        # client to drain buffered SSE frames, which may be slow.
+                        # client to drain the remaining stream, which may be slow.
                         await active_requests.remove(request.config)
-                    while request.frames:
-                        yield request.frames.popleft()
-            while request.frames:
-                yield request.frames.popleft()
+                    yield encode_sse(event.type.value, event_payload(event))
         except asyncio.CancelledError, GeneratorExit:
             # Disconnects and explicit iterator closure are control flow, not
             # application errors: never attempt to yield an SSE error frame.
@@ -291,6 +274,70 @@ async def stream_message(session_id: str, payload: AnalyzeRequest) -> StreamingR
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         background=BackgroundTask(title_after_success),
+    )
+
+
+@router.get("/{session_id}/slash-commands", response_model=list[SlashCommandOut])
+async def list_slash_commands(session_id: str) -> list[SlashCommandOut]:
+    """List container-registered commands available to one conversation."""
+    if await session_storage.get(session_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+    runtime_settings = await runtime_settings_service.get()
+    container = await _slash_container(session_id, runtime_settings)
+    return [
+        SlashCommandOut(
+            id=command.id,
+            name=command.name,
+            description=command.description,
+            type=command.type,
+        )
+        for command in container.slash_commands()
+    ]
+
+
+@router.post("/{session_id}/slash-commands/{command_id}")
+async def stream_slash_command(
+    session_id: str,
+    command_id: str,
+    payload: AnalyzeRequest,
+) -> StreamingResponse:
+    """Execute one registered slash command and stream its Agent events."""
+    request = await _prepare_agent_request(session_id, payload)
+    if request.agent.slash_command(command_id) is None:
+        await _discard_prepared_request(request)
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Slash command not found")
+    invocation = SlashCommandInvocation(
+        session_id=session_id,
+        client=request.client,
+        message=request.message,
+        model=request.model,
+        config=request.config,
+        reasoning_effort=request.effort,
+        metadata=payload.metadata,
+        tags=payload.tags,
+    )
+    return _stream_response(
+        request,
+        session_id,
+        lambda: request.agent.execute_slash_command(command_id, invocation),
+    )
+
+
+@router.post("/{session_id}/messages")
+async def stream_message(session_id: str, payload: AnalyzeRequest) -> StreamingResponse:
+    """Run one user turn and stream lossless zett-agent events as SSE."""
+    request = await _prepare_agent_request(session_id, payload)
+    return _stream_response(
+        request,
+        session_id,
+        lambda: request.client.stream(
+            request.message,
+            config=request.config,
+            model=request.model,
+            reasoning_effort=request.effort,
+            metadata=payload.metadata,
+            tags=payload.tags,
+        ),
     )
 
 

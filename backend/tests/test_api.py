@@ -16,8 +16,8 @@ from zett_agent import (
     AgentRunConfig,
     AssistantMessage,
     ExternalEvent,
-    ImageBytesSource,
     ImageContent,
+    ImageUrlSource,
     ModelEvent,
     ModelRequest,
     ModelResponse,
@@ -151,7 +151,7 @@ def test_steer_endpoint_routes_typed_external_event(monkeypatch) -> None:
                         "type": "image",
                         "name": "clipboard.png",
                         "mime_type": "image/png",
-                        "data_base64": "aW1hZ2U=",
+                        "content_url": "data:image/png;base64,aW1hZ2U=",
                     },
                 ],
             },
@@ -170,7 +170,7 @@ def test_steer_endpoint_routes_typed_external_event(monkeypatch) -> None:
                         content=[
                             TextContent("Explain first."),
                             ImageContent(
-                                source=ImageBytesSource(b"image", "image/png"),
+                                source=ImageUrlSource("data:image/png;base64,aW1hZ2U="),
                                 alt_text="clipboard.png",
                             ),
                         ]
@@ -616,7 +616,7 @@ def test_pasted_image_is_persisted_in_the_user_message_not_session_assets(monkey
                         "type": "image",
                         "name": "clipboard.png",
                         "mime_type": "image/png",
-                        "data_base64": base64.b64encode(image_bytes).decode("ascii"),
+                        "content_url": f"data:image/png;base64,{base64.b64encode(image_bytes).decode('ascii')}",
                     },
                     {"type": "text", "text": "after image."},
                 ],
@@ -628,8 +628,8 @@ def test_pasted_image_is_persisted_in_the_user_message_not_session_assets(monkey
         assert isinstance(message, UserMessage)
         assert [type(part).__name__ for part in message.parts] == ["TextContent", "ImageContent", "TextContent"]
         image = message.parts[1]
-        assert isinstance(image.source, ImageBytesSource)
-        assert image.source.data == image_bytes
+        assert isinstance(image.source, ImageUrlSource)
+        assert image.source.url == f"data:image/png;base64,{base64.b64encode(image_bytes).decode('ascii')}"
         detail = client.get(f"/api/agent/sessions/{session_id}").json()
         assert detail["assets"] == []
         user_message = next(message for message in detail["messages"] if message["role"] == "user")
@@ -660,7 +660,14 @@ def test_message_images_reject_empty_turns_invalid_base64_and_oversized_collecti
             endpoint,
             json={
                 **common,
-                "parts": [{"type": "image", "name": "bad.png", "mime_type": "image/png", "data_base64": "%%%"}],
+                "parts": [
+                    {
+                        "type": "image",
+                        "name": "bad.png",
+                        "mime_type": "image/png",
+                        "content_url": "data:image/png;base64,%%%",
+                    }
+                ],
             },
         )
         assert invalid.status_code == 422
@@ -673,7 +680,7 @@ def test_message_images_reject_empty_turns_invalid_base64_and_oversized_collecti
                         "type": "image",
                         "name": "large.png",
                         "mime_type": "image/png",
-                        "data_base64": base64.b64encode(b"1234").decode("ascii"),
+                        "content_url": f"data:image/png;base64,{base64.b64encode(b'1234').decode('ascii')}",
                     }
                 ],
             },
@@ -690,7 +697,7 @@ def test_message_images_reject_empty_turns_invalid_base64_and_oversized_collecti
                         "type": "image",
                         "name": f"image-{index}.png",
                         "mime_type": "image/png",
-                        "data_base64": base64.b64encode(b"x").decode("ascii"),
+                        "content_url": f"data:image/png;base64,{base64.b64encode(b'x').decode('ascii')}",
                     }
                     for index in range(33)
                 ],
@@ -709,7 +716,7 @@ def test_message_images_reject_empty_turns_invalid_base64_and_oversized_collecti
                         "type": "image",
                         "name": f"configured-{index}.png",
                         "mime_type": "image/png",
-                        "data_base64": base64.b64encode(b"x").decode("ascii"),
+                        "content_url": f"data:image/png;base64,{base64.b64encode(b'x').decode('ascii')}",
                     }
                     for index in range(2)
                 ],

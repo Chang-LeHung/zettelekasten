@@ -1,10 +1,11 @@
 """HTTP application request and response models."""
 
 from datetime import date, datetime
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from ..messages import FrontMessagePart, FrontUserMessage
 from ..schemas import (
     AgentArtifact,
     ArtifactContent,
@@ -50,25 +51,6 @@ class PersistedToolCallOut(BaseModel):
     arguments: dict[str, Any] = Field(default_factory=dict)
 
 
-class MessageTextPartOut(BaseModel):
-    """One text segment in an ordered persisted user message."""
-
-    type: Literal["text"] = "text"
-    text: str
-
-
-class MessageImagePartOut(BaseModel):
-    """One image segment in an ordered persisted user or tool message."""
-
-    type: Literal["image"] = "image"
-    name: str
-    mime_type: str | None = None
-    content_url: str
-
-
-MessagePartOut = Annotated[MessageTextPartOut | MessageImagePartOut, Field(discriminator="type")]
-
-
 class PersistedMessageOut(BaseModel):
     """One immutable raw message projected for the conversation UI."""
 
@@ -78,7 +60,7 @@ class PersistedMessageOut(BaseModel):
     sequence: int
     role: str
     content: str
-    parts: list[MessagePartOut] = Field(default_factory=list)
+    parts: list[FrontMessagePart] = Field(default_factory=list)
     reasoning_content: str | None = None
     model: str | None = None
     provider: str | None = None
@@ -253,46 +235,8 @@ class ProviderDetailResponse(ProviderResponse):
     )
 
 
-class MessageTextPartIn(BaseModel):
-    """One text segment in an ordered multimodal request."""
-
-    type: Literal["text"] = "text"
-    text: str
-
-
-class MessageImagePartIn(BaseModel):
-    """One base64-encoded image segment in an ordered multimodal request."""
-
-    type: Literal["image"] = "image"
-    name: str = Field(min_length=1, max_length=500)
-    mime_type: str = Field(pattern=r"^image/[A-Za-z0-9.+-]+$", max_length=255)
-    data_base64: str = Field(min_length=1)
-
-
-MessagePartIn = Annotated[MessageTextPartIn | MessageImagePartIn, Field(discriminator="type")]
-
-
-class UserMessageIn(BaseModel):
+class UserMessageIn(FrontUserMessage):
     """One multimodal user message shared by starts and active steering."""
-
-    raw_content: str = ""
-    # Up to 256 configured images may be interleaved with 257 text segments.
-    parts: list[MessagePartIn] = Field(default_factory=list, max_length=513)
-
-    @property
-    def current_message(self) -> str:
-        """Return only this request's text; persisted history is restored separately."""
-        return self.raw_content.strip()
-
-    @model_validator(mode="after")
-    def require_message_content(self) -> AnalyzeRequest:
-        """Accept text, images, or both while rejecting an empty user turn."""
-        if not self.current_message and not any(
-            isinstance(part, MessageImagePartIn) or (isinstance(part, MessageTextPartIn) and part.text.strip())
-            for part in self.parts
-        ):
-            raise ValueError("A message requires text or at least one image")
-        return self
 
 
 class AnalyzeRequest(UserMessageIn):
@@ -318,6 +262,15 @@ class ExternalEventOut(BaseModel):
 
     accepted: bool
     accepted_by: list[str] = Field(default_factory=list)
+
+
+class SlashCommandOut(BaseModel):
+    """Browser-safe metadata for one container-registered slash command."""
+
+    id: str
+    name: str
+    description: str
+    type: str
 
 
 class ShellApprovalSettings(BaseModel):

@@ -6,6 +6,7 @@ import type {
   AgentModelUsage,
   AgentUsageActivityDay,
   AgentServerToolActivity,
+  AgentSlashCommand,
   AgentSteeringMessage,
   AgentStreamCallbacks,
   AgentSession,
@@ -18,7 +19,7 @@ import type {
   LibraryItem,
   LibraryItemType,
   LibraryItemUpdate,
-  MessagePartInput,
+  MessagePart,
   ReasoningEffort,
   RuntimeSettings,
   SessionModelPreference,
@@ -211,10 +212,14 @@ export const aiClient = {
     messages: AnalysisMessage[],
     callbacks: AgentStreamCallbacks = {},
     signal?: AbortSignal,
-    parts: MessagePartInput[] = [],
+    parts: MessagePart[] = [],
     shellApprovalMode: ShellApprovalMode = 'review',
+    slashCommandId: string | null = null,
   ): Promise<AgentArtifact | null> {
-    const response = await fetch(`${API_URL}/agent/${conversationId}/messages`, {
+    const path = slashCommandId
+      ? `/agent/${conversationId}/slash-commands/${slashCommandId}`
+      : `/agent/${conversationId}/messages`
+    const response = await fetch(`${API_URL}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -312,8 +317,38 @@ export const aiClient = {
     return result
   },
 
+  slashCommandStream(
+    conversationId: string,
+    commandId: string,
+    rawContent: string,
+    providerId: string,
+    reasoningEffort: ReasoningEffort,
+    messages: AnalysisMessage[],
+    callbacks: AgentStreamCallbacks = {},
+    signal?: AbortSignal,
+    parts: MessagePart[] = [],
+    shellApprovalMode: ShellApprovalMode = 'review',
+  ): Promise<AgentArtifact | null> {
+    return this.analyzeStream(
+      conversationId,
+      rawContent,
+      providerId,
+      reasoningEffort,
+      messages,
+      callbacks,
+      signal,
+      parts,
+      shellApprovalMode,
+      commandId,
+    )
+  },
+
   startAgent(): Promise<AgentStart> {
     return request<AgentStart>('/agent/start', { method: 'POST' })
+  },
+
+  listSlashCommands(conversationId: string): Promise<AgentSlashCommand[]> {
+    return request<AgentSlashCommand[]>(`/agent/${conversationId}/slash-commands`)
   },
 
   getAgentSession(conversationId: string): Promise<AgentSession> {
@@ -377,7 +412,7 @@ export const aiClient = {
   steerAgent(
     conversationId: string,
     rawContent: string,
-    parts: MessagePartInput[] = [],
+    parts: MessagePart[] = [],
   ): Promise<{ accepted: boolean }> {
     return request<{ accepted: boolean }>(`/agent/${conversationId}/steer`, {
       method: 'POST',

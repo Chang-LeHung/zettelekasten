@@ -13,8 +13,11 @@ from zett_agent import (
 )
 
 from ..config import settings
+from .slash import ZettelkastenExt
+from .slash_skills import SkillSlashCommandExtension
 
 DEFAULT_ZETT_MCP_CONFIG_PATH = Path("~/.zettelekasten/mcp.json")
+DEFAULT_ZETT_SKILL_ROOTS = ("~/.zettelekasten/skills",)
 
 SYSTEM_PROMPT = """You are the Zettelkasten Agent, an assistant for developing ideas into durable knowledge.
 Use the conversation and attached assets as source material. Create or update artifacts only when useful; ordinary
@@ -48,7 +51,8 @@ class ZettelkastenAgentConfig:
     shell_approval_storage: ShellApprovalStorage | None = None
     storage: SQLiteSessionStorage | None = field(default=None, repr=False, compare=False)
     context_composition_recorder: Callable[[str, dict[str, float]], Awaitable[None]] | None = None
-    skill_roots: tuple[str | Path, ...] = ("~/.zettelekasten/skills",)
+    skill_roots: tuple[str | Path, ...] = DEFAULT_ZETT_SKILL_ROOTS
+    extensions: tuple[ZettelkastenExt, ...] | None = None
     mcp_servers: tuple[McpServer, ...] = ()
     mcp_config_path: str | Path | None = DEFAULT_ZETT_MCP_CONFIG_PATH
     mcp_server_keys: tuple[str, ...] = DEFAULT_MCP_SERVER_KEYS
@@ -76,3 +80,9 @@ class ZettelkastenAgentConfig:
         if configured == default and not configured.is_file():
             return None
         return self.mcp_config_path
+
+    def resolved_extensions(self) -> tuple[ZettelkastenExt, ...]:
+        """Load configured extensions, defaulting to local skill commands."""
+        if self.extensions is not None:
+            return self.extensions
+        return (SkillSlashCommandExtension(self.skill_roots),)
