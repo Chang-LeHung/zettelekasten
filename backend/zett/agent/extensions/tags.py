@@ -2,9 +2,9 @@
 
 from zett_agent import AgentExtension, AgentRunContext, tool
 
-from ..application.tagging import tag_service
-from ..infra.dao import artifact_storage
-from ..schemas import AgentArtifact, TagOut, TagTreeOut
+from ...application.tagging import tag_service
+from ...infra.dao import artifact_storage
+from ...schemas import AgentArtifact, TagOut, TagTreeOut
 
 
 class TagExtension(AgentExtension):

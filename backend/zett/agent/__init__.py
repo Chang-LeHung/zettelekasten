@@ -1,6 +1,5 @@
 """Minimal zett-agent composition and SSE transport."""
 
-from .assets import AssetDetails, AssetExtension, AssetInput
 from .at_command import (
     AtCommandDefinition,
     AtCommandHandler,
@@ -10,17 +9,29 @@ from .at_command import (
     at_command_message,
     stable_at_command_id,
 )
-from .at_sources import SessionArtifactAtCommandSource, SessionAssetAtCommandSource, SessionReferenceExtension
 from .config import ZettelkastenAgentConfig
 from .container import ZettelkastenContainer, ZettelkastenExt
-from .context_composition import CONTEXT_COMPOSITION_EVENT, ContextCompositionExtension, context_composition
 from .dispatcher import SSESend, ZettelkastenEventDispatcher, encode_sse, event_payload
+from .extensions import (
+    CONTEXT_COMPOSITION_EVENT,
+    ArtifactExtension,
+    AssetDetails,
+    AssetExtension,
+    AssetInput,
+    ContextCompositionExtension,
+    context_composition,
+)
+from .plugins import (
+    SessionArtifactAtCommandSource,
+    SessionAssetAtCommandSource,
+    SessionReferenceExtension,
+    SkillSlashCommandExtension,
+)
 from .slash import (
     SlashCommandDefinition,
     SlashCommandHandler,
     SlashCommandInvocation,
 )
-from .slash_skills import SkillSlashCommandExtension
 from .zettelkasten import ZettelkastenAgent
 
 __all__ = [
@@ -33,6 +44,7 @@ __all__ = [
     "AtCommandItem",
     "AtCommandInvocation",
     "AtCommandSource",
+    "ArtifactExtension",
     "ZettelkastenAgent",
     "ZettelkastenAgentConfig",
     "CONTEXT_COMPOSITION_EVENT",

@@ -8,7 +8,9 @@ when a build exists.
 
 | Path | Contents |
 | --- | --- |
-| `zett/agent/` | Composition root for conversations: extension stack, model factory, SSE dispatcher, session title agent |
+| `zett/agent/` | Composition root for conversations: container, capability contracts, model factory, SSE dispatcher, session title agent |
+| `zett/agent/extensions/` | Zett's adapters to the zett-agent `AgentExtension` point: the asset, artifact, tag, and context-composition tools |
+| `zett/agent/plugins/` | Zett's own `ZettelkastenExt` plugins: the skill slash commands and the `@` reference kinds |
 | `zett/application/` | Routes, use-case services, and the framework-neutral `ObjectStore` contract |
 | `zett/infra/` | SQLAlchemy models and DAOs, local ObjectStore adapter, agent runtime storage, logging |
 | `zett/schemas.py`, `zett/models/` | Write and read models shared by routes and storage |

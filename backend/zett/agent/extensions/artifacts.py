@@ -5,16 +5,16 @@ from typing import Annotated
 from pydantic import Field
 from zett_agent import AgentExtension, AgentRunContext, tool
 
-from ..application.artifact_pruner import AgentArtifactPreview, ArtifactPruner
-from ..application.tagging import tag_service
-from ..infra.dao import artifact_storage
-from ..models import ArtifactListOptions
-from ..schemas import AgentArtifact, AgentArtifactWrite, ArtifactContent, ArtifactCreateContent, ArtifactStatus
+from ...application.artifact_pruner import AgentArtifactPreview, ArtifactPruner
+from ...application.tagging import tag_service
+from ...infra.dao import artifact_storage
+from ...models import ArtifactListOptions
+from ...schemas import AgentArtifact, AgentArtifactWrite, ArtifactContent, ArtifactCreateContent, ArtifactStatus
 
 artifact_pruner = ArtifactPruner()
 
 
-class ZettelkastenExtension(AgentExtension):
+class ArtifactExtension(AgentExtension):
     """Expose typed artifact operations to the model."""
 
     # Do not add an on_state() workspace system message. A conversation starts

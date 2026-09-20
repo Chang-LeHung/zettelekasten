@@ -26,7 +26,6 @@ from zett_agent import (
 )
 
 from ..infra.agent_runtime import get_agent_runtime_storage
-from .assets import AssetExtension
 from .at_command import (
     AtCommandDefinition,
     AtCommandHandler,
@@ -35,18 +34,21 @@ from .at_command import (
     AtCommandSource,
     named_at_commands,
 )
-from .at_sources import SessionReferenceExtension
 from .config import SYSTEM_PROMPT, ZettelkastenAgentConfig
 from .container import ZettelkastenContainer, ZettelkastenExt
-from .context_composition import ContextCompositionExtension
-from .extensions import ZettelkastenExtension
+from .extensions import (
+    ArtifactExtension,
+    AssetExtension,
+    ContextCompositionExtension,
+    TagExtension,
+)
+from .plugins import SessionReferenceExtension
 from .slash import (
     SlashCommandDefinition,
     SlashCommandHandler,
     SlashCommandInvocation,
     stable_slash_command_id,
 )
-from .tags import TagExtension
 
 _SLASH_NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _AT_COMMAND_KIND = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -70,7 +72,7 @@ class ZettelkastenAgent(ZettelkastenContainer):
         extensions = [
             SessionPersistenceExtension(self.storage),
             AssetExtension(max_asset_size_bytes=config.max_asset_size_bytes),
-            ZettelkastenExtension(),
+            ArtifactExtension(),
             TagExtension(),
             ShellApprovalExtension(config.shell_approval_storage),
             CodingExtension(),

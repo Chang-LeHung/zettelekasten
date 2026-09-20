@@ -7,6 +7,7 @@
 - Put use-case orchestration in the application layer.
 - Put database, ORM, DAO, repository, and external-provider adapters in `zett/infra`.
 - Interfaces such as HTTP and CLI must call application services instead of DAOs directly.
+- Keep the two extension mechanisms in their own directories. Adapters to the zett-agent runtime extension point (tools and hooks implemented with `AgentExtension`) live in `zett/agent/extensions`; Zett's own container plugins (capabilities registered with `ZettelkastenExt`, such as slash commands and `@` references) live in `zett/agent/plugins`.
 
 ## Persistence
 
@@ -27,7 +28,7 @@
 
 ## Agent Context
 
-- Do not add per-turn injections that rebuild the leading system prefix. A conversation starts with none of that state, and later tool calls and results already carry it, so rebuilding the prefix invalidates prompt-cache prefixes without adding unseen information. `ZettelkastenExtension.on_tool`, `AssetExtension.on_tool`, and `TagExtension.on_tool` record this decision for their own domains.
+- Do not add per-turn injections that rebuild the leading system prefix. A conversation starts with none of that state, and later tool calls and results already carry it, so rebuilding the prefix invalidates prompt-cache prefixes without adding unseen information. `ArtifactExtension.on_tool`, `AssetExtension.on_tool`, and `TagExtension.on_tool` record this decision for their own domains.
 - Retrieve existing knowledge through tools (`query_artifacts`, `list_assets`, `list_tags`), not through injected snapshots.
 - Keep model-facing artifact previews bounded: `ArtifactPruner` projects search results, complete documents are read only on explicit request, and server-owned object keys such as a LaTeX `project_path` never appear in a preview.
 - Slash commands are container capabilities registered by `ZettelkastenExt` implementations loaded from `ZettelkastenAgentConfig`. The container assigns stable IDs, the browser submits at most one ID, and the backend resolves it to a handler that sends the command's message through the prepared Agent stream.

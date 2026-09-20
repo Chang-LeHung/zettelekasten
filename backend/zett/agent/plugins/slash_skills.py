@@ -14,9 +14,9 @@ from zett_agent import (
     UserMessage,
 )
 
-from ..messages import MessagePartCodec
-from .container import ZettelkastenContainer, ZettelkastenExt
-from .slash import SlashCommandInvocation
+from ...messages import MessagePartCodec
+from ..container import ZettelkastenContainer, ZettelkastenExt
+from ..slash import SlashCommandInvocation
 
 _CODEC = MessagePartCodec()
 

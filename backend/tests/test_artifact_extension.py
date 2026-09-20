@@ -14,7 +14,7 @@ from zett_agent import (
     ToolMessage,
 )
 
-from zett.agent.extensions import ZettelkastenExtension
+from zett.agent.extensions import ArtifactExtension
 from zett.infra.dao import artifact_storage, session_storage
 from zett.schemas import AgentArtifactWrite, AgentSessionCreate, ArticleArtifactContent, CardArtifactContent
 
@@ -147,9 +147,7 @@ class ArtifactQueryModel:
 async def test_artifact_query_tools_run_complete_session_scoped_lifecycle() -> None:
     session_id = (await session_storage.create(AgentSessionCreate())).session_id
     model = ArtifactQueryModel()
-    agent = await Agent.create(
-        model, config=AgentRunConfig(session_id=session_id), extensions=[ZettelkastenExtension()]
-    )
+    agent = await Agent.create(model, config=AgentRunConfig(session_id=session_id), extensions=[ArtifactExtension()])
 
     result = await agent.run("Create cards and query them")
 
@@ -207,7 +205,7 @@ async def test_artifact_queries_are_scoped_to_the_owning_session() -> None:
     agent = await Agent.create(
         CrossSessionModel(),
         config=AgentRunConfig(session_id=other),
-        extensions=[ZettelkastenExtension()],
+        extensions=[ArtifactExtension()],
     )
     result = await agent.run("Read the other artifact")
 
@@ -233,9 +231,7 @@ async def test_artifact_workspace_is_not_reinjected_into_system_context() -> Non
             requests.append(request)
             yield ModelEvent.completed(ModelResponse(AssistantMessage(content="done")))
 
-    agent = await Agent.create(
-        Model(), config=AgentRunConfig(session_id=session_id), extensions=[ZettelkastenExtension()]
-    )
+    agent = await Agent.create(Model(), config=AgentRunConfig(session_id=session_id), extensions=[ArtifactExtension()])
     await agent.run("Inspect the workspace")
 
     assert all(
