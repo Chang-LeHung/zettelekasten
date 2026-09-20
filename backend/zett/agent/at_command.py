@@ -17,28 +17,21 @@ from __future__ import annotations
 
 import re
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator, Callable, Iterable, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Iterable, Sequence
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Any
+from typing import Any
 from uuid import UUID, uuid5
 
 from zett_agent import (
-    AgentClient,
     AgentEvent,
-    AgentModel,
-    AgentRunConfig,
     ImageContent,
-    JsonValue,
-    ReasoningEffort,
     TextContent,
     UserContentPart,
     UserMessage,
 )
 
+from ..application.turns import AgentTurn
 from ..messages import MessagePartCodec
-
-if TYPE_CHECKING:
-    from .container import ZettelkastenContainer
 
 AT_COMMAND_NAMESPACE = UUID("7f0b0be6-9d3f-5a3f-8f1e-1b7f2f6c4a11")
 AT_COMMAND_NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -89,18 +82,10 @@ class AtCommandItem:
         }
 
 
-@dataclass(frozen=True, slots=True)
-class AtCommandInvocation:
-    """One prepared Agent request that a referenced resource may send to the model."""
+@dataclass(slots=True)
+class AtCommandInvocation(AgentTurn):
+    """One prepared turn that references a conversation resource."""
 
-    session_id: str
-    client: AgentClient
-    message: UserMessage
-    model: AgentModel
-    config: AgentRunConfig
-    reasoning_effort: ReasoningEffort
-    metadata: Mapping[str, JsonValue]
-    tags: Mapping[str, JsonValue]
     item: AtCommandItem
 
 
@@ -114,10 +99,7 @@ class AtCommandDefinition:
     handler: AtCommandHandler
 
 
-type AtCommandHandler = Callable[
-    ["ZettelkastenContainer", AtCommandInvocation],
-    AsyncIterator[AgentEvent],
-]
+type AtCommandHandler = Callable[[AtCommandInvocation], AsyncIterator[AgentEvent]]
 
 
 class AtCommandSource(ABC):

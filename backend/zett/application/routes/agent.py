@@ -49,6 +49,7 @@ from ..session_context import session_context_composition_service
 from ..session_preferences import session_model_preference_service
 from ..session_titles import generate_initial_session_title
 from ..settings import RuntimeSettings, runtime_settings_service
+from ..turns import AgentTurn
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 logger = get_logger(__name__)
@@ -378,18 +379,17 @@ async def stream_at_command(
 async def stream_message(session_id: str, payload: AnalyzeRequest) -> StreamingResponse:
     """Run one user turn and stream lossless zett-agent events as SSE."""
     request = await _prepare_agent_request(session_id, payload)
-    return _stream_response(
-        request,
-        session_id,
-        lambda: request.client.stream(
-            request.message,
-            config=request.config,
-            model=request.model,
-            reasoning_effort=request.effort,
-            metadata=payload.metadata,
-            tags=payload.tags,
-        ),
+    turn = AgentTurn(
+        session_id=session_id,
+        client=request.client,
+        message=request.message,
+        model=request.model,
+        config=request.config,
+        reasoning_effort=request.effort,
+        metadata=payload.metadata,
+        tags=payload.tags,
     )
+    return _stream_response(request, session_id, lambda: turn.prompt())
 
 
 @router.post("/{session_id}/events", response_model=ExternalEventOut)

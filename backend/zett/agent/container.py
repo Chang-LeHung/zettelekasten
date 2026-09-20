@@ -1,19 +1,15 @@
 """Abstract container interface that Zettelkasten extensions register against.
 
 The container is the whole capability surface an extension sees: it registers
-slash commands and ``@`` commands, and it streams one prepared turn through the
-Agent. ``ZettelkastenAgent`` is the concrete implementation, while extensions
-depend only on this interface, so neither side needs to know the other's
-internals.
+slash commands and ``@`` commands. ``ZettelkastenAgent`` is the concrete
+implementation, while extensions depend only on this interface, so neither side
+needs to know the other's internals.
 """
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING
-
-from zett_agent import AgentEvent, UserMessage
 
 if TYPE_CHECKING:
     from .at_command import (
@@ -21,7 +17,7 @@ if TYPE_CHECKING:
         AtCommandHandler,
         AtCommandSource,
     )
-    from .slash import CommandInvocation, SlashCommandDefinition, SlashCommandHandler
+    from .slash import SlashCommandDefinition, SlashCommandHandler
 
 
 class ZettelkastenExt(ABC):
@@ -36,12 +32,7 @@ class ZettelkastenExt(ABC):
 
 
 class ZettelkastenContainer(ABC):
-    """Capabilities one extension may use on the container that loaded it.
-
-    Extensions only register capabilities here. Running a command or reference is
-    the container's job, and it hands the prepared turn to the Agent through
-    :meth:`stream_to_agent`.
-    """
+    """Capabilities one extension may use on the container that loaded it."""
 
     @abstractmethod
     def register_slash_command(
@@ -66,21 +57,6 @@ class ZettelkastenContainer(ABC):
         handler: AtCommandHandler,
     ) -> AtCommandDefinition:
         """Register one referenceable resource kind and its Agent handoff."""
-        raise NotImplementedError
-
-    @abstractmethod
-    def stream_to_agent(
-        self,
-        invocation: CommandInvocation,
-        *,
-        message: UserMessage | None = None,
-    ) -> AsyncIterator[AgentEvent]:
-        """Stream one prepared command or reference turn through the Agent.
-
-        Implementations are async generators. Supplying ``message`` replaces the
-        browser message the invocation carried, which is how a skill command or
-        an ``@`` reference names what the model must read.
-        """
         raise NotImplementedError
 
 

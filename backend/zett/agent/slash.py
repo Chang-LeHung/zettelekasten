@@ -2,40 +2,20 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from uuid import UUID, uuid5
 
-from zett_agent import (
-    AgentClient,
-    AgentEvent,
-    AgentModel,
-    AgentRunConfig,
-    JsonValue,
-    ReasoningEffort,
-    UserMessage,
-)
+from zett_agent import AgentEvent
 
-# The container interface lives in ``container.py``; it is imported here only so
-# the handler alias below names the same type extensions register against.
-from .at_command import AtCommandInvocation
-from .container import ZettelkastenContainer
+from ..application.turns import AgentTurn
 
 SLASH_COMMAND_NAMESPACE = UUID("3c9d2c8b-9f14-51a9-a759-a8c9a3bf4f8a")
 
 
-@dataclass(frozen=True, slots=True)
-class SlashCommandInvocation:
-    """One prepared Agent request that a slash command may send to the model."""
-
-    session_id: str
-    client: AgentClient
-    message: UserMessage
-    model: AgentModel
-    config: AgentRunConfig
-    reasoning_effort: ReasoningEffort
-    metadata: Mapping[str, JsonValue]
-    tags: Mapping[str, JsonValue]
+@dataclass(slots=True)
+class SlashCommandInvocation(AgentTurn):
+    """One prepared turn that a slash command may rewrite before it runs."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,11 +40,7 @@ class SlashCommandRegistration:
     handler: SlashCommandHandler
 
 
-type SlashCommandHandler = Callable[
-    ["ZettelkastenContainer", SlashCommandInvocation],
-    AsyncIterator[AgentEvent],
-]
-type CommandInvocation = SlashCommandInvocation | AtCommandInvocation
+type SlashCommandHandler = Callable[[SlashCommandInvocation], AsyncIterator[AgentEvent]]
 
 
 def stable_slash_command_id(*, owner: str, command_type: str, name: str) -> str:
@@ -74,7 +50,6 @@ def stable_slash_command_id(*, owner: str, command_type: str, name: str) -> str:
 
 __all__ = [
     "SLASH_COMMAND_NAMESPACE",
-    "CommandInvocation",
     "SlashCommandDefinition",
     "SlashCommandHandler",
     "SlashCommandInvocation",

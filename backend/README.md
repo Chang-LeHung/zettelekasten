@@ -89,10 +89,10 @@ the leading system prefix stays stable.
 
 The `ZettelkastenAgent` container loads application extensions from its
 configuration. Each `ZettelkastenExt` can register slash commands with a name,
-description, type, and Agent-stream handler. The container assigns a stable ID
-to every command; the frontend lists those IDs and submits at most one command
-ID with an input. The backend resolves that ID and runs the registered handler,
-which may transform the current message before sending it through the Agent. A
+description, type, and handler. The container assigns a stable ID to every
+command; the frontend lists those IDs and submits at most one command ID with an
+input. The backend resolves that ID and runs the registered handler, which
+receives the prepared turn, may replace its message, and streams the result. A
 skill command names the skill for the current turn and lets the model load its
 instructions with `read_skill`, and it records the original browser message as
 `slash_command.raw_parts` so the conversation UI shows what the user sent
@@ -106,6 +106,15 @@ registers the built-in `asset` and `artifact` kinds, so the composer menu offers
 the session's own material. A submitted reference injects only its kind and ID,
 the model reads content with `get_asset` or `get_artifact`, and the original
 browser message is recorded as `at_command.raw_parts`.
+
+Every model call goes through `AgentTurn.prompt` in
+`zett.application.turns`. The HTTP message route, slash command handlers, and
+`@` reference handlers each describe their turn as an `AgentTurn` (session,
+request-owned client, model, run config, reasoning effort, metadata, and tags),
+optionally replace its message, and prompt it; run options are assembled once
+instead of at each call site. A turn is single use, so prompting it twice raises
+`TurnAlreadyPromptedError` instead of starting a second request against the same
+reserved session.
 
 ## Local data
 

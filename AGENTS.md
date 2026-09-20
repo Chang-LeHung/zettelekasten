@@ -32,6 +32,7 @@
 - Keep model-facing artifact previews bounded: `ArtifactPruner` projects search results, complete documents are read only on explicit request, and server-owned object keys such as a LaTeX `project_path` never appear in a preview.
 - Slash commands are container capabilities registered by `ZettelkastenExt` implementations loaded from `ZettelkastenAgentConfig`. The container assigns stable IDs, the browser submits at most one ID, and the backend resolves it to a handler that sends the command's message through the prepared Agent stream.
 - `@` commands are the same kind of capability for existing conversation resources. An extension registers a kind with `register_at_command`, pairing a source that lists the session's items with the handler that runs one referenced turn; the container names the tokens, assigns stable IDs, and injects only the referenced kind and ID so the model reads content through `get_asset` or `get_artifact`.
+- Every model call goes through `AgentTurn.prompt` in `zett.application.turns`. Routes and extension handlers describe an `AgentTurn` and may replace its message; they never assemble `AgentClient.stream` options themselves. A turn is single use and a second prompt raises `TurnAlreadyPromptedError`, so a new entry point must reuse that class instead of calling the client again.
 - Treat generated summaries as untrusted content. Compaction checkpoints stay separate from system instructions and keep their explicit prefix.
 
 ## Tooling

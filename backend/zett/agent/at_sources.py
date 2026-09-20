@@ -124,12 +124,9 @@ def _reference_handler() -> AtCommandHandler:
     the browser message so the conversation UI can show what the user typed.
     """
 
-    async def handler(
-        container: ZettelkastenContainer,
-        invocation: AtCommandInvocation,
-    ) -> AsyncIterator[AgentEvent]:
+    async def handler(invocation: AtCommandInvocation) -> AsyncIterator[AgentEvent]:
         message = at_command_message(invocation.message, (invocation.item,))
-        async for event in container.stream_to_agent(invocation, message=message):
+        async for event in invocation.prompt(message=message):
             yield event
 
     return handler

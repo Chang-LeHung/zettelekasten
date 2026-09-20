@@ -44,11 +44,8 @@ class ExampleSlashExtension(ZettelkastenExt):
         )
 
     @staticmethod
-    async def handler(
-        container: ZettelkastenContainer,
-        invocation: SlashCommandInvocation,
-    ) -> AsyncIterator[AgentEvent]:
-        del container, invocation
+    async def handler(invocation: SlashCommandInvocation) -> AsyncIterator[AgentEvent]:
+        del invocation
         yield AgentEvent(
             AgentEventType.CUSTOM,
             session_id="slash-session",
@@ -57,10 +54,42 @@ class ExampleSlashExtension(ZettelkastenExt):
         )
 
 
-def _invocation(message: UserContent = "/example-command inspect this") -> SlashCommandInvocation:
+class RecordingContainer(ZettelkastenContainer):
+    """Collect the capabilities one extension registers."""
+
+    def __init__(self) -> None:
+        self.slash_commands: list[dict[str, object]] = []
+
+    def register_slash_command(self, **kwargs):
+        self.slash_commands.append(kwargs)
+        return object()
+
+    def register_at_command(self, **kwargs):
+        raise AssertionError(f"Unexpected registration: {kwargs}")
+
+
+class CapturingClient:
+    """Record the turn a handler sends to the model instead of running one."""
+
+    def __init__(self, captured: list[UserMessage], events: list[AgentEvent]) -> None:
+        self._captured = captured
+        self._events = events
+
+    async def stream(self, message: UserMessage, **options: object) -> AsyncIterator[AgentEvent]:
+        del options
+        self._captured.append(message)
+        for event in self._events:
+            yield event
+
+
+def _invocation(
+    message: UserContent = "/example-command inspect this",
+    *,
+    client: AgentClient | None = None,
+) -> SlashCommandInvocation:
     return SlashCommandInvocation(
         session_id="slash-session",
-        client=AgentClient.__new__(AgentClient),
+        client=client or AgentClient.__new__(AgentClient),
         message=UserMessage(content=message),
         model=None,  # type: ignore[arg-type]
         config=AgentRunConfig(session_id="slash-session"),
@@ -119,37 +148,19 @@ async def test_skill_extension_registers_and_points_at_the_skill(tmp_path) -> No
     extension = SkillSlashCommandExtension((tmp_path,))
     captured: list[UserMessage] = []
 
-    class CapturingContainer(ZettelkastenContainer):
-        async def stream_to_agent(
-            self,
-            invocation: SlashCommandInvocation,
-            *,
-            message: UserMessage | None = None,
-        ) -> AsyncIterator[AgentEvent]:
-            del invocation
-            assert message is not None
-            captured.append(message)
-            yield AgentEvent(AgentEventType.CUSTOM, session_id="slash-session", name="captured")
+    container = RecordingContainer()
+    await extension.register(container)
+    assert [(command["name"], command["command_type"]) for command in container.slash_commands] == [
+        ("zett-review", "skill")
+    ]
 
-        def register_slash_command(self, **kwargs):
-            raise AssertionError(f"Unexpected registration: {kwargs}")
-
-        def register_at_command(self, **kwargs):
-            raise AssertionError(f"Unexpected registration: {kwargs}")
-
-    commands = []
-
-    class RegistrationContainer(CapturingContainer):
-        def register_slash_command(self, **kwargs):
-            commands.append(kwargs)
-            return object()
-
-    registration_container = RegistrationContainer()
-    await extension.register(registration_container)
-    assert [(command["name"], command["command_type"]) for command in commands] == [("zett-review", "skill")]
-
-    handler = commands[0]["handler"]
-    events = [event async for event in handler(registration_container, _invocation("/zett-review inspect the diff"))]
+    handler = container.slash_commands[0]["handler"]
+    event = AgentEvent(AgentEventType.CUSTOM, session_id="slash-session", name="captured")
+    invocation = _invocation(
+        "/zett-review inspect the diff",
+        client=CapturingClient(captured, [event]),
+    )
+    events = [event async for event in handler(invocation)]
 
     assert [event.name for event in events] == ["captured"]
     assert len(captured) == 1
@@ -178,32 +189,16 @@ async def test_skill_command_records_the_original_message_with_images(tmp_path) 
     extension = SkillSlashCommandExtension((tmp_path,))
     captured: list[UserMessage] = []
 
-    class CapturingContainer(ZettelkastenContainer):
-        async def stream_to_agent(
-            self,
-            invocation: SlashCommandInvocation,
-            *,
-            message: UserMessage | None = None,
-        ) -> AsyncIterator[AgentEvent]:
-            del invocation
-            assert message is not None
-            captured.append(message)
-            yield AgentEvent(AgentEventType.CUSTOM, session_id="slash-session", name="captured")
-
-        def register_slash_command(self, **kwargs):
-            captured.append(kwargs)
-            return object()
-
-        def register_at_command(self, **kwargs):
-            raise AssertionError(f"Unexpected registration: {kwargs}")
-
-    container = CapturingContainer()
+    container = RecordingContainer()
     await extension.register(container)
-    handler = captured.pop()["handler"]
+    handler = container.slash_commands[0]["handler"]
     image = ImageContent(source=ImageBytesSource(b"png", "image/png"), alt_text="diff.png")
-    invocation = _invocation([TextContent("/zett-review check this diff"), image])
+    invocation = _invocation(
+        [TextContent("/zett-review check this diff"), image],
+        client=CapturingClient(captured, []),
+    )
 
-    [event async for event in handler(container, invocation)]
+    [event async for event in handler(invocation)]
 
     assert captured[0].attributes["slash_command"]["raw_parts"] == [
         {"type": "text", "text": "/zett-review check this diff"},

@@ -23,7 +23,6 @@ from zett_agent import (
     TodoWriteExtension,
     ToolGuidelinesExtension,
     UsageActivityExtension,
-    UserMessage,
 )
 
 from ..infra.agent_runtime import get_agent_runtime_storage
@@ -42,7 +41,6 @@ from .container import ZettelkastenContainer, ZettelkastenExt
 from .context_composition import ContextCompositionExtension
 from .extensions import ZettelkastenExtension
 from .slash import (
-    CommandInvocation,
     SlashCommandDefinition,
     SlashCommandHandler,
     SlashCommandInvocation,
@@ -169,7 +167,7 @@ class ZettelkastenAgent(ZettelkastenContainer):
         command = self.slash_command(command_id)
         if command is None:
             raise KeyError(f"Slash command not found: {command_id}")
-        async for event in command.handler(self, invocation):
+        async for event in command.handler(invocation):
             yield event
 
     def register_at_command(
@@ -229,24 +227,7 @@ class ZettelkastenAgent(ZettelkastenContainer):
         definition = self._at_commands.get(invocation.item.kind)
         if definition is None:
             raise KeyError(f"@ command kind is not registered: {invocation.item.kind}")
-        async for event in definition.handler(self, invocation):
-            yield event
-
-    async def stream_to_agent(
-        self,
-        invocation: CommandInvocation,
-        *,
-        message: UserMessage | None = None,
-    ) -> AsyncIterator[AgentEvent]:
-        """Stream a command- or reference-produced message through the prepared client."""
-        async for event in invocation.client.stream(
-            message or invocation.message,
-            config=invocation.config,
-            model=invocation.model,
-            reasoning_effort=invocation.reasoning_effort,
-            metadata=invocation.metadata,
-            tags=invocation.tags,
-        ):
+        async for event in definition.handler(invocation):
             yield event
 
     def client(self, dispatcher: AgentEventDispatcher) -> AgentClient:

@@ -44,10 +44,7 @@ class SkillSlashCommandExtension(ZettelkastenExt):
     def _handler(path: Path):
         """Build one handler that points the Agent at the skill it must load."""
 
-        async def handler(
-            container: ZettelkastenContainer,
-            invocation: SlashCommandInvocation,
-        ) -> AsyncIterator[AgentEvent]:
+        async def handler(invocation: SlashCommandInvocation) -> AsyncIterator[AgentEvent]:
             if not path.is_file():
                 raise ValueError(f"Skill is no longer readable: {path.name}")
             skill_name = path.parent.name
@@ -76,7 +73,7 @@ class SkillSlashCommandExtension(ZettelkastenExt):
                     }
                 },
             )
-            async for event in container.stream_to_agent(invocation, message=message):
+            async for event in invocation.prompt(message=message):
                 yield event
 
         return handler
