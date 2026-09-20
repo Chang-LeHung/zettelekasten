@@ -291,6 +291,36 @@ it('loads slash commands and streams through the command endpoint', async () => 
   expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/agent/session/slash-commands/command-1')
 })
 
+it('lists @ references and streams through the reference endpoint', async () => {
+  const reference = {
+    id: 'reference-1',
+    kind: 'asset',
+    name: 'report-md',
+    label: 'report.md',
+    description: 'text asset · 12 B',
+  }
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify([reference])))
+    .mockResolvedValueOnce(new Response(
+      'event: text_delta\ndata: {"session_id":"session","phase":"generating","delta":"Done"}\n\n'
+      + 'event: run_completed\ndata: {"session_id":"session","phase":"completed"}\n\n',
+    ))
+  vi.stubGlobal('fetch', fetchMock)
+
+  expect(await aiClient.listAtCommands('session')).toEqual([reference])
+  await aiClient.atCommandStream(
+    'session',
+    'reference-1',
+    'compare @report-md with the draft',
+    'provider',
+    'medium',
+    [],
+  )
+
+  expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/agent/session/at-commands')
+  expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/agent/session/at-commands/reference-1')
+})
+
 it('delivers steering message parts to the active stream callback', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
     'event: steering_started\n'

@@ -286,6 +286,18 @@ export interface AgentSlashCommand {
   type: string
 }
 
+/**
+ * One conversation resource the composer may reference with an `@` token.
+ * `name` is the token without its trigger, `label` is the user-facing name.
+ */
+export interface AgentAtCommand {
+  id: string
+  kind: string
+  name: string
+  label: string
+  description: string
+}
+
 export interface AgentTodoItem {
   content: string
   status: 'pending' | 'processing' | 'completed'

@@ -1,5 +1,6 @@
 """Reusable application facade around one multi-session zett-agent runtime."""
 
+import asyncio
 import re
 from collections.abc import AsyncIterator
 from typing import Self
@@ -27,22 +28,33 @@ from zett_agent import (
 
 from ..infra.agent_runtime import get_agent_runtime_storage
 from .assets import AssetExtension
+from .at_command import (
+    AtCommandDefinition,
+    AtCommandHandler,
+    AtCommandInvocation,
+    AtCommandItem,
+    AtCommandSource,
+    named_at_commands,
+)
+from .at_sources import SessionReferenceExtension
 from .config import SYSTEM_PROMPT, ZettelkastenAgentConfig
+from .container import ZettelkastenContainer, ZettelkastenExt
 from .context_composition import ContextCompositionExtension
 from .extensions import ZettelkastenExtension
 from .slash import (
+    CommandInvocation,
     SlashCommandDefinition,
     SlashCommandHandler,
     SlashCommandInvocation,
-    ZettelkastenExt,
     stable_slash_command_id,
 )
 from .tags import TagExtension
 
 _SLASH_NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+_AT_COMMAND_KIND = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
-class ZettelkastenAgent:
+class ZettelkastenAgent(ZettelkastenContainer):
     """Own one configured conversation Agent and its request-scoped clients.
 
     A lightweight AgentClient is created per HTTP request so each response
@@ -53,9 +65,10 @@ class ZettelkastenAgent:
     def __init__(self, config: ZettelkastenAgentConfig) -> None:
         self.config = config
         self.storage = config.storage or get_agent_runtime_storage()
-        self.extensions: tuple[ZettelkastenExt, ...] = config.resolved_extensions()
+        self.extensions: tuple[ZettelkastenExt, ...] = (*config.resolved_extensions(), SessionReferenceExtension())
         self._extensions_loaded = False
         self._slash_commands: dict[str, SlashCommandDefinition] = {}
+        self._at_commands: dict[str, AtCommandDefinition] = {}
         extensions = [
             SessionPersistenceExtension(self.storage),
             AssetExtension(max_asset_size_bytes=config.max_asset_size_bytes),
@@ -147,23 +160,6 @@ class ZettelkastenAgent:
         """Resolve one command by the stable ID exposed to the browser."""
         return self._slash_commands.get(command_id)
 
-    async def stream_to_agent(
-        self,
-        invocation: SlashCommandInvocation,
-        *,
-        message: UserMessage | None = None,
-    ) -> AsyncIterator[AgentEvent]:
-        """Stream a command-produced message through the prepared Agent client."""
-        async for event in invocation.client.stream(
-            message or invocation.message,
-            config=invocation.config,
-            model=invocation.model,
-            reasoning_effort=invocation.reasoning_effort,
-            metadata=invocation.metadata,
-            tags=invocation.tags,
-        ):
-            yield event
-
     async def execute_slash_command(
         self,
         command_id: str,
@@ -174,6 +170,83 @@ class ZettelkastenAgent:
         if command is None:
             raise KeyError(f"Slash command not found: {command_id}")
         async for event in command.handler(self, invocation):
+            yield event
+
+    def register_at_command(
+        self,
+        *,
+        owner: str,
+        kind: str,
+        source: AtCommandSource,
+        handler: AtCommandHandler,
+    ) -> AtCommandDefinition:
+        """Register one kind of ``@`` referenceable resource and its Agent handoff."""
+        normalized_owner = owner.strip()
+        normalized_kind = kind.strip()
+        if not normalized_owner:
+            raise ValueError("@ command source owner cannot be empty")
+        if not _AT_COMMAND_KIND.fullmatch(normalized_kind):
+            raise ValueError("@ command kinds must use lowercase letters, digits, and single hyphens")
+        if normalized_kind in self._at_commands:
+            raise ValueError(f"@ command kind is already registered: {normalized_kind}")
+        if source.owner != normalized_owner or source.kind != normalized_kind:
+            raise ValueError("@ command source must describe the kind it is registered for")
+        definition = AtCommandDefinition(
+            owner=normalized_owner,
+            kind=normalized_kind,
+            source=source,
+            handler=handler,
+        )
+        self._at_commands[definition.kind] = definition
+        return definition
+
+    def at_command_definitions(self) -> tuple[AtCommandDefinition, ...]:
+        """Return registered ``@`` kinds in deterministic display order."""
+        return tuple(self._at_commands[kind] for kind in sorted(self._at_commands))
+
+    async def at_commands(self, session_id: str) -> tuple[AtCommandItem, ...]:
+        """List every resource the browser may reference in this conversation.
+
+        Sources build validated items, so listing merges what they return and
+        only has to settle ``@`` token collisions between kinds.
+        """
+        listings = await asyncio.gather(
+            *(definition.source.items(session_id) for definition in self.at_command_definitions())
+        )
+        return named_at_commands(item for listed in listings for item in listed)
+
+    async def at_command(self, session_id: str, item_id: str) -> AtCommandItem | None:
+        """Resolve one submitted ``@`` ID, or None when it is no longer referenceable."""
+        item = next((candidate for candidate in await self.at_commands(session_id) if candidate.id == item_id), None)
+        if item is None:
+            return None
+        if not await self._at_commands[item.kind].source.verify(session_id, item):
+            return None
+        return item
+
+    async def execute_at_command(self, invocation: AtCommandInvocation) -> AsyncIterator[AgentEvent]:
+        """Run the registered handler of one already-resolved ``@`` reference."""
+        definition = self._at_commands.get(invocation.item.kind)
+        if definition is None:
+            raise KeyError(f"@ command kind is not registered: {invocation.item.kind}")
+        async for event in definition.handler(self, invocation):
+            yield event
+
+    async def stream_to_agent(
+        self,
+        invocation: CommandInvocation,
+        *,
+        message: UserMessage | None = None,
+    ) -> AsyncIterator[AgentEvent]:
+        """Stream a command- or reference-produced message through the prepared client."""
+        async for event in invocation.client.stream(
+            message or invocation.message,
+            config=invocation.config,
+            model=invocation.model,
+            reasoning_effort=invocation.reasoning_effort,
+            metadata=invocation.metadata,
+            tags=invocation.tags,
+        ):
             yield event
 
     def client(self, dispatcher: AgentEventDispatcher) -> AgentClient:

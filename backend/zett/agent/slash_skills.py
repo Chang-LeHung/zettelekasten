@@ -15,12 +15,13 @@ from zett_agent import (
 )
 
 from ..messages import MessagePartCodec
-from .slash import SlashCommandInvocation, ZettelkastenContainer
+from .container import ZettelkastenContainer, ZettelkastenExt
+from .slash import SlashCommandInvocation
 
 _CODEC = MessagePartCodec()
 
 
-class SkillSlashCommandExtension:
+class SkillSlashCommandExtension(ZettelkastenExt):
     """Register one slash command for every valid local Agent Skill."""
 
     name = "skills"

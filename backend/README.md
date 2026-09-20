@@ -58,6 +58,8 @@ Everything is mounted under `/api`.
 | `POST /api/agent/{id}/messages` | Run one turn and stream zett-agent events as SSE |
 | `GET /api/agent/{id}/slash-commands` | List commands registered by configured Zettelkasten extensions |
 | `POST /api/agent/{id}/slash-commands/{command_id}` | Execute one slash command and stream its Agent events |
+| `GET /api/agent/{id}/at-commands` | List the conversation resources the composer may reference with `@` |
+| `POST /api/agent/{id}/at-commands/{item_id}` | Run one turn that references an `@` resource and stream its Agent events |
 | `POST /api/agent/{id}/events` | Deliver one UI answer, such as an `ask_user` choice, to the active request |
 | `POST /api/agent/{id}/steer` | Insert an urgent user message into the active request |
 | `/api/files/{key}` | The only binary content endpoint; streams one ObjectStore key |
@@ -95,6 +97,15 @@ skill command names the skill for the current turn and lets the model load its
 instructions with `read_skill`, and it records the original browser message as
 `slash_command.raw_parts` so the conversation UI shows what the user sent
 instead of the rewritten prompt.
+
+The same extensions register `@` commands, one per referenceable resource kind.
+An `@` command pairs a source that lists the current conversation's resources
+with a handler that runs one referenced turn, and the container assigns stable
+IDs plus unique token names to the listed items. `SessionReferenceExtension`
+registers the built-in `asset` and `artifact` kinds, so the composer menu offers
+the session's own material. A submitted reference injects only its kind and ID,
+the model reads content with `get_asset` or `get_artifact`, and the original
+browser message is recorded as `at_command.raw_parts`.
 
 ## Local data
 

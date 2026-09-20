@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ApiError, aiClient, assetClient, libraryClient, settingsClient, tagClient } from './api/client'
-import type { AgentArtifact, AgentCompactionActivity, AgentContextComposition, AgentCustomEvent, AgentModelUsage, AgentModelUsageActivitySeries, AgentPersistedMessage, AgentServerToolActivity, AgentSession, AgentSlashCommand, AgentSteeringMessage, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AgentUsageActivityDay, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageImagePart, MessagePart, ReasoningEffort, RuntimeSettings, SessionAsset, ShellApprovalMode, StaticAsset, Tag } from './api/types'
+import type { AgentArtifact, AgentAtCommand, AgentCompactionActivity, AgentContextComposition, AgentCustomEvent, AgentModelUsage, AgentModelUsageActivitySeries, AgentPersistedMessage, AgentServerToolActivity, AgentSession, AgentSlashCommand, AgentSteeringMessage, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AgentUsageActivityDay, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageImagePart, MessagePart, ReasoningEffort, RuntimeSettings, SessionAsset, ShellApprovalMode, StaticAsset, Tag } from './api/types'
 import AgentComposerControls from './components/AgentComposerControls.vue'
-import ComposerSlashMenu from './components/ComposerSlashMenu.vue'
+import ComposerCommandMenu from './components/ComposerCommandMenu.vue'
 import CacheHitRate from './components/CacheHitRate.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import TagManagerDialog from './components/TagManagerDialog.vue'
@@ -18,6 +18,7 @@ import { artifactContentFromLibraryUpdate, libraryItemFromArtifact } from './uti
 import { artifactListsEquivalent, sameArtifactRevision, stabilizeArtifactReferences } from './utils/artifactStability'
 import { assetOpenAction, isPdfAsset } from './utils/assetOpen'
 import { createAsyncRefreshScheduler } from './utils/asyncRefresh'
+import { AtCommandInput, type AtCommandMatch } from './utils/atCommand'
 import { SlashCommandInput, type SlashCommandMatch } from './utils/slashCommand'
 import { buildConversationTurns, formatTurnDuration, splitTurnTimeline, type ConversationTurn } from './utils/conversationTurns'
 import { jsonSnapshot } from './utils/jsonSnapshot'
@@ -80,6 +81,7 @@ interface QueuedFollowUp {
   parts: MessagePart[]
   shellApprovalMode: ShellApprovalMode
   slashCommandId: string | null
+  atCommandId: string | null
 }
 interface PendingSteeringEcho {
   message: AgentSteeringMessage
@@ -89,6 +91,15 @@ interface ActiveSlashMenu {
   target: ComposerTarget
   match: SlashCommandMatch
   activeIndex: number
+}
+interface ActiveAtMenu {
+  target: ComposerTarget
+  match: AtCommandMatch
+  activeIndex: number
+}
+interface ComposerHighlightSegment {
+  text: string
+  kind: 'slash' | 'reference' | null
 }
 const libraryItems = ref<LibraryItem[]>([])
 const selectedLibraryItem = ref<LibraryItem | null>(null)
@@ -167,6 +178,10 @@ const slashCommandsLoaded = ref(false)
 const slashCommandsLoading = ref(false)
 const slashMenu = ref<ActiveSlashMenu | null>(null)
 const selectedSlashCommand = ref<AgentSlashCommand | null>(null)
+const atCommands = ref<AgentAtCommand[]>([])
+const atCommandsLoaded = ref(false)
+const atCommandsLoading = ref(false)
+const atMenu = ref<ActiveAtMenu | null>(null)
 const initialComposerInput = ref<HTMLTextAreaElement | null>(null)
 const followUpComposerInput = ref<HTMLTextAreaElement | null>(null)
 const initialComposerHighlight = ref<HTMLElement | null>(null)
@@ -330,8 +345,34 @@ const slashMenuActiveIndex = computed(() => {
   if (!menu || !slashMenuCommands.value.length) return 0
   return Math.min(menu.activeIndex, slashMenuCommands.value.length - 1)
 })
-const initialSlashHighlight = computed(() => slashHighlightParts('initial'))
-const followUpSlashHighlight = computed(() => slashHighlightParts('follow-up'))
+const slashMenuItems = computed(() => slashMenuCommands.value.map((command) => ({
+  id: command.id,
+  name: command.name,
+  description: command.description,
+  badge: command.type,
+})))
+const atMenuCommands = computed(() => {
+  const query = atMenu.value?.match.query.trim().toLowerCase()
+  if (!query) return atCommands.value
+  return atCommands.value.filter((command) => (
+    command.name.toLowerCase().includes(query)
+    || command.label.toLowerCase().includes(query)
+    || command.kind.toLowerCase().includes(query)
+  ))
+})
+const atMenuActiveIndex = computed(() => {
+  const menu = atMenu.value
+  if (!menu || !atMenuCommands.value.length) return 0
+  return Math.min(menu.activeIndex, atMenuCommands.value.length - 1)
+})
+const atMenuItems = computed(() => atMenuCommands.value.map((command) => ({
+  id: command.id,
+  name: command.name,
+  description: `${command.label} · ${command.description}`,
+  badge: command.kind,
+})))
+const initialTokenHighlight = computed(() => composerHighlightSegments('initial'))
+const followUpTokenHighlight = computed(() => composerHighlightSegments('follow-up'))
 const conversationUsage = computed(() => {
   const messages = conversationTurns.value.flatMap((turn) => turn.responses)
   const activeTurn = conversationTurns.value.at(-1)
@@ -1477,6 +1518,7 @@ async function analyze(): Promise<void> {
   startTurnClock()
   const messageText = raw.value
   const slashCommandId = slashCommandIdFor(messageText)
+  const atCommandId = atCommandIdFor(messageText)
   const requestParts = buildMessageParts(messageText, pendingMessageImages.value)
   initialMessageParts.value = requestParts
   pendingMessageImages.value = []
@@ -1487,6 +1529,8 @@ async function analyze(): Promise<void> {
   let activeConversationId: string | null = null
   try {
     activeConversationId = await ensureConversation()
+    // A slash command owns the turn; a bare `@` reference runs through the
+    // at-command stream, which injects that resource before the Agent runs.
     const result = slashCommandId
       ? await aiClient.slashCommandStream(
           activeConversationId,
@@ -1500,6 +1544,19 @@ async function analyze(): Promise<void> {
           requestParts,
           shellApprovalMode.value,
         )
+      : atCommandId
+        ? await aiClient.atCommandStream(
+            activeConversationId,
+            atCommandId,
+            messageText,
+            selectedProviderId.value,
+            reasoningEffort.value,
+            [],
+            callbacks,
+            controller.signal,
+            requestParts,
+            shellApprovalMode.value,
+          )
       : await aiClient.analyzeStream(
           activeConversationId,
           messageText,
@@ -1547,6 +1604,7 @@ async function refine(queued?: QueuedFollowUp): Promise<void> {
   }
   const requestParts = queued?.parts ?? buildMessageParts(content, pendingMessageImages.value)
   const slashCommandId = queued?.slashCommandId ?? slashCommandIdFor(content)
+  const atCommandId = queued?.atCommandId ?? atCommandIdFor(content)
   const history: AnalysisMessage[] = [...conversation.value, { role: 'user', content, parts: requestParts }]
   conversation.value = history
   if (!queued) {
@@ -1578,6 +1636,19 @@ async function refine(queued?: QueuedFollowUp): Promise<void> {
           requestParts,
           queued?.shellApprovalMode ?? shellApprovalMode.value,
         )
+      : atCommandId
+        ? await aiClient.atCommandStream(
+            activeConversationId,
+            atCommandId,
+            content,
+            selectedProviderId.value,
+            reasoningEffort.value,
+            history,
+            callbacks,
+            controller.signal,
+            requestParts,
+            queued?.shellApprovalMode ?? shellApprovalMode.value,
+          )
       : await aiClient.analyzeStream(
           activeConversationId,
           content,
@@ -1621,12 +1692,14 @@ function queueFollowUp(): void {
   if (!content.trim() && !pendingMessageImages.value.length) return
   const parts = buildMessageParts(content, pendingMessageImages.value)
   const slashCommandId = slashCommandIdFor(content)
+  const atCommandId = atCommandIdFor(content)
   queuedFollowUps.value.push({
     id: nextQueuedFollowUpId++,
     content,
     parts,
     shellApprovalMode: shellApprovalMode.value,
     slashCommandId,
+    atCommandId,
   })
   followUp.value = ''
   pendingMessageImages.value = []
@@ -1685,6 +1758,10 @@ async function steerQueuedFollowUp(item: QueuedFollowUp): Promise<void> {
   if (!activeConversationId || !loading.value) return
   if (item.slashCommandId) {
     showNotice('Slash commands cannot be used as steering messages', 'error')
+    return
+  }
+  if (item.atCommandId) {
+    showNotice('Referenced resources cannot be used as steering messages', 'error')
     return
   }
   const steeringMessage: AgentSteeringMessage = {
@@ -1757,6 +1834,8 @@ async function ensureConversation(): Promise<string> {
   assets.value = started.assets
   slashCommands.value = []
   slashCommandsLoaded.value = false
+  atCommands.value = []
+  atCommandsLoaded.value = false
   clearSlashCommand()
   return started.conversation_id
 }
@@ -1778,6 +1857,8 @@ function applySession(session: AgentSession): void {
   pendingMessageImages.value = []
   slashCommands.value = []
   slashCommandsLoaded.value = false
+  atCommands.value = []
+  atCommandsLoaded.value = false
   clearSlashCommand()
   conversation.value = restored.messages
   traceMessages.value = session.messages
@@ -2031,6 +2112,8 @@ function clearWorkspaceState(): void {
   pendingMessageImages.value = []
   slashCommands.value = []
   slashCommandsLoaded.value = false
+  atCommands.value = []
+  atCommandsLoaded.value = false
   clearSlashCommand()
   selectedSuggestions.value = []
   artifacts.value = []
@@ -2202,16 +2285,32 @@ function composerHighlight(target: ComposerTarget): HTMLElement | null {
   return target === 'initial' ? initialComposerHighlight.value : followUpComposerHighlight.value
 }
 
-function slashHighlightParts(target: ComposerTarget): { before: string; token: string; after: string } | null {
+/**
+ * Highlight every composer token the backend can resolve for this text: the
+ * selected slash command and any `@` reference that matches a listed resource.
+ * The textarea stays transparent above this mirror so both kinds read as chips.
+ */
+function composerHighlightSegments(target: ComposerTarget): ComposerHighlightSegment[] | null {
   const value = composerTextValue(target)
-  const detected = detectedSlashCommand(value)
-  if (!detected) return null
-  const { range } = detected
-  return {
-    before: value.slice(0, range.start),
-    token: value.slice(range.start, range.end),
-    after: value.slice(range.end),
+  const marked: Array<{ start: number; end: number; kind: 'slash' | 'reference' }> = []
+  const slash = detectedSlashCommand(value)
+  if (slash) marked.push({ ...slash.range, kind: 'slash' })
+  for (const token of AtCommandInput.tokens(value)) {
+    const reference = atCommands.value.find(item => item.name === token.name)
+    if (reference) marked.push({ start: token.start, end: token.end, kind: 'reference' })
   }
+  if (!marked.length) return null
+  marked.sort((left, right) => left.start - right.start)
+  const segments: ComposerHighlightSegment[] = []
+  let cursor = 0
+  for (const span of marked) {
+    if (span.start < cursor) continue
+    if (span.start > cursor) segments.push({ text: value.slice(cursor, span.start), kind: null })
+    segments.push({ text: value.slice(span.start, span.end), kind: span.kind })
+    cursor = span.end
+  }
+  if (cursor < value.length) segments.push({ text: value.slice(cursor), kind: null })
+  return segments
 }
 
 function detectedSlashCommand(value: string): { command: AgentSlashCommand; range: { start: number; end: number } } | null {
@@ -2229,6 +2328,19 @@ function detectedSlashCommand(value: string): { command: AgentSlashCommand; rang
 
 function slashCommandIdFor(value: string): string | null {
   return detectedSlashCommand(value)?.command.id ?? null
+}
+
+/**
+ * Resolve the `@` tokens a message already contains. Like the slash command
+ * lookup, the browser submits at most one reference: the first token that still
+ * matches a listed resource owns the turn.
+ */
+function atCommandIdFor(value: string): string | null {
+  for (const token of AtCommandInput.tokens(value)) {
+    const reference = atCommands.value.find(item => item.name === token.name)
+    if (reference) return reference.id
+  }
+  return null
 }
 
 function syncComposerHighlight(target: ComposerTarget): void {
@@ -2254,7 +2366,100 @@ function setComposerTextValue(target: ComposerTarget, value: string): void {
 function clearSlashCommand(): void {
   selectedSlashCommand.value = null
   slashMenu.value = null
+  atMenu.value = null
   composerComposing.value = false
+}
+
+async function loadAtCommands(force = false): Promise<void> {
+  const sessionId = conversationId.value
+  if (!sessionId) {
+    atCommands.value = []
+    atCommandsLoaded.value = true
+    return
+  }
+  if (atCommandsLoaded.value && !force) return
+  atCommandsLoading.value = true
+  try {
+    const commands = await aiClient.listAtCommands(sessionId)
+    if (conversationId.value === sessionId) {
+      atCommands.value = commands
+      atCommandsLoaded.value = true
+    }
+  } catch (error) {
+    showNotice(errorMessage(error), 'error')
+  } finally {
+    if (conversationId.value === sessionId) atCommandsLoading.value = false
+  }
+}
+
+function refreshAtMenu(target: ComposerTarget, value: string, caret: number): void {
+  if (!atCommandsLoaded.value && !atCommandsLoading.value && AtCommandInput.tokenNames(value).length) {
+    void loadAtCommands()
+  }
+  const match = AtCommandInput.match(value, caret)
+  if (!match) {
+    if (atMenu.value?.target === target) atMenu.value = null
+    return
+  }
+  const current = atMenu.value
+  const sameRange = current?.target === target
+    && current.match.start === match.start
+  atMenu.value = {
+    target,
+    match,
+    activeIndex: sameRange ? current.activeIndex : 0,
+  }
+  // References are created and deleted during the session, so every new token
+  // refreshes the list while repeated keystrokes reuse the loaded one.
+  if (!atCommandsLoading.value) void loadAtCommands(!sameRange)
+}
+
+function selectAtCommand(index: number): void {
+  const menu = atMenu.value
+  const command = atMenuCommands.value[index]
+  if (!menu || !command) return
+  const textarea = composerTextarea(menu.target)
+  const insertion = AtCommandInput.insert(composerTextValue(menu.target), menu.match, command.name)
+  setComposerTextValue(menu.target, insertion.value)
+  atMenu.value = null
+  composerComposing.value = false
+  void nextTick(() => {
+    textarea?.focus()
+    textarea?.setSelectionRange(insertion.caret, insertion.caret)
+    syncComposerHighlight(menu.target)
+  })
+}
+
+function deleteReferenceToken(event: KeyboardEvent, target: ComposerTarget): boolean {
+  if (event.key !== 'Backspace' && event.key !== 'Delete') return false
+  const textarea = composerTextarea(target)
+  if (!textarea) return false
+  const value = textarea.value
+  const selectionStart = textarea.selectionStart ?? 0
+  const selectionEnd = textarea.selectionEnd ?? 0
+  const token = AtCommandInput.tokens(value).find((candidate) => (
+    event.key === 'Backspace'
+      ? selectionStart >= candidate.start && selectionStart <= candidate.end + 1
+      : selectionStart >= candidate.start - 1 && selectionStart <= candidate.end
+  ))
+  if (!token || !atCommands.value.some(item => item.name === token.name)) return false
+  const deletion = AtCommandInput.deleteAtomically(
+    value,
+    token.name,
+    selectionStart,
+    selectionEnd,
+    event.key,
+  )
+  if (!deletion) return false
+  event.preventDefault()
+  setComposerTextValue(target, deletion.value)
+  atMenu.value = null
+  void nextTick(() => {
+    textarea.focus()
+    textarea.setSelectionRange(deletion.caret, deletion.caret)
+    syncComposerHighlight(target)
+  })
+  return true
 }
 
 async function loadSlashCommands(force = false): Promise<void> {
@@ -2350,9 +2555,17 @@ function deleteSelectedSlashCommand(event: KeyboardEvent, target: ComposerTarget
 function handleComposerKeydown(event: KeyboardEvent, target: ComposerTarget): void {
   if (event.isComposing) return
   if (deleteSelectedSlashCommand(event, target)) return
+  if (deleteReferenceToken(event, target)) return
   const menu = slashMenu.value
   if (menu?.target === target) {
     if (slashCommandsLoading.value && (event.key === 'Enter' || event.key === 'Tab')) {
+      event.preventDefault()
+      return
+    }
+  }
+  const references = atMenu.value
+  if (references?.target === target) {
+    if (atCommandsLoading.value && (event.key === 'Enter' || event.key === 'Tab')) {
       event.preventDefault()
       return
     }
@@ -2374,8 +2587,26 @@ function handleComposerKeydown(event: KeyboardEvent, target: ComposerTarget): vo
       return
     }
   }
+  if (references?.target === target && atMenuCommands.value.length) {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      const delta = event.key === 'ArrowDown' ? 1 : -1
+      const count = atMenuCommands.value.length
+      atMenu.value = {
+        ...references,
+        activeIndex: (atMenuActiveIndex.value + delta + count) % count,
+      }
+      return
+    }
+    if (event.key === 'Enter' || event.key === 'Tab') {
+      event.preventDefault()
+      selectAtCommand(atMenuActiveIndex.value)
+      return
+    }
+  }
   if (event.key === 'Escape') {
     slashMenu.value = null
+    atMenu.value = null
     return
   }
   if (event.key === 'Enter' && !event.shiftKey) {
@@ -2388,6 +2619,7 @@ function handleComposerSelection(target: ComposerTarget, event: MouseEvent): voi
   const textarea = event.currentTarget
   if (!(textarea instanceof HTMLTextAreaElement)) return
   refreshSlashMenu(target, textarea.value, textarea.selectionStart ?? textarea.value.length)
+  refreshAtMenu(target, textarea.value, textarea.selectionStart ?? textarea.value.length)
 }
 
 function updateComposerText(event: Event, target: 'initial' | 'follow-up'): void {
@@ -2397,6 +2629,7 @@ function updateComposerText(event: Event, target: 'initial' | 'follow-up'): void
   rebaseMessageImagePositions(previous, next)
   setComposerTextValue(target, next)
   refreshSlashMenu(target, next, textarea.selectionStart ?? next.length)
+  refreshAtMenu(target, next, textarea.selectionStart ?? next.length)
   void nextTick(() => syncComposerHighlight(target))
 }
 
@@ -3321,7 +3554,7 @@ onBeforeUnmount(() => {
                     <button
                       class="queued-followup-steer"
                       type="button"
-                      :disabled="steeringQueuedFollowUpId === item.id || item.slashCommandId !== null"
+                      :disabled="steeringQueuedFollowUpId === item.id || item.slashCommandId !== null || item.atCommandId !== null"
                       :aria-label="`Steer with ${queuedFollowUpText(item)}`"
                       title="Apply this follow-up to the active run now"
                       @click="steerQueuedFollowUp(item)"
@@ -3340,9 +3573,9 @@ onBeforeUnmount(() => {
                   </article>
                 </div>
                 <form class="agent-input" @submit.prevent="submitConversation">
-                  <ComposerSlashMenu
+                  <ComposerCommandMenu
                     v-if="slashMenu"
-                    :commands="slashMenuCommands"
+                    :items="slashMenuItems"
                     :active-index="slashMenuActiveIndex"
                     :loading="slashCommandsLoading && !slashCommandsLoaded"
                     :heading="$t('composer.slashCommands')"
@@ -3350,6 +3583,18 @@ onBeforeUnmount(() => {
                     :empty-label="$t('composer.noSlashCommands')"
                     @select="selectSlashCommand"
                     @hover="slashMenu = slashMenu ? { ...slashMenu, activeIndex: $event } : null"
+                  />
+                  <ComposerCommandMenu
+                    v-if="atMenu"
+                    trigger="@"
+                    :items="atMenuItems"
+                    :active-index="atMenuActiveIndex"
+                    :loading="atCommandsLoading && !atCommandsLoaded"
+                    :heading="$t('composer.references')"
+                    :hint="$t('composer.selectOneReference')"
+                    :empty-label="$t('composer.noReferences')"
+                    @select="selectAtCommand"
+                    @hover="atMenu = atMenu ? { ...atMenu, activeIndex: $event } : null"
                   />
                   <div v-if="pendingMessageImages.length" class="message-image-drafts" aria-label="Images attached to this message">
                     <figure v-for="image in pendingMessageImages" :key="image.id">
@@ -3364,8 +3609,8 @@ onBeforeUnmount(() => {
                       <button class="message-image-remove" type="button" :aria-label="`Remove ${image.name}`" @click="removeMessageImage(image.id)">×</button>
                     </figure>
                   </div>
-                  <div v-if="!conversationStarted" class="composer-textarea-wrap" :class="{ 'slash-selected': initialSlashHighlight, composing: composerComposing }">
-                    <div ref="initialComposerHighlight" class="composer-input-mirror" aria-hidden="true"><template v-if="initialSlashHighlight"><span>{{ initialSlashHighlight.before }}</span><mark>{{ initialSlashHighlight.token }}</mark><span>{{ initialSlashHighlight.after }}</span></template><template v-else>{{ raw }}</template></div>
+                  <div v-if="!conversationStarted" class="composer-textarea-wrap" :class="{ 'token-selected': initialTokenHighlight, composing: composerComposing }">
+                    <div ref="initialComposerHighlight" class="composer-input-mirror" aria-hidden="true"><template v-if="initialTokenHighlight"><template v-for="(segment, index) in initialTokenHighlight" :key="index"><mark v-if="segment.kind" :class="segment.kind === 'reference' ? 'reference' : ''">{{ segment.text }}</mark><span v-else>{{ segment.text }}</span></template></template><template v-else>{{ raw }}</template></div>
                     <textarea
                       ref="initialComposerInput"
                       :value="raw"
@@ -3380,8 +3625,8 @@ onBeforeUnmount(() => {
                       @keydown="handleComposerKeydown($event, 'initial')"
                     />
                   </div>
-                  <div v-else class="composer-textarea-wrap" :class="{ 'slash-selected': followUpSlashHighlight, composing: composerComposing }">
-                    <div ref="followUpComposerHighlight" class="composer-input-mirror" aria-hidden="true"><template v-if="followUpSlashHighlight"><span>{{ followUpSlashHighlight.before }}</span><mark>{{ followUpSlashHighlight.token }}</mark><span>{{ followUpSlashHighlight.after }}</span></template><template v-else>{{ followUp }}</template></div>
+                  <div v-else class="composer-textarea-wrap" :class="{ 'token-selected': followUpTokenHighlight, composing: composerComposing }">
+                    <div ref="followUpComposerHighlight" class="composer-input-mirror" aria-hidden="true"><template v-if="followUpTokenHighlight"><template v-for="(segment, index) in followUpTokenHighlight" :key="index"><mark v-if="segment.kind" :class="segment.kind === 'reference' ? 'reference' : ''">{{ segment.text }}</mark><span v-else>{{ segment.text }}</span></template></template><template v-else>{{ followUp }}</template></div>
                     <textarea
                       ref="followUpComposerInput"
                       :value="followUp"
@@ -4017,12 +4262,13 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .composer-input-mirror mark { padding: 0; border-radius: .36rem; color: transparent; background: transparent; }
 .agent-input textarea { display: block; width: 100%; min-height: 4rem; padding: .7rem .8rem .25rem; resize: none; border: 0; outline: 0; color: var(--text); caret-color: var(--text); background: transparent; font-family: inherit; font-size: .78rem; line-height: 1.5; }
 .composer-textarea-wrap textarea { position: relative; z-index: 1; }
-.composer-textarea-wrap.slash-selected .composer-input-mirror { color: var(--text); }
-.composer-textarea-wrap.slash-selected textarea { color: transparent; }
-.composer-textarea-wrap.slash-selected .composer-input-mirror mark { margin: -.1rem -.34rem; padding: .1rem .34rem; border-radius: .34rem; color: #2f674a; background: #e7eee9; }
-.composer-textarea-wrap.slash-selected.composing .composer-input-mirror { color: transparent; }
-.composer-textarea-wrap.slash-selected.composing .composer-input-mirror mark { color: transparent; }
-.composer-textarea-wrap.slash-selected.composing textarea { color: var(--text); }
+.composer-textarea-wrap.token-selected .composer-input-mirror { color: var(--text); }
+.composer-textarea-wrap.token-selected textarea { color: transparent; }
+.composer-textarea-wrap.token-selected .composer-input-mirror mark { margin: -.1rem -.34rem; padding: .1rem .34rem; border-radius: .34rem; color: #2f674a; background: #e7eee9; }
+.composer-textarea-wrap.token-selected .composer-input-mirror mark.reference { color: #31537a; background: #e6edf6; }
+.composer-textarea-wrap.token-selected.composing .composer-input-mirror { color: transparent; }
+.composer-textarea-wrap.token-selected.composing .composer-input-mirror mark { color: transparent; }
+.composer-textarea-wrap.token-selected.composing textarea { color: var(--text); }
 .agent-input-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; min-height: 2.45rem; padding: 0 .3rem .1rem .45rem; }
 .agent-input-footer small { color: var(--tertiary); font-size: .55rem; }
 .agent-input .send-button { position: static; }

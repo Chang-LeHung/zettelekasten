@@ -273,6 +273,16 @@ class SlashCommandOut(BaseModel):
     type: str
 
 
+class AtCommandOut(BaseModel):
+    """Browser-safe metadata for one resource the conversation may reference."""
+
+    id: str
+    kind: str
+    name: str
+    label: str
+    description: str
+
+
 class ShellApprovalSettings(BaseModel):
     """Persisted shell approval policy for one Agent session."""
 

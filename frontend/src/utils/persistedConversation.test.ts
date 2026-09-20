@@ -82,6 +82,38 @@ describe('restorePersistedConversation', () => {
     })
   })
 
+  it('shows the original @ reference input instead of the injected reference context', () => {
+    const injected = 'The user referenced resources from this conversation with @ tokens.\n\n- @report-md: asset asset-1\n\nUser request:\ncompare @report-md with the draft'
+    const restored = restorePersistedConversation([
+      record(1, 'user', { content: 'compare @report-md with the draft' }),
+      record(2, 'assistant', { content: 'Compared.' }),
+      record(3, 'user', {
+        content: injected,
+        parts: [{ type: 'text', text: injected }],
+        attributes: {
+          at_command: {
+            references: [
+              {
+                id: 'reference-1',
+                kind: 'asset',
+                name: 'report-md',
+                label: 'report.md',
+                target_id: 'asset-1',
+              },
+            ],
+            raw_parts: [{ type: 'text', text: 'compare @report-md with the draft' }],
+          },
+        },
+      }),
+    ])
+
+    expect(restored.messages[1]).toMatchObject({
+      role: 'user',
+      content: 'compare @report-md with the draft',
+      parts: [{ type: 'text', text: 'compare @report-md with the draft' }],
+    })
+  })
+
   it('restores ordered image tool output in the same shape as live events', () => {
     const restored = restorePersistedConversation([
       record(1, 'user', { content: 'Read the image' }),

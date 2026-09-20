@@ -6,6 +6,7 @@ import type {
   AgentModelUsage,
   AgentUsageActivityDay,
   AgentServerToolActivity,
+  AgentAtCommand,
   AgentSlashCommand,
   AgentSteeringMessage,
   AgentStreamCallbacks,
@@ -34,6 +35,12 @@ import type {
 
 const API_URL = (import.meta.env.VITE_API_URL ?? '/api').replace(/\/$/, '')
 const artifactIndex = new Map<string, AgentArtifact>()
+
+/**
+ * Endpoint of a container-registered capability that runs one turn: either a
+ * slash command ID or an `@` reference ID.
+ */
+type AgentCommandTarget = { slug: 'slash-commands' | 'at-commands'; id: string }
 
 function asNonNegativeNumber(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0
@@ -214,10 +221,10 @@ export const aiClient = {
     signal?: AbortSignal,
     parts: MessagePart[] = [],
     shellApprovalMode: ShellApprovalMode = 'review',
-    slashCommandId: string | null = null,
+    command: AgentCommandTarget | null = null,
   ): Promise<AgentArtifact | null> {
-    const path = slashCommandId
-      ? `/agent/${conversationId}/slash-commands/${slashCommandId}`
+    const path = command
+      ? `/agent/${conversationId}/${command.slug}/${encodeURIComponent(command.id)}`
       : `/agent/${conversationId}/messages`
     const response = await fetch(`${API_URL}${path}`, {
       method: 'POST',
@@ -339,7 +346,38 @@ export const aiClient = {
       signal,
       parts,
       shellApprovalMode,
-      commandId,
+      { slug: 'slash-commands', id: commandId },
+    )
+  },
+
+  /**
+   * Run one turn that references a conversation resource. The browser submits
+   * the `@` item ID it resolved from the composer text, and the backend injects
+   * that reference before streaming the Agent events.
+   */
+  atCommandStream(
+    conversationId: string,
+    itemId: string,
+    rawContent: string,
+    providerId: string,
+    reasoningEffort: ReasoningEffort,
+    messages: AnalysisMessage[],
+    callbacks: AgentStreamCallbacks = {},
+    signal?: AbortSignal,
+    parts: MessagePart[] = [],
+    shellApprovalMode: ShellApprovalMode = 'review',
+  ): Promise<AgentArtifact | null> {
+    return this.analyzeStream(
+      conversationId,
+      rawContent,
+      providerId,
+      reasoningEffort,
+      messages,
+      callbacks,
+      signal,
+      parts,
+      shellApprovalMode,
+      { slug: 'at-commands', id: itemId },
     )
   },
 
@@ -349,6 +387,10 @@ export const aiClient = {
 
   listSlashCommands(conversationId: string): Promise<AgentSlashCommand[]> {
     return request<AgentSlashCommand[]>(`/agent/${conversationId}/slash-commands`)
+  },
+
+  listAtCommands(conversationId: string): Promise<AgentAtCommand[]> {
+    return request<AgentAtCommand[]>(`/agent/${conversationId}/at-commands`)
   },
 
   getAgentSession(conversationId: string): Promise<AgentSession> {

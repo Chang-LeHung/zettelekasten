@@ -23,12 +23,13 @@ from zett.agent import (
     ZettelkastenAgent,
     ZettelkastenAgentConfig,
     ZettelkastenContainer,
+    ZettelkastenExt,
 )
 from zett.application.routes import agent as agent_routes
 from zett.main import app
 
 
-class ExampleSlashExtension:
+class ExampleSlashExtension(ZettelkastenExt):
     """Register one deterministic command without requiring a model."""
 
     name = "example"
@@ -118,7 +119,7 @@ async def test_skill_extension_registers_and_points_at_the_skill(tmp_path) -> No
     extension = SkillSlashCommandExtension((tmp_path,))
     captured: list[UserMessage] = []
 
-    class CapturingContainer:
+    class CapturingContainer(ZettelkastenContainer):
         async def stream_to_agent(
             self,
             invocation: SlashCommandInvocation,
@@ -131,6 +132,9 @@ async def test_skill_extension_registers_and_points_at_the_skill(tmp_path) -> No
             yield AgentEvent(AgentEventType.CUSTOM, session_id="slash-session", name="captured")
 
         def register_slash_command(self, **kwargs):
+            raise AssertionError(f"Unexpected registration: {kwargs}")
+
+        def register_at_command(self, **kwargs):
             raise AssertionError(f"Unexpected registration: {kwargs}")
 
     commands = []
@@ -174,7 +178,7 @@ async def test_skill_command_records_the_original_message_with_images(tmp_path) 
     extension = SkillSlashCommandExtension((tmp_path,))
     captured: list[UserMessage] = []
 
-    class CapturingContainer:
+    class CapturingContainer(ZettelkastenContainer):
         async def stream_to_agent(
             self,
             invocation: SlashCommandInvocation,
@@ -189,6 +193,9 @@ async def test_skill_command_records_the_original_message_with_images(tmp_path) 
         def register_slash_command(self, **kwargs):
             captured.append(kwargs)
             return object()
+
+        def register_at_command(self, **kwargs):
+            raise AssertionError(f"Unexpected registration: {kwargs}")
 
     container = CapturingContainer()
     await extension.register(container)

@@ -34,17 +34,21 @@ function toolOutput(content: string): unknown {
 
 /**
  * Original user message recorded when an application extension rewrote the
- * model prompt, such as a slash command that loaded a skill. The expanded
- * prompt stays in `content`, so the UI must not show it back to the user as if
- * they had typed it. Images travel with the recorded parts.
+ * model prompt, such as a slash command that loaded a skill or an `@` reference
+ * that named a conversation resource. The expanded prompt stays in `content`,
+ * so the UI must not show it back to the user as if they had typed it. Images
+ * travel with the recorded parts.
  */
 function originalUserParts(record: AgentPersistedMessage): MessagePart[] | null {
-  const slashCommand = record.attributes?.slash_command
-  if (!slashCommand || typeof slashCommand !== 'object') return null
-  const rawParts = (slashCommand as { raw_parts?: unknown }).raw_parts
-  if (!Array.isArray(rawParts)) return null
-  const parts = rawParts.filter(isRecordedPart)
-  return parts.length ? parts : null
+  for (const key of ['slash_command', 'at_command']) {
+    const rewrite = record.attributes?.[key]
+    if (!rewrite || typeof rewrite !== 'object') continue
+    const rawParts = (rewrite as { raw_parts?: unknown }).raw_parts
+    if (!Array.isArray(rawParts)) continue
+    const parts = rawParts.filter(isRecordedPart)
+    if (parts.length) return parts
+  }
+  return null
 }
 
 function isRecordedPart(part: unknown): part is MessagePart {

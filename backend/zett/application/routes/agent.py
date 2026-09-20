@@ -21,6 +21,7 @@ from zett_agent import (
 )
 
 from ...agent import (
+    AtCommandInvocation,
     SlashCommandInvocation,
     ZettelkastenAgent,
     ZettelkastenAgentConfig,
@@ -37,6 +38,7 @@ from ...messages import MessageImageSizeExceeded, MessagePartCodec, MessagePartE
 from ...schemas import ProviderConnection
 from ..schemas import (
     AnalyzeRequest,
+    AtCommandOut,
     ExternalEventIn,
     ExternalEventOut,
     SlashCommandOut,
@@ -151,7 +153,7 @@ def _agent_config(session_id: str, runtime_settings: RuntimeSettings) -> Zettelk
     )
 
 
-async def _slash_container(session_id: str, runtime_settings: RuntimeSettings) -> ZettelkastenAgent:
+async def _container(session_id: str, runtime_settings: RuntimeSettings) -> ZettelkastenAgent:
     """Create one initialized container without constructing a provider model."""
     return await ZettelkastenAgent(_agent_config(session_id, runtime_settings)).initialize()
 
@@ -283,7 +285,7 @@ async def list_slash_commands(session_id: str) -> list[SlashCommandOut]:
     if await session_storage.get(session_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
     runtime_settings = await runtime_settings_service.get()
-    container = await _slash_container(session_id, runtime_settings)
+    container = await _container(session_id, runtime_settings)
     return [
         SlashCommandOut(
             id=command.id,
@@ -292,6 +294,25 @@ async def list_slash_commands(session_id: str) -> list[SlashCommandOut]:
             type=command.type,
         )
         for command in container.slash_commands()
+    ]
+
+
+@router.get("/{session_id}/at-commands", response_model=list[AtCommandOut])
+async def list_at_commands(session_id: str) -> list[AtCommandOut]:
+    """List the conversation resources the browser may reference with ``@``."""
+    if await session_storage.get(session_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+    runtime_settings = await runtime_settings_service.get()
+    container = await _container(session_id, runtime_settings)
+    return [
+        AtCommandOut(
+            id=item.id,
+            kind=item.kind,
+            name=item.name,
+            label=item.label,
+            description=item.description,
+        )
+        for item in await container.at_commands(session_id)
     ]
 
 
@@ -320,6 +341,36 @@ async def stream_slash_command(
         request,
         session_id,
         lambda: request.agent.execute_slash_command(command_id, invocation),
+    )
+
+
+@router.post("/{session_id}/at-commands/{item_id}")
+async def stream_at_command(
+    session_id: str,
+    item_id: str,
+    payload: AnalyzeRequest,
+) -> StreamingResponse:
+    """Run the turn that references one conversation resource with ``@``."""
+    request = await _prepare_agent_request(session_id, payload)
+    item = await request.agent.at_command(session_id, item_id)
+    if item is None:
+        await _discard_prepared_request(request)
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "At command not found")
+    invocation = AtCommandInvocation(
+        session_id=session_id,
+        client=request.client,
+        message=request.message,
+        model=request.model,
+        config=request.config,
+        reasoning_effort=request.effort,
+        metadata=payload.metadata,
+        tags=payload.tags,
+        item=item,
+    )
+    return _stream_response(
+        request,
+        session_id,
+        lambda: request.agent.execute_at_command(invocation),
     )
 
 

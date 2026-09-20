@@ -13,7 +13,7 @@ from zett_agent import (
 )
 
 from ..config import settings
-from .slash import ZettelkastenExt
+from .container import ZettelkastenExt
 from .slash_skills import SkillSlashCommandExtension
 
 DEFAULT_ZETT_MCP_CONFIG_PATH = Path("~/.zettelekasten/mcp.json")
