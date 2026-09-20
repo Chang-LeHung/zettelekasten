@@ -10,12 +10,11 @@ from sqlalchemy import select
 from zett_agent import new_uuid7
 
 from ...application.object_store import static_asset_key
-from ...models import StaticAssetListOptions
-from ...schemas import StaticAssetCreate, StaticAssetOut
+from ...schemas import StaticAssetCreate, StaticAssetEntity, StaticAssetListOptions
 from ..database import session_scope
-from ..models import StaticAssetModel
 from ..object_store import get_object_store
 from ..storage import AsyncStorage
+from ..tables import StaticAssetRow
 
 
 def _safe_suffix(name: str) -> str:
@@ -24,10 +23,10 @@ def _safe_suffix(name: str) -> str:
     return suffix if re.fullmatch(r"\.[a-z0-9]+", suffix) else ""
 
 
-def _asset_out(model: StaticAssetModel) -> StaticAssetOut:
+def _asset_out(model: StaticAssetRow) -> StaticAssetEntity:
     """Convert one persisted row into its public typed representation."""
     object_store = get_object_store()
-    return StaticAssetOut(
+    return StaticAssetEntity(
         id=model.id,
         name=model.name,
         mime_type=model.mime_type,
@@ -41,10 +40,10 @@ def _asset_out(model: StaticAssetModel) -> StaticAssetOut:
     )
 
 
-class StaticAssetStorage(AsyncStorage[StaticAssetCreate, StaticAssetOut, str, StaticAssetListOptions]):
+class StaticAssetStorage(AsyncStorage[StaticAssetCreate, StaticAssetEntity, str, StaticAssetListOptions]):
     """Persist global uploaded files under one static directory."""
 
-    async def create(self, entity: StaticAssetCreate) -> StaticAssetOut:
+    async def create(self, entity: StaticAssetCreate) -> StaticAssetEntity:
         """Store one uploaded file and its typed metadata."""
         asset_id = new_uuid7()
         now = datetime.now(UTC)
@@ -53,7 +52,7 @@ class StaticAssetStorage(AsyncStorage[StaticAssetCreate, StaticAssetOut, str, St
         stored = await object_store.write(key, entity.content)
         try:
             async with session_scope() as session:
-                model = StaticAssetModel(
+                model = StaticAssetRow(
                     id=asset_id,
                     name=entity.name,
                     mime_type=entity.mime_type,
@@ -71,19 +70,19 @@ class StaticAssetStorage(AsyncStorage[StaticAssetCreate, StaticAssetOut, str, St
             await object_store.delete(stored.key)
             raise
 
-    async def get(self, entity_id: str) -> StaticAssetOut | None:
+    async def get(self, entity_id: str) -> StaticAssetEntity | None:
         async with session_scope() as session:
-            model = await session.get(StaticAssetModel, entity_id)
+            model = await session.get(StaticAssetRow, entity_id)
             return _asset_out(model) if model is not None else None
 
-    async def update(self, entity_id: str, entity: StaticAssetCreate) -> StaticAssetOut:
+    async def update(self, entity_id: str, entity: StaticAssetCreate) -> StaticAssetEntity:
         """Replace file content and editable metadata while retaining identity."""
         replacement_key: str | None = None
         old_storage_path: str | None = None
         object_store = get_object_store()
         try:
             async with session_scope() as session:
-                model = await session.get(StaticAssetModel, entity_id)
+                model = await session.get(StaticAssetRow, entity_id)
                 if model is None:
                     raise KeyError(f"Static asset not found: {entity_id}")
                 old_storage_path = model.storage_path
@@ -112,7 +111,7 @@ class StaticAssetStorage(AsyncStorage[StaticAssetCreate, StaticAssetOut, str, St
         """Delete metadata first, then explicitly remove the owned file."""
         storage_path: str | None = None
         async with session_scope() as session:
-            model = await session.get(StaticAssetModel, entity_id)
+            model = await session.get(StaticAssetRow, entity_id)
             if model is None:
                 return False
             storage_path = model.storage_path
@@ -121,14 +120,14 @@ class StaticAssetStorage(AsyncStorage[StaticAssetCreate, StaticAssetOut, str, St
             await get_object_store().delete(storage_path)
         return True
 
-    async def list(self, options: StaticAssetListOptions | None = None) -> list[StaticAssetOut]:
+    async def list(self, options: StaticAssetListOptions | None = None) -> list[StaticAssetEntity]:
         options = options or StaticAssetListOptions()
         async with session_scope() as session:
-            statement = select(StaticAssetModel)
+            statement = select(StaticAssetRow)
             if options.query:
-                statement = statement.where(StaticAssetModel.name.ilike(f"%{options.query}%"))
+                statement = statement.where(StaticAssetRow.name.ilike(f"%{options.query}%"))
             statement = (
-                statement.order_by(StaticAssetModel.created_at.desc(), StaticAssetModel.id.desc())
+                statement.order_by(StaticAssetRow.created_at.desc(), StaticAssetRow.id.desc())
                 .limit(options.limit)
                 .offset(options.offset)
             )
@@ -137,7 +136,7 @@ class StaticAssetStorage(AsyncStorage[StaticAssetCreate, StaticAssetOut, str, St
     async def content_path(self, entity_id: str) -> Path | None:
         """Resolve one stored file after confirming its metadata exists."""
         async with session_scope() as session:
-            model = await session.get(StaticAssetModel, entity_id)
+            model = await session.get(StaticAssetRow, entity_id)
             if model is None:
                 return None
             path = get_object_store().resolve(model.storage_path)

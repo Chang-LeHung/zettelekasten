@@ -8,7 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from .base import Base
 
 
-class TagModel(Base):
+class TagRow(Base):
     """One stable node in the persistent library classification tree."""
 
     __tablename__ = "tags"

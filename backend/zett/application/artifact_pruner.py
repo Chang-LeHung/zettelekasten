@@ -29,11 +29,11 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field
 
 from ..schemas import (
-    AgentArtifact,
+    AgentArtifactEntity,
     ArticleArtifactContent,
     ArtifactContent,
     ArtifactStatus,
-    ArtifactTagOut,
+    ArtifactTagEntity,
     ArtifactType,
     CardArtifactContent,
     CardType,
@@ -125,7 +125,7 @@ class AgentArtifactPreview(BaseModel):
     published_content: ArtifactPreviewContent | None = None
     draft_content: ArtifactPreviewContent | None = None
     version: int = Field(ge=1)
-    tags: list[ArtifactTagOut] = Field(default_factory=list)
+    tags: list[ArtifactTagEntity] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
@@ -148,11 +148,11 @@ class ArtifactPruner:
         self.image_text_chars = self._positive("image_text_chars", image_text_chars)
         self.image_url_chars = self._positive("image_url_chars", image_url_chars)
 
-    def prune(self, artifacts: Sequence[AgentArtifact]) -> list[AgentArtifactPreview]:
+    def prune(self, artifacts: Sequence[AgentArtifactEntity]) -> list[AgentArtifactPreview]:
         """Return bounded previews while preserving source ordering."""
         return [self.prune_one(artifact) for artifact in artifacts]
 
-    def prune_one(self, artifact: AgentArtifact) -> AgentArtifactPreview:
+    def prune_one(self, artifact: AgentArtifactEntity) -> AgentArtifactPreview:
         """Project one artifact with its published content and its draft."""
         return AgentArtifactPreview(
             id=artifact.id,

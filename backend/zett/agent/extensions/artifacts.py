@@ -8,8 +8,13 @@ from zett_agent import AgentExtension, AgentRunContext, tool
 from ...application.artifact_pruner import AgentArtifactPreview, ArtifactPruner
 from ...application.tagging import tag_service
 from ...infra.dao import artifact_storage
-from ...models import ArtifactListOptions
-from ...schemas import AgentArtifact, AgentArtifactWrite, ArtifactContent, ArtifactCreateContent
+from ...schemas import (
+    AgentArtifactEntity,
+    AgentArtifactWrite,
+    ArtifactContent,
+    ArtifactCreateContent,
+    ArtifactListOptions,
+)
 
 artifact_pruner = ArtifactPruner()
 
@@ -28,7 +33,9 @@ class ArtifactExtension(AgentExtension):
         session_id = context.config.session_id
 
         @tool
-        async def create_artifact(content: ArtifactCreateContent, raw_content: str | None = None) -> AgentArtifact:
+        async def create_artifact(
+            content: ArtifactCreateContent, raw_content: str | None = None
+        ) -> AgentArtifactEntity:
             """Create a draft card, article, image, slide deck, or LaTeX PDF in this conversation.
 
             Args:
@@ -87,7 +94,7 @@ class ArtifactExtension(AgentExtension):
             return await tag_service.sync_confirmed_suggestions(created)
 
         @tool
-        async def get_artifact(artifact_id: str) -> AgentArtifact:
+        async def get_artifact(artifact_id: str) -> AgentArtifactEntity:
             """Return one artifact with its published content and its draft.
 
             Args:
@@ -145,7 +152,7 @@ class ArtifactExtension(AgentExtension):
             return artifact_pruner.prune(artifacts)
 
         @tool
-        async def update_artifact(artifact_id: str, content: ArtifactContent) -> AgentArtifact:
+        async def update_artifact(artifact_id: str, content: ArtifactContent) -> AgentArtifactEntity:
             """Replace the draft content of an existing conversation artifact.
 
             Args:
@@ -220,7 +227,7 @@ class ArtifactExtension(AgentExtension):
             context.register_tool(registered)
 
     @staticmethod
-    async def _artifact(session_id: str, artifact_id: str) -> AgentArtifact:
+    async def _artifact(session_id: str, artifact_id: str) -> AgentArtifactEntity:
         artifact = await artifact_storage.get_for_session(session_id, artifact_id)
         if artifact is None:
             raise ValueError(f"Artifact not found in this session: {artifact_id}")

@@ -3,15 +3,14 @@
 from fastapi import APIRouter, HTTPException, Query, status
 
 from ...infra.dao import artifact_storage, session_storage
-from ...models import ArtifactListOptions
-from ...schemas import AgentArtifact, AgentArtifactWrite, ArtifactStatus, ArtifactType
+from ...schemas import AgentArtifactEntity, AgentArtifactWrite, ArtifactListOptions, ArtifactStatus, ArtifactType
 from ..schemas import ArtifactCreateIn, ArtifactUpdateIn, DeleteResponse
 from ..tagging import tag_service
 
 router = APIRouter(tags=["artifacts"])
 
 
-@router.get("/artifacts", response_model=list[AgentArtifact])
+@router.get("/artifacts", response_model=list[AgentArtifactEntity])
 async def list_all_artifacts(
     q: str | None = None,
     artifact_types: list[ArtifactType] = Query(default=[]),
@@ -19,7 +18,7 @@ async def list_all_artifacts(
     tag_ids: list[str] = Query(default=[]),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
-) -> list[AgentArtifact]:
+) -> list[AgentArtifactEntity]:
     """Search artifacts across sessions for the library UI."""
     try:
         expanded_tag_ids = await tag_service.subtree_ids(tag_ids) if tag_ids else ()
@@ -36,8 +35,8 @@ async def list_all_artifacts(
     return await artifact_storage.list(options)
 
 
-@router.get("/agent/{session_id}/artifacts", response_model=list[AgentArtifact])
-async def list_session_artifacts(session_id: str) -> list[AgentArtifact]:
+@router.get("/agent/{session_id}/artifacts", response_model=list[AgentArtifactEntity])
+async def list_session_artifacts(session_id: str) -> list[AgentArtifactEntity]:
     """List every artifact belonging to one conversation."""
     if await session_storage.get(session_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
@@ -46,10 +45,10 @@ async def list_session_artifacts(session_id: str) -> list[AgentArtifact]:
 
 @router.post(
     "/agent/{session_id}/artifacts",
-    response_model=AgentArtifact,
+    response_model=AgentArtifactEntity,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_artifact(session_id: str, payload: ArtifactCreateIn) -> AgentArtifact:
+async def create_artifact(session_id: str, payload: ArtifactCreateIn) -> AgentArtifactEntity:
     """Create one typed artifact owned by the URL session."""
     if await session_storage.get(session_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
@@ -68,16 +67,16 @@ async def create_artifact(session_id: str, payload: ArtifactCreateIn) -> AgentAr
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
 
 
-@router.get("/agent/{session_id}/artifacts/{artifact_id}", response_model=AgentArtifact)
-async def get_artifact(session_id: str, artifact_id: str) -> AgentArtifact:
+@router.get("/agent/{session_id}/artifacts/{artifact_id}", response_model=AgentArtifactEntity)
+async def get_artifact(session_id: str, artifact_id: str) -> AgentArtifactEntity:
     artifact = await artifact_storage.get_for_session(session_id, artifact_id)
     if artifact is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Artifact not found")
     return artifact
 
 
-@router.put("/agent/{session_id}/artifacts/{artifact_id}", response_model=AgentArtifact)
-async def update_artifact(session_id: str, artifact_id: str, payload: ArtifactUpdateIn) -> AgentArtifact:
+@router.put("/agent/{session_id}/artifacts/{artifact_id}", response_model=AgentArtifactEntity)
+async def update_artifact(session_id: str, artifact_id: str, payload: ArtifactUpdateIn) -> AgentArtifactEntity:
     """Write user-edited content, replacing any draft the model proposed.
 
     The editor's save is a user action, so it publishes directly and mirrors the
@@ -101,12 +100,12 @@ async def update_artifact(session_id: str, artifact_id: str, payload: ArtifactUp
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
 
 
-@router.put("/agent/{session_id}/artifacts/{artifact_id}/draft", response_model=AgentArtifact)
+@router.put("/agent/{session_id}/artifacts/{artifact_id}/draft", response_model=AgentArtifactEntity)
 async def update_artifact_draft(
     session_id: str,
     artifact_id: str,
     payload: ArtifactUpdateIn,
-) -> AgentArtifact:
+) -> AgentArtifactEntity:
     """Write an edited draft without touching the published artifact.
 
     Every editing surface lands here: the conversation panel, its full editor,
@@ -129,8 +128,8 @@ async def update_artifact_draft(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
 
 
-@router.post("/agent/{session_id}/artifacts/{artifact_id}/save", response_model=AgentArtifact)
-async def save_artifact(session_id: str, artifact_id: str) -> AgentArtifact:
+@router.post("/agent/{session_id}/artifacts/{artifact_id}/save", response_model=AgentArtifactEntity)
+async def save_artifact(session_id: str, artifact_id: str) -> AgentArtifactEntity:
     """Publish the pending draft as this artifact's content and mark it saved.
 
     This is the user's explicit approval step: the model only ever writes draft

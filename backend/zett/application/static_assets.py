@@ -3,21 +3,20 @@
 from pathlib import Path
 
 from ..infra.dao import static_asset_storage
-from ..models import StaticAssetListOptions
-from ..schemas import StaticAssetCreate, StaticAssetOut
+from ..schemas import StaticAssetCreate, StaticAssetEntity, StaticAssetListOptions
 from .settings import runtime_settings_service
 
 
 class StaticAssetService:
     """List, upload, delete, and resolve global static assets."""
 
-    async def list(self, options: StaticAssetListOptions | None = None) -> list[StaticAssetOut]:
+    async def list(self, options: StaticAssetListOptions | None = None) -> list[StaticAssetEntity]:
         return await static_asset_storage.list(options)
 
-    async def get(self, asset_id: str) -> StaticAssetOut | None:
+    async def get(self, asset_id: str) -> StaticAssetEntity | None:
         return await static_asset_storage.get(asset_id)
 
-    async def upload(self, *, name: str, mime_type: str | None, content: bytes) -> StaticAssetOut:
+    async def upload(self, *, name: str, mime_type: str | None, content: bytes) -> StaticAssetEntity:
         """Persist one uploaded file after applying the runtime size limit."""
         runtime_settings = await runtime_settings_service.get()
         if len(content) > runtime_settings.max_asset_size_bytes:

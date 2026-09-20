@@ -4,13 +4,13 @@ from sqlalchemy import select
 from zett.infra import database
 from zett.infra.dao.artifact import artifact_storage
 from zett.infra.dao.session import session_storage
-from zett.infra.models import SessionArtifactModel
 from zett.infra.storage import AsyncStorage
-from zett.models import ArtifactListOptions
+from zett.infra.tables import SessionArtifactRow
 from zett.schemas import (
     AgentArtifactWrite,
     AgentSessionCreate,
     ArticleArtifactContent,
+    ArtifactListOptions,
     ArtifactStatus,
     CardArtifactContent,
     ImageArtifactContent,
@@ -67,7 +67,7 @@ async def test_artifact_storage_persists_multiple_typed_outputs_per_session() ->
     assert image.content.artifact_type == "image"
     assert slides.content.artifact_type == "slides"
     async with database.session_scope() as db:
-        rows = await db.scalars(select(SessionArtifactModel.artifact_type).order_by(SessionArtifactModel.created_at))
+        rows = await db.scalars(select(SessionArtifactRow.artifact_type).order_by(SessionArtifactRow.created_at))
         assert rows.all() == [
             1,
             2,

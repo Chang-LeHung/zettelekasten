@@ -10,7 +10,7 @@ from zett_agent import new_uuid7
 
 from ...schemas import JsonValue, KeyValueRecord
 from ..database import session_scope
-from ..models import KeyValueModel
+from ..tables import KeyValueRow
 
 
 def _normalize_key(key: str) -> str:
@@ -22,7 +22,7 @@ def _normalize_key(key: str) -> str:
     return normalized
 
 
-def _record(model: KeyValueModel) -> KeyValueRecord:
+def _record(model: KeyValueRow) -> KeyValueRecord:
     """Detach and decode one ORM revision before its transaction closes."""
     created_at = model.created_at.replace(tzinfo=UTC) if model.created_at.tzinfo is None else model.created_at
     updated_at = model.updated_at.replace(tzinfo=UTC) if model.updated_at.tzinfo is None else model.updated_at
@@ -59,7 +59,7 @@ class KeyValueStorage:
         """Return one current value, or ``None`` when its key is absent."""
         normalized = _normalize_key(key)
         async with session_scope() as session:
-            statement = select(KeyValueModel).where(KeyValueModel.key == normalized)
+            statement = select(KeyValueRow).where(KeyValueRow.key == normalized)
             model = (await session.scalars(statement)).first()
             return _record(model) if model is not None else None
 
@@ -74,9 +74,9 @@ class KeyValueStorage:
         serialized = json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
         async with self._write_lock(), session_scope() as session:
             now = datetime.now(UTC)
-            model = (await session.scalars(select(KeyValueModel).where(KeyValueModel.key == normalized))).first()
+            model = (await session.scalars(select(KeyValueRow).where(KeyValueRow.key == normalized))).first()
             if model is None:
-                model = KeyValueModel(
+                model = KeyValueRow(
                     id=new_uuid7(),
                     key=normalized,
                     value=serialized,
@@ -96,7 +96,7 @@ class KeyValueStorage:
         """Delete one key and report whether it existed."""
         normalized = _normalize_key(key)
         async with self._write_lock(), session_scope() as session:
-            model = (await session.scalars(select(KeyValueModel).where(KeyValueModel.key == normalized))).first()
+            model = (await session.scalars(select(KeyValueRow).where(KeyValueRow.key == normalized))).first()
             if model is None:
                 return False
             await session.delete(model)
@@ -104,10 +104,10 @@ class KeyValueStorage:
 
     async def iter_prefix(self, prefix: str = "") -> list[KeyValueRecord]:
         """Return a key-sorted snapshot of current values under a prefix."""
-        statement = select(KeyValueModel)
+        statement = select(KeyValueRow)
         if prefix:
-            statement = statement.where(KeyValueModel.key.startswith(prefix, autoescape=True))
-        statement = statement.order_by(KeyValueModel.key)
+            statement = statement.where(KeyValueRow.key.startswith(prefix, autoescape=True))
+        statement = statement.order_by(KeyValueRow.key)
         async with session_scope() as session:
             return [_record(model) for model in await session.scalars(statement)]
 

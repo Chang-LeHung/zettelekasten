@@ -12,7 +12,7 @@ from zett.application.artifact_pruner import (
     LatexPdfArtifactPreviewContent,
 )
 from zett.schemas import (
-    AgentArtifact,
+    AgentArtifactEntity,
     ArticleArtifactContent,
     ArtifactStatus,
     CardArtifactContent,
@@ -21,10 +21,10 @@ from zett.schemas import (
 )
 
 
-def _artifact(content, artifact_id: str, draft=None) -> AgentArtifact:
+def _artifact(content, artifact_id: str, draft=None) -> AgentArtifactEntity:
     described = content or draft
     now = datetime.now(UTC)
-    return AgentArtifact(
+    return AgentArtifactEntity(
         id=artifact_id,
         session_id="session",
         artifact_type=described.artifact_type,

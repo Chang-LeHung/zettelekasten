@@ -10,12 +10,11 @@ from sqlalchemy import select
 from zett_agent import new_uuid7
 
 from ...application.object_store import session_asset_key
-from ...models import SessionAssetListOptions
-from ...schemas import SessionAssetCreate, SessionAssetOut, SessionAssetType
+from ...schemas import SessionAssetCreate, SessionAssetEntity, SessionAssetListOptions, SessionAssetType
 from ..database import session_scope
-from ..models import SessionAssetModel
 from ..object_store import get_object_store
 from ..storage import AsyncStorage
+from ..tables import SessionAssetRow
 
 
 class AssetTypeCode(IntEnum):
@@ -37,7 +36,7 @@ CODE_TO_ASSET = {int(code): asset_type for asset_type, code in ASSET_TO_CODE.ite
 FILE_ASSET_TYPES = (SessionAssetType.IMAGE, SessionAssetType.FILE)
 
 
-def _asset_out(model: SessionAssetModel) -> SessionAssetOut:
+def _asset_out(model: SessionAssetRow) -> SessionAssetEntity:
     """Convert one ORM row into the typed public asset representation."""
     asset_type = CODE_TO_ASSET[model.asset_type]
     object_store = get_object_store()
@@ -48,7 +47,7 @@ def _asset_out(model: SessionAssetModel) -> SessionAssetOut:
         if model.source_path
         else None
     )
-    return SessionAssetOut(
+    return SessionAssetEntity(
         id=model.id,
         session_id=model.session_id,
         asset_type=asset_type,
@@ -87,10 +86,10 @@ def _validate_payload(entity: SessionAssetCreate) -> None:
                 raise ValueError("Link asset requires exactly one external URL or referenced object path")
 
 
-class SessionAssetStorage(AsyncStorage[SessionAssetCreate, SessionAssetOut, str, SessionAssetListOptions]):
+class SessionAssetStorage(AsyncStorage[SessionAssetCreate, SessionAssetEntity, str, SessionAssetListOptions]):
     """Persist session asset metadata in SQLite and binary payloads on local disk."""
 
-    async def create(self, entity: SessionAssetCreate) -> SessionAssetOut:
+    async def create(self, entity: SessionAssetCreate) -> SessionAssetEntity:
         """Store one asset after confirming its Agent session exists."""
         _validate_payload(entity)
         from ..agent_runtime import get_agent_runtime_storage
@@ -113,7 +112,7 @@ class SessionAssetStorage(AsyncStorage[SessionAssetCreate, SessionAssetOut, str,
         payload = entity.content or (entity.text_content or entity.source_url or entity.source_path or "").encode()
         try:
             async with session_scope() as session:
-                model = SessionAssetModel(
+                model = SessionAssetRow(
                     id=asset_id,
                     session_id=entity.session_id,
                     asset_type=int(ASSET_TO_CODE[entity.asset_type]),
@@ -138,19 +137,19 @@ class SessionAssetStorage(AsyncStorage[SessionAssetCreate, SessionAssetOut, str,
                 await object_store.delete(written_key)
             raise
 
-    async def get(self, entity_id: str) -> SessionAssetOut | None:
+    async def get(self, entity_id: str) -> SessionAssetEntity | None:
         async with session_scope() as session:
-            model = await session.get(SessionAssetModel, entity_id)
+            model = await session.get(SessionAssetRow, entity_id)
             return _asset_out(model) if model else None
 
-    async def update(self, entity_id: str, entity: SessionAssetCreate) -> SessionAssetOut:
+    async def update(self, entity_id: str, entity: SessionAssetCreate) -> SessionAssetEntity:
         _validate_payload(entity)
         replacement_key: str | None = None
         old_storage_path: str | None = None
         object_store = get_object_store()
         try:
             async with session_scope() as session:
-                model = await session.get(SessionAssetModel, entity_id)
+                model = await session.get(SessionAssetRow, entity_id)
                 if model is None or model.session_id != entity.session_id:
                     raise KeyError(f"Session asset not found: {entity_id}")
                 old_storage_path = model.storage_path
@@ -189,10 +188,10 @@ class SessionAssetStorage(AsyncStorage[SessionAssetCreate, SessionAssetOut, str,
             await object_store.delete(old_storage_path)
         return result
 
-    async def rename(self, session_id: str, entity_id: str, name: str) -> SessionAssetOut:
+    async def rename(self, session_id: str, entity_id: str, name: str) -> SessionAssetEntity:
         """Change display metadata only; never rewrite bytes or their UUID path."""
         async with session_scope() as session:
-            model = await session.get(SessionAssetModel, entity_id)
+            model = await session.get(SessionAssetRow, entity_id)
             if model is None or model.session_id != session_id:
                 raise KeyError(f"Session asset not found: {entity_id}")
             model.name = name
@@ -203,7 +202,7 @@ class SessionAssetStorage(AsyncStorage[SessionAssetCreate, SessionAssetOut, str,
     async def delete(self, entity_id: str) -> bool:
         storage_path: str | None = None
         async with session_scope() as session:
-            model = await session.get(SessionAssetModel, entity_id)
+            model = await session.get(SessionAssetRow, entity_id)
             if model is None:
                 return False
             storage_path = model.storage_path
@@ -212,25 +211,25 @@ class SessionAssetStorage(AsyncStorage[SessionAssetCreate, SessionAssetOut, str,
             await get_object_store().delete(storage_path)
         return True
 
-    async def list(self, options: SessionAssetListOptions | None = None) -> list[SessionAssetOut]:
+    async def list(self, options: SessionAssetListOptions | None = None) -> list[SessionAssetEntity]:
         options = options or SessionAssetListOptions()
         async with session_scope() as session:
-            statement = select(SessionAssetModel)
+            statement = select(SessionAssetRow)
             if options.session_id:
-                statement = statement.where(SessionAssetModel.session_id == options.session_id)
+                statement = statement.where(SessionAssetRow.session_id == options.session_id)
             if options.query:
-                statement = statement.where(SessionAssetModel.name.ilike(f"%{options.query}%"))
+                statement = statement.where(SessionAssetRow.name.ilike(f"%{options.query}%"))
             if options.asset_types:
                 codes = [int(ASSET_TO_CODE[SessionAssetType(value)]) for value in options.asset_types]
-                statement = statement.where(SessionAssetModel.asset_type.in_(codes))
+                statement = statement.where(SessionAssetRow.asset_type.in_(codes))
             statement = (
-                statement.order_by(SessionAssetModel.created_at, SessionAssetModel.id)
+                statement.order_by(SessionAssetRow.created_at, SessionAssetRow.id)
                 .limit(options.limit)
                 .offset(options.offset)
             )
             return [_asset_out(model) for model in await session.scalars(statement)]
 
-    async def get_for_session(self, session_id: str, asset_id: str) -> SessionAssetOut | None:
+    async def get_for_session(self, session_id: str, asset_id: str) -> SessionAssetEntity | None:
         """Read an asset only when it belongs to the requested session."""
         asset = await self.get(asset_id)
         return asset if asset and asset.session_id == session_id else None
@@ -238,7 +237,7 @@ class SessionAssetStorage(AsyncStorage[SessionAssetCreate, SessionAssetOut, str,
     async def content_path(self, session_id: str, asset_id: str) -> Path | None:
         """Resolve a stored binary path after verifying session ownership."""
         async with session_scope() as session:
-            model = await session.get(SessionAssetModel, asset_id)
+            model = await session.get(SessionAssetRow, asset_id)
             if model is None or model.session_id != session_id or not model.storage_path:
                 return None
             path = get_object_store().resolve(model.storage_path)
@@ -249,13 +248,13 @@ class SessionAssetStorage(AsyncStorage[SessionAssetCreate, SessionAssetOut, str,
         async with session_scope() as session:
             storage_paths = tuple(
                 await session.scalars(
-                    select(SessionAssetModel.storage_path).where(
-                        SessionAssetModel.session_id == session_id,
-                        SessionAssetModel.storage_path.is_not(None),
+                    select(SessionAssetRow.storage_path).where(
+                        SessionAssetRow.session_id == session_id,
+                        SessionAssetRow.storage_path.is_not(None),
                     )
                 )
             )
-            await session.execute(sql_delete(SessionAssetModel).where(SessionAssetModel.session_id == session_id))
+            await session.execute(sql_delete(SessionAssetRow).where(SessionAssetRow.session_id == session_id))
         object_store = get_object_store()
         for storage_path in storage_paths:
             if storage_path is not None:

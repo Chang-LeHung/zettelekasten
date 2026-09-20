@@ -48,7 +48,7 @@ STATUS_TO_CODE = {
 CODE_TO_STATUS = {int(code): status for status, code in STATUS_TO_CODE.items()}
 
 
-class SessionArtifactModel(Base):
+class SessionArtifactRow(Base):
     """Typed, versioned output produced within an agent session."""
 
     __tablename__ = "session_artifacts"
@@ -82,7 +82,7 @@ class SessionArtifactModel(Base):
     updated_at: Mapped[datetime] = mapped_column(index=True)
 
 
-class ArtifactTagModel(Base):
+class ArtifactTagRow(Base):
     """Explicit association between an artifact and a confirmed tag.
 
     The relation has no foreign keys by design: deleting an artifact removes its

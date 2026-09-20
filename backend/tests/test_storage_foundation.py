@@ -13,11 +13,18 @@ from zett.infra.agent_runtime import get_agent_runtime_storage
 from zett.infra.dao.artifact import artifact_storage
 from zett.infra.dao.asset import session_asset_storage
 from zett.infra.dao.session import session_storage
-from zett.infra.models import Base
 from zett.infra.storage import AsyncStorage
+from zett.infra.tables import Base
 from zett.main import app
-from zett.models import ArtifactListOptions, SessionAssetListOptions, SessionListOptions
-from zett.schemas import AgentArtifactWrite, AgentSessionCreate, CardArtifactContent, SessionAssetCreate
+from zett.schemas import (
+    AgentArtifactWrite,
+    AgentSessionCreate,
+    ArtifactListOptions,
+    CardArtifactContent,
+    SessionAssetCreate,
+    SessionAssetListOptions,
+    SessionListOptions,
+)
 
 
 async def test_sessions_reuse_agent_storage_and_paginate_raw_history():

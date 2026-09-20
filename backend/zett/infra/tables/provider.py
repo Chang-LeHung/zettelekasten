@@ -8,7 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from .base import Base
 
 
-class ProviderModel(Base):
+class ProviderRow(Base):
     """Locally configured model endpoint with an encrypted API credential."""
 
     __tablename__ = "providers"

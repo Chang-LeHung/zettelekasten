@@ -36,7 +36,7 @@ class ProviderWrite(BaseModel):
     metadata: dict[str, object] = Field(default_factory=dict, description="Provider-specific JSON options")
 
 
-class ProviderOut(BaseModel):
+class ProviderEntity(BaseModel):
     """Safe provider metadata returned without its API key or ciphertext."""
 
     id: str = Field(description="Stable provider configuration UUID")

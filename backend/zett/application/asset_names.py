@@ -5,7 +5,7 @@ from typing import Annotated
 from pydantic import BaseModel, StringConstraints
 
 from ..infra.dao import session_asset_storage
-from ..schemas import SessionAssetOut
+from ..schemas import SessionAssetEntity
 
 
 class AssetRenameIn(BaseModel):
@@ -14,6 +14,6 @@ class AssetRenameIn(BaseModel):
     ]
 
 
-async def rename_asset(session_id: str, asset_id: str, payload: AssetRenameIn) -> SessionAssetOut:
+async def rename_asset(session_id: str, asset_id: str, payload: AssetRenameIn) -> SessionAssetEntity:
     """Preserve immutable identity and references while changing a display name."""
     return await session_asset_storage.rename(session_id, asset_id, payload.name)

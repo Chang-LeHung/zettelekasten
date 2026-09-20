@@ -8,13 +8,13 @@ from sqlalchemy import delete as sql_delete
 from zett_agent import new_uuid7
 
 from ...application.object_store import ObjectKey
-from ...models import ArtifactListOptions
 from ...schemas import (
-    AgentArtifact,
+    AgentArtifactEntity,
     AgentArtifactWrite,
     ArtifactContent,
+    ArtifactListOptions,
     ArtifactStatus,
-    ArtifactTagOut,
+    ArtifactTagEntity,
     ArtifactType,
     ImageArtifactContent,
     LatexPdfArtifactContent,
@@ -28,16 +28,16 @@ from ..artifact_search import (
 )
 from ..database import session_scope
 from ..latex_projects import create_latex_project, validate_latex_project_path
-from ..models import (
+from ..object_store import get_object_store
+from ..storage import AsyncStorage
+from ..tables import (
     CODE_TO_STATUS,
     CODE_TO_TYPE,
     STATUS_TO_CODE,
     TYPE_TO_CODE,
-    ArtifactTagModel,
-    SessionArtifactModel,
+    ArtifactTagRow,
+    SessionArtifactRow,
 )
-from ..object_store import get_object_store
-from ..storage import AsyncStorage
 
 CONTENT_ADAPTER = TypeAdapter(ArtifactContent)
 
@@ -50,7 +50,7 @@ def _json_load[JSONValueT](value: str | None, fallback: JSONValueT) -> JSONValue
         return fallback
 
 
-def _artifact_out(model: SessionArtifactModel, *, tags: list[ArtifactTagOut] | None = None) -> AgentArtifact:
+def _artifact_out(model: SessionArtifactRow, *, tags: list[ArtifactTagEntity] | None = None) -> AgentArtifactEntity:
     """Hydrate a typed artifact from its ORM record and discriminated JSON content."""
     content = _content(model.content_json)
     draft_content = _content(model.draft_content_json)
@@ -60,7 +60,7 @@ def _artifact_out(model: SessionArtifactModel, *, tags: list[ArtifactTagOut] | N
         content_url = get_object_store().url(ObjectKey(f"{editable.project_path}/{editable.pdf_name}"))
     elif isinstance(editable, ImageArtifactContent) and editable.asset_path:
         content_url = get_object_store().url(editable.asset_path)
-    return AgentArtifact(
+    return AgentArtifactEntity(
         id=model.id,
         session_id=model.session_id,
         artifact_type=CODE_TO_TYPE[model.artifact_type],
@@ -111,10 +111,10 @@ def _updated_content(
     return content
 
 
-class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifact, str, ArtifactListOptions]):
+class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifactEntity, str, ArtifactListOptions]):
     """SQLAlchemy storage for polymorphic, session-owned artifacts."""
 
-    async def create(self, entity: AgentArtifactWrite) -> AgentArtifact:
+    async def create(self, entity: AgentArtifactWrite) -> AgentArtifactEntity:
         """Persist one artifact after confirming its Agent session exists."""
         from ..agent_runtime import get_agent_runtime_storage
 
@@ -125,7 +125,7 @@ class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifact, str, Artif
         draft_content = _created_content(entity.session_id, entity.draft_content)
         described = content or draft_content
         async with session_scope() as session:
-            model = SessionArtifactModel(
+            model = SessionArtifactRow(
                 id=new_uuid7(),
                 session_id=entity.session_id,
                 artifact_type=int(TYPE_TO_CODE[described.artifact_type]),
@@ -149,9 +149,9 @@ class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifact, str, Artif
             )
             return _artifact_out(model)
 
-    async def get(self, entity_id: str) -> AgentArtifact | None:
+    async def get(self, entity_id: str) -> AgentArtifactEntity | None:
         async with session_scope() as session:
-            model = await session.get(SessionArtifactModel, entity_id)
+            model = await session.get(SessionArtifactRow, entity_id)
             artifact = _artifact_out(model) if model else None
         if artifact is None:
             return None
@@ -160,17 +160,17 @@ class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifact, str, Artif
         tags = (await tag_storage.tags_for_artifacts((entity_id,))).get(entity_id, [])
         return artifact.model_copy(update={"tags": tags})
 
-    async def get_for_session(self, session_id: str, artifact_id: str) -> AgentArtifact | None:
+    async def get_for_session(self, session_id: str, artifact_id: str) -> AgentArtifactEntity | None:
         """Read an artifact only when it belongs to the requested session."""
         artifact = await self.get(artifact_id)
         return artifact if artifact is not None and artifact.session_id == session_id else None
 
-    async def update(self, entity_id: str, entity: AgentArtifactWrite) -> AgentArtifact:
+    async def update(self, entity_id: str, entity: AgentArtifactWrite) -> AgentArtifactEntity:
         content = _updated_content(entity.session_id, entity.content)
         draft_content = _updated_content(entity.session_id, entity.draft_content)
         described = content or draft_content
         async with session_scope() as session:
-            model = await session.get(SessionArtifactModel, entity_id)
+            model = await session.get(SessionArtifactRow, entity_id)
             if model is None or model.session_id != entity.session_id:
                 raise KeyError(f"Artifact not found: {entity_id}")
             model.artifact_type = int(TYPE_TO_CODE[described.artifact_type])
@@ -193,30 +193,30 @@ class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifact, str, Artif
 
     async def delete(self, entity_id: str) -> bool:
         async with session_scope() as session:
-            model = await session.get(SessionArtifactModel, entity_id)
+            model = await session.get(SessionArtifactRow, entity_id)
             if model is None:
                 return False
-            await session.execute(sql_delete(ArtifactTagModel).where(ArtifactTagModel.artifact_id == entity_id))
+            await session.execute(sql_delete(ArtifactTagRow).where(ArtifactTagRow.artifact_id == entity_id))
             await delete_artifact_search(session, entity_id)
             await session.delete(model)
             return True
 
-    async def list(self, options: ArtifactListOptions | None = None) -> list[AgentArtifact]:
+    async def list(self, options: ArtifactListOptions | None = None) -> list[AgentArtifactEntity]:
         options = options or ArtifactListOptions()
         async with session_scope() as session:
-            statement = select(SessionArtifactModel)
+            statement = select(SessionArtifactRow)
             if options.session_id:
-                statement = statement.where(SessionArtifactModel.session_id == options.session_id)
+                statement = statement.where(SessionArtifactRow.session_id == options.session_id)
             if options.artifact_types:
                 codes = [int(TYPE_TO_CODE[ArtifactType(value)]) for value in options.artifact_types]
-                statement = statement.where(SessionArtifactModel.artifact_type.in_(codes))
+                statement = statement.where(SessionArtifactRow.artifact_type.in_(codes))
             if options.statuses:
                 codes = [int(STATUS_TO_CODE[ArtifactStatus(value)]) for value in options.statuses]
-                statement = statement.where(SessionArtifactModel.status.in_(codes))
+                statement = statement.where(SessionArtifactRow.status.in_(codes))
             if options.tag_ids:
                 statement = statement.where(
-                    SessionArtifactModel.id.in_(
-                        select(ArtifactTagModel.artifact_id).where(ArtifactTagModel.tag_id.in_(options.tag_ids))
+                    SessionArtifactRow.id.in_(
+                        select(ArtifactTagRow.artifact_id).where(ArtifactTagRow.tag_id.in_(options.tag_ids))
                     )
                 )
             rank = None
@@ -226,10 +226,10 @@ class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifact, str, Artif
                     pattern = f"%{options.query}%"
                     statement = statement.where(
                         or_(
-                            SessionArtifactModel.title.ilike(pattern),
-                            SessionArtifactModel.content_json.ilike(pattern),
-                            SessionArtifactModel.draft_content_json.ilike(pattern),
-                            SessionArtifactModel.raw_content.ilike(pattern),
+                            SessionArtifactRow.title.ilike(pattern),
+                            SessionArtifactRow.content_json.ilike(pattern),
+                            SessionArtifactRow.draft_content_json.ilike(pattern),
+                            SessionArtifactRow.raw_content.ilike(pattern),
                         )
                     )
                 else:
@@ -243,11 +243,11 @@ class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifact, str, Artif
                         .bindparams(search_query=fts_query)
                         .subquery("artifact_search_rank")
                     )
-                    statement = statement.join(rank, rank.c.artifact_id == SessionArtifactModel.id)
+                    statement = statement.join(rank, rank.c.artifact_id == SessionArtifactRow.id)
             order = (
-                (rank.c.rank, SessionArtifactModel.updated_at.desc(), SessionArtifactModel.id.desc())
+                (rank.c.rank, SessionArtifactRow.updated_at.desc(), SessionArtifactRow.id.desc())
                 if rank is not None
-                else (SessionArtifactModel.updated_at.desc(), SessionArtifactModel.id.desc())
+                else (SessionArtifactRow.updated_at.desc(), SessionArtifactRow.id.desc())
             )
             statement = statement.order_by(*order).limit(options.limit).offset(options.offset)
             artifacts = [_artifact_out(model) for model in await session.scalars(statement)]
@@ -260,17 +260,13 @@ class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifact, str, Artif
         """Explicitly remove every artifact owned by a deleted session."""
         async with session_scope() as session:
             artifact_ids = tuple(
-                await session.scalars(
-                    select(SessionArtifactModel.id).where(SessionArtifactModel.session_id == session_id)
-                )
+                await session.scalars(select(SessionArtifactRow.id).where(SessionArtifactRow.session_id == session_id))
             )
             if artifact_ids:
-                await session.execute(
-                    sql_delete(ArtifactTagModel).where(ArtifactTagModel.artifact_id.in_(artifact_ids))
-                )
+                await session.execute(sql_delete(ArtifactTagRow).where(ArtifactTagRow.artifact_id.in_(artifact_ids)))
                 await delete_artifacts_search(session, artifact_ids)
             result = await session.execute(
-                sql_delete(SessionArtifactModel).where(SessionArtifactModel.session_id == session_id)
+                sql_delete(SessionArtifactRow).where(SessionArtifactRow.session_id == session_id)
             )
             return result.rowcount
 

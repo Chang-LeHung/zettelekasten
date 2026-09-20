@@ -11,11 +11,16 @@ from zett.config import settings
 from zett.infra import object_store as object_store_module
 from zett.infra.dao import artifact_storage, session_storage
 from zett.infra.database import session_scope
-from zett.infra.models import SessionArtifactModel
 from zett.infra.object_store import LocalObjectStore, get_object_store
+from zett.infra.tables import SessionArtifactRow
 from zett.main import app
-from zett.models import ArtifactListOptions
-from zett.schemas import AgentArtifactWrite, AgentSessionCreate, LatexPdfArtifactContent, LatexPdfArtifactCreate
+from zett.schemas import (
+    AgentArtifactWrite,
+    AgentSessionCreate,
+    ArtifactListOptions,
+    LatexPdfArtifactContent,
+    LatexPdfArtifactCreate,
+)
 
 
 def project_key(session_id: str, name: str = "paper") -> str:
@@ -41,7 +46,7 @@ async def test_latex_pdf_lifecycle_and_inline_content() -> None:
         assert artifact["content"] == content
         assert artifact["artifact_type"] == "latex_pdf"
         async with session_scope() as db:
-            rows = await db.scalars(select(SessionArtifactModel).where(SessionArtifactModel.id == artifact["id"]))
+            rows = await db.scalars(select(SessionArtifactRow).where(SessionArtifactRow.id == artifact["id"]))
             row = rows.one()
             assert row.artifact_type == 5
             assert row.title == "paper"

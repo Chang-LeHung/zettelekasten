@@ -11,11 +11,10 @@ from sqlalchemy import or_, select
 from zett_agent import new_uuid7
 
 from ...config import settings
-from ...models import ProviderListOptions
-from ...schemas import ProviderConnection, ProviderOut, ProviderType, ProviderWrite
+from ...schemas import ProviderConnection, ProviderEntity, ProviderListOptions, ProviderType, ProviderWrite
 from ..database import session_scope
-from ..models import ProviderModel
 from ..storage import AsyncStorage
+from ..tables import ProviderRow
 
 
 class ProviderTypeCode(IntEnum):
@@ -85,9 +84,9 @@ def _decrypt_api_key(ciphertext: str | None) -> str | None:
         raise RuntimeError("Stored provider API key cannot be decrypted with the local key") from error
 
 
-def _provider_out(model: ProviderModel) -> ProviderOut:
+def _provider_out(model: ProviderRow) -> ProviderEntity:
     """Detach safe metadata without exposing ciphertext or plaintext credentials."""
-    return ProviderOut(
+    return ProviderEntity(
         id=model.id,
         name=model.name,
         provider=CODE_TO_TYPE[model.provider],
@@ -101,7 +100,7 @@ def _provider_out(model: ProviderModel) -> ProviderOut:
     )
 
 
-class ProviderStorage(AsyncStorage[ProviderWrite, ProviderOut, str, ProviderListOptions]):
+class ProviderStorage(AsyncStorage[ProviderWrite, ProviderEntity, str, ProviderListOptions]):
     """Store model configurations while keeping API keys encrypted at rest.
 
     ``get`` and ``list`` return safe models with only ``api_key_configured``.
@@ -110,10 +109,10 @@ class ProviderStorage(AsyncStorage[ProviderWrite, ProviderOut, str, ProviderList
     previously stored credential.
     """
 
-    async def create(self, entity: ProviderWrite) -> ProviderOut:
+    async def create(self, entity: ProviderWrite) -> ProviderEntity:
         now = datetime.now(UTC)
         async with session_scope() as session:
-            model = ProviderModel(
+            model = ProviderRow(
                 id=new_uuid7(),
                 name=entity.name,
                 provider=int(TYPE_TO_CODE[entity.provider]),
@@ -129,14 +128,14 @@ class ProviderStorage(AsyncStorage[ProviderWrite, ProviderOut, str, ProviderList
             await session.flush()
             return _provider_out(model)
 
-    async def get(self, entity_id: str) -> ProviderOut | None:
+    async def get(self, entity_id: str) -> ProviderEntity | None:
         async with session_scope() as session:
-            model = await session.get(ProviderModel, entity_id)
+            model = await session.get(ProviderRow, entity_id)
             return _provider_out(model) if model is not None else None
 
-    async def update(self, entity_id: str, entity: ProviderWrite) -> ProviderOut:
+    async def update(self, entity_id: str, entity: ProviderWrite) -> ProviderEntity:
         async with session_scope() as session:
-            model = await session.get(ProviderModel, entity_id)
+            model = await session.get(ProviderRow, entity_id)
             if model is None:
                 raise KeyError(f"Provider not found: {entity_id}")
             model.name = entity.name
@@ -152,27 +151,25 @@ class ProviderStorage(AsyncStorage[ProviderWrite, ProviderOut, str, ProviderList
 
     async def delete(self, entity_id: str) -> bool:
         async with session_scope() as session:
-            model = await session.get(ProviderModel, entity_id)
+            model = await session.get(ProviderRow, entity_id)
             if model is None:
                 return False
             await session.delete(model)
             return True
 
-    async def list(self, options: ProviderListOptions | None = None) -> list[ProviderOut]:
+    async def list(self, options: ProviderListOptions | None = None) -> list[ProviderEntity]:
         options = options or ProviderListOptions()
         async with session_scope() as session:
-            statement = select(ProviderModel)
+            statement = select(ProviderRow)
             if options.query:
                 pattern = f"%{options.query}%"
-                statement = statement.where(or_(ProviderModel.name.ilike(pattern), ProviderModel.model.ilike(pattern)))
+                statement = statement.where(or_(ProviderRow.name.ilike(pattern), ProviderRow.model.ilike(pattern)))
             if options.providers:
                 codes = [int(TYPE_TO_CODE[ProviderType(provider)]) for provider in options.providers]
-                statement = statement.where(ProviderModel.provider.in_(codes))
+                statement = statement.where(ProviderRow.provider.in_(codes))
             if options.enabled is not None:
-                statement = statement.where(ProviderModel.enabled.is_(options.enabled))
-            statement = (
-                statement.order_by(ProviderModel.name, ProviderModel.id).limit(options.limit).offset(options.offset)
-            )
+                statement = statement.where(ProviderRow.enabled.is_(options.enabled))
+            statement = statement.order_by(ProviderRow.name, ProviderRow.id).limit(options.limit).offset(options.offset)
             return [_provider_out(model) for model in await session.scalars(statement)]
 
     async def resolve_connection(
@@ -188,13 +185,13 @@ class ProviderStorage(AsyncStorage[ProviderWrite, ProviderOut, str, ProviderList
         """
         async with session_scope() as session:
             if entity_id is None:
-                statement = select(ProviderModel)
+                statement = select(ProviderRow)
                 if enabled_only:
-                    statement = statement.where(ProviderModel.enabled.is_(True))
-                ordered = statement.order_by(ProviderModel.name, ProviderModel.id).limit(1)
+                    statement = statement.where(ProviderRow.enabled.is_(True))
+                ordered = statement.order_by(ProviderRow.name, ProviderRow.id).limit(1)
                 model = (await session.scalars(ordered)).first()
             else:
-                model = await session.get(ProviderModel, entity_id)
+                model = await session.get(ProviderRow, entity_id)
             if model is None or (enabled_only and not model.enabled):
                 return None
             api_key = _decrypt_api_key(model.encrypted_api_key)

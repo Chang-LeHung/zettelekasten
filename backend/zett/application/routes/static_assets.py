@@ -2,29 +2,28 @@
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
-from ...models import StaticAssetListOptions
-from ...schemas import StaticAssetOut
+from ...schemas import StaticAssetEntity, StaticAssetListOptions
 from ..schemas import DeleteResponse
 from ..static_assets import static_asset_service
 
 router = APIRouter(prefix="/assets", tags=["assets"])
 
 
-@router.get("", response_model=list[StaticAssetOut])
+@router.get("", response_model=list[StaticAssetEntity])
 async def list_assets(
     query: str | None = None,
     limit: int = Query(default=500, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
-) -> list[StaticAssetOut]:
+) -> list[StaticAssetEntity]:
     """List global uploaded files, newest first."""
     return await static_asset_service.list(StaticAssetListOptions(query=query, limit=limit, offset=offset))
 
 
-@router.post("/upload", response_model=StaticAssetOut, status_code=status.HTTP_201_CREATED)
+@router.post("/upload", response_model=StaticAssetEntity, status_code=status.HTTP_201_CREATED)
 async def upload_asset(
     request: Request,
     name: str = Query(min_length=1, max_length=500),
-) -> StaticAssetOut:
+) -> StaticAssetEntity:
     """Upload one file without attaching it to a conversation."""
     max_size = await static_asset_service.max_upload_size()
     content = bytearray()
@@ -39,8 +38,8 @@ async def upload_asset(
         raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, str(error)) from error
 
 
-@router.get("/{asset_id}", response_model=StaticAssetOut)
-async def get_asset(asset_id: str) -> StaticAssetOut:
+@router.get("/{asset_id}", response_model=StaticAssetEntity)
+async def get_asset(asset_id: str) -> StaticAssetEntity:
     """Read one global asset's metadata."""
     asset = await static_asset_service.get(asset_id)
     if asset is None:

@@ -8,10 +8,9 @@ import pytest
 from zett.config import settings
 from zett.infra.dao.provider import provider_storage
 from zett.infra.database import session_scope
-from zett.infra.models import ProviderModel
 from zett.infra.storage import AsyncStorage
-from zett.models import ProviderListOptions
-from zett.schemas import ProviderWrite
+from zett.infra.tables import ProviderRow
+from zett.schemas import ProviderListOptions, ProviderWrite
 
 
 def provider(**changes) -> ProviderWrite:
@@ -37,7 +36,7 @@ async def test_provider_crud_encrypts_credentials_and_returns_safe_models():
     assert "test-secret-key" not in repr(created)
 
     async with session_scope() as session:
-        row = await session.get(ProviderModel, created.id)
+        row = await session.get(ProviderRow, created.id)
         assert row is not None
         assert row.encrypted_api_key != "test-secret-key"
         assert "test-secret-key" not in row.encrypted_api_key
@@ -92,7 +91,7 @@ async def test_provider_missing_and_corrupt_credentials_fail_predictably():
 
     created = await provider_storage.create(provider())
     async with session_scope() as session:
-        row = await session.get(ProviderModel, created.id)
+        row = await session.get(ProviderRow, created.id)
         assert row is not None
         row.encrypted_api_key = "not-a-fernet-token"
     with pytest.raises(RuntimeError, match="cannot be decrypted"):
@@ -119,7 +118,7 @@ async def test_responses_compatible_provider_round_trips_through_integer_code():
 
     assert created.provider == "responses_compatible"
     async with session_scope() as session:
-        row = await session.get(ProviderModel, created.id)
+        row = await session.get(ProviderRow, created.id)
         assert row is not None
         assert row.provider == 7
     resolved = await provider_storage.resolve_connection(created.id)

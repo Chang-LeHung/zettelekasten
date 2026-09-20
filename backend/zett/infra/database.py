@@ -16,7 +16,7 @@ from sqlalchemy.schema import CreateColumn, CreateIndex
 
 from ..config import settings
 from .artifact_search import ensure_artifact_search
-from .models import Base
+from .tables import Base
 
 #: NullPool keeps every connection inside the loop that opened it, matching the
 #: Agent session storage and allowing tests to swap paths per event loop.

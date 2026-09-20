@@ -3,8 +3,7 @@
 from dataclasses import dataclass
 
 from ..infra.dao import artifact_storage, tag_storage
-from ..models import TagListOptions
-from ..schemas import AgentArtifact, ArtifactStatus, TagOut, TagTreeOut, TagWrite
+from ..schemas import AgentArtifactEntity, ArtifactStatus, TagEntity, TagListOptions, TagTreeEntity, TagWrite
 
 
 def normalize_tag_path(path: str) -> tuple[str, str, tuple[str, ...]]:
@@ -30,9 +29,9 @@ class TagService:
         *,
         description: str | None = None,
         color: str | None = None,
-    ) -> TagOut:
+    ) -> TagEntity:
         display, _, segments = normalize_tag_path(path)
-        parent: TagOut | None = None
+        parent: TagEntity | None = None
         for index in range(len(segments)):
             node_path = "/".join(segments[: index + 1])
             normalized = node_path.casefold()
@@ -75,7 +74,7 @@ class TagService:
         path: str | None = None,
         description: str | None = None,
         color: str | None = None,
-    ) -> TagOut:
+    ) -> TagEntity:
         current = await self.require(tag_id)
         target_path, target_normalized, segments = normalize_tag_path(path or current.path)
         if target_normalized != current.normalized_path and await tag_storage.child_count(tag_id):
@@ -108,21 +107,21 @@ class TagService:
             await tag_storage.delete(tag.id)
         return True
 
-    async def list_tree(self) -> list[TagTreeOut]:
+    async def list_tree(self) -> list[TagTreeEntity]:
         tags = list(await tag_storage.list(TagListOptions(limit=2_000)))
         assignments = await tag_storage.assignments()
-        children: dict[str | None, list[TagOut]] = {}
+        children: dict[str | None, list[TagEntity]] = {}
         for tag in tags:
             children.setdefault(tag.parent_id, []).append(tag)
 
-        def build(tag: TagOut) -> tuple[TagTreeOut, set[str]]:
+        def build(tag: TagEntity) -> tuple[TagTreeEntity, set[str]]:
             built_children = [build(child) for child in children.get(tag.id, [])]
             child_nodes = [child for child, _ in built_children]
             direct_artifacts = assignments.get(tag.id, set())
             subtree_artifacts = set(direct_artifacts)
             for _, child_artifacts in built_children:
                 subtree_artifacts.update(child_artifacts)
-            return TagTreeOut(
+            return TagTreeEntity(
                 **tag.model_dump(),
                 direct_count=len(direct_artifacts),
                 total_count=len(subtree_artifacts),
@@ -141,7 +140,7 @@ class TagService:
                 expanded[candidate.id] = None
         return tuple(expanded)
 
-    async def replace_artifact_tags(self, artifact_id: str, paths: list[str]) -> AgentArtifact:
+    async def replace_artifact_tags(self, artifact_id: str, paths: list[str]) -> AgentArtifactEntity:
         artifact = await artifact_storage.get(artifact_id)
         if artifact is None:
             raise KeyError(f"Artifact not found: {artifact_id}")
@@ -154,7 +153,7 @@ class TagService:
             raise KeyError(f"Artifact not found: {artifact_id}")
         return refreshed
 
-    async def sync_confirmed_suggestions(self, artifact: AgentArtifact) -> AgentArtifact:
+    async def sync_confirmed_suggestions(self, artifact: AgentArtifactEntity) -> AgentArtifactEntity:
         """Promote the suggestions retained by the UI into persistent assignments."""
         content = artifact.editable_content
         if artifact.status != ArtifactStatus.SAVED or not hasattr(content, "suggested_tags"):
@@ -163,7 +162,7 @@ class TagService:
         return await self.replace_artifact_tags(artifact.id, paths)
 
     @staticmethod
-    async def require(tag_id: str) -> TagOut:
+    async def require(tag_id: str) -> TagEntity:
         tag = await tag_storage.get(tag_id)
         if tag is None:
             raise KeyError(f"Tag not found: {tag_id}")

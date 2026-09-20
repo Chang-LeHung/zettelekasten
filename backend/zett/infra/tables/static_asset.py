@@ -8,7 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from .base import Base
 
 
-class StaticAssetModel(Base):
+class StaticAssetRow(Base):
     """Metadata for one uploaded file stored under the global static asset root."""
 
     __tablename__ = "static_assets"

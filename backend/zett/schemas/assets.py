@@ -42,7 +42,7 @@ class SessionAssetCreate(BaseModel):
     metadata: dict[str, object] = Field(default_factory=dict, description="Extensible asset metadata")
 
 
-class SessionAssetOut(BaseModel):
+class SessionAssetEntity(BaseModel):
     """Serialized session asset with a controlled content endpoint.
 
     The three content representations are intentionally separate:
@@ -88,7 +88,7 @@ class StaticAssetCreate(BaseModel):
     metadata: dict[str, object] = Field(default_factory=dict, description="Extensible asset metadata")
 
 
-class StaticAssetOut(BaseModel):
+class StaticAssetEntity(BaseModel):
     """Serialized file that is available across conversations.
 
     ``storage_path`` is the persisted identity. ``content_url`` is derived on

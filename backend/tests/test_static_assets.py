@@ -8,8 +8,7 @@ from zett.config import settings
 from zett.infra.dao import static_asset_storage
 from zett.infra.object_store import get_object_store
 from zett.main import app
-from zett.models import StaticAssetListOptions
-from zett.schemas import StaticAssetCreate
+from zett.schemas import StaticAssetCreate, StaticAssetListOptions
 
 
 async def test_static_asset_storage_updates_files_and_removes_owned_content():

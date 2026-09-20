@@ -25,7 +25,7 @@ class TagWrite(BaseModel):
     color: str | None = Field(default=None, max_length=32)
 
 
-class TagOut(TagWrite):
+class TagEntity(TagWrite):
     """Persistent tag returned by storage and application boundaries."""
 
     id: str
@@ -33,7 +33,7 @@ class TagOut(TagWrite):
     updated_at: datetime
 
 
-class ArtifactTagOut(BaseModel):
+class ArtifactTagEntity(BaseModel):
     """Stable tag reference assigned to an artifact."""
 
     id: str
@@ -41,9 +41,9 @@ class ArtifactTagOut(BaseModel):
     name: str
 
 
-class TagTreeOut(TagOut):
+class TagTreeEntity(TagEntity):
     """Hierarchical tag facet with direct and descendant artifact counts."""
 
     direct_count: int = Field(default=0, ge=0)
     total_count: int = Field(default=0, ge=0)
-    children: list[TagTreeOut] = Field(default_factory=list)
+    children: list[TagTreeEntity] = Field(default_factory=list)

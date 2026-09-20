@@ -8,7 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from .base import Base
 
 
-class ModelUsageActivityModel(Base):
+class ModelUsageActivityRow(Base):
     """One completed model request's token usage, retained for activity charts."""
 
     __tablename__ = "model_usage_activity"

@@ -7,7 +7,7 @@ from zett_agent import ModelUsageActivityDay, ModelUsageActivityRecord, new_uuid
 
 from ...schemas import ModelUsageActivitySeries, UsageActivityDayRecord
 from ..database import session_scope
-from ..models import ModelUsageActivityModel
+from ..tables import ModelUsageActivityRow
 
 
 class SQLiteModelUsageActivityStorage:
@@ -17,7 +17,7 @@ class SQLiteModelUsageActivityStorage:
         """Insert one completed model request."""
         async with session_scope() as session:
             session.add(
-                ModelUsageActivityModel(
+                ModelUsageActivityRow(
                     id=new_uuid7(),
                     session_id=record.session_id,
                     request_id=record.request_id,
@@ -38,21 +38,21 @@ class SQLiteModelUsageActivityStorage:
             raise ValueError("activity end date cannot precede start date")
         start_at = datetime.combine(start, time.min, tzinfo=UTC)
         end_at = datetime.combine(end + timedelta(days=1), time.min, tzinfo=UTC)
-        day = func.date(ModelUsageActivityModel.created_at)
+        day = func.date(ModelUsageActivityRow.created_at)
         async with session_scope() as session:
             rows = await session.execute(
                 select(
                     day.label("day"),
-                    func.count(ModelUsageActivityModel.id).label("requests"),
-                    func.sum(ModelUsageActivityModel.input_tokens).label("input_tokens"),
-                    func.sum(ModelUsageActivityModel.output_tokens).label("output_tokens"),
-                    func.sum(ModelUsageActivityModel.cache_read_tokens).label("cache_read_tokens"),
-                    func.sum(ModelUsageActivityModel.cache_write_tokens).label("cache_write_tokens"),
-                    func.sum(ModelUsageActivityModel.reasoning_tokens).label("reasoning_tokens"),
+                    func.count(ModelUsageActivityRow.id).label("requests"),
+                    func.sum(ModelUsageActivityRow.input_tokens).label("input_tokens"),
+                    func.sum(ModelUsageActivityRow.output_tokens).label("output_tokens"),
+                    func.sum(ModelUsageActivityRow.cache_read_tokens).label("cache_read_tokens"),
+                    func.sum(ModelUsageActivityRow.cache_write_tokens).label("cache_write_tokens"),
+                    func.sum(ModelUsageActivityRow.reasoning_tokens).label("reasoning_tokens"),
                 )
                 .where(
-                    ModelUsageActivityModel.created_at >= start_at,
-                    ModelUsageActivityModel.created_at < end_at,
+                    ModelUsageActivityRow.created_at >= start_at,
+                    ModelUsageActivityRow.created_at < end_at,
                 )
                 .group_by(day)
                 .order_by(day)
@@ -76,26 +76,26 @@ class SQLiteModelUsageActivityStorage:
             raise ValueError("activity end date cannot precede start date")
         start_at = datetime.combine(start, time.min, tzinfo=UTC)
         end_at = datetime.combine(end + timedelta(days=1), time.min, tzinfo=UTC)
-        day = func.date(ModelUsageActivityModel.created_at)
+        day = func.date(ModelUsageActivityRow.created_at)
         async with session_scope() as session:
             rows = await session.execute(
                 select(
-                    ModelUsageActivityModel.provider,
-                    ModelUsageActivityModel.model,
+                    ModelUsageActivityRow.provider,
+                    ModelUsageActivityRow.model,
                     day.label("day"),
-                    func.count(ModelUsageActivityModel.id).label("requests"),
-                    func.sum(ModelUsageActivityModel.input_tokens).label("input_tokens"),
-                    func.sum(ModelUsageActivityModel.output_tokens).label("output_tokens"),
-                    func.sum(ModelUsageActivityModel.cache_read_tokens).label("cache_read_tokens"),
-                    func.sum(ModelUsageActivityModel.cache_write_tokens).label("cache_write_tokens"),
-                    func.sum(ModelUsageActivityModel.reasoning_tokens).label("reasoning_tokens"),
+                    func.count(ModelUsageActivityRow.id).label("requests"),
+                    func.sum(ModelUsageActivityRow.input_tokens).label("input_tokens"),
+                    func.sum(ModelUsageActivityRow.output_tokens).label("output_tokens"),
+                    func.sum(ModelUsageActivityRow.cache_read_tokens).label("cache_read_tokens"),
+                    func.sum(ModelUsageActivityRow.cache_write_tokens).label("cache_write_tokens"),
+                    func.sum(ModelUsageActivityRow.reasoning_tokens).label("reasoning_tokens"),
                 )
                 .where(
-                    ModelUsageActivityModel.created_at >= start_at,
-                    ModelUsageActivityModel.created_at < end_at,
+                    ModelUsageActivityRow.created_at >= start_at,
+                    ModelUsageActivityRow.created_at < end_at,
                 )
-                .group_by(ModelUsageActivityModel.provider, ModelUsageActivityModel.model, day)
-                .order_by(ModelUsageActivityModel.provider, ModelUsageActivityModel.model, day)
+                .group_by(ModelUsageActivityRow.provider, ModelUsageActivityRow.model, day)
+                .order_by(ModelUsageActivityRow.provider, ModelUsageActivityRow.model, day)
             )
 
         grouped: dict[tuple[str | None, str | None], list[UsageActivityDayRecord]] = {}

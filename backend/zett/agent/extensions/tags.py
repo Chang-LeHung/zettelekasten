@@ -4,7 +4,7 @@ from zett_agent import AgentExtension, AgentRunContext, tool
 
 from ...application.tagging import tag_service
 from ...infra.dao import artifact_storage
-from ...schemas import AgentArtifact, TagOut, TagTreeOut
+from ...schemas import AgentArtifactEntity, TagEntity, TagTreeEntity
 
 
 class TagExtension(AgentExtension):
@@ -20,7 +20,7 @@ class TagExtension(AgentExtension):
         session_id = context.config.session_id
 
         @tool
-        async def create_tag(path: str, description: str | None = None, color: str | None = None) -> TagOut:
+        async def create_tag(path: str, description: str | None = None, color: str | None = None) -> TagEntity:
             """Create a persistent library tag and any missing parent tags.
 
             Args:
@@ -39,7 +39,7 @@ class TagExtension(AgentExtension):
             return await tag_service.create_path(path, description=description, color=color)
 
         @tool
-        async def list_tags() -> list[TagTreeOut]:
+        async def list_tags() -> list[TagTreeEntity]:
             """List the complete persistent tag tree and artifact counts.
 
             Snippet:
@@ -56,7 +56,7 @@ class TagExtension(AgentExtension):
             path: str | None = None,
             description: str | None = None,
             color: str | None = None,
-        ) -> TagOut:
+        ) -> TagEntity:
             """Rename, move, or restyle one persistent leaf tag.
 
             Args:
@@ -87,7 +87,7 @@ class TagExtension(AgentExtension):
             return await tag_service.delete(tag_id, recursive=recursive, force=force)
 
         @tool
-        async def set_artifact_tags(artifact_id: str, paths: list[str]) -> AgentArtifact:
+        async def set_artifact_tags(artifact_id: str, paths: list[str]) -> AgentArtifactEntity:
             """Replace the confirmed persistent tags assigned to one saved artifact.
 
             Args:

@@ -12,8 +12,9 @@ when a build exists.
 | `zett/agent/extensions/` | Zett's adapters to the zett-agent `AgentExtension` point: the asset, artifact, tag, and context-composition tools |
 | `zett/agent/plugins/` | Zett's own `ZettelkastenExt` plugins: the skill slash commands and the `@` reference kinds |
 | `zett/application/` | Routes, use-case services, and the framework-neutral `ObjectStore` contract |
-| `zett/infra/` | SQLAlchemy models and DAOs, local ObjectStore adapter, agent runtime storage, logging |
-| `zett/schemas.py`, `zett/models/` | Write and read models shared by routes and storage |
+| `zett/infra/tables/` | SQLAlchemy table mappings (`*Row`) that own the physical schema |
+| `zett/infra/` | DAOs, local ObjectStore adapter, agent runtime storage, logging |
+| `zett/schemas/` | Typed read, write, and `*ListOptions` query models shared by routes, tools, and storage |
 | `zett/main.py`, `zett/cli.py` | ASGI entry point and the packaged `zett` command |
 
 Domain rules currently live in `schemas.py`, storage contracts in
@@ -55,7 +56,7 @@ save endpoint or edits a library document from the Library view; both writes
 mirror the published content into `draft_content_json`, so the draft is always
 the working copy and matches `content_json` right after a save. An empty
 `content_json` means the artifact was never published.
-`AgentArtifact.editable_content` is the draft-first view shared by the
+`AgentArtifactEntity.editable_content` is the draft-first view shared by the
 conversation UI, previews, search, and the draft-versus-published diff, and
 `ArtifactPruner` returns `published_content` and `draft_content` previews
 together so a querying model can compare what the user kept with what it

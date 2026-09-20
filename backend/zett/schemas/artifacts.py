@@ -7,7 +7,7 @@ from typing import Annotated, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .cards import CardType, normalize_card_type
-from .tags import ArtifactTagOut, SuggestedTag
+from .tags import ArtifactTagEntity, SuggestedTag
 
 
 class ArtifactType(StrEnum):
@@ -209,7 +209,7 @@ class AgentArtifactWrite(BaseModel):
         return self.content or self.draft_content  # type: ignore[return-value]
 
 
-class AgentArtifact(BaseModel):
+class AgentArtifactEntity(BaseModel):
     """One typed output produced inside a persisted agent conversation.
 
     ``content`` is what the user published and ``draft_content`` is what the
@@ -235,7 +235,7 @@ class AgentArtifact(BaseModel):
     raw_content: str | None = Field(default=None, description="Original input associated with this artifact")
     version: int = Field(default=1, ge=1, description="Monotonic revision number")
     metadata: dict[str, object] = Field(default_factory=dict, description="Extensible artifact metadata")
-    tags: list[ArtifactTagOut] = Field(default_factory=list, description="Confirmed persistent library tags")
+    tags: list[ArtifactTagEntity] = Field(default_factory=list, description="Confirmed persistent library tags")
     # Response-only ObjectStore URL. Example:
     # "/api/files/artifacts/<session_id>/<project>/paper.pdf".
     # Null for card/article/slides and for externally referenced images.

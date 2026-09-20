@@ -7,12 +7,12 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ..messages import FrontMessagePart, FrontUserMessage
 from ..schemas import (
-    AgentArtifact,
+    AgentArtifactEntity,
     ArtifactContent,
     ArtifactCreateContent,
     ArtifactStatus,
     ProviderType,
-    SessionAssetOut,
+    SessionAssetEntity,
 )
 
 
@@ -96,16 +96,16 @@ class SessionOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     messages: list[PersistedMessageOut] = Field(default_factory=list)
-    artifacts: list[AgentArtifact] = Field(default_factory=list)
-    assets: list[SessionAssetOut] = Field(default_factory=list)
+    artifacts: list[AgentArtifactEntity] = Field(default_factory=list)
+    assets: list[SessionAssetEntity] = Field(default_factory=list)
 
 
 class AgentStartOut(BaseModel):
     """New empty conversation and its initial workspace collections."""
 
     conversation_id: str
-    artifacts: list[AgentArtifact] = Field(default_factory=list)
-    assets: list[SessionAssetOut] = Field(default_factory=list)
+    artifacts: list[AgentArtifactEntity] = Field(default_factory=list)
+    assets: list[SessionAssetEntity] = Field(default_factory=list)
 
 
 class ArtifactCreateIn(BaseModel):

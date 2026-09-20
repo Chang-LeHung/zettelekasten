@@ -12,8 +12,13 @@ from collections.abc import AsyncIterator, Sequence
 from zett_agent import AgentEvent
 
 from ...infra.dao import artifact_storage, session_asset_storage
-from ...models import ArtifactListOptions, SessionAssetListOptions
-from ...schemas import AgentArtifact, SessionAssetOut, SessionAssetType
+from ...schemas import (
+    AgentArtifactEntity,
+    ArtifactListOptions,
+    SessionAssetEntity,
+    SessionAssetListOptions,
+    SessionAssetType,
+)
 from ..at_command import (
     AtCommandHandler,
     AtCommandInvocation,
@@ -53,7 +58,7 @@ class SessionAssetAtCommandSource(AtCommandSource):
         """Confirm one referenced asset still belongs to the conversation."""
         return await session_asset_storage.get_for_session(session_id, item.target_id) is not None
 
-    def _item(self, asset: SessionAssetOut) -> AtCommandItem:
+    def _item(self, asset: SessionAssetEntity) -> AtCommandItem:
         return self.item(
             target_id=asset.id,
             label=asset.name,
@@ -61,7 +66,7 @@ class SessionAssetAtCommandSource(AtCommandSource):
         )
 
     @staticmethod
-    def _description(asset: SessionAssetOut) -> str:
+    def _description(asset: SessionAssetEntity) -> str:
         label = f"{asset.asset_type.value} asset"
         if asset.asset_type is SessionAssetType.LINK and asset.source_url:
             return f"{label} · {asset.source_url}"
@@ -87,7 +92,7 @@ class SessionArtifactAtCommandSource(AtCommandSource):
         """Confirm one referenced artifact still belongs to the conversation."""
         return await artifact_storage.get_for_session(session_id, item.target_id) is not None
 
-    def _item(self, artifact: AgentArtifact) -> AtCommandItem:
+    def _item(self, artifact: AgentArtifactEntity) -> AtCommandItem:
         content = artifact.editable_content
         title = str(getattr(content, "title", "") or artifact.artifact_type.value)
         return self.item(

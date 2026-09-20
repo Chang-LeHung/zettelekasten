@@ -5,8 +5,7 @@ from zett_agent import ProviderAuthError, ProviderResponseError
 
 from ...infra.dao import provider_storage
 from ...infra.log import get_logger
-from ...models import ProviderListOptions
-from ...schemas import ProviderConnection, ProviderOut, ProviderWrite
+from ...schemas import ProviderConnection, ProviderEntity, ProviderListOptions, ProviderWrite
 from ..provider_connections import ProviderConnectionTestError, verify_provider_connection
 from ..schemas import DeleteResponse, ProviderDetailResponse, ProviderIn, ProviderResponse
 
@@ -14,7 +13,7 @@ router = APIRouter(prefix="/ai/providers", tags=["providers"])
 logger = get_logger(__name__)
 
 
-def _response(provider: ProviderOut) -> ProviderResponse:
+def _response(provider: ProviderEntity) -> ProviderResponse:
     temperature = provider.metadata.get("temperature")
     response = provider.metadata.get("response", False)
     return ProviderResponse(
@@ -32,7 +31,7 @@ def _response(provider: ProviderOut) -> ProviderResponse:
     )
 
 
-def _detail_response(provider: ProviderOut, api_key: str | None) -> ProviderDetailResponse:
+def _detail_response(provider: ProviderEntity, api_key: str | None) -> ProviderDetailResponse:
     """Add the decrypted credential only for the selected settings row."""
     return ProviderDetailResponse(**_response(provider).model_dump(), api_key=api_key)
 

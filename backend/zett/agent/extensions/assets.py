@@ -9,8 +9,7 @@ from zett_agent import AgentExtension, AgentRunContext, tool
 
 from ...config import settings
 from ...infra.dao import session_asset_storage
-from ...models import SessionAssetListOptions
-from ...schemas import SessionAssetCreate, SessionAssetOut, SessionAssetType
+from ...schemas import SessionAssetCreate, SessionAssetEntity, SessionAssetListOptions, SessionAssetType
 
 
 class AssetInput(BaseModel):
@@ -46,7 +45,7 @@ class AssetInput(BaseModel):
         return self
 
 
-class AssetDetails(SessionAssetOut):
+class AssetDetails(SessionAssetEntity):
     """Asset metadata with optional binary content requested explicitly by the model."""
 
     content_base64: str | None = Field(
@@ -98,7 +97,7 @@ class AssetExtension(AgentExtension):
         session_id = context.config.session_id
 
         @tool
-        async def create_asset(asset: AssetInput) -> SessionAssetOut:
+        async def create_asset(asset: AssetInput) -> SessionAssetEntity:
             """Create a text, link, image, or file asset in this conversation.
 
             Args:
@@ -138,7 +137,7 @@ class AssetExtension(AgentExtension):
             return AssetDetails(**asset.model_dump(), content_base64=encoded)
 
         @tool
-        async def update_asset(asset_id: str, asset: AssetInput) -> SessionAssetOut:
+        async def update_asset(asset_id: str, asset: AssetInput) -> SessionAssetEntity:
             """Replace all editable fields and content of one conversation asset.
 
             Args:
@@ -177,7 +176,7 @@ class AssetExtension(AgentExtension):
             asset_types: tuple[SessionAssetType, ...] = (),
             limit: Annotated[int, Field(ge=1, le=500)] = 100,
             offset: Annotated[int, Field(ge=0)] = 0,
-        ) -> list[SessionAssetOut]:
+        ) -> list[SessionAssetEntity]:
             """List assets owned by this conversation with filtering and pagination.
 
             Args:
@@ -206,7 +205,7 @@ class AssetExtension(AgentExtension):
             context.register_tool(registered)
 
     @staticmethod
-    async def _asset(session_id: str, asset_id: str) -> SessionAssetOut:
+    async def _asset(session_id: str, asset_id: str) -> SessionAssetEntity:
         """Resolve an asset only inside the active session boundary."""
         asset = await session_asset_storage.get_for_session(session_id, asset_id)
         if asset is None:

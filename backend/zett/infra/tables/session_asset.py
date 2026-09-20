@@ -8,7 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from .base import Base
 
 
-class SessionAssetModel(Base):
+class SessionAssetRow(Base):
     """Metadata for text, link, image, or file assets owned by one session."""
 
     __tablename__ = "session_assets"

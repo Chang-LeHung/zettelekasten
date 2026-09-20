@@ -3,8 +3,7 @@
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from ...infra.dao import session_asset_storage, session_storage
-from ...models import SessionAssetListOptions
-from ...schemas import SessionAssetCreate, SessionAssetOut, SessionAssetType
+from ...schemas import SessionAssetCreate, SessionAssetEntity, SessionAssetListOptions, SessionAssetType
 from ..asset_names import AssetRenameIn, rename_asset
 from ..schemas import DeleteResponse, LinkAssetIn, TextAssetIn
 from ..settings import runtime_settings_service
@@ -18,14 +17,14 @@ async def _require_session(session_id: str) -> None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
 
 
-@router.get("", response_model=list[SessionAssetOut])
+@router.get("", response_model=list[SessionAssetEntity])
 async def list_assets(
     session_id: str,
     query: str | None = None,
     asset_types: list[SessionAssetType] = Query(default=[]),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
-) -> list[SessionAssetOut]:
+) -> list[SessionAssetEntity]:
     """List one session's assets with optional type and name filters."""
     await _require_session(session_id)
     options = SessionAssetListOptions(
@@ -38,8 +37,8 @@ async def list_assets(
     return await session_asset_storage.list(options)
 
 
-@router.get("/{asset_id}", response_model=SessionAssetOut)
-async def get_asset(session_id: str, asset_id: str) -> SessionAssetOut:
+@router.get("/{asset_id}", response_model=SessionAssetEntity)
+async def get_asset(session_id: str, asset_id: str) -> SessionAssetEntity:
     """Read asset metadata only within its owning session."""
     asset = await session_asset_storage.get_for_session(session_id, asset_id)
     if asset is None:
@@ -47,8 +46,8 @@ async def get_asset(session_id: str, asset_id: str) -> SessionAssetOut:
     return asset
 
 
-@router.post("/text", response_model=SessionAssetOut, status_code=status.HTTP_201_CREATED)
-async def create_text_asset(session_id: str, payload: TextAssetIn) -> SessionAssetOut:
+@router.post("/text", response_model=SessionAssetEntity, status_code=status.HTTP_201_CREATED)
+async def create_text_asset(session_id: str, payload: TextAssetIn) -> SessionAssetEntity:
     """Attach inline text to a session."""
     await _require_session(session_id)
     entity = SessionAssetCreate(
@@ -62,8 +61,8 @@ async def create_text_asset(session_id: str, payload: TextAssetIn) -> SessionAss
     return await session_asset_storage.create(entity)
 
 
-@router.post("/link", response_model=SessionAssetOut, status_code=status.HTTP_201_CREATED)
-async def create_link_asset(session_id: str, payload: LinkAssetIn) -> SessionAssetOut:
+@router.post("/link", response_model=SessionAssetEntity, status_code=status.HTTP_201_CREATED)
+async def create_link_asset(session_id: str, payload: LinkAssetIn) -> SessionAssetEntity:
     """Attach an external URL without downloading its content."""
     await _require_session(session_id)
     entity = SessionAssetCreate(
@@ -76,8 +75,8 @@ async def create_link_asset(session_id: str, payload: LinkAssetIn) -> SessionAss
     return await session_asset_storage.create(entity)
 
 
-@router.post("/import/static/{static_asset_id}", response_model=SessionAssetOut, status_code=status.HTTP_201_CREATED)
-async def import_static_asset(session_id: str, static_asset_id: str) -> SessionAssetOut:
+@router.post("/import/static/{static_asset_id}", response_model=SessionAssetEntity, status_code=status.HTTP_201_CREATED)
+async def import_static_asset(session_id: str, static_asset_id: str) -> SessionAssetEntity:
     """Reference one global static asset by object key without copying its file."""
     await _require_session(session_id)
     static_asset = await static_asset_service.get(static_asset_id)
@@ -99,10 +98,10 @@ async def import_static_asset(session_id: str, static_asset_id: str) -> SessionA
     return await session_asset_storage.create(entity)
 
 
-@router.post("/upload", response_model=SessionAssetOut, status_code=status.HTTP_201_CREATED)
+@router.post("/upload", response_model=SessionAssetEntity, status_code=status.HTTP_201_CREATED)
 async def upload_asset(
     session_id: str, request: Request, name: str = Query(min_length=1, max_length=500)
-) -> SessionAssetOut:
+) -> SessionAssetEntity:
     """Store a raw request body as an image or generic file asset."""
     await _require_session(session_id)
     runtime_settings = await runtime_settings_service.get()
@@ -135,8 +134,8 @@ async def delete_asset(session_id: str, asset_id: str) -> DeleteResponse:
     return DeleteResponse(ok=await session_asset_storage.delete(asset_id))
 
 
-@router.patch("/{asset_id}/name", response_model=SessionAssetOut)
-async def rename_asset_route(session_id: str, asset_id: str, payload: AssetRenameIn) -> SessionAssetOut:
+@router.patch("/{asset_id}/name", response_model=SessionAssetEntity)
+async def rename_asset_route(session_id: str, asset_id: str, payload: AssetRenameIn) -> SessionAssetEntity:
     """Rename the display label without changing stored file names or URLs."""
     try:
         return await rename_asset(session_id, asset_id, payload)

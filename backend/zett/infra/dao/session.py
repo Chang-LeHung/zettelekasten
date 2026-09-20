@@ -2,8 +2,7 @@
 
 from zett_agent import RawMessageRecord, SessionSummary
 
-from ...models import SessionListOptions
-from ...schemas import AgentSessionCreate
+from ...schemas import AgentSessionCreate, SessionListOptions
 from ..agent_runtime import get_agent_runtime_storage
 from ..storage import AsyncStorage
 from .artifact import artifact_storage

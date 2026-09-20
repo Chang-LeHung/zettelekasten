@@ -8,6 +8,7 @@
 - Put database, ORM, DAO, repository, and external-provider adapters in `zett/infra`.
 - Interfaces such as HTTP and CLI must call application services instead of DAOs directly.
 - Keep the two extension mechanisms in their own directories. Adapters to the zett-agent runtime extension point (tools and hooks implemented with `AgentExtension`) live in `zett/agent/extensions`; Zett's own container plugins (capabilities registered with `ZettelkastenExt`, such as slash commands and `@` references) live in `zett/agent/plugins`.
+- Keep one word per role in type names. Persisted domain objects are `*Entity` (`AgentArtifactEntity`), SQLAlchemy table mappings are `*Row` in `zett/infra/tables/`, storage payloads are `*Write`/`*Create`, query criteria are `*ListOptions` in `zett/schemas/options.py`, HTTP-only wrappers are `*In`/`*Out` in `zett/application/schemas.py`, and the word `model` is reserved for LLM and provider types such as `AgentModel` or `ModelRequest`.
 
 ## Persistence
 

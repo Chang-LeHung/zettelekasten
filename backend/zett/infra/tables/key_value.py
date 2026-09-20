@@ -8,7 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from .base import Base
 
 
-class KeyValueModel(Base):
+class KeyValueRow(Base):
     """One mutable, versioned JSON value stored under a unique key."""
 
     __tablename__ = "key_values"

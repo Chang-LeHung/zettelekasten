@@ -16,7 +16,7 @@ from sqlalchemy.pool import NullPool
 from zett.infra import database
 from zett.infra.dao.kv import KeyValueStorage
 from zett.infra.database import session_scope
-from zett.infra.models import KeyValueModel
+from zett.infra.tables import KeyValueRow
 from zett.main import app
 
 DEFAULT_MAX_ASSET_SIZE_BYTES = 250 * 1024 * 1024
@@ -35,7 +35,7 @@ async def test_key_value_storage_updates_one_record_and_increments_its_version()
     assert await storage.get("settings.example") == second
 
     async with session_scope() as session:
-        rows = await session.scalars(select(KeyValueModel).where(KeyValueModel.key == "settings.example"))
+        rows = await session.scalars(select(KeyValueRow).where(KeyValueRow.key == "settings.example"))
         records = list(rows)
         assert len(records) == 1
         assert records[0].version == 2
@@ -136,12 +136,12 @@ async def test_key_value_storage_validates_keys_and_json_values() -> None:
 
 
 def test_key_column_has_a_unique_sqlite_index(isolated_database: Path) -> None:
-    key_column = KeyValueModel.__table__.c.key
+    key_column = KeyValueRow.__table__.c.key
 
     assert key_column.index is True
     assert key_column.unique is True
     with sqlite3.connect(isolated_database) as connection:
-        indexes = connection.execute(f"pragma index_list({KeyValueModel.__tablename__})").fetchall()
+        indexes = connection.execute(f"pragma index_list({KeyValueRow.__tablename__})").fetchall()
         unique_key_index = next(
             row[1]
             for row in indexes
@@ -223,7 +223,7 @@ async def test_runtime_settings_http_lifecycle_uses_defaults_and_persists_update
         )
 
     async with session_scope() as session:
-        rows = await session.scalars(select(KeyValueModel).where(KeyValueModel.key == "settings.runtime"))
+        rows = await session.scalars(select(KeyValueRow).where(KeyValueRow.key == "settings.runtime"))
         revisions = list(rows)
         assert len(revisions) == 1
         assert revisions[0].version == 1

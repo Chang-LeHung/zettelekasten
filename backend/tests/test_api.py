@@ -34,7 +34,7 @@ from zett.application.session_context import SESSION_CONTEXT_KEY_PREFIX
 from zett.application.session_preferences import SESSION_MODEL_KEY_PREFIX
 from zett.infra.dao import artifact_storage, provider_storage, session_storage
 from zett.infra.database import session_scope
-from zett.infra.models import KeyValueModel
+from zett.infra.tables import KeyValueRow
 from zett.main import app
 from zett.schemas import AgentArtifactWrite, AgentSessionCreate, CardArtifactContent
 
@@ -604,7 +604,7 @@ async def test_agent_stream_uses_provider_neutral_events_and_persists_messages(m
     assert model.closed
     async with session_scope() as session:
         record = await session.scalar(
-            select(KeyValueModel).where(KeyValueModel.key == f"{SESSION_CONTEXT_KEY_PREFIX}{session_id}")
+            select(KeyValueRow).where(KeyValueRow.key == f"{SESSION_CONTEXT_KEY_PREFIX}{session_id}")
         )
     assert record is not None
     ratios = json.loads(record.value)
@@ -866,9 +866,9 @@ async def test_first_successful_turn_generates_the_session_title_once(monkeypatc
     async with session_scope() as session:
         revisions = list(
             await session.scalars(
-                select(KeyValueModel)
-                .where(KeyValueModel.key == f"{SESSION_MODEL_KEY_PREFIX}{session_id}")
-                .order_by(KeyValueModel.version)
+                select(KeyValueRow)
+                .where(KeyValueRow.key == f"{SESSION_MODEL_KEY_PREFIX}{session_id}")
+                .order_by(KeyValueRow.version)
             )
         )
         versions = [revision.version for revision in revisions]
