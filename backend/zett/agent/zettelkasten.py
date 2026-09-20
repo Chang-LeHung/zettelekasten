@@ -72,7 +72,7 @@ class ZettelkastenAgent:
             SkillExtension(config.skill_roots),
             McpExtension(
                 servers=config.mcp_servers,
-                config_path=config.resolved_mcp_config_path(),
+                config_path=config.mcp_config_path,
                 server_keys=config.mcp_server_keys,
             ),
             ToolGuidelinesExtension(),

@@ -108,7 +108,7 @@ async def test_container_executes_the_registered_handler() -> None:
     assert events[0].payload == {"ok": True}
 
 
-async def test_skill_extension_registers_and_expands_skill_commands(tmp_path) -> None:
+async def test_skill_extension_registers_and_points_at_the_skill(tmp_path) -> None:
     skill = tmp_path / "zett-review" / "SKILL.md"
     skill.parent.mkdir(parents=True)
     skill.write_text(
@@ -150,11 +150,13 @@ async def test_skill_extension_registers_and_expands_skill_commands(tmp_path) ->
     assert [event.name for event in events] == ["captured"]
     assert len(captured) == 1
     prompt = captured[0].text
-    assert "Run focused checks first." in prompt
+    assert "Run focused checks first." not in prompt
     assert "inspect the diff" in prompt
     assert "invoked the /zett-review slash command" in prompt
-    assert "loaded the zett-review skill" in prompt
-    assert prompt.index("Skill instructions:") < prompt.index("User request:")
+    assert "selects the zett-review skill" in prompt
+    assert "`read_skill`" in prompt
+    assert "only when you need them" in prompt
+    assert prompt.index("read_skill") < prompt.index("User request:")
     assert captured[0].attributes["slash_command"] == {
         "name": "zett-review",
         "type": "skill",

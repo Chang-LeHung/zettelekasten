@@ -5,7 +5,14 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Sequence
 from pathlib import Path
 
-from zett_agent import AgentEvent, ImageContent, SkillExtension, TextContent, UserMessage
+from zett_agent import (
+    READ_SKILL_TOOL_NAME,
+    AgentEvent,
+    ImageContent,
+    SkillExtension,
+    TextContent,
+    UserMessage,
+)
 
 from ..messages import MessagePartCodec
 from .slash import SlashCommandInvocation, ZettelkastenContainer
@@ -34,25 +41,20 @@ class SkillSlashCommandExtension:
 
     @staticmethod
     def _handler(path: Path):
-        """Build one handler that sends the skill instructions to the Agent."""
+        """Build one handler that points the Agent at the skill it must load."""
 
         async def handler(
             container: ZettelkastenContainer,
             invocation: SlashCommandInvocation,
         ) -> AsyncIterator[AgentEvent]:
-            try:
-                instructions = path.read_text(encoding="utf-8")
-            except (OSError, UnicodeError) as error:
-                raise ValueError(f"Skill is no longer readable: {path.name}") from error
+            if not path.is_file():
+                raise ValueError(f"Skill is no longer readable: {path.name}")
             skill_name = path.parent.name
             original_text = invocation.message.text.strip()
             prompt = (
-                f"The user invoked the /{skill_name} slash command. That command loaded the "
-                f"{skill_name} skill for this turn, so treat the request below as a "
-                "skill-driven request instead of an ordinary message.\n\n"
-                f"Skill: {skill_name}\n\n"
-                "Skill instructions:\n"
-                f"{instructions}\n\n"
+                f"The user invoked the /{skill_name} slash command, which selects the {skill_name} skill "
+                f"for this turn. Its instructions are not included here: call `{READ_SKILL_TOOL_NAME}` with "
+                f"`{skill_name}` only when you need them, and follow the returned instructions.\n\n"
                 "User request:\n"
                 f"{original_text}"
             )

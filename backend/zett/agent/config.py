@@ -71,16 +71,6 @@ class ZettelkastenAgentConfig:
         if self.compaction_keep_recent_tokens >= self.compaction_max_tokens:
             raise ValueError("compaction_keep_recent_tokens must be below compaction_max_tokens")
 
-    def resolved_mcp_config_path(self) -> str | Path | None:
-        """Treat the absent default file as optional while keeping custom paths strict."""
-        if self.mcp_config_path is None:
-            return None
-        configured = Path(self.mcp_config_path).expanduser().resolve()
-        default = DEFAULT_ZETT_MCP_CONFIG_PATH.expanduser().resolve()
-        if configured == default and not configured.is_file():
-            return None
-        return self.mcp_config_path
-
     def resolved_extensions(self) -> tuple[ZettelkastenExt, ...]:
         """Load configured extensions, defaulting to local skill commands."""
         if self.extensions is not None:

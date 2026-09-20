@@ -91,9 +91,10 @@ description, type, and Agent-stream handler. The container assigns a stable ID
 to every command; the frontend lists those IDs and submits at most one command
 ID with an input. The backend resolves that ID and runs the registered handler,
 which may transform the current message before sending it through the Agent. A
-skill command expands the model-facing prompt with the skill instructions and
-records the original browser message as `slash_command.raw_parts`, so the
-conversation UI shows what the user sent instead of the expanded prompt.
+skill command names the skill for the current turn and lets the model load its
+instructions with `read_skill`, and it records the original browser message as
+`slash_command.raw_parts` so the conversation UI shows what the user sent
+instead of the rewritten prompt.
 
 ## Local data
 
