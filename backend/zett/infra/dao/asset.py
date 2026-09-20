@@ -110,9 +110,7 @@ class SessionAssetStorage(AsyncStorage[SessionAssetCreate, SessionAssetOut, str,
         elif entity.asset_type == SessionAssetType.TEXT and entity.text_content is None:
             raise ValueError("Text asset content is required")
 
-        payload = entity.content or (
-            entity.text_content or entity.source_url or entity.source_path or ""
-        ).encode()
+        payload = entity.content or (entity.text_content or entity.source_url or entity.source_path or "").encode()
         try:
             async with session_scope() as session:
                 model = SessionAssetModel(
@@ -167,9 +165,9 @@ class SessionAssetStorage(AsyncStorage[SessionAssetCreate, SessionAssetOut, str,
                     stored = await object_store.write(key, entity.content)
                     storage_path = str(stored.key)
                     replacement_key = storage_path
-                payload = entity.content or (
-                    entity.text_content or entity.source_url or entity.source_path or ""
-                ).encode()
+                payload = (
+                    entity.content or (entity.text_content or entity.source_url or entity.source_path or "").encode()
+                )
                 model.asset_type = int(ASSET_TO_CODE[entity.asset_type])
                 model.name = entity.name
                 model.mime_type = entity.mime_type

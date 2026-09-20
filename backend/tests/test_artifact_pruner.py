@@ -54,7 +54,7 @@ def test_artifact_pruner_returns_bounded_type_specific_previews() -> None:
                 prompt="prompt-long",
                 alt_text="alt-long",
                 source_url="data:image/png;base64,abcdefghijklm",
-                    asset_path="assets/sessions/session/asset.png",
+                asset_path="assets/sessions/session/asset.png",
             ),
             "image",
         ),
