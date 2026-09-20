@@ -3,6 +3,7 @@ import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, r
 import { ApiError, aiClient, assetClient, libraryClient, settingsClient, tagClient } from './api/client'
 import type { AgentArtifact, AgentAtCommand, AgentCompactionActivity, AgentContextComposition, AgentCustomEvent, AgentModelUsage, AgentModelUsageActivitySeries, AgentPersistedMessage, AgentServerToolActivity, AgentSession, AgentSlashCommand, AgentSteeringMessage, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AgentUsageActivityDay, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageImagePart, MessagePart, ReasoningEffort, RuntimeSettings, SessionAsset, ShellApprovalMode, StaticAsset, Tag } from './api/types'
 import AgentComposerControls from './components/AgentComposerControls.vue'
+import ArtifactDiffView from './components/ArtifactDiffView.vue'
 import ComposerCommandMenu from './components/ComposerCommandMenu.vue'
 import CacheHitRate from './components/CacheHitRate.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
@@ -14,8 +15,9 @@ import ShellApprovalPrompt from './components/ShellApprovalPrompt.vue'
 import ToolResult from './components/ToolResult.vue'
 import UsageActivityGraph from './components/UsageActivityGraph.vue'
 import { addAgentUsage, latestAgentUsage, summarizeAgentUsage } from './utils/agentUsage'
-import { artifactContentFromLibraryUpdate, libraryItemFromArtifact } from './utils/artifactEditor'
+import { artifactContentFromLibraryUpdate, artifactEditableContent, hasPendingDraft, libraryItemFromArtifact } from './utils/artifactEditor'
 import { artifactListsEquivalent, sameArtifactRevision, stabilizeArtifactReferences } from './utils/artifactStability'
+import { diffArtifactContent } from './utils/artifactDiff'
 import { assetOpenAction, isPdfAsset } from './utils/assetOpen'
 import { createAsyncRefreshScheduler } from './utils/asyncRefresh'
 import { AtCommandInput, type AtCommandMatch } from './utils/atCommand'
@@ -212,6 +214,8 @@ const streamingStatus = ref('idle')
 const turnElapsedMs = ref(0)
 const activeStreamController = ref<AbortController | null>(null)
 const artifactPreview = ref(true)
+/** Show the draft-versus-published diff instead of the editor or preview. */
+const artifactDiff = ref(false)
 const conversationId = ref<string | null>(null)
 const editingSessionId = ref<string | null>(null)
 const sessionTitleDraft = ref('')
@@ -387,6 +391,10 @@ const conversationUsage = computed(() => {
   return summarizeAgentUsage(messages)
 })
 const selectedArtifact = computed(() => artifacts.value.find((artifact) => artifact.id === selectedArtifactId.value) || null)
+const selectedArtifactDiff = computed(() => diffArtifactContent(
+  selectedArtifact.value?.content ?? null,
+  selectedArtifact.value?.draft_content ?? null,
+))
 const selectedImageUrl = computed(() => {
   const content = artifactContent.value
   if (content?.artifact_type !== 'image') return null
@@ -398,7 +406,8 @@ function artifactTypeLabel(type: ArtifactContent['artifact_type']): string {
   return ({ card: 'Card', article: 'Article', image: 'Image', slides: 'Slides', latex_pdf: 'LaTeX PDF' })[type]
 }
 
-function artifactTitle(content: ArtifactContent): string {
+function artifactTitle(content: ArtifactContent | null): string {
+  if (!content) return 'Untitled artifact'
   return content.artifact_type === 'latex_pdf' ? content.pdf_name.replace(/\.pdf$/, '') : content.title
 }
 
@@ -1350,12 +1359,15 @@ async function saveLibraryEditor(payload: LibraryItemUpdate): Promise<void> {
     if (artifactId !== null) {
       const artifact = artifacts.value.find((candidate) => candidate.id === artifactId)
       if (!artifact) return
-      artifactContent.value = artifactContentFromLibraryUpdate(artifact.content, payload)
-      const saved = await saveSelectedArtifact()
-      if (!saved) return
+      const content = artifactEditableContent(artifact)
+      if (!content) return
+      artifactContent.value = artifactContentFromLibraryUpdate(content, payload)
+      // The editor stages the draft; publishing stays a separate action.
+      await syncSelectedArtifactDraft()
       const updated = artifacts.value.find((candidate) => candidate.id === artifactId)
       const updatedItem = updated ? libraryItemFromArtifact(updated) : null
       if (updatedItem) libraryEditorItem.value = updatedItem
+      showNotice('Draft updated — review the diff and save to publish it')
       return
     }
 
@@ -1622,7 +1634,7 @@ async function refine(queued?: QueuedFollowUp): Promise<void> {
   let activeConversationId: string | null = null
   try {
     activeConversationId = await ensureConversation()
-    await syncSelectedArtifact()
+    await syncSelectedArtifactDraft()
     const result = slashCommandId
       ? await aiClient.slashCommandStream(
           activeConversationId,
@@ -2049,10 +2061,15 @@ function selectArtifact(artifact: AgentArtifact): void {
   const artifactChanged = selectedArtifactId.value !== artifact.id
   const current = selectedArtifact.value
   if (!artifactChanged && current && artifactContent.value && sameArtifactRevision(current, artifact)) return
+  const content = artifactEditableContent(artifact)
+  if (!content) return
   selectedArtifactId.value = artifact.id
-  artifactContent.value = jsonSnapshot(artifact.content)
-  selectedSuggestions.value = artifact.content.artifact_type === 'latex_pdf' ? [] : artifact.content.suggested_tags.map((tag) => tag.path)
-  if (artifactChanged) artifactPreview.value = true
+  artifactContent.value = jsonSnapshot(content)
+  selectedSuggestions.value = content.artifact_type === 'latex_pdf' ? [] : content.suggested_tags.map((tag) => tag.path)
+  if (artifactChanged) {
+    artifactPreview.value = true
+    artifactDiff.value = false
+  }
 }
 
 function applyArtifacts(nextArtifacts: AgentArtifact[], preferLatest = true): void {
@@ -2087,10 +2104,14 @@ async function refreshArtifactsAfterTurn(sessionId: string | null): Promise<void
   }
 }
 
-async function syncSelectedArtifact(): Promise<void> {
+/**
+ * Persist the panel's edits as a draft. Editing never rewrites published
+ * content; the save action is what publishes a draft.
+ */
+async function syncSelectedArtifactDraft(): Promise<void> {
   const current = selectedArtifact.value
   if (!conversationId.value || !selectedArtifactId.value || !artifactContent.value || !current) return
-  const updated = await aiClient.updateAgentArtifact(
+  const updated = await aiClient.updateAgentArtifactDraft(
     conversationId.value,
     selectedArtifactId.value,
     artifactContent.value,
@@ -2121,6 +2142,7 @@ function clearWorkspaceState(): void {
   previewAsset.value = null
   selectedArtifactId.value = null
   artifactPreview.value = true
+  artifactDiff.value = false
   conversationId.value = null
   workspaceView.value = 'workspace'
   traceMessages.value = []
@@ -2811,11 +2833,15 @@ async function saveSelectedArtifact(): Promise<boolean> {
     if (content.artifact_type !== 'latex_pdf') {
       content.suggested_tags = content.suggested_tags.filter((tag) => selectedSuggestions.value.includes(tag.path))
     }
-    await syncSelectedArtifact()
+    await syncSelectedArtifactDraft()
     const saved = await aiClient.saveAgentArtifact(activeConversationId, artifactId)
     const index = artifacts.value.findIndex((artifact) => artifact.id === saved.id)
     if (index >= 0) artifacts.value.splice(index, 1, saved)
-    if (selectedArtifactId.value === artifactId) artifactContent.value = jsonSnapshot(saved.content)
+    if (selectedArtifactId.value === artifactId) {
+      artifactContent.value = jsonSnapshot(saved.content)
+      // The published draft is gone, so leave the comparison view.
+      artifactDiff.value = false
+    }
     if (content.artifact_type !== 'image') {
       await loadLibrary()
       tags.value = await tagClient.list()
@@ -3156,7 +3182,14 @@ onBeforeUnmount(() => {
         @close="staticAssetImportOpen = false"
         @import="importStaticAsset"
       />
-      <LibraryEditor v-if="libraryEditorItem" :item="libraryEditorItem" :saving="libraryEditorSaving" @close="closeLibraryEditor" @save="saveLibraryEditor" />
+      <LibraryEditor
+        v-if="libraryEditorItem"
+        :item="libraryEditorItem"
+        :saving="libraryEditorSaving"
+        :save-label="libraryEditorArtifactId !== null ? $t('Save draft') : $t('Save')"
+        @close="closeLibraryEditor"
+        @save="saveLibraryEditor"
+      />
 
       <template v-if="view === 'library' || view === 'search'">
         <header class="topbar">
@@ -3685,7 +3718,7 @@ onBeforeUnmount(() => {
               <div v-if="artifacts.length" class="artifact-list" aria-label="Conversation artifacts">
                 <button v-for="artifact in artifacts" :key="artifact.id" :class="{ active: artifact.id === selectedArtifactId }" type="button" @click="selectArtifact(artifact)">
                   <span class="artifact-kind-icon">{{ artifact.artifact_type === 'card' ? '◇' : artifact.artifact_type === 'article' ? '¶' : artifact.artifact_type === 'slides' ? '▤' : '▧' }}</span>
-                  <span><strong>{{ artifactTitle(artifact.content) }}</strong><small>{{ artifact.artifact_type }} · v{{ artifact.version }} · {{ artifact.status }}</small></span>
+                  <span><strong>{{ artifactTitle(artifactEditableContent(artifact)) }}</strong><small>{{ artifact.artifact_type }} · v{{ artifact.version }} · {{ artifact.status }}{{ hasPendingDraft(artifact) ? ' · unsaved draft' : '' }}</small></span>
                 </button>
               </div>
               <div v-if="!artifactContent" class="artifact-placeholder">
@@ -3696,10 +3729,12 @@ onBeforeUnmount(() => {
               <div v-else class="artifact-panel artifact-editor">
                 <div class="artifact-editor-accent" />
                 <header class="artifact-editor-header">
-                  <div class="artifact-state"><i :class="{ saved: selectedArtifact?.status === 'saved' }" /><span><strong>{{ selectedArtifact?.artifact_type }} artifact</strong><small>{{ selectedArtifact?.status }} · version {{ selectedArtifact?.version }}</small></span></div>
-                  <div class="artifact-mode-switch" :aria-label="$t('Artifact display mode')"><button v-if="['card', 'article', 'slides'].includes(artifactContent.artifact_type)" type="button" @click="openSelectedArtifactEditor">{{ $t('Edit') }}</button><button v-else type="button" :class="{ active: !artifactPreview }" @click="artifactPreview = false">{{ $t('Edit') }}</button><button type="button" :class="{ active: artifactPreview }" @click="artifactPreview = true">{{ $t('Preview') }}</button></div>
+                  <div class="artifact-state"><i :class="{ saved: selectedArtifact?.status === 'saved' }" /><span><strong>{{ selectedArtifact?.artifact_type }} artifact</strong><small>{{ selectedArtifact?.status }} · version {{ selectedArtifact?.version }}{{ selectedArtifact && hasPendingDraft(selectedArtifact) ? ' · unsaved draft' : '' }}</small></span></div>
+                  <div class="artifact-mode-switch" :aria-label="$t('Artifact display mode')"><button v-if="selectedArtifactDiff?.changed" type="button" :class="{ active: artifactDiff }" @click="artifactDiff = true; artifactPreview = false">{{ $t('Diff') }}</button><button v-if="['card', 'article', 'slides'].includes(artifactContent.artifact_type)" type="button" @click="openSelectedArtifactEditor">{{ $t('Edit') }}</button><button v-else type="button" :class="{ active: !artifactPreview && !artifactDiff }" @click="artifactPreview = false; artifactDiff = false">{{ $t('Edit') }}</button><button type="button" :class="{ active: artifactPreview && !artifactDiff }" @click="artifactPreview = true; artifactDiff = false">{{ $t('Preview') }}</button></div>
                 </header>
                 <div class="artifact-editor-body">
+                  <ArtifactDiffView v-if="artifactDiff && selectedArtifactDiff" :diff="selectedArtifactDiff" />
+                  <template v-else>
                   <div v-if="artifactContent.artifact_type === 'card'" class="card-meta-row">
                     <div class="card-type-control">
                       <span>{{ $t('Card type') }}</span>
@@ -3739,8 +3774,9 @@ onBeforeUnmount(() => {
                     </template>
                   </article>
                   <div v-if="artifactContent.artifact_type !== 'latex_pdf' && artifactContent.suggested_tags.length" class="suggestions card-tags-editor"><span>Classification</span><div class="suggestion-list"><label v-for="tag in artifactContent.suggested_tags" :key="tag.path" :class="{ selected: selectedSuggestions.includes(tag.path) }"><input v-model="selectedSuggestions" type="checkbox" :value="tag.path" /><span>{{ tag.path }}</span><small>{{ Math.round(tag.confidence * 100) }}%</small></label></div></div>
+                  </template>
                 </div>
-                <footer class="panel-actions artifact-editor-actions"><button class="danger-button" type="button" @click="deleteSelectedArtifact">Delete</button><button class="primary-action" :disabled="saving || !artifactTitle(artifactContent).trim()" type="button" @click="saveSelectedArtifact">{{ saving ? 'Saving…' : artifactContent.artifact_type === 'image' ? 'Save changes' : selectedArtifact?.status === 'saved' ? `Update artifact ${artifactTypeLabel(artifactContent.artifact_type).toLowerCase()}` : 'Save artifact' }}<svg><use href="#icon-arrow" /></svg></button></footer>
+                <footer class="panel-actions artifact-editor-actions"><button class="danger-button" type="button" @click="deleteSelectedArtifact">Delete</button><button class="primary-action" :disabled="saving || !artifactTitle(artifactContent).trim()" type="button" @click="saveSelectedArtifact">{{ saving ? 'Saving…' : artifactDiff && selectedArtifact?.draft_content ? 'Save draft' : artifactContent.artifact_type === 'image' ? 'Save changes' : selectedArtifact?.status === 'saved' ? `Update artifact ${artifactTypeLabel(artifactContent.artifact_type).toLowerCase()}` : 'Save artifact' }}<svg><use href="#icon-arrow" /></svg></button></footer>
               </div>
             </aside>
           </div>
@@ -4386,8 +4422,8 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .artifact-panel { padding: 1.5rem; border: 1px solid rgba(29,29,31,.08); border-radius: 1.1rem; background: rgba(255,255,255,.88); box-shadow: var(--shadow); backdrop-filter: blur(18px); transform-origin: 50% 0; }
 .artifact-panel.artifact-editor { position: relative; display: flex; flex-direction: column; padding: 0; overflow: hidden; color: #252a27; background: #fff; }
 .artifact-editor-accent { height: .26rem; flex: 0 0 auto; background: linear-gradient(90deg, #385d49, #77a087 70%, #b5cabb); }
-.artifact-editor-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem 1.15rem .9rem; border-bottom: 1px solid #e9ece9; }
-.artifact-state { min-width: 0; display: flex; align-items: center; gap: .62rem; }
+.artifact-editor-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .55rem 1rem; padding: .9rem 1.15rem; border-bottom: 1px solid #e9ece9; }
+.artifact-state { flex: 1 1 12rem; min-width: 0; display: flex; align-items: center; gap: .62rem; }
 .artifact-state > i { width: .58rem; height: .58rem; flex: 0 0 auto; border-radius: 50%; background: #7a9d87; box-shadow: 0 0 0 .28rem #edf4ef; }
 .artifact-state > i.saved { background: #347b51; }
 .artifact-state strong, .artifact-state small { display: block; }
@@ -4401,8 +4437,8 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .card-type-options button { min-height: 1.8rem; padding: 0 .68rem; border: 0; border-radius: .5rem; color: #747b77; background: transparent; cursor: pointer; font-size: .68rem; font-weight: 620; text-transform: capitalize; }
 .card-type-options button:hover { color: #405548; background: rgba(255,255,255,.72); }
 .card-type-options button.active { color: #2f5541; background: #fff; box-shadow: 0 1px 4px rgba(30,50,39,.1), inset 0 0 0 1px rgba(71,105,87,.1); }
-.artifact-mode-switch { flex: 0 0 auto; display: grid; grid-template-columns: repeat(2, minmax(4.5rem, 1fr)); gap: .18rem; padding: .18rem; border: 1px solid #e1e5e2; border-radius: .6rem; background: #f2f4f2; }
-.artifact-mode-switch button { min-width: 0; min-height: 1.72rem; padding: 0 .65rem; border: 0; border-radius: .43rem; color: #7a807c; background: transparent; cursor: pointer; font-size: .65rem; font-weight: 620; white-space: nowrap; }
+.artifact-mode-switch { flex: 0 0 auto; margin-left: auto; display: flex; align-items: center; gap: .18rem; padding: .16rem; border: 1px solid #e1e5e2; border-radius: .62rem; background: #f2f4f2; }
+.artifact-mode-switch button { min-width: 0; min-height: 1.6rem; padding: 0 .7rem; border: 0; border-radius: .45rem; color: #7a807c; background: transparent; cursor: pointer; font-size: .65rem; font-weight: 620; white-space: nowrap; }
 .artifact-mode-switch button.active { color: #365744; background: #fff; box-shadow: 0 1px 4px rgba(24,38,30,.09); }
 .card-title-control, .card-summary-control, .card-content-control { display: grid; gap: .42rem; margin-top: 1rem; }
 .card-title-control textarea, .card-summary-control textarea, .card-content-control textarea { width: 100%; resize: vertical; border: 0; outline: 0; color: #222724; font-family: inherit; }

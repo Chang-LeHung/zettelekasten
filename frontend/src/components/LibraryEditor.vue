@@ -9,6 +9,8 @@ import SlidesPreview from './SlidesPreview.vue'
 const props = defineProps<{
   item: LibraryItem
   saving: boolean
+  /** Label for the primary action; conversation editors stage a draft. */
+  saveLabel?: string
 }>()
 
 const emit = defineEmits<{
@@ -130,8 +132,8 @@ onBeforeUnmount(() => {
         <div class="editor-actions">
           <span class="save-state" :class="{ changed: dirty }"><i />{{ dirty ? 'Unsaved changes' : 'All changes saved' }}</span>
           <span class="live-indicator"><i />Live preview</span>
-          <button class="save-button" :disabled="saving || !dirty || !draft.title.trim() || !draft.content.trim()" type="button" title="Save (⌘S)" @click="submit">
-            {{ saving ? 'Saving…' : 'Save' }}
+          <button class="save-button" :disabled="saving || !dirty || !draft.title.trim() || !draft.content.trim()" type="button" :title="`${saveLabel ?? 'Save'} (⌘S)`" @click="submit">
+            {{ saving ? 'Saving…' : saveLabel ?? 'Save' }}
           </button>
         </div>
       </header>

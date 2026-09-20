@@ -53,7 +53,6 @@ class ArtifactQueryModel:
             "get_artifact",
             "query_artifacts",
             "update_artifact",
-            "save_artifact",
             "delete_artifact",
         }
         match self.step:
@@ -86,14 +85,15 @@ class ArtifactQueryModel:
                     )
                 )
             case 2:
-                assert str(_tool_payload(request)["content"]["title"]) == "Rust ownership"
+                assert str(_tool_payload(request)["draft_content"]["title"]) == "Rust ownership"
                 message = AssistantMessage(
                     tool_calls=(ToolCall("get", "get_artifact", {"artifact_id": self.first_id}),)
                 )
             case 3:
                 fetched = _tool_payload(request)
                 assert fetched["id"] == self.first_id
-                assert fetched["content"]["title"] == "Python process"
+                assert fetched["content"] is None
+                assert fetched["draft_content"]["title"] == "Python process"
                 message = AssistantMessage(
                     tool_calls=(
                         ToolCall(
@@ -105,9 +105,9 @@ class ArtifactQueryModel:
                 )
             case 4:
                 matched = _tool_items(request)
-                assert [item["content"]["title"] for item in matched] == ["Rust ownership"]
-                assert matched[0]["content"]["content_preview"] == "Another idea"
-                assert matched[0]["content"]["content_truncated"] is False
+                assert [item["draft_content"]["title"] for item in matched] == ["Rust ownership"]
+                assert matched[0]["draft_content"]["content_preview"] == "Another idea"
+                assert matched[0]["draft_content"]["content_truncated"] is False
                 assert "raw_content" not in matched[0]
                 assert "metadata" not in matched[0]
                 message = AssistantMessage(
@@ -132,7 +132,8 @@ class ArtifactQueryModel:
                 )
             case 6:
                 latest = _tool_payload(request)
-                assert latest["content"]["content"] == "Updated idea"
+                assert latest["content"] is None
+                assert latest["draft_content"]["content"] == "Updated idea"
                 assert latest["version"] == 2
                 message = AssistantMessage(
                     tool_calls=(ToolCall("query-saved", "query_artifacts", {"statuses": ["saved"]}),)
@@ -153,7 +154,14 @@ async def test_artifact_query_tools_run_complete_session_scoped_lifecycle() -> N
 
     assert result.content == "Artifact queries complete."
     assert model.step == 8
-    assert len(await artifact_storage.list()) == 2
+    written = await artifact_storage.list()
+    assert len(written) == 2
+    # The model proposes drafts only; nothing it wrote is published content.
+    assert all(artifact.content is None for artifact in written)
+    assert {artifact.draft_content.title for artifact in written if artifact.draft_content} == {
+        "Python process",
+        "Rust ownership",
+    }
 
 
 async def test_artifact_queries_are_scoped_to_the_owning_session() -> None:
@@ -196,7 +204,7 @@ async def test_artifact_queries_are_scoped_to_the_owning_session() -> None:
                 assert isinstance(tool_result, ToolMessage)
                 assert tool_result.success
                 matched = json.loads(tool_result.content)
-                assert [item["content"]["title"] for item in matched] == ["Secret"]
+                assert [item["published_content"]["title"] for item in matched] == ["Secret"]
                 assert matched[0]["session_id"] == owner
                 message = AssistantMessage(content="Global search found the artifact.")
             self.step += 1
@@ -211,6 +219,37 @@ async def test_artifact_queries_are_scoped_to_the_owning_session() -> None:
 
     assert result.content == "Global search found the artifact."
     assert await artifact_storage.get_for_session(owner, secret.id) is not None
+
+
+async def test_model_drafts_stay_unpublished_until_the_user_saves() -> None:
+    """A draft write never becomes content; only the user's save publishes it."""
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
+    draft = await artifact_storage.create(
+        AgentArtifactWrite(
+            session_id=session_id,
+            draft_content=CardArtifactContent(title="Proposed card", content="Model draft"),
+        )
+    )
+
+    assert draft.content is None
+    assert draft.draft_content is not None
+    assert draft.editable_content is not None
+    assert draft.editable_content.title == "Proposed card"
+
+    # The model can only propose again; publishing stays a user action.
+    revised = await artifact_storage.update(
+        draft.id,
+        AgentArtifactWrite(
+            session_id=session_id,
+            content=draft.content,
+            draft_content=CardArtifactContent(title="Proposed card", content="Second draft"),
+            status=draft.status,
+            metadata=draft.metadata,
+        ),
+    )
+
+    assert revised.content is None
+    assert revised.draft_content is not None and revised.draft_content.content == "Second draft"
 
 
 async def test_artifact_workspace_is_not_reinjected_into_system_context() -> None:

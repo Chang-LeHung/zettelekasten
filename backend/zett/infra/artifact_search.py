@@ -14,13 +14,19 @@ from ..schemas import ArtifactContent
 _CONTENT_ADAPTER = TypeAdapter(ArtifactContent)
 
 
-def artifact_search_document(content: ArtifactContent, raw_content: str | None) -> tuple[str, str]:
+def artifact_search_document(content: ArtifactContent | None, raw_content: str | None) -> tuple[str, str]:
     """Extract the weighted title and the complete searchable document body.
 
     The title is intentionally present in both FTS columns: ``title`` carries the
     higher BM25 weight, while ``body`` keeps the full document text available to
     normal content matching.
+
+    ``content`` is the editable content the artifact shows, so an unpublished
+    draft is searchable before its first save. An artifact without any content
+    contributes only its original ``raw_content``.
     """
+    if content is None:
+        return "", raw_content or ""
     title = str(getattr(content, "title", "") or "").strip()
     payload = content.model_dump(exclude={"artifact_type", "project_path", "title"})
     body_parts = [title] if title else []
@@ -60,16 +66,27 @@ async def ensure_artifact_search(connection: AsyncConnection) -> None:
     existing = {
         row.artifact_id for row in (await connection.execute(text("SELECT artifact_id FROM artifact_search"))).all()
     }
-    rows = (await connection.execute(text("SELECT id, content_json, raw_content FROM session_artifacts"))).all()
+    rows = (
+        await connection.execute(
+            text("SELECT id, content_json, draft_content_json, raw_content FROM session_artifacts")
+        )
+    ).all()
     for row in rows:
         if row.id in existing:
             continue
-        try:
-            content = _CONTENT_ADAPTER.validate_python(json.loads(row.content_json))
-        except TypeError, ValueError:
-            continue
+        content = _stored_content(row.content_json) or _stored_content(row.draft_content_json)
         title, body = artifact_search_document(content, row.raw_content)
         await _insert(connection, row.id, title, body)
+
+
+def _stored_content(value: str | None) -> ArtifactContent | None:
+    """Decode one stored content column, tolerating an absent or unreadable value."""
+    if not value:
+        return None
+    try:
+        return _CONTENT_ADAPTER.validate_python(json.loads(value))
+    except TypeError, ValueError:
+        return None
 
 
 async def upsert_artifact_search(

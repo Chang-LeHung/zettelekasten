@@ -1,14 +1,24 @@
 import { expect, it } from 'vitest'
 import type { AgentArtifact, ArticleArtifactContent, CardArtifactContent } from '../api/types'
-import { artifactContentFromLibraryUpdate, libraryItemFromArtifact } from './artifactEditor'
+import {
+  artifactContentFromLibraryUpdate,
+  artifactEditableContent,
+  hasPendingDraft,
+  libraryItemFromArtifact,
+} from './artifactEditor'
 
-function artifact(content: CardArtifactContent | ArticleArtifactContent): AgentArtifact {
+function artifact(
+  content: CardArtifactContent | ArticleArtifactContent | null,
+  draft: CardArtifactContent | ArticleArtifactContent | null = null,
+): AgentArtifact {
+  const described = draft ?? content
   return {
     id: 'artifact-1',
     session_id: 'session-1',
-    artifact_type: content.artifact_type,
+    artifact_type: described?.artifact_type ?? 'card',
     status: 'draft',
     content,
+    draft_content: draft,
     raw_content: 'original request',
     version: 1,
     metadata: { source: 'conversation' },
@@ -101,4 +111,69 @@ it('leaves image and PDF artifacts in their specialized inline editors', () => {
     pdf_name: 'paper.pdf',
   }
   expect(libraryItemFromArtifact(image)).toBeNull()
+})
+
+it('shows the model draft until the user publishes it', () => {
+  const published: CardArtifactContent = {
+    artifact_type: 'card',
+    card_type: 'note',
+    title: 'Published card',
+    summary: '',
+    content: 'Published body',
+    suggested_tags: [],
+    keywords: [],
+  }
+  const draft: CardArtifactContent = {
+    ...published,
+    title: 'Draft card',
+    content: 'Draft body',
+  }
+
+  expect(artifactEditableContent(artifact(published, draft))).toEqual(draft)
+  expect(libraryItemFromArtifact(artifact(published, draft))).toMatchObject({
+    title: 'Draft card',
+    content: 'Draft body',
+  })
+})
+
+it('projects an artifact the model created but nobody saved yet', () => {
+  const draft: CardArtifactContent = {
+    artifact_type: 'card',
+    card_type: 'idea',
+    title: 'Fresh draft',
+    summary: '',
+    content: 'Model body',
+    suggested_tags: [],
+    keywords: [],
+  }
+  const unsaved = artifact(null, draft)
+
+  expect(unsaved.content).toBeNull()
+  expect(artifactEditableContent(unsaved)).toEqual(draft)
+  expect(libraryItemFromArtifact(unsaved)).toMatchObject({
+    item_type: 'card',
+    title: 'Fresh draft',
+    content: 'Model body',
+  })
+  expect(artifactEditableContent(artifact(null))).toBeNull()
+  expect(libraryItemFromArtifact(artifact(null))).toBeNull()
+})
+
+it('treats a draft that mirrors the saved content as nothing pending', () => {
+  const published: CardArtifactContent = {
+    artifact_type: 'card',
+    card_type: 'note',
+    title: 'Saved card',
+    summary: '',
+    content: 'Saved body',
+    suggested_tags: [],
+    keywords: [],
+  }
+  const edited: CardArtifactContent = { ...published, content: 'Edited body' }
+
+  expect(hasPendingDraft(artifact(published, { ...published }))).toBe(false)
+  expect(hasPendingDraft(artifact(published, edited))).toBe(true)
+  // A draft without published content is still pending user approval.
+  expect(hasPendingDraft(artifact(null, edited))).toBe(true)
+  expect(hasPendingDraft(artifact(published, null))).toBe(false)
 })

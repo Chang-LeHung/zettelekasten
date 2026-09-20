@@ -1,6 +1,5 @@
 import json
 from datetime import UTC, datetime
-from enum import IntEnum
 from typing import cast
 
 from pydantic import TypeAdapter
@@ -29,37 +28,17 @@ from ..artifact_search import (
 )
 from ..database import session_scope
 from ..latex_projects import create_latex_project, validate_latex_project_path
-from ..models import ArtifactTagModel, SessionArtifactModel
+from ..models import (
+    CODE_TO_STATUS,
+    CODE_TO_TYPE,
+    STATUS_TO_CODE,
+    TYPE_TO_CODE,
+    ArtifactTagModel,
+    SessionArtifactModel,
+)
 from ..object_store import get_object_store
 from ..storage import AsyncStorage
 
-
-class ArtifactTypeCode(IntEnum):
-    CARD = 1
-    ARTICLE = 2
-    IMAGE = 3
-    SLIDES = 4
-    LATEX_PDF = 5
-
-
-class ArtifactStatusCode(IntEnum):
-    DRAFT = 1
-    SAVED = 2
-
-
-TYPE_TO_CODE = {
-    ArtifactType.CARD: ArtifactTypeCode.CARD,
-    ArtifactType.ARTICLE: ArtifactTypeCode.ARTICLE,
-    ArtifactType.IMAGE: ArtifactTypeCode.IMAGE,
-    ArtifactType.SLIDES: ArtifactTypeCode.SLIDES,
-    ArtifactType.LATEX_PDF: ArtifactTypeCode.LATEX_PDF,
-}
-CODE_TO_TYPE = {int(code): value for value, code in TYPE_TO_CODE.items()}
-STATUS_TO_CODE = {
-    ArtifactStatus.DRAFT: ArtifactStatusCode.DRAFT,
-    ArtifactStatus.SAVED: ArtifactStatusCode.SAVED,
-}
-CODE_TO_STATUS = {int(code): value for value, code in STATUS_TO_CODE.items()}
 CONTENT_ADAPTER = TypeAdapter(ArtifactContent)
 
 
@@ -73,18 +52,21 @@ def _json_load[JSONValueT](value: str | None, fallback: JSONValueT) -> JSONValue
 
 def _artifact_out(model: SessionArtifactModel, *, tags: list[ArtifactTagOut] | None = None) -> AgentArtifact:
     """Hydrate a typed artifact from its ORM record and discriminated JSON content."""
-    content = CONTENT_ADAPTER.validate_python(_json_load(model.content_json, {}))
+    content = _content(model.content_json)
+    draft_content = _content(model.draft_content_json)
+    editable = content or draft_content
     content_url: str | None = None
-    if isinstance(content, LatexPdfArtifactContent):
-        content_url = get_object_store().url(ObjectKey(f"{content.project_path}/{content.pdf_name}"))
-    elif isinstance(content, ImageArtifactContent) and content.asset_path:
-        content_url = get_object_store().url(content.asset_path)
+    if isinstance(editable, LatexPdfArtifactContent):
+        content_url = get_object_store().url(ObjectKey(f"{editable.project_path}/{editable.pdf_name}"))
+    elif isinstance(editable, ImageArtifactContent) and editable.asset_path:
+        content_url = get_object_store().url(editable.asset_path)
     return AgentArtifact(
         id=model.id,
         session_id=model.session_id,
         artifact_type=CODE_TO_TYPE[model.artifact_type],
         status=CODE_TO_STATUS[model.status],
         content=content,
+        draft_content=draft_content,
         raw_content=model.raw_content,
         version=model.version,
         metadata=_json_load(model.metadata_value, {}),
@@ -93,6 +75,40 @@ def _artifact_out(model: SessionArtifactModel, *, tags: list[ArtifactTagOut] | N
         tags=tags or [],
         content_url=content_url,
     )
+
+
+def _content(value: str | None) -> ArtifactContent | None:
+    """Decode one stored content column; an empty column carries no content."""
+    decoded = _json_load(value, None)
+    return None if decoded is None else CONTENT_ADAPTER.validate_python(decoded)
+
+
+def _store_content(content: ArtifactContent | None) -> str:
+    """Encode one content column, using an empty string for "not written yet"."""
+    return "" if content is None else content.model_dump_json()
+
+
+def _created_content(
+    session_id: str,
+    content: ArtifactContent | LatexPdfArtifactCreate | None,
+) -> ArtifactContent | None:
+    """Resolve one create payload, allocating a LaTeX project when requested."""
+    if isinstance(content, LatexPdfArtifactCreate):
+        return create_latex_project(session_id, content)
+    return content
+
+
+def _updated_content(
+    session_id: str,
+    content: ArtifactContent | LatexPdfArtifactCreate | None,
+) -> ArtifactContent | None:
+    """Resolve one update payload, requiring the server-assigned LaTeX project."""
+    if isinstance(content, LatexPdfArtifactCreate) and not isinstance(content, LatexPdfArtifactContent):
+        raise ValueError("Updates must include the server-assigned project_path")
+    if isinstance(content, LatexPdfArtifactContent):
+        # A draft or saved reference can precede compilation; only validate its location.
+        validate_latex_project_path(session_id, content)
+    return content
 
 
 class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifact, str, ArtifactListOptions]):
@@ -105,17 +121,18 @@ class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifact, str, Artif
         if await get_agent_runtime_storage().get_session(entity.session_id) is None:
             raise KeyError(f"Agent session not found: {entity.session_id}")
         now = datetime.now(UTC)
-        content = entity.content
-        if isinstance(content, LatexPdfArtifactCreate):
-            content = create_latex_project(entity.session_id, content)
+        content = _created_content(entity.session_id, entity.content)
+        draft_content = _created_content(entity.session_id, entity.draft_content)
+        described = content or draft_content
         async with session_scope() as session:
             model = SessionArtifactModel(
                 id=new_uuid7(),
                 session_id=entity.session_id,
-                artifact_type=int(TYPE_TO_CODE[entity.content.artifact_type]),
+                artifact_type=int(TYPE_TO_CODE[described.artifact_type]),
                 status=int(STATUS_TO_CODE[entity.status]),
-                title=entity.content.title,
-                content_json=content.model_dump_json(),
+                title=described.title,
+                content_json=_store_content(content),
+                draft_content_json=_store_content(draft_content),
                 raw_content=entity.raw_content,
                 version=1,
                 metadata_value=json.dumps(entity.metadata, ensure_ascii=False),
@@ -127,7 +144,7 @@ class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifact, str, Artif
             await upsert_artifact_search(
                 session,
                 artifact_id=model.id,
-                content=content,
+                content=described,
                 raw_content=entity.raw_content,
             )
             return _artifact_out(model)
@@ -149,21 +166,18 @@ class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifact, str, Artif
         return artifact if artifact is not None and artifact.session_id == session_id else None
 
     async def update(self, entity_id: str, entity: AgentArtifactWrite) -> AgentArtifact:
-        if isinstance(entity.content, LatexPdfArtifactCreate) and not isinstance(
-            entity.content, LatexPdfArtifactContent
-        ):
-            raise ValueError("Updates must include the server-assigned project_path")
-        if isinstance(entity.content, LatexPdfArtifactContent):
-            # A draft or saved reference can precede compilation; only validate its location.
-            validate_latex_project_path(entity.session_id, entity.content)
+        content = _updated_content(entity.session_id, entity.content)
+        draft_content = _updated_content(entity.session_id, entity.draft_content)
+        described = content or draft_content
         async with session_scope() as session:
             model = await session.get(SessionArtifactModel, entity_id)
             if model is None or model.session_id != entity.session_id:
                 raise KeyError(f"Artifact not found: {entity_id}")
-            model.artifact_type = int(TYPE_TO_CODE[entity.content.artifact_type])
+            model.artifact_type = int(TYPE_TO_CODE[described.artifact_type])
             model.status = int(STATUS_TO_CODE[entity.status])
-            model.title = entity.content.title
-            model.content_json = entity.content.model_dump_json()
+            model.title = described.title
+            model.content_json = _store_content(content)
+            model.draft_content_json = _store_content(draft_content)
             model.raw_content = entity.raw_content
             model.metadata_value = json.dumps(entity.metadata, ensure_ascii=False)
             model.version += 1
@@ -172,7 +186,7 @@ class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifact, str, Artif
             await upsert_artifact_search(
                 session,
                 artifact_id=model.id,
-                content=entity.content,
+                content=described,
                 raw_content=entity.raw_content,
             )
             return _artifact_out(model)
@@ -214,6 +228,7 @@ class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifact, str, Artif
                         or_(
                             SessionArtifactModel.title.ilike(pattern),
                             SessionArtifactModel.content_json.ilike(pattern),
+                            SessionArtifactModel.draft_content_json.ilike(pattern),
                             SessionArtifactModel.raw_content.ilike(pattern),
                         )
                     )

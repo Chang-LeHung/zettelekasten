@@ -9,7 +9,7 @@ from ...application.artifact_pruner import AgentArtifactPreview, ArtifactPruner
 from ...application.tagging import tag_service
 from ...infra.dao import artifact_storage
 from ...models import ArtifactListOptions
-from ...schemas import AgentArtifact, AgentArtifactWrite, ArtifactContent, ArtifactCreateContent, ArtifactStatus
+from ...schemas import AgentArtifact, AgentArtifactWrite, ArtifactContent, ArtifactCreateContent
 
 artifact_pruner = ArtifactPruner()
 
@@ -38,11 +38,12 @@ class ArtifactExtension(AgentExtension):
             Snippet:
                 create_artifact(content={"artifact_type": "card", "title": "...", "content": "..."})
                 create_artifact(content={"artifact_type": "latex_pdf", "pdf_name": "paper.pdf"})
-                create_artifact(content={"artifact_type": "slides", "title": "...", "content": "# Topic\n\n--\n\n## Detail\n\n---\n\n# Next topic"})
+                create_artifact(content={"artifact_type": "slides", "title": "...", "content": "# Topic\\n\\n--\\n\\n## Detail\\n\\n---\\n\\n# Next topic"})
                 create_artifact(content={"artifact_type": "slides", "title": "Processes", "content": "<!-- slide:cover -->\\n# Processes\\n\\n## From programs to execution\\n\\nAuthor name\\n\\n[Website](https://example.com)\\n\\n---\\n# Overview\\n\\n--\\n## Process state\\n\\n- One idea"})
 
             Guidelines:
                 - Create an artifact only when it is a useful output of the conversation.
+                - Creation writes draft content only. The user publishes it; never claim an artifact is saved.
                 - To start a LaTeX project, call create_artifact(content={"artifact_type": "latex_pdf", "pdf_name": "paper.pdf"}). Do not supply project_path, title, summary, or source text.
                 - Creation allocates a project directory and returns content.project_path as an object key relative to ZETT_STORAGE_ROOT. Treat that returned key as authoritative: never guess it or reconstruct it from the session ID or PDF name.
                 - Filesystem/shell tools run from the repository directory, so resolve the returned key under `Path.home() / ".zettelekasten"` before writing project sources and compiling the returned pdf_name.
@@ -80,13 +81,14 @@ class ArtifactExtension(AgentExtension):
                 - Ordinary horizontal sections start with a title-only page followed by '--' and content pages; explicit cover or HTML openers are exceptions.
                 - Keep each slide concise: one idea, a short heading, and no more than six brief bullets.
             """
-            return await artifact_storage.create(
-                AgentArtifactWrite(session_id=session_id, content=content, raw_content=raw_content)
+            created = await artifact_storage.create(
+                AgentArtifactWrite(session_id=session_id, draft_content=content, raw_content=raw_content)
             )
+            return await tag_service.sync_confirmed_suggestions(created)
 
         @tool
         async def get_artifact(artifact_id: str) -> AgentArtifact:
-            """Return the current content of one artifact in this conversation.
+            """Return one artifact with its published content and its draft.
 
             Args:
                 artifact_id: Stable ID of an artifact in this conversation.
@@ -96,6 +98,7 @@ class ArtifactExtension(AgentExtension):
 
             Guidelines:
                 - Use to fetch the latest content of an artifact after changes.
+                - `content` is what the user published; `draft_content` is the working copy you edit, and the two are equal right after a save.
             """
             return await self._artifact(session_id, artifact_id)
 
@@ -108,6 +111,10 @@ class ArtifactExtension(AgentExtension):
             limit: Annotated[int, Field(ge=1, le=500)] = 20,
         ) -> list[AgentArtifactPreview]:
             """Search artifacts by title text, type, and status.
+
+            Every result carries both sides of the artifact: `published_content`
+            is what the user saved and `draft_content` is the current working
+            copy, which equals the published content right after a save.
 
             Args:
                 query: Case-insensitive text matched against artifact titles.
@@ -139,18 +146,19 @@ class ArtifactExtension(AgentExtension):
 
         @tool
         async def update_artifact(artifact_id: str, content: ArtifactContent) -> AgentArtifact:
-            """Replace the editable content of an existing conversation artifact.
+            """Replace the draft content of an existing conversation artifact.
 
             Args:
                 artifact_id: Stable ID of an artifact in this conversation.
-                content: Complete replacement content.
+                content: Complete replacement draft content.
 
             Snippet:
                 update_artifact(artifact_id="...", content={"artifact_type": "article", "title": "..."})
                 update_artifact(artifact_id="...", content={"artifact_type": "slides", "title": "Processes", "content": "<!-- slide:cover -->\\n# Processes\\n\\n## Optional subtitle\\n\\nAuthor name\\n\\n---\\n# Overview\\n\\n--\\n## Details\\n\\n- One idea"})
 
             Guidelines:
-                - Call get_artifact to read the complete artifact before replacing its content.
+                - Call get_artifact to read the complete artifact before replacing its draft.
+                - Updates write draft content only. The published artifact is untouched until the user saves.
                 - Keep cards focused on one idea and remove every word that does not add meaning.
                 - Markdown and sanitized raw HTML with inline Grid/Flex styles are supported; no scripts, global style tags or fixed overlays. HTML code fences display source only.
                 - Use '# Title', '## Section', '### Subsection', '**important**', and '- item' for structure.
@@ -177,39 +185,14 @@ class ArtifactExtension(AgentExtension):
                 artifact_id,
                 AgentArtifactWrite(
                     session_id=session_id,
-                    content=content,
+                    content=current.content,
+                    draft_content=content,
                     raw_content=current.raw_content,
                     status=current.status,
                     metadata=current.metadata,
                 ),
             )
             return await tag_service.sync_confirmed_suggestions(updated)
-
-        @tool
-        async def save_artifact(artifact_id: str) -> AgentArtifact:
-            """Mark one draft artifact as saved after explicit user approval.
-
-            Args:
-                artifact_id: Stable ID of an artifact in this conversation.
-
-            Snippet:
-                save_artifact(artifact_id="...")
-
-            Guidelines:
-                - Call this only when the user explicitly requests saving the artifact.
-            """
-            current = await self._artifact(session_id, artifact_id)
-            saved = await artifact_storage.update(
-                artifact_id,
-                AgentArtifactWrite(
-                    session_id=session_id,
-                    content=current.content,
-                    raw_content=current.raw_content,
-                    status=ArtifactStatus.SAVED,
-                    metadata=current.metadata,
-                ),
-            )
-            return await tag_service.sync_confirmed_suggestions(saved)
 
         @tool
         async def delete_artifact(artifact_id: str) -> bool:
@@ -232,7 +215,6 @@ class ArtifactExtension(AgentExtension):
             get_artifact,
             query_artifacts,
             update_artifact,
-            save_artifact,
             delete_artifact,
         ):
             context.register_tool(registered)

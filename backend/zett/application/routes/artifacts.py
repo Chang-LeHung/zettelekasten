@@ -21,7 +21,6 @@ async def list_all_artifacts(
     offset: int = Query(default=0, ge=0),
 ) -> list[AgentArtifact]:
     """Search artifacts across sessions for the library UI."""
-    await tag_service.backfill_legacy_artifacts()
     try:
         expanded_tag_ids = await tag_service.subtree_ids(tag_ids) if tag_ids else ()
     except KeyError as error:
@@ -57,6 +56,7 @@ async def create_artifact(session_id: str, payload: ArtifactCreateIn) -> AgentAr
     entity = AgentArtifactWrite(
         session_id=session_id,
         content=payload.content,
+        draft_content=payload.content,
         raw_content=payload.raw_content,
         status=payload.status,
         metadata=payload.metadata,
@@ -78,13 +78,18 @@ async def get_artifact(session_id: str, artifact_id: str) -> AgentArtifact:
 
 @router.put("/agent/{session_id}/artifacts/{artifact_id}", response_model=AgentArtifact)
 async def update_artifact(session_id: str, artifact_id: str, payload: ArtifactUpdateIn) -> AgentArtifact:
-    """Replace editable content while preserving lifecycle and metadata."""
+    """Write user-edited content, replacing any draft the model proposed.
+
+    The editor's save is a user action, so it publishes directly and mirrors the
+    published content into the draft, which keeps the draft as the working copy.
+    """
     current = await artifact_storage.get_for_session(session_id, artifact_id)
     if current is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Artifact not found")
     entity = AgentArtifactWrite(
         session_id=session_id,
         content=payload.content,
+        draft_content=payload.content,
         raw_content=current.raw_content,
         status=current.status,
         metadata=current.metadata,
@@ -96,15 +101,53 @@ async def update_artifact(session_id: str, artifact_id: str, payload: ArtifactUp
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
 
 
-@router.post("/agent/{session_id}/artifacts/{artifact_id}/save", response_model=AgentArtifact)
-async def save_artifact(session_id: str, artifact_id: str) -> AgentArtifact:
-    """Move a draft artifact into the durable saved library."""
+@router.put("/agent/{session_id}/artifacts/{artifact_id}/draft", response_model=AgentArtifact)
+async def update_artifact_draft(
+    session_id: str,
+    artifact_id: str,
+    payload: ArtifactUpdateIn,
+) -> AgentArtifact:
+    """Write an edited draft without touching the published artifact.
+
+    Every editing surface lands here: the conversation panel, its full editor,
+    and the model's own tools. The save endpoint is what publishes a draft.
+    """
     current = await artifact_storage.get_for_session(session_id, artifact_id)
     if current is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Artifact not found")
     entity = AgentArtifactWrite(
         session_id=session_id,
         content=current.content,
+        draft_content=payload.content,
+        raw_content=current.raw_content,
+        status=current.status,
+        metadata=current.metadata,
+    )
+    try:
+        return await artifact_storage.update(artifact_id, entity)
+    except (ValueError, FileNotFoundError) as error:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
+
+
+@router.post("/agent/{session_id}/artifacts/{artifact_id}/save", response_model=AgentArtifact)
+async def save_artifact(session_id: str, artifact_id: str) -> AgentArtifact:
+    """Publish the pending draft as this artifact's content and mark it saved.
+
+    This is the user's explicit approval step: the model only ever writes draft
+    content, and nothing it produced becomes the artifact's content until this
+    request arrives from the browser. The draft keeps a copy of the published
+    content so the model always reads its working copy from ``draft_content``.
+    """
+    current = await artifact_storage.get_for_session(session_id, artifact_id)
+    if current is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Artifact not found")
+    published = current.draft_content or current.content
+    if published is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Artifact has no content to save")
+    entity = AgentArtifactWrite(
+        session_id=session_id,
+        content=published,
+        draft_content=published,
         raw_content=current.raw_content,
         status=ArtifactStatus.SAVED,
         metadata=current.metadata,

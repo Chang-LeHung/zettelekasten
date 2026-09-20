@@ -31,6 +31,7 @@ from pydantic import BaseModel, Field
 from ..schemas import (
     AgentArtifact,
     ArticleArtifactContent,
+    ArtifactContent,
     ArtifactStatus,
     ArtifactTagOut,
     ArtifactType,
@@ -110,12 +111,19 @@ ArtifactPreviewContent = Annotated[
 
 
 class AgentArtifactPreview(BaseModel):
-    """Compact artifact projection returned by the model-facing query tool."""
+    """Compact artifact projection returned by the model-facing query tool.
+
+    Both sides of the artifact travel together: ``published_content`` is what the
+    user saved and ``draft_content`` is what the model proposes since then. After
+    a save the two are equal, so the model can always read the draft as its own
+    working copy without losing sight of the published text.
+    """
 
     id: str
     session_id: str
     status: ArtifactStatus
-    content: ArtifactPreviewContent
+    published_content: ArtifactPreviewContent | None = None
+    draft_content: ArtifactPreviewContent | None = None
     version: int = Field(ge=1)
     tags: list[ArtifactTagOut] = Field(default_factory=list)
     created_at: datetime
@@ -145,75 +153,82 @@ class ArtifactPruner:
         return [self.prune_one(artifact) for artifact in artifacts]
 
     def prune_one(self, artifact: AgentArtifact) -> AgentArtifactPreview:
-        """Project one artifact according to its discriminated content type."""
-        match artifact.content:
-            case CardArtifactContent() as content:
-                preview, truncated = self._clip(content.content, self.card_chars)
+        """Project one artifact with its published content and its draft."""
+        return AgentArtifactPreview(
+            id=artifact.id,
+            session_id=artifact.session_id,
+            status=artifact.status,
+            published_content=self._project(artifact.content),
+            draft_content=self._project(artifact.draft_content),
+            version=artifact.version,
+            tags=artifact.tags,
+            created_at=artifact.created_at,
+            updated_at=artifact.updated_at,
+        )
+
+    def _project(self, content: ArtifactContent | None) -> ArtifactPreviewContent | None:
+        """Build one bounded, type-specific preview for either side of the pair."""
+        match content:
+            case CardArtifactContent() as card:
+                preview, truncated = self._clip(card.content, self.card_chars)
                 projected = CardArtifactPreviewContent(
-                    title=content.title,
-                    summary=content.summary,
-                    suggested_tags=content.suggested_tags,
-                    keywords=content.keywords,
-                    card_type=content.card_type,
+                    title=card.title,
+                    summary=card.summary,
+                    suggested_tags=card.suggested_tags,
+                    keywords=card.keywords,
+                    card_type=card.card_type,
                     content_preview=preview,
                     content_truncated=truncated,
                 )
-            case ArticleArtifactContent() as content:
-                preview, truncated = self._clip(content.content, self.article_chars)
+            case ArticleArtifactContent() as article:
+                preview, truncated = self._clip(article.content, self.article_chars)
                 projected = ArticleArtifactPreviewContent(
-                    title=content.title,
-                    summary=content.summary,
-                    suggested_tags=content.suggested_tags,
-                    keywords=content.keywords,
-                    subtitle=content.subtitle,
+                    title=article.title,
+                    summary=article.summary,
+                    suggested_tags=article.suggested_tags,
+                    keywords=article.keywords,
+                    subtitle=article.subtitle,
                     content_preview=preview,
                     content_truncated=truncated,
                 )
-            case ImageArtifactContent() as content:
-                prompt, prompt_truncated = self._clip(content.prompt, self.image_text_chars)
-                alt_text, alt_text_truncated = self._clip(content.alt_text, self.image_text_chars)
-                source_url, source_url_truncated = self._optional_clip(content.source_url, self.image_url_chars)
+            case ImageArtifactContent() as image:
+                prompt, prompt_truncated = self._clip(image.prompt, self.image_text_chars)
+                alt_text, alt_text_truncated = self._clip(image.alt_text, self.image_text_chars)
+                source_url, source_url_truncated = self._optional_clip(image.source_url, self.image_url_chars)
                 projected = ImageArtifactPreviewContent(
-                    title=content.title,
-                    summary=content.summary,
-                    suggested_tags=content.suggested_tags,
-                    keywords=content.keywords,
+                    title=image.title,
+                    summary=image.summary,
+                    suggested_tags=image.suggested_tags,
+                    keywords=image.keywords,
                     prompt_preview=prompt,
                     prompt_truncated=prompt_truncated,
                     alt_text_preview=alt_text,
                     alt_text_truncated=alt_text_truncated,
                     source_url_preview=source_url,
                     source_url_truncated=source_url_truncated,
-                    asset_path=content.asset_path,
+                    asset_path=image.asset_path,
                 )
-            case SlidesArtifactContent() as content:
-                preview, truncated = self._clip(content.content, self.slides_chars)
+            case SlidesArtifactContent() as slides:
+                preview, truncated = self._clip(slides.content, self.slides_chars)
                 projected = SlidesArtifactPreviewContent(
-                    title=content.title,
-                    summary=content.summary,
-                    suggested_tags=content.suggested_tags,
-                    keywords=content.keywords,
-                    subtitle=content.subtitle,
+                    title=slides.title,
+                    summary=slides.summary,
+                    suggested_tags=slides.suggested_tags,
+                    keywords=slides.keywords,
+                    subtitle=slides.subtitle,
                     content_preview=preview,
                     content_truncated=truncated,
                 )
-            case LatexPdfArtifactContent() as content:
+            case LatexPdfArtifactContent() as pdf:
                 projected = LatexPdfArtifactPreviewContent(
-                    title=content.title,
-                    pdf_name=content.pdf_name,
+                    title=pdf.title,
+                    pdf_name=pdf.pdf_name,
                 )
+            case None:
+                return None
             case _:
-                raise TypeError(f"Unsupported artifact content: {type(artifact.content)!r}")
-        return AgentArtifactPreview(
-            id=artifact.id,
-            session_id=artifact.session_id,
-            status=artifact.status,
-            content=projected,
-            version=artifact.version,
-            tags=artifact.tags,
-            created_at=artifact.created_at,
-            updated_at=artifact.updated_at,
-        )
+                raise TypeError(f"Unsupported artifact content: {type(content)!r}")
+        return projected
 
     @staticmethod
     def _clip(value: str, limit: int) -> tuple[str, bool]:

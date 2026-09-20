@@ -2,9 +2,9 @@
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .cards import CardType, normalize_card_type
 from .tags import ArtifactTagOut, SuggestedTag
@@ -175,17 +175,46 @@ ArtifactContent = Annotated[
 
 
 class AgentArtifactWrite(BaseModel):
-    """Complete write model accepted by the session artifact storage boundary."""
+    """Complete write model accepted by the session artifact storage boundary.
+
+    ``content`` is the published artifact and ``draft_content`` is a proposal
+    awaiting an explicit user save; a write always states both, because the
+    storage replaces the editable fields instead of patching them. At least one
+    of the two must be present so every artifact has something to render.
+    """
 
     session_id: str = Field(description="Owning agent session UUID")
-    content: ArtifactContent | LatexPdfArtifactCreate = Field(description="Type-specific editable artifact content")
+    content: ArtifactContent | LatexPdfArtifactCreate | None = Field(
+        default=None,
+        description="Published artifact content; empty until a user saves",
+    )
+    draft_content: ArtifactContent | LatexPdfArtifactCreate | None = Field(
+        default=None,
+        description="Model-proposed content awaiting an explicit user save",
+    )
     raw_content: str | None = Field(default=None, description="Original input associated with this artifact")
     status: ArtifactStatus = Field(default=ArtifactStatus.DRAFT, description="Current artifact lifecycle state")
     metadata: dict[str, object] = Field(default_factory=dict, description="Extensible artifact metadata")
 
+    @model_validator(mode="after")
+    def require_editable_content(self) -> Self:
+        """Keep every artifact renderable from its published or draft content."""
+        if self.content is None and self.draft_content is None:
+            raise ValueError("An artifact write requires published content, draft content, or both")
+        return self
+
+    @property
+    def editable_content(self) -> ArtifactContent | LatexPdfArtifactCreate:
+        """Return the content that describes this artifact right now."""
+        return self.content or self.draft_content  # type: ignore[return-value]
+
 
 class AgentArtifact(BaseModel):
     """One typed output produced inside a persisted agent conversation.
+
+    ``content`` is what the user published and ``draft_content`` is what the
+    model proposed since then; ``editable_content`` picks the draft first. Only a
+    user save moves a draft into ``content``.
 
     ``content_url`` is not a database column. It is computed for artifacts that
     own a file, currently LaTeX PDFs and local image artifacts.
@@ -195,7 +224,14 @@ class AgentArtifact(BaseModel):
     session_id: str = Field(description="Owning agent session UUID")
     artifact_type: ArtifactType = Field(description="Artifact discriminator used for rendering and queries")
     status: ArtifactStatus = Field(description="Current artifact lifecycle state")
-    content: ArtifactContent = Field(description="Type-specific editable artifact content")
+    content: ArtifactContent | None = Field(
+        default=None,
+        description="Published artifact content; empty until a user saves",
+    )
+    draft_content: ArtifactContent | None = Field(
+        default=None,
+        description="Model-proposed content awaiting an explicit user save",
+    )
     raw_content: str | None = Field(default=None, description="Original input associated with this artifact")
     version: int = Field(default=1, ge=1, description="Monotonic revision number")
     metadata: dict[str, object] = Field(default_factory=dict, description="Extensible artifact metadata")
@@ -209,3 +245,8 @@ class AgentArtifact(BaseModel):
     )
     created_at: datetime = Field(description="UTC artifact creation timestamp")
     updated_at: datetime = Field(description="UTC last modification timestamp")
+
+    @property
+    def editable_content(self) -> ArtifactContent | None:
+        """Return the content the UI and the model should show for this artifact."""
+        return self.content or self.draft_content

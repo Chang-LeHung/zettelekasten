@@ -12,7 +12,6 @@ router = APIRouter(prefix="/library/tags", tags=["library-tags"])
 @router.get("", response_model=list[TagTreeOut])
 async def list_tags() -> list[TagTreeOut]:
     """Return the complete stable taxonomy with direct and descendant counts."""
-    await tag_service.backfill_legacy_artifacts()
     return await tag_service.list_tree()
 
 

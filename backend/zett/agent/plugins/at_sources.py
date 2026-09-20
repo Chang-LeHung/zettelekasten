@@ -88,7 +88,8 @@ class SessionArtifactAtCommandSource(AtCommandSource):
         return await artifact_storage.get_for_session(session_id, item.target_id) is not None
 
     def _item(self, artifact: AgentArtifact) -> AtCommandItem:
-        title = artifact.content.title
+        content = artifact.editable_content
+        title = str(getattr(content, "title", "") or artifact.artifact_type.value)
         return self.item(
             target_id=artifact.id,
             label=title,

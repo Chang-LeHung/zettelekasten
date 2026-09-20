@@ -32,6 +32,7 @@ import type {
   TagRecord,
   SessionAsset,
 } from './types'
+import { artifactEditableContent } from '../utils/artifactEditor'
 
 const API_URL = (import.meta.env.VITE_API_URL ?? '/api').replace(/\/$/, '')
 const artifactIndex = new Map<string, AgentArtifact>()
@@ -147,10 +148,12 @@ export const libraryClient = {
 
   async update(itemType: LibraryItemType, itemId: string, payload: LibraryItemUpdate): Promise<LibraryItem> {
     const artifact = requireIndexedArtifact(itemId)
-    if (artifact.content.artifact_type === 'latex_pdf' || itemType === 'latex_pdf') {
+    const current = artifactEditableContent(artifact)
+    if (!current) throw new Error('Artifact has neither published nor draft content')
+    if (current.artifact_type === 'latex_pdf' || itemType === 'latex_pdf') {
       throw new Error('Edit the LaTeX project files, not Markdown.')
     }
-    const suggestedTags = (payload.tags ?? artifact.content.suggested_tags.map((tag) => tag.path)).map((path) => ({
+    const suggestedTags = (payload.tags ?? current.suggested_tags.map((tag) => tag.path)).map((path) => ({
       path,
       existing: true,
       confidence: 1,
@@ -163,16 +166,16 @@ export const libraryClient = {
           summary: payload.summary || '',
           content: payload.content,
           suggested_tags: suggestedTags,
-          keywords: artifact.content.keywords,
+          keywords: current.keywords,
         }
       : {
           artifact_type: 'card',
           title: payload.title,
-          card_type: artifact.content.artifact_type === 'card' ? artifact.content.card_type : 'note',
+          card_type: current.artifact_type === 'card' ? current.card_type : 'note',
           summary: payload.summary || '',
           content: payload.content,
           suggested_tags: suggestedTags,
-          keywords: artifact.content.keywords,
+          keywords: current.keywords,
         }
     const updated = await request<AgentArtifact>(`/agent/${artifact.session_id}/artifacts/${itemId}`, {
       method: 'PUT',
@@ -516,12 +519,16 @@ export const aiClient = {
     return request<AgentArtifact>(`/agent/${conversationId}/artifacts/${artifactId}`)
   },
 
-  updateAgentArtifact(
+  /**
+   * Write editing as a draft. Published content only changes through
+   * `saveAgentArtifact`, so an editor save never rewrites the original.
+   */
+  updateAgentArtifactDraft(
     conversationId: string,
     artifactId: string,
     content: ArtifactContent,
   ): Promise<AgentArtifact> {
-    return request<AgentArtifact>(`/agent/${conversationId}/artifacts/${artifactId}`, {
+    return request<AgentArtifact>(`/agent/${conversationId}/artifacts/${artifactId}/draft`, {
       method: 'PUT',
       body: JSON.stringify({ content }),
     })
@@ -611,7 +618,8 @@ function requireIndexedArtifact(id: string): AgentArtifact {
 }
 
 function artifactToLibraryItem(artifact: AgentArtifact): LibraryItem {
-  const content = artifact.content
+  const content = artifactEditableContent(artifact)
+  if (!content) throw new Error('Artifact has neither published nor draft content')
   if (content.artifact_type === 'image') throw new Error('Image artifacts are not library documents')
   return {
     id: artifact.id,

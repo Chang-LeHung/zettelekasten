@@ -32,10 +32,11 @@ from zett.application.routes import agent as agent_routes
 from zett.application.routes import providers as provider_routes
 from zett.application.session_context import SESSION_CONTEXT_KEY_PREFIX
 from zett.application.session_preferences import SESSION_MODEL_KEY_PREFIX
-from zett.infra.dao import provider_storage
+from zett.infra.dao import artifact_storage, provider_storage, session_storage
 from zett.infra.database import session_scope
 from zett.infra.models import KeyValueModel
 from zett.main import app
+from zett.schemas import AgentArtifactWrite, AgentSessionCreate, CardArtifactContent
 
 
 def _provider_payload(**changes):
@@ -390,6 +391,59 @@ def test_session_asset_and_artifact_http_lifecycle():
         assert client.delete(f"/api/agent/{session_id}/artifacts/{artifact_id}").json() == {"ok": True}
         assert client.delete(f"/api/agent/{session_id}/artifacts/{slides_id}").json() == {"ok": True}
         assert client.delete(f"/api/agent/{session_id}/assets/{asset_id}").json() == {"ok": True}
+
+
+async def test_artifact_save_publishes_the_model_draft() -> None:
+    """The browser's save publishes a draft and clears it; the model cannot."""
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
+    draft = await artifact_storage.create(
+        AgentArtifactWrite(
+            session_id=session_id,
+            draft_content=CardArtifactContent(title="Proposed card", content="Model draft"),
+        )
+    )
+    assert draft.content is None
+
+    with TestClient(app) as client:
+        response = client.post(f"/api/agent/{session_id}/artifacts/{draft.id}/save")
+        listing = client.get(f"/api/agent/{session_id}/artifacts").json()
+
+    assert response.status_code == 200
+    published = response.json()
+    assert published["status"] == "saved"
+    assert published["content"]["title"] == "Proposed card"
+    assert published["content"]["content"] == "Model draft"
+    # Saving keeps the draft as a copy of what the user published.
+    assert published["draft_content"] == published["content"]
+    assert listing[0]["content"]["content"] == "Model draft"
+    assert listing[0]["draft_content"] == listing[0]["content"]
+
+
+async def test_artifact_draft_endpoint_never_rewrites_published_content() -> None:
+    """Editing stores a draft; only the save endpoint publishes it."""
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
+    published = await artifact_storage.create(
+        AgentArtifactWrite(
+            session_id=session_id,
+            content=CardArtifactContent(title="Published card", content="Published body"),
+        )
+    )
+
+    with TestClient(app) as client:
+        drafted = client.put(
+            f"/api/agent/{session_id}/artifacts/{published.id}/draft",
+            json={"content": _card_content("Edited title")},
+        )
+
+    assert drafted.status_code == 200
+    body = drafted.json()
+    assert body["content"]["title"] == "Published card"
+    assert body["content"]["content"] == "Published body"
+    assert body["draft_content"]["title"] == "Edited title"
+
+    stored = await artifact_storage.get(published.id)
+    assert stored is not None
+    assert stored.content is not None and stored.content.title == "Published card"
 
 
 def test_artifact_api_rejects_ambiguous_slide_boundaries() -> None:

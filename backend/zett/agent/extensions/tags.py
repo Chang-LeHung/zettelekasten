@@ -48,7 +48,6 @@ class TagExtension(AgentExtension):
             Guidelines:
                 - Inspect existing tags before creating a near-duplicate category.
             """
-            await tag_service.backfill_legacy_artifacts()
             return await tag_service.list_tree()
 
         @tool

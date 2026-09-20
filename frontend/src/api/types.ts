@@ -385,7 +385,10 @@ export interface AgentArtifact {
   session_id: string
   artifact_type: ArtifactType
   status: ArtifactStatus
-  content: ArtifactContent
+  /** Published content. Null until the user saves the artifact's first draft. */
+  content: ArtifactContent | null
+  /** Model-proposed content awaiting an explicit user save. */
+  draft_content: ArtifactContent | null
   raw_content: string | null
   version: number
   metadata: Record<string, unknown>

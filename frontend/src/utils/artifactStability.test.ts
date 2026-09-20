@@ -13,6 +13,7 @@ function artifact(id: string, version = 1): AgentArtifact {
     artifact_type: 'latex_pdf',
     status: 'draft',
     content: { artifact_type: 'latex_pdf', pdf_name: `${id}.pdf`, project_path: `/tmp/${id}` },
+    draft_content: null,
     raw_content: null,
     version,
     metadata: {},

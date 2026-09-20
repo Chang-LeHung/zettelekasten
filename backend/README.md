@@ -27,7 +27,7 @@ Domain rules currently live in `schemas.py`, storage contracts in
 | Session | `zett-agent` | `agent_sessions`, `raw_messages`, `session_snapshots` |
 | Asset | Zett | `session_assets` plus binary files stored by relative object key |
 | Static asset | Zett | `static_assets` plus uploaded files stored by relative object key |
-| Artifact | Zett | `session_artifacts`: card, article, image, slides, latex_pdf |
+| Artifact | Zett | `session_artifacts`: card, article, image, slides, latex_pdf with published `content_json` and model `draft_content_json` |
 | Tag | Zett | `tags`, `artifact_tags` |
 | Provider | Zett | `providers`, with credentials encrypted by the local provider key |
 | Runtime settings | Zett | `key_values` under `settings.runtime` |
@@ -46,6 +46,20 @@ Every persisted file location is a relative `ObjectKey` below
 validation, writes, reads, deletion, and public-URL generation; DAOs never
 construct filesystem paths directly. Importing a Static Asset into a session
 stores the target object key in `source_path` and does not copy the binary.
+
+Artifact content is user-published. Model tools write `draft_content_json` and
+the tool list has no save operation, and the conversation's editing surfaces
+(panel, inline editor, and full editor) stage their edits through the draft
+endpoint. `content_json` changes only when the user publishes a draft with the
+save endpoint or edits a library document from the Library view; both writes
+mirror the published content into `draft_content_json`, so the draft is always
+the working copy and matches `content_json` right after a save. An empty
+`content_json` means the artifact was never published.
+`AgentArtifact.editable_content` is the draft-first view shared by the
+conversation UI, previews, search, and the draft-versus-published diff, and
+`ArtifactPruner` returns `published_content` and `draft_content` previews
+together so a querying model can compare what the user kept with what it
+proposes.
 
 ## HTTP surface
 
@@ -67,7 +81,9 @@ Everything is mounted under `/api`.
 | `/api/files/{key}` | The only binary content endpoint; streams one ObjectStore key |
 | `/api/agent/{id}/assets*` | Session asset CRUD, upload, rename, and Static Asset object references |
 | `/api/assets*` | Session-independent file listing, upload, metadata, and deletion |
-| `/api/agent/{id}/artifacts*`, `GET /api/artifacts` | Artifact CRUD, save, per-session listing, and library-wide search |
+| `/api/agent/{id}/artifacts*`, `GET /api/artifacts` | Artifact CRUD, per-session listing, and library-wide search |
+| `/api/agent/{id}/artifacts/{artifact_id}/draft` | Stage edited content as the draft without touching published content |
+| `/api/agent/{id}/artifacts/{artifact_id}/save` | Publish the pending draft as the artifact's content (user action) |
 | `/api/agent/{id}/artifacts/{artifact}` | Artifact metadata; `content_url` addresses its unified file key |
 | `/api/ai/providers*` | Model endpoint configuration |
 | `/api/settings` | Read or replace runtime limits |

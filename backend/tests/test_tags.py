@@ -76,10 +76,11 @@ async def test_tag_deletion_protects_children_and_assignments() -> None:
     assert refreshed is not None and refreshed.tags == []
 
 
-async def test_library_tag_api_backfills_old_artifacts_and_filters_a_parent_subtree() -> None:
+async def test_library_tag_api_filters_a_parent_subtree_and_blocks_its_deletion() -> None:
     session_id = (await session_storage.create(AgentSessionCreate())).session_id
     artifact = await tagged_card(session_id)
-    assert artifact.tags == []
+    confirmed = await tag_service.sync_confirmed_suggestions(artifact)
+    assert [tag.path for tag in confirmed.tags] == ["Engineering/Python/Asyncio"]
 
     with TestClient(app) as client:
         tree = client.get("/api/library/tags").json()
@@ -94,7 +95,7 @@ async def test_library_tag_api_backfills_old_artifacts_and_filters_a_parent_subt
         blocked = client.delete(f"/api/library/tags/{root_id}?recursive=true")
         assert blocked.status_code == 409
 
-        # Clearing a confirmed assignment must not let legacy suggestions recreate it.
+        # Clearing a confirmed assignment removes the assignment for good.
         assert client.put(f"/api/library/tags/artifacts/{artifact.id}", json={"paths": []}).status_code == 200
         assert client.get("/api/library/tags").json()[0]["total_count"] == 0
         assert client.delete(f"/api/library/tags/{root_id}?recursive=true").json() == {"ok": True}
@@ -103,6 +104,7 @@ async def test_library_tag_api_backfills_old_artifacts_and_filters_a_parent_subt
 async def test_library_tag_api_force_delete_removes_all_artifact_assignments() -> None:
     session_id = (await session_storage.create(AgentSessionCreate())).session_id
     artifact = await tagged_card(session_id)
+    await tag_service.sync_confirmed_suggestions(artifact)
 
     with TestClient(app) as client:
         tree = client.get("/api/library/tags").json()

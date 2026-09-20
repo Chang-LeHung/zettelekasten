@@ -2,11 +2,9 @@
 
 from dataclasses import dataclass
 
-from ..infra.dao import artifact_storage, key_value_storage, tag_storage
-from ..models import ArtifactListOptions, TagListOptions
+from ..infra.dao import artifact_storage, tag_storage
+from ..models import TagListOptions
 from ..schemas import AgentArtifact, ArtifactStatus, TagOut, TagTreeOut, TagWrite
-
-LEGACY_TAG_BACKFILL_KEY = "library.tags.backfilled.v1"
 
 
 def normalize_tag_path(path: str) -> tuple[str, str, tuple[str, ...]]:
@@ -158,29 +156,11 @@ class TagService:
 
     async def sync_confirmed_suggestions(self, artifact: AgentArtifact) -> AgentArtifact:
         """Promote the suggestions retained by the UI into persistent assignments."""
-        if artifact.status != ArtifactStatus.SAVED or not hasattr(artifact.content, "suggested_tags"):
+        content = artifact.editable_content
+        if artifact.status != ArtifactStatus.SAVED or not hasattr(content, "suggested_tags"):
             return artifact
-        paths = [tag.path for tag in artifact.content.suggested_tags]
+        paths = [tag.path for tag in content.suggested_tags]
         return await self.replace_artifact_tags(artifact.id, paths)
-
-    async def backfill_legacy_artifacts(self) -> None:
-        """Materialize tags embedded by releases predating the assignment table."""
-        if await key_value_storage.get(LEGACY_TAG_BACKFILL_KEY) is not None:
-            return
-        offset = 0
-        while True:
-            artifacts = await artifact_storage.list(
-                ArtifactListOptions(statuses=(ArtifactStatus.SAVED,), limit=500, offset=offset)
-            )
-            for artifact in artifacts:
-                if not artifact.tags and hasattr(artifact.content, "suggested_tags"):
-                    paths = [tag.path for tag in artifact.content.suggested_tags]
-                    if paths:
-                        await self.replace_artifact_tags(artifact.id, paths)
-            if len(artifacts) < 500:
-                await key_value_storage.update(LEGACY_TAG_BACKFILL_KEY, True)
-                return
-            offset += len(artifacts)
 
     @staticmethod
     async def require(tag_id: str) -> TagOut:
