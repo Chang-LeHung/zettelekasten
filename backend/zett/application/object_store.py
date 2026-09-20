@@ -121,6 +121,18 @@ class ObjectStore(Protocol):
             that exact object key currently resolves to a file.
         """
 
+    async def delete_tree(self, key: str | ObjectKey) -> int:
+        """Delete every object below one directory key and return their count.
+
+        Example:
+            ``await store.delete_tree("assets/sessions/session-1")`` removes the
+            files a deleted conversation owned, including uploaded message
+            images that no metadata row points at individually.
+
+        Deleting an absent directory is a no-op so callers can clean up
+        unconditionally while removing one session.
+        """
+
     def ensure_directory(self, key: str | ObjectKey) -> Path:
         """Create and return one directory below the storage root.
 
@@ -148,6 +160,27 @@ def session_asset_key(session_id: str, asset_id: str, suffix: str = "") -> Objec
         ``assets/sessions/session-1/asset-1.png``.
     """
     return join_object_key("assets", "sessions", session_id, f"{asset_id}{suffix}")
+
+
+def session_directory_key(session_id: str) -> ObjectKey:
+    """Return the canonical directory every session-owned upload lives below.
+
+    Example:
+        ``session_directory_key("session-1")`` returns
+        ``assets/sessions/session-1``, which a deleted session removes whole.
+    """
+    return join_object_key("assets", "sessions", session_id)
+
+
+def session_upload_key(session_id: str, upload_name: str) -> ObjectKey:
+    """Return the canonical key for one file submitted with a conversation turn.
+
+    Example:
+        ``session_upload_key("session-1", "20260920T144512123456Z-1-clipboard.png")``
+        returns
+        ``assets/sessions/session-1/uploads/20260920T144512123456Z-1-clipboard.png``.
+    """
+    return join_object_key("assets", "sessions", session_id, "uploads", upload_name)
 
 
 def static_asset_key(asset_id: str, suffix: str = "") -> ObjectKey:

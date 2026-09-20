@@ -86,6 +86,24 @@ class LocalObjectStore(ObjectStore):
         self._remove_empty_parents(path.parent)
         return True
 
+    async def delete_tree(self, key: str | ObjectKey) -> int:
+        """Delete every file below one directory key, then the directory itself."""
+        directory = self.resolve(key)
+        if not directory.is_dir():
+            return 0
+        removed = 0
+        # Unlink files before their directories so no half-deleted tree can
+        # survive a failure partway through the walk.
+        for candidate in sorted(directory.rglob("*"), key=lambda item: len(item.parts), reverse=True):
+            if candidate.is_file() or candidate.is_symlink():
+                candidate.unlink()
+                removed += 1
+            elif candidate.is_dir():
+                candidate.rmdir()
+        directory.rmdir()
+        self._remove_empty_parents(directory.parent)
+        return removed
+
     async def exists(self, key: str | ObjectKey) -> bool:
         return self.resolve(key).is_file()
 

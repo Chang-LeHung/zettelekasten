@@ -30,6 +30,7 @@
 ## Agent Context
 
 - Do not add per-turn injections that rebuild the leading system prefix. A conversation starts with none of that state, and later tool calls and results already carry it, so rebuilding the prefix invalidates prompt-cache prefixes without adding unseen information. `ArtifactExtension.on_tool`, `AssetExtension.on_tool`, and `TagExtension.on_tool` record this decision for their own domains.
+- `SessionFilesExtension.on_state` adds one system message naming the session's own file directory. It names a location rather than a snapshot, so its text is identical on every turn of one session and never rebuilds the prefix; which uploads exist stays readable through the filesystem tools.
 - Retrieve existing knowledge through tools (`query_artifacts`, `list_assets`, `list_tags`), not through injected snapshots.
 - Artifact content is user-published. Model tools write `draft_content` only and never expose a save tool, `update_artifact` patches only the fields it is given and edits body snippets through `content_edits`, and the conversation's edit surfaces stage drafts through `PUT /api/agent/{id}/artifacts/{artifact_id}/draft`. `content` changes only when the user saves the artifact (`POST /api/agent/{id}/artifacts/{artifact_id}/save`) or edits a library document from the Library view, and those writes mirror the published content back into `draft_content` so the draft is always the model's working copy. `AgentArtifactEntity.editable_content` is the draft-first view the UI, previews, search, and the diff share, and `ArtifactPruner` returns `published_content` and `draft_content` together so the model can compare them.
 - Keep model-facing artifact previews bounded: `ArtifactPruner` projects search results, complete documents are read only on explicit request, and server-owned object keys such as a LaTeX `project_path` never appear in a preview.
@@ -69,10 +70,11 @@
 - Persist every file location as an `ObjectKey` relative to `settings.storage_root`; never store absolute paths or entity-specific content URLs. `ObjectStore` owns path containment, filesystem access, and unified `/api/files/{key}` URL generation.
 - The default `storage_root` is `~/.zettelekasten`; there is no legacy `~/.zett` compatibility path.
 - Store session binary assets under `assets/sessions/{session_id}/` and session-independent uploads under `assets/static/`.
+- Images submitted with a message are written at submit time under `assets/sessions/{session_id}/uploads/`, named by submission time. They are session files, not Session Assets: the message keeps its inline data URL, no `session_assets` row is created, and the model reaches the bytes through the path rather than through `list_assets`.
 - Importing a Static Asset into a session creates a URL reference and must not copy the global binary unless the user explicitly uploads it into that session.
 - Store LaTeX artifact projects under `artifacts/{session_id}/`; `project_path` is the relative object key and `ObjectStore` validates containment and symlink escape before every read.
 - Never expose absolute filesystem paths in public models; relative `ObjectKey` values are allowed.
-- Delete owned artifacts, tag links, and asset files explicitly before removing the Agent session. Do not rely on foreign keys or cascades.
+- Delete owned artifacts, tag links, and asset files explicitly before removing the Agent session. Deleting a session also removes its whole `assets/sessions/{session_id}/` directory, which collects message uploads that no row points at. Do not rely on foreign keys or cascades.
 - Tests must exercise actual temporary SQLite databases and clean up their data.
 
 ## Documentation

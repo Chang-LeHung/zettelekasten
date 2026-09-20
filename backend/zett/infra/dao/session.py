@@ -2,6 +2,7 @@
 
 from zett_agent import RawMessageRecord, SessionSummary
 
+from ...application.message_files import delete_session_files
 from ...schemas import AgentSessionCreate, SessionListOptions
 from ..agent_runtime import get_agent_runtime_storage
 from ..storage import AsyncStorage
@@ -18,9 +19,9 @@ class SessionStorage(AsyncStorage[AgentSessionCreate, SessionSummary, str, Sessi
     threads here to keep the ASGI loop free.
 
     Deletion explicitly removes the Agent session and its history as well as the
-    owned artifacts and asset files. The two databases and filesystem do not
-    share a transaction; cleanup is idempotent so a failed deletion can be
-    retried.
+    owned artifacts, asset files, and uploaded message images. The two databases
+    and filesystem do not share a transaction; cleanup is idempotent so a failed
+    deletion can be retried.
     """
 
     async def create(self, entity: AgentSessionCreate) -> SessionSummary:
@@ -45,6 +46,9 @@ class SessionStorage(AsyncStorage[AgentSessionCreate, SessionSummary, str, Sessi
         result = await get_agent_runtime_storage().delete_session(entity_id)
         await artifact_storage.delete_session(entity_id)
         await session_asset_storage.delete_session(entity_id)
+        # Asset rows and message uploads both live below the session directory.
+        # Removing it whole also collects uploads that no row pointed at.
+        await delete_session_files(entity_id)
         return result
 
     async def list(self, options: SessionListOptions | None = None) -> list[SessionSummary]:

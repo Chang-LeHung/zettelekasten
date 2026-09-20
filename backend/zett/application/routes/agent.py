@@ -36,6 +36,7 @@ from ...infra.log import get_logger
 from ...infra.shell_approval import shell_approval_storage
 from ...messages import MessageImageSizeExceeded, MessagePartCodec, MessagePartError
 from ...schemas import ProviderConnection
+from ..message_files import store_message_images
 from ..schemas import (
     AnalyzeRequest,
     AtCommandOut,
@@ -176,6 +177,21 @@ def _user_message(payload: UserMessageIn, *, max_images: int, max_asset_size_byt
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
 
 
+async def _store_message_images(session_id: str, payload: UserMessageIn) -> None:
+    """Persist submitted images as session files without ever dropping the turn.
+
+    The message already carries its images inline, so the files are the model's
+    handle on the same bytes rather than the only copy. A storage failure
+    therefore degrades the turn instead of rejecting a message the user already
+    wrote; the upload directory named in the session-files system message simply
+    stays empty for that turn.
+    """
+    try:
+        await store_message_images(session_id, payload)
+    except Exception:
+        logger.exception("Could not store submitted message images; session_id=%s", session_id)
+
+
 async def _prepare_agent_request(session_id: str, payload: AnalyzeRequest) -> _PreparedAgentRequest:
     """Validate input, reserve its session, and construct request-owned resources."""
     if await session_storage.get(session_id) is None:
@@ -194,6 +210,7 @@ async def _prepare_agent_request(session_id: str, payload: AnalyzeRequest) -> _P
         max_images=runtime_settings.max_message_images,
         max_asset_size_bytes=runtime_settings.max_asset_size_bytes,
     )
+    await _store_message_images(session_id, payload)
     await shell_approval_storage.set_session_mode(session_id, ShellApprovalMode(payload.shell_approval_mode))
     config = AgentRunConfig(session_id=session_id)
     await active_requests.reserve(config)

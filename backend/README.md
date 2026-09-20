@@ -27,6 +27,7 @@ Domain rules currently live in `schemas.py`, storage contracts in
 | --- | --- | --- |
 | Session | `zett-agent` | `agent_sessions`, `raw_messages`, `session_snapshots` |
 | Asset | Zett | `session_assets` plus binary files stored by relative object key |
+| Message upload | Zett | `assets/sessions/<session-id>/uploads/` files written at submit time; no metadata row |
 | Static asset | Zett | `static_assets` plus uploaded files stored by relative object key |
 | Artifact | Zett | `session_artifacts`: card, article, image, slides, latex_pdf with published `content_json` and model `draft_content_json` |
 | Tag | Zett | `tags`, `artifact_tags` |
@@ -47,6 +48,15 @@ Every persisted file location is a relative `ObjectKey` below
 validation, writes, reads, deletion, and public-URL generation; DAOs never
 construct filesystem paths directly. Importing a Static Asset into a session
 stores the target object key in `source_path` and does not copy the binary.
+
+Submitting a message with images writes those images to the session's own
+directory as well, under `assets/sessions/<session-id>/uploads/`, named by
+submission time. The user message keeps its inline data URL, so the browser
+still renders from the message and the raw log stays a complete immutable
+record; the files are the handle a model needs for `view_image`, a LaTeX build,
+or a shell command. They are not Session Assets: nothing is listed by
+`list_assets`, and deleting the session removes the whole session directory, so
+uploads no row points at cannot leak.
 
 Artifact content is user-published. Model tools write `draft_content_json` and
 the tool list has no save operation, and the conversation's editing surfaces
@@ -109,6 +119,13 @@ backpressure to the running turn.
 Conversation context is restored from the newest snapshot plus the Raw Log
 after its boundary; per-turn workspace and taxonomy injections were removed so
 the leading system prefix stays stable.
+
+`SessionFilesExtension` adds one stable system message naming the conversation's
+own file directory, alongside the runtime's `# Filesystem environment` and
+`# Tool snippets` instructions. It is byte-identical on every turn of a session
+because it names a directory rather than listing state: which uploads exist is
+left to the filesystem tools, so submitting another image never rewrites the
+leading prefix.
 
 The `ZettelkastenAgent` container loads application extensions from its
 configuration. Each `ZettelkastenExt` can register slash commands with a name,

@@ -40,6 +40,7 @@ from .extensions import (
     ArtifactExtension,
     AssetExtension,
     ContextCompositionExtension,
+    SessionFilesExtension,
     TagExtension,
 )
 from .plugins import SessionReferenceExtension
@@ -89,6 +90,7 @@ class ZettelkastenAgent(ZettelkastenContainer):
                 server_keys=config.mcp_server_keys,
             ),
             ToolGuidelinesExtension(),
+            SessionFilesExtension(),
             ContextCompositionExtension(config.context_composition_recorder),
             ModelRequestTraceExtension(),
         ]

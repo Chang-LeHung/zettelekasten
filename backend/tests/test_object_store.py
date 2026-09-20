@@ -32,6 +32,22 @@ async def test_local_object_store_writes_and_addresses_one_relative_key(tmp_path
     assert await store.exists(key) is False
 
 
+async def test_local_object_store_deletes_a_whole_tree_and_prunes_its_parents(tmp_path) -> None:
+    store = LocalObjectStore(tmp_path)
+    session_directory = ObjectKey("assets/sessions/session-1")
+    await store.write("assets/sessions/session-1/uploads/first.png", b"first")
+    await store.write("assets/sessions/session-1/uploads/second.png", b"second")
+    await store.write("assets/sessions/session-1/asset-1.pdf", b"asset")
+    await store.write("assets/sessions/session-2/uploads/kept.png", b"kept")
+
+    assert await store.delete_tree(session_directory) == 3
+
+    assert not store.resolve(session_directory).exists()
+    assert await store.exists("assets/sessions/session-2/uploads/kept.png")
+    # An absent directory is a no-op so session cleanup can stay unconditional.
+    assert await store.delete_tree(session_directory) == 0
+
+
 def test_local_object_store_rejects_symlink_escape(tmp_path) -> None:
     root = tmp_path / "root"
     outside = tmp_path / "outside"

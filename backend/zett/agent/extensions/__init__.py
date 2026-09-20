@@ -9,6 +9,7 @@ capabilities such as slash commands and ``@`` references live in
 from .artifacts import ArtifactExtension
 from .assets import AssetDetails, AssetExtension, AssetInput
 from .context_composition import CONTEXT_COMPOSITION_EVENT, ContextCompositionExtension, context_composition
+from .session_files import SessionFilesExtension
 from .tags import TagExtension
 
 __all__ = [
@@ -18,6 +19,7 @@ __all__ = [
     "AssetInput",
     "CONTEXT_COMPOSITION_EVENT",
     "ContextCompositionExtension",
+    "SessionFilesExtension",
     "TagExtension",
     "context_composition",
 ]

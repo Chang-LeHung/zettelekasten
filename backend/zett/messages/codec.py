@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 import re
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from zett_agent import (
     ImageBytesSource,
@@ -43,6 +44,18 @@ _DATA_URL_HEADER = re.compile(r"^data:(image/[A-Za-z0-9.+-]+);base64$")
 _REMOTE_SCHEMES = ("http://", "https://")
 
 _IMAGE_MIME = re.compile(IMAGE_MIME_PATTERN)
+
+
+@dataclass(frozen=True, slots=True)
+class DecodedImage:
+    """One validated image payload decoded from a frontend data URL."""
+
+    #: Browser-supplied display name, such as ``clipboard.png``.
+    name: str
+    #: MIME type carried by the data URL rather than declared separately.
+    mime_type: str
+    #: Encoded image file bytes, not decoded pixels or base64 text.
+    data: bytes
 
 
 class MessagePartCodec:
@@ -131,6 +144,27 @@ class MessagePartCodec:
                     raise UnsupportedMessagePartError(f"Unsupported message part: {type(part).__name__}")
         return parts
 
+    def decode_images(self, front: FrontUserMessage) -> list[DecodedImage]:
+        """Decode every base64 image part so a caller can persist the bytes.
+
+        Validation is identical to :meth:`to_user_message`, so these are exactly
+        the bytes the model receives. Images submitted as remote http(s) URLs
+        carry no local payload and are skipped rather than reported as empty.
+
+        Example:
+            Persist one submitted message's images::
+
+                for image in MessagePartCodec().decode_images(front):
+                    store.write(upload_key, image.data)
+        """
+        images: list[DecodedImage] = []
+        for part in front.parts:
+            if not isinstance(part, FrontImagePart) or part.content_url.startswith(_REMOTE_SCHEMES):
+                continue
+            mime_type, encoded, _ = self._data_url_payload(part.name, part.mime_type, part.content_url)
+            images.append(DecodedImage(name=part.name, mime_type=mime_type, data=base64.b64decode(encoded)))
+        return images
+
     @staticmethod
     def _text_content(text: str) -> TextContent | None:
         if isinstance(text, _BYTE_TYPES):
@@ -148,16 +182,21 @@ class MessagePartCodec:
             raise MessagePartBytesError(f"Image {name!r} must carry base64 text, not raw bytes")
         if content_url.startswith(_REMOTE_SCHEMES):
             return ImageContent(source=ImageUrlSource(content_url), alt_text=name), 0
+        data_mime, encoded, size = self._data_url_payload(name, mime_type, content_url)
+        source = ImageUrlSource(f"{self.image_url_prefix}{data_mime};base64,{encoded}")
+        return ImageContent(source=source, alt_text=name), size
+
+    @classmethod
+    def _data_url_payload(cls, name: str, mime_type: str | None, content_url: str) -> tuple[str, str, int]:
+        """Validate one base64 data URL and return its MIME type, payload, and size."""
         header, separator, payload = content_url.partition(",")
         if not separator:
             raise InvalidImagePayloadError(f"Image {name!r} must be a base64 data URL or an http(s) URL")
-        data_mime = self._data_url_mime(header, name)
+        data_mime = cls._data_url_mime(header, name)
         if mime_type is not None and mime_type != data_mime:
             raise InvalidImagePayloadError(f"Image {name!r} declares {mime_type} but its data URL carries {data_mime}")
         encoded = "".join(payload.split())
-        size = self._decoded_size(encoded, name)
-        source = ImageUrlSource(f"{self.image_url_prefix}{data_mime};base64,{encoded}")
-        return ImageContent(source=source, alt_text=name), size
+        return data_mime, encoded, cls._decoded_size(encoded, name)
 
     @classmethod
     def _front_image(cls, part: ImageContent) -> FrontImagePart:
@@ -205,4 +244,4 @@ class MessagePartCodec:
         return size
 
 
-__all__ = ["MessagePartCodec"]
+__all__ = ["DecodedImage", "MessagePartCodec"]

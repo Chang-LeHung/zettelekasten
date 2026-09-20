@@ -9,7 +9,7 @@ zett-agent content types directly:
   stored messages back into the browser shape
 """
 
-from .codec import MessagePartCodec
+from .codec import DecodedImage, MessagePartCodec
 from .errors import (
     InvalidImagePayloadError,
     MessageImageCountExceeded,
@@ -28,6 +28,7 @@ from .front import (
 )
 
 __all__ = [
+    "DecodedImage",
     "IMAGE_MIME_PATTERN",
     "FrontImagePart",
     "FrontMessagePart",
