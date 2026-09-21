@@ -58,6 +58,8 @@ class ZettelkastenAgentConfig:
     mcp_servers: tuple[McpServer, ...] = ()
     mcp_config_path: str | Path | None = DEFAULT_ZETT_MCP_CONFIG_PATH
     mcp_server_keys: tuple[str, ...] = DEFAULT_MCP_SERVER_KEYS
+    interactive: bool = True
+    coding_enabled: bool = True
 
     def __post_init__(self) -> None:
         if not self.session_id.strip():

@@ -75,9 +75,6 @@ class ZettelkastenAgent(ZettelkastenContainer):
             AssetExtension(max_asset_size_bytes=config.max_asset_size_bytes),
             ArtifactExtension(),
             TagExtension(),
-            ShellApprovalExtension(config.shell_approval_storage),
-            CodingExtension(),
-            AskUserExtension(),
             TodoWriteExtension(),
             CompactionExtension(
                 max_tokens=config.compaction_max_tokens,
@@ -94,6 +91,15 @@ class ZettelkastenAgent(ZettelkastenContainer):
             ContextCompositionExtension(config.context_composition_recorder),
             ModelRequestTraceExtension(),
         ]
+        if config.coding_enabled:
+            extensions.extend(
+                (
+                    ShellApprovalExtension(config.shell_approval_storage),
+                    CodingExtension(),
+                )
+            )
+        if config.interactive:
+            extensions.append(AskUserExtension())
         if config.usage_activity_storage is not None:
             extensions.append(UsageActivityExtension(config.usage_activity_storage))
         self.agent = Agent(
