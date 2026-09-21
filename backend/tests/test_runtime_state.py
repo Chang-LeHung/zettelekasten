@@ -1,9 +1,12 @@
 """Runtime state and stop-controller behavior."""
 
+import asyncio
 import json
+import os
 import socket
 import subprocess
 import sys
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -11,9 +14,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from zett.config import settings
-from zett.infra.scheduler.runtime_state import RuntimeProcessController, RuntimeStateStore
+from zett.infra.scheduler.runtime_state import (
+    RuntimeProcessController,
+    RuntimeStateStore,
+    RuntimeWatchdog,
+)
 from zett.main import app
-from zett.schemas import ServerRuntimeState
+from zett.schemas import ProcessRole, ServerRuntimeState
 
 
 async def test_runtime_state_round_trip_accepts_partial_records_and_removes_file(tmp_path: Path) -> None:
@@ -113,6 +120,67 @@ async def test_stop_terminates_a_live_recorded_server(tmp_path: Path) -> None:
         if process.poll() is None:
             process.kill()
             process.wait()
+
+
+async def test_runtime_watchdog_accepts_only_complete_owned_state(tmp_path: Path) -> None:
+    store = RuntimeStateStore(tmp_path / "runtime.json")
+
+    async def on_orphaned(reason: str) -> None:
+        del reason
+
+    watchdog = RuntimeWatchdog(
+        role=ProcessRole.SCHEDULER,
+        pid=12345,
+        store=store,
+        interval_seconds=0.01,
+        on_orphaned=on_orphaned,
+    )
+
+    assert "missing" in (await watchdog.check_once() or "")
+
+    await store.write(ServerRuntimeState(server_pid=None, port=6280, scheduler_pids=[12345]))
+    assert await watchdog.check_once() == "runtime state has no server_pid"
+
+    await store.write(
+        ServerRuntimeState(
+            server_pid=os.getpid(),
+            port=6280,
+            scheduler_pids=[],
+        )
+    )
+    assert "not registered" in (await watchdog.check_once() or "")
+
+    await store.write(
+        ServerRuntimeState(
+            server_pid=os.getpid(),
+            port=6280,
+            scheduler_pids=[12345],
+        )
+    )
+    assert await watchdog.check_once() is None
+
+
+async def test_runtime_watchdog_exits_after_repeated_failures(tmp_path: Path) -> None:
+    exited = threading.Event()
+
+    async def on_orphaned(reason: str) -> None:
+        del reason
+        exited.set()
+
+    watchdog = RuntimeWatchdog(
+        role=ProcessRole.WORKER,
+        pid=12345,
+        store=RuntimeStateStore(tmp_path / "runtime.json"),
+        interval_seconds=0.01,
+        failure_threshold=2,
+        on_orphaned=on_orphaned,
+    )
+
+    await watchdog.start()
+    try:
+        assert await asyncio.to_thread(exited.wait, 1)
+    finally:
+        await watchdog.stop()
 
 
 def test_fastapi_lifespan_writes_and_removes_runtime_state() -> None:

@@ -13,7 +13,7 @@ from .infra.log import configure_logging, get_logger, uvicorn_log_config
 from .infra.persistence.database import init_db
 from .infra.scheduler import ActionExecutorRegistry, SchedulerRunner, WorkerRunner
 from .infra.scheduler.processes import ProcessHeartbeatPublisher
-from .infra.scheduler.runtime_state import RuntimeProcessController, RuntimeStateStore
+from .infra.scheduler.runtime_state import RuntimeProcessController, RuntimeStateStore, RuntimeWatchdog
 from .schemas import ProcessRole, ServerRuntimeState
 
 app = typer.Typer(help="Zett")
@@ -125,6 +125,20 @@ def worker(
 async def _run_with_heartbeat(runner: SchedulerRunner | WorkerRunner, role: ProcessRole, instance_id: str) -> None:
     """Run one scheduler or worker alongside its independent heartbeat task."""
     heartbeat = ProcessHeartbeatPublisher(role=role, instance_id=instance_id)
+
+    async def stop_orphaned(reason: str) -> None:
+        logger.error(
+            "Runtime watchdog stopped orphaned process; role=%s instance_id=%s reason=%s",
+            role.value,
+            instance_id,
+            reason,
+        )
+        if isinstance(runner, WorkerRunner):
+            await runner.stop()
+        else:
+            runner.stop()
+
+    watchdog = RuntimeWatchdog(role=role, on_orphaned=stop_orphaned) if settings.process_watchdog_enabled else None
     heartbeat_started = False
     try:
         try:
@@ -132,8 +146,12 @@ async def _run_with_heartbeat(runner: SchedulerRunner | WorkerRunner, role: Proc
             heartbeat_started = True
         except Exception:
             logger.exception("Could not start process heartbeat; role=%s instance_id=%s", role.value, instance_id)
+        if watchdog is not None:
+            await watchdog.start()
         await runner.run_forever()
     finally:
+        if watchdog is not None:
+            await watchdog.stop()
         if heartbeat_started:
             await heartbeat.stop()
 

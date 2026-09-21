@@ -8,11 +8,12 @@ import socket
 import subprocess  # noqa: S404
 import tempfile
 import time
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
 from ...config import settings
-from ...schemas import ServerRuntimeState
+from ...schemas import ProcessRole, ServerRuntimeState
 from ..log import get_logger
 
 logger = get_logger(__name__)
@@ -200,3 +201,88 @@ class RuntimeProcessController:
         except OSError, subprocess.SubprocessError:
             return []
         return [int(value) for value in result.stdout.split() if value.isdigit()]
+
+
+class RuntimeWatchdog:
+    """Exit a scheduler/worker when its owning FastAPI process disappears.
+
+    FastAPI can crash without running lifespan cleanup, while scheduler and
+    worker subprocesses keep running. The runtime file is therefore treated as
+    the parent lease: the child requires a complete file, a live server PID,
+    and its own PID in the scheduler/worker list. Repeated validation failures
+    mean the process is orphaned, so it exits instead of continuing forever.
+    """
+
+    def __init__(
+        self,
+        *,
+        role: ProcessRole,
+        pid: int | None = None,
+        store: RuntimeStateStore | None = None,
+        interval_seconds: float = settings.process_watchdog_interval_seconds,
+        failure_threshold: int = settings.process_watchdog_failure_threshold,
+        on_orphaned: Callable[[str], Awaitable[None]],
+    ) -> None:
+        self.role = role
+        self.pid = pid or os.getpid()
+        self.store = store or RuntimeStateStore()
+        self.interval_seconds = max(0.1, interval_seconds)
+        self.failure_threshold = max(1, failure_threshold)
+        self.on_orphaned = on_orphaned
+        self._task: asyncio.Task[None] | None = None
+
+    async def start(self) -> None:
+        """Start the periodic parent-lease validation loop."""
+        if self._task is None:
+            self._task = asyncio.create_task(self._run(), name=f"runtime-watchdog:{self.role.value}")
+
+    async def stop(self) -> None:
+        """Stop the watchdog during normal process cleanup."""
+        if self._task is not None:
+            self._task.cancel()
+            await asyncio.gather(self._task, return_exceptions=True)
+            self._task = None
+
+    async def check_once(self) -> str | None:
+        """Return a terminal reason when this process is no longer owned."""
+        state = await self.store.read()
+        if state is None:
+            return "runtime state file is missing, unreadable, or malformed"
+        if state.server_pid is None:
+            return "runtime state has no server_pid"
+        if state.port is None:
+            return "runtime state has no port"
+        if not RuntimeProcessController._pid_running(state.server_pid):
+            return f"owning FastAPI process {state.server_pid} is not running"
+        role_pids = state.scheduler_pids if self.role is ProcessRole.SCHEDULER else state.worker_pids
+        if self.pid not in role_pids:
+            return f"current {self.role.value} PID {self.pid} is not registered in runtime state"
+        return None
+
+    async def _run(self) -> None:
+        failures = 0
+        while True:
+            await asyncio.sleep(self.interval_seconds)
+            reason = await self.check_once()
+            if reason is None:
+                failures = 0
+                continue
+            failures += 1
+            logger.error(
+                "Runtime watchdog validation failed; role=%s pid=%d failures=%d/%d reason=%s",
+                self.role.value,
+                self.pid,
+                failures,
+                self.failure_threshold,
+                reason,
+            )
+            if failures < self.failure_threshold:
+                continue
+            logger.error(
+                "Runtime watchdog is terminating orphaned process; role=%s pid=%d reason=%s",
+                self.role.value,
+                self.pid,
+                reason,
+            )
+            await self.on_orphaned(reason)
+            return

@@ -25,6 +25,14 @@ class Settings:
     supervisor_poll_seconds: float = float(os.getenv("ZETT_SUPERVISOR_POLL_SECONDS", "5"))
     heartbeat_interval_seconds: float = float(os.getenv("ZETT_HEARTBEAT_INTERVAL_SECONDS", "5"))
     heartbeat_timeout_seconds: float = float(os.getenv("ZETT_HEARTBEAT_TIMEOUT_SECONDS", "20"))
+    process_watchdog_enabled: bool = os.getenv("ZETT_PROCESS_WATCHDOG_ENABLED", "true").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    process_watchdog_interval_seconds: float = float(os.getenv("ZETT_PROCESS_WATCHDOG_INTERVAL_SECONDS", "5"))
+    process_watchdog_failure_threshold: int = int(os.getenv("ZETT_PROCESS_WATCHDOG_FAILURE_THRESHOLD", "3"))
     worker_processes: int = int(os.getenv("ZETT_WORKER_PROCESSES", "1"))
 
 

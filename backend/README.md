@@ -180,6 +180,11 @@ The Web lifespan writes server PID, port, scheduler PIDs, and worker PIDs to
 recorded server and child processes, and removes the file. Stale or partial
 runtime state is cleaned before a new server starts.
 
+Scheduler and worker processes also run a watchdog against that file. They exit
+after repeated failures when the file is missing or incomplete, when the owning
+FastAPI PID is gone, or when their own PID is no longer registered. This prevents
+orphaned workers from continuing after an unclean Web-process crash.
+
 The FastAPI lifespan runs a lightweight process supervisor. Scheduler and
 worker processes post heartbeats to `/api/health/processes/heartbeat`; FastAPI
 keeps the latest values in an in-memory registry. The supervisor keeps local
@@ -225,6 +230,9 @@ transactions. The Web process writes `logs/zett.log`, the scheduler writes
 | `ZETT_SUPERVISOR_POLL_SECONDS` | Process supervision interval |
 | `ZETT_HEARTBEAT_INTERVAL_SECONDS` | Scheduler and worker heartbeat interval |
 | `ZETT_HEARTBEAT_TIMEOUT_SECONDS` | Age after which a process heartbeat is stale |
+| `ZETT_PROCESS_WATCHDOG_ENABLED` | Enable the orphan-process watchdog for scheduler and worker |
+| `ZETT_PROCESS_WATCHDOG_INTERVAL_SECONDS` | Interval between runtime ownership checks |
+| `ZETT_PROCESS_WATCHDOG_FAILURE_THRESHOLD` | Consecutive failures required before a child exits |
 | `ZETT_WORKER_PROCESSES` | Required number of execution worker processes |
 
 Conversation limits are user settings rather than environment variables:
