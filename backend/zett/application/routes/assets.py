@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
-from ...infra.dao import session_asset_storage, session_storage
+from ...infra.persistence.dao import session_asset_storage, session_storage
 from ...schemas import SessionAssetCreate, SessionAssetEntity, SessionAssetListOptions, SessionAssetType
 from ..asset_names import AssetRenameIn, rename_asset
 from ..schemas import DeleteResponse, LinkAssetIn, TextAssetIn

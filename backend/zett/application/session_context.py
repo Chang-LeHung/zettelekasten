@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from zett_agent import ModelRequest, SQLiteSessionStorage, SystemMessage
 
 from ..agent.extensions.context_composition import context_composition
-from ..infra.dao import KeyValueStorage, key_value_storage
+from ..infra.persistence.dao import KeyValueStorage, key_value_storage
 
 SESSION_CONTEXT_KEY_PREFIX = "sessions.context-composition."
 

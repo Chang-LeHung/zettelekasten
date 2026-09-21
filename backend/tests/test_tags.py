@@ -6,7 +6,7 @@ from zett_agent import AgentRunConfig, AgentRunContext, AgentState
 
 from zett.agent.extensions import TagExtension
 from zett.application.tagging import tag_service
-from zett.infra.dao import artifact_storage, session_storage, tag_storage
+from zett.infra.persistence.dao import artifact_storage, session_storage, tag_storage
 from zett.main import app
 from zett.schemas import (
     AgentArtifactWrite,

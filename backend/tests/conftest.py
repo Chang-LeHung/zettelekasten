@@ -10,11 +10,11 @@ from zett_agent import AssistantMessage, ModelEvent, ModelRequest, ModelResponse
 from zett import config
 from zett.application import provider_connections
 from zett.application.health import process_heartbeat_registry
-from zett.infra import database
 from zett.infra.artifacts.search import ensure_artifact_search
 from zett.infra.files import object_store as object_store_module
 from zett.infra.files.object_store import LocalObjectStore
-from zett.infra.tables import Base
+from zett.infra.persistence import database
+from zett.infra.persistence.tables import Base
 
 
 @pytest.fixture(autouse=True)

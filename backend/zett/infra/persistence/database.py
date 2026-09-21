@@ -15,8 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, async_sessionm
 from sqlalchemy.pool import NullPool
 from sqlalchemy.schema import CreateColumn, CreateIndex
 
-from ..config import settings
-from .artifacts.search import ensure_artifact_search
+from ...config import settings
+from ..artifacts.search import ensure_artifact_search
 from .tables import Base
 
 #: NullPool keeps every connection inside the loop that opened it, matching the

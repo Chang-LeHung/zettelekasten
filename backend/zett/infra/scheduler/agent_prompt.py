@@ -11,12 +11,12 @@ from ...agent.zettelkasten import ZettelkastenAgent
 from ...application.session_context import session_context_composition_service
 from ...application.settings import runtime_settings_service
 from ...infra.agent.runtime import get_agent_runtime_storage
-from ...infra.dao import (
+from ...infra.log import get_logger
+from ...infra.persistence.dao import (
     model_usage_activity_storage,
     provider_storage,
     session_storage,
 )
-from ...infra.log import get_logger
 from ...schemas import AGENT_PROMPT_ACTION_KIND, AgentPromptAction, AgentSessionCreate, JsonValue
 from .contracts import ActionExecutionStatus, ActionExecutor, ActionResult, ExecutionContext
 

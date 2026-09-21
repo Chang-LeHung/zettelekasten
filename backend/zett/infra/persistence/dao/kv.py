@@ -8,7 +8,7 @@ from weakref import WeakKeyDictionary
 from sqlalchemy import select
 from zett_agent import new_uuid7
 
-from ...schemas import JsonValue, KeyValueRecord
+from ....schemas import JsonValue, KeyValueRecord
 from ..database import session_scope
 from ..tables import KeyValueRow
 

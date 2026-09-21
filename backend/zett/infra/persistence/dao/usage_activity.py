@@ -5,7 +5,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from sqlalchemy import func, select
 from zett_agent import ModelUsageActivityDay, ModelUsageActivityRecord, new_uuid7
 
-from ...schemas import ModelUsageActivitySeries, UsageActivityDayRecord
+from ....schemas import ModelUsageActivitySeries, UsageActivityDayRecord
 from ..database import session_scope
 from ..tables import ModelUsageActivityRow
 

@@ -16,7 +16,7 @@ from zett_agent import (
 )
 
 from zett.agent import AssetExtension
-from zett.infra.dao import session_asset_storage, session_storage
+from zett.infra.persistence.dao import session_asset_storage, session_storage
 from zett.schemas import AgentSessionCreate, SessionAssetCreate, SessionAssetListOptions
 
 

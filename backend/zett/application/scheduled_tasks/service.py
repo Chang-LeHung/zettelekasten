@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 
 from zett_agent import new_uuid7
 
-from ...infra.dao import ScheduledTaskStorage, scheduled_task_storage
+from ...infra.persistence.dao import ScheduledTaskStorage, scheduled_task_storage
 from ...infra.scheduler import next_run_after
 from ...schemas import (
     ScheduledTaskCreate,

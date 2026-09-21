@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from zett_agent import new_uuid7
 
-from ...schemas import ArtifactTagEntity, TagEntity, TagListOptions, TagWrite
+from ....schemas import ArtifactTagEntity, TagEntity, TagListOptions, TagWrite
 from ..database import session_scope
 from ..storage import AsyncStorage
 from ..tables import ArtifactTagRow, TagRow

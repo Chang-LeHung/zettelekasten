@@ -1,11 +1,11 @@
 import pytest
 from sqlalchemy import select
 
-from zett.infra import database
-from zett.infra.dao.artifact import artifact_storage
-from zett.infra.dao.session import session_storage
-from zett.infra.storage import AsyncStorage
-from zett.infra.tables import SessionArtifactRow
+from zett.infra.persistence import database
+from zett.infra.persistence.dao.artifact import artifact_storage
+from zett.infra.persistence.dao.session import session_storage
+from zett.infra.persistence.storage import AsyncStorage
+from zett.infra.persistence.tables import SessionArtifactRow
 from zett.schemas import (
     AgentArtifactWrite,
     AgentSessionCreate,

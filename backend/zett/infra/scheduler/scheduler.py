@@ -14,8 +14,8 @@ from ...schemas import (
     ScheduledTaskRunStatus,
     ScheduledTaskTrigger,
 )
-from ..dao import ScheduledTaskStorage, scheduled_task_storage
 from ..log import get_logger
+from ..persistence.dao import ScheduledTaskStorage, scheduled_task_storage
 from .schedule import next_run_after
 
 logger = get_logger(__name__)

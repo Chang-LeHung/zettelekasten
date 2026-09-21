@@ -8,7 +8,7 @@ from sqlalchemy import or_, select, update
 from sqlalchemy.exc import IntegrityError
 from zett_agent import new_uuid7
 
-from ...schemas import (
+from ....schemas import (
     ScheduledTaskAction,
     ScheduledTaskEntity,
     ScheduledTaskListOptions,

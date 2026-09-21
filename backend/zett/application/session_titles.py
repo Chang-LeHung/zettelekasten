@@ -2,8 +2,8 @@
 
 from ..agent.model_factory import create_model
 from ..agent.session_title import SessionTitleAgent
-from ..infra.dao import session_storage
 from ..infra.log import get_logger
+from ..infra.persistence.dao import session_storage
 from ..schemas import AgentSessionCreate, ProviderConnection
 
 logger = get_logger(__name__)

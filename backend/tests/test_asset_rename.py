@@ -2,7 +2,7 @@
 
 from fastapi.testclient import TestClient
 
-from zett.infra.dao import session_asset_storage
+from zett.infra.persistence.dao import session_asset_storage
 from zett.main import app
 
 

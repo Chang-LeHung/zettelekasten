@@ -11,7 +11,7 @@ from collections.abc import AsyncIterator, Sequence
 
 from zett_agent import AgentEvent
 
-from ...infra.dao import artifact_storage, session_asset_storage
+from ...infra.persistence.dao import artifact_storage, session_asset_storage
 from ...schemas import (
     AgentArtifactEntity,
     ArtifactListOptions,

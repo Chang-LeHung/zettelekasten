@@ -7,8 +7,8 @@ import uvicorn
 from zett_agent import new_uuid7
 
 from .config import settings
-from .infra.database import init_db
 from .infra.log import configure_logging, get_logger, uvicorn_log_config
+from .infra.persistence.database import init_db
 from .infra.scheduler import ActionExecutorRegistry, SchedulerRunner, WorkerRunner
 from .infra.scheduler.processes import ProcessHeartbeatPublisher
 from .schemas import ProcessRole

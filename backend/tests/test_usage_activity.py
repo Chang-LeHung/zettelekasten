@@ -3,7 +3,7 @@ from datetime import UTC, date, datetime
 from fastapi.testclient import TestClient
 from zett_agent import ModelUsageActivityRecord
 
-from zett.infra.dao import model_usage_activity_storage
+from zett.infra.persistence.dao import model_usage_activity_storage
 from zett.main import app
 
 

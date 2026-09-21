@@ -32,9 +32,9 @@ from zett.application.routes import agent as agent_routes
 from zett.application.routes import providers as provider_routes
 from zett.application.session_context import SESSION_CONTEXT_KEY_PREFIX
 from zett.application.session_preferences import SESSION_MODEL_KEY_PREFIX
-from zett.infra.dao import artifact_storage, provider_storage, session_storage
-from zett.infra.database import session_scope
-from zett.infra.tables import KeyValueRow
+from zett.infra.persistence.dao import artifact_storage, provider_storage, session_storage
+from zett.infra.persistence.database import session_scope
+from zett.infra.persistence.tables import KeyValueRow
 from zett.main import app
 from zett.schemas import AgentArtifactWrite, AgentSessionCreate, CardArtifactContent
 

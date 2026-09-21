@@ -10,11 +10,11 @@ from zett_agent import UserMessage
 
 from zett.config import settings
 from zett.infra.agent.runtime import get_agent_runtime_storage
-from zett.infra.dao.artifact import artifact_storage
-from zett.infra.dao.asset import session_asset_storage
-from zett.infra.dao.session import session_storage
-from zett.infra.storage import AsyncStorage
-from zett.infra.tables import Base
+from zett.infra.persistence.dao.artifact import artifact_storage
+from zett.infra.persistence.dao.asset import session_asset_storage
+from zett.infra.persistence.dao.session import session_storage
+from zett.infra.persistence.storage import AsyncStorage
+from zett.infra.persistence.tables import Base
 from zett.main import app
 from zett.schemas import (
     AgentArtifactWrite,

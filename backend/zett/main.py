@@ -11,8 +11,8 @@ from starlette.concurrency import run_in_threadpool
 from .application.health import ProcessSupervisor, process_heartbeat_registry
 from .application.router import api_router
 from .infra.agent.runtime import close_agent_runtime_storage, get_agent_runtime_storage
-from .infra.database import init_db
 from .infra.log import configure_logging, get_logger, shutdown_logging
+from .infra.persistence.database import init_db
 
 logger = get_logger(__name__)
 

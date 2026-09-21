@@ -10,8 +10,9 @@ from sqlalchemy import update
 from zett_agent import AssistantMessage, ModelEvent, ModelRequest, ModelResponse, UserMessage, new_uuid7
 
 from zett.application.scheduled_tasks import ScheduledTaskService
-from zett.infra.dao import provider_storage, scheduled_task_storage, session_storage
-from zett.infra.database import session_scope
+from zett.infra.persistence.dao import provider_storage, scheduled_task_storage, session_storage
+from zett.infra.persistence.database import session_scope
+from zett.infra.persistence.tables import ScheduledTaskRow
 from zett.infra.scheduler import (
     ActionExecutionStatus,
     ActionExecutor,
@@ -24,7 +25,6 @@ from zett.infra.scheduler import (
 )
 from zett.infra.scheduler import agent_prompt as scheduled_agent_module
 from zett.infra.scheduler.agent_prompt import scheduled_agent_executor
-from zett.infra.tables import ScheduledTaskRow
 from zett.main import app
 from zett.schemas import (
     CronSchedule,

@@ -13,10 +13,10 @@ from sqlalchemy.engine import URL
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from zett.infra import database
-from zett.infra.dao.kv import KeyValueStorage
-from zett.infra.database import session_scope
-from zett.infra.tables import KeyValueRow
+from zett.infra.persistence import database
+from zett.infra.persistence.dao.kv import KeyValueStorage
+from zett.infra.persistence.database import session_scope
+from zett.infra.persistence.tables import KeyValueRow
 from zett.main import app
 
 DEFAULT_MAX_ASSET_SIZE_BYTES = 250 * 1024 * 1024

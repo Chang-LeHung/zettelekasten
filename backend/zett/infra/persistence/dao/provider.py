@@ -10,8 +10,8 @@ from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import or_, select
 from zett_agent import new_uuid7
 
-from ...config import settings
-from ...schemas import ProviderConnection, ProviderEntity, ProviderListOptions, ProviderType, ProviderWrite
+from ....config import settings
+from ....schemas import ProviderConnection, ProviderEntity, ProviderListOptions, ProviderType, ProviderWrite
 from ..database import session_scope
 from ..storage import AsyncStorage
 from ..tables import ProviderRow

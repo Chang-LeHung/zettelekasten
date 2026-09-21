@@ -12,7 +12,7 @@ from enum import IntEnum
 from sqlalchemy import Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ...schemas import ArtifactStatus, ArtifactType
+from ....schemas import ArtifactStatus, ArtifactType
 from .base import Base
 
 

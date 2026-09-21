@@ -15,7 +15,7 @@ from zett_agent import (
 )
 
 from zett.agent.extensions import ArtifactExtension
-from zett.infra.dao import artifact_storage, session_storage
+from zett.infra.persistence.dao import artifact_storage, session_storage
 from zett.schemas import AgentArtifactWrite, AgentSessionCreate, ArticleArtifactContent, CardArtifactContent
 
 

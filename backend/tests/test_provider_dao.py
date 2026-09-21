@@ -6,10 +6,10 @@ from uuid import UUID
 import pytest
 
 from zett.config import settings
-from zett.infra.dao.provider import provider_storage
-from zett.infra.database import session_scope
-from zett.infra.storage import AsyncStorage
-from zett.infra.tables import ProviderRow
+from zett.infra.persistence.dao.provider import provider_storage
+from zett.infra.persistence.database import session_scope
+from zett.infra.persistence.storage import AsyncStorage
+from zett.infra.persistence.tables import ProviderRow
 from zett.schemas import ProviderListOptions, ProviderWrite
 
 

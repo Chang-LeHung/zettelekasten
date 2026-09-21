@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from ..infra.dao import artifact_storage, tag_storage
+from ..infra.persistence.dao import artifact_storage, tag_storage
 from ..schemas import AgentArtifactEntity, ArtifactStatus, TagEntity, TagListOptions, TagTreeEntity, TagWrite
 
 

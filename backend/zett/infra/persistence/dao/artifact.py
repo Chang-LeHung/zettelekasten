@@ -7,8 +7,8 @@ from sqlalchemy import Float, String, or_, select, text
 from sqlalchemy import delete as sql_delete
 from zett_agent import new_uuid7
 
-from ...application.object_store import ObjectKey
-from ...schemas import (
+from ....application.object_store import ObjectKey
+from ....schemas import (
     AgentArtifactEntity,
     AgentArtifactWrite,
     ArtifactContent,
@@ -20,15 +20,15 @@ from ...schemas import (
     LatexPdfArtifactContent,
     LatexPdfArtifactCreate,
 )
-from ..artifacts.latex_projects import create_latex_project, validate_latex_project_path
-from ..artifacts.search import (
+from ...artifacts.latex_projects import create_latex_project, validate_latex_project_path
+from ...artifacts.search import (
     build_fts_query,
     delete_artifact_search,
     delete_artifacts_search,
     upsert_artifact_search,
 )
+from ...files.object_store import get_object_store
 from ..database import session_scope
-from ..files.object_store import get_object_store
 from ..storage import AsyncStorage
 from ..tables import (
     CODE_TO_STATUS,
@@ -116,7 +116,7 @@ class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifactEntity, str,
 
     async def create(self, entity: AgentArtifactWrite) -> AgentArtifactEntity:
         """Persist one artifact after confirming its Agent session exists."""
-        from ..agent.runtime import get_agent_runtime_storage
+        from ...agent.runtime import get_agent_runtime_storage
 
         if await get_agent_runtime_storage().get_session(entity.session_id) is None:
             raise KeyError(f"Agent session not found: {entity.session_id}")

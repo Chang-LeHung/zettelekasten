@@ -2,8 +2,8 @@
 
 from sqlalchemy import text
 
-from zett.infra import database
-from zett.infra.database import init_db, session_scope
+from zett.infra.persistence import database
+from zett.infra.persistence.database import init_db, session_scope
 
 
 async def _columns(table: str) -> set[str]:
@@ -43,7 +43,7 @@ async def test_ensure_columns_keeps_existing_artifact_rows_readable() -> None:
 
     await init_db()
 
-    from zett.infra.dao import artifact_storage
+    from zett.infra.persistence.dao import artifact_storage
 
     artifact = await artifact_storage.get("legacy")
     assert artifact is not None

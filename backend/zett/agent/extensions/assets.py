@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from zett_agent import AgentExtension, AgentRunContext, tool
 
 from ...config import settings
-from ...infra.dao import session_asset_storage
+from ...infra.persistence.dao import session_asset_storage
 from ...schemas import SessionAssetCreate, SessionAssetEntity, SessionAssetListOptions, SessionAssetType
 
 

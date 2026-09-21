@@ -4,7 +4,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, StringConstraints
 
-from ..infra.dao import session_asset_storage
+from ..infra.persistence.dao import session_asset_storage
 from ..schemas import SessionAssetEntity
 
 
