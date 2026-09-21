@@ -120,6 +120,8 @@ def test_schema_and_http_surface_contain_no_retired_business_logic(isolated_data
         "key_values",
         "model_usage_activity",
         "providers",
+        "scheduled_task_runs",
+        "scheduled_tasks",
         "session_artifacts",
         "session_assets",
         "static_assets",
@@ -153,8 +155,10 @@ def test_schema_and_http_surface_contain_no_retired_business_logic(isolated_data
         assert "/api/artifacts" in paths
         assert "/api/assets" in paths
         assert "/api/files/{key}" in paths
+        assert "/api/health/processes" in paths
         assert "/api/library/tags" in paths
         assert "/api/settings" in paths
+        assert "/api/scheduled-tasks" in paths
         for path in ("/api/cards", "/api/tags", "/api/library", "/api/ai/providers"):
             expected = 200 if path == "/api/ai/providers" else 404
             assert client.get(path).status_code == expected

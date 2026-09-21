@@ -15,6 +15,16 @@ class Settings:
     log_level: str = os.getenv("ZETT_LOG_LEVEL", "INFO").upper()
     host: str = os.getenv("ZETT_HOST", "127.0.0.1")
     port: int = int(os.getenv("ZETT_PORT", "6280"))
+    process_supervisor_enabled: bool = os.getenv("ZETT_PROCESS_SUPERVISOR_ENABLED", "true").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    supervisor_poll_seconds: float = float(os.getenv("ZETT_SUPERVISOR_POLL_SECONDS", "5"))
+    heartbeat_interval_seconds: float = float(os.getenv("ZETT_HEARTBEAT_INTERVAL_SECONDS", "5"))
+    heartbeat_timeout_seconds: float = float(os.getenv("ZETT_HEARTBEAT_TIMEOUT_SECONDS", "20"))
+    worker_processes: int = int(os.getenv("ZETT_WORKER_PROCESSES", "1"))
 
 
 settings = Settings()

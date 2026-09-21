@@ -46,6 +46,18 @@ def test_logging_configuration_is_idempotent(tmp_path) -> None:
     assert len(logging.getLogger("zett").handlers) == handler_count
 
 
+def test_logging_configuration_can_target_a_process_specific_file(tmp_path) -> None:
+    log_path = configure_logging(tmp_path, file_name="scheduler.log")
+    logger = get_logger("zett.tests.scheduler")
+
+    logger.info("scheduler marker")
+    for handler in logging.getLogger("zett").handlers:
+        handler.flush()
+
+    assert log_path == tmp_path / "scheduler.log"
+    assert "scheduler marker" in log_path.read_text()
+
+
 def test_log_record_reports_the_exact_source_call_site(tmp_path) -> None:
     log_path = configure_logging(tmp_path)
     logger = get_logger("zett.tests.location")

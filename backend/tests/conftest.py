@@ -9,6 +9,7 @@ from zett_agent import AssistantMessage, ModelEvent, ModelRequest, ModelResponse
 
 from zett import config
 from zett.application import provider_connections
+from zett.application.health import process_heartbeat_registry
 from zett.infra import database
 from zett.infra import object_store as object_store_module
 from zett.infra.artifact_search import ensure_artifact_search
@@ -43,12 +44,14 @@ async def isolated_database(tmp_path, monkeypatch: pytest.MonkeyPatch) -> AsyncI
     monkeypatch.setattr(config.settings, "storage_root", tmp_path)
     monkeypatch.setattr(config.settings, "provider_key_path", tmp_path / "provider.key")
     monkeypatch.setattr(config.settings, "log_directory", tmp_path / "logs")
+    monkeypatch.setattr(config.settings, "process_supervisor_enabled", False)
     monkeypatch.setattr(object_store_module, "_object_store", LocalObjectStore(tmp_path))
     monkeypatch.setattr(database, "engine", engine)
     monkeypatch.setattr(database, "session_factory", async_sessionmaker(engine, expire_on_commit=False))
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
         await ensure_artifact_search(connection)
+    await process_heartbeat_registry.clear()
     yield database_path
     from zett.infra.agent_runtime import close_agent_runtime_storage
 

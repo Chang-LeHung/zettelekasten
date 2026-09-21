@@ -37,6 +37,7 @@ def _close_handlers(logger: logging.Logger) -> None:
 def configure_logging(
     log_directory: Path | None = None,
     *,
+    file_name: str = LOG_FILE_NAME,
     max_bytes: int = MAX_LOG_FILE_BYTES,
     backup_count: int = LOG_BACKUP_COUNT,
     level: str | None = None,
@@ -51,8 +52,11 @@ def configure_logging(
 
     directory = (log_directory or settings.log_directory).expanduser().resolve()
     resolved_level = (level or settings.log_level).upper()
-    signature = (directory, max_bytes, backup_count, resolved_level)
-    log_path = directory / LOG_FILE_NAME
+    normalized_file_name = file_name.strip()
+    if not normalized_file_name or Path(normalized_file_name).name != normalized_file_name:
+        raise ValueError("Log file name must be a non-empty file name without directories")
+    log_path = directory / normalized_file_name
+    signature = (log_path, max_bytes, backup_count, resolved_level)
     with _configuration_lock:
         if _configured_signature == signature:
             return log_path

@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
+from .application.health import ProcessSupervisor, process_heartbeat_registry
 from .application.router import api_router
 from .infra.agent_runtime import close_agent_runtime_storage, get_agent_runtime_storage
 from .infra.database import init_db
@@ -23,8 +24,14 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
     try:
         await init_db()
         get_agent_runtime_storage()
+        await process_heartbeat_registry.clear()
+        supervisor = ProcessSupervisor()
+        await supervisor.start()
         logger.info("Zett service started; log_file=%s", log_path)
-        yield
+        try:
+            yield
+        finally:
+            await supervisor.stop()
     finally:
         logger.info("Zett service stopped")
         try:

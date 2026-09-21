@@ -9,6 +9,7 @@ hopping through a worker thread per DAO call.
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
+from sqlalchemy import event
 from sqlalchemy.engine import URL
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -25,6 +26,18 @@ engine = create_async_engine(
     poolclass=NullPool,
 )
 session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+
+@event.listens_for(engine.sync_engine, "connect")
+def _configure_sqlite_connection(dbapi_connection: object, _: object) -> None:
+    """Use WAL and wait briefly when the scheduler and Web process both write."""
+    cursor = dbapi_connection.cursor()  # type: ignore[attr-defined]
+    try:
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=5000")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+    finally:
+        cursor.close()
 
 
 async def ensure_indexes(connection: AsyncConnection) -> None:
