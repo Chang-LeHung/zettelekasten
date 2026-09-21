@@ -61,18 +61,22 @@ or a shell command. They are not Session Assets: nothing is listed by
 `list_assets`, and deleting the session removes the whole session directory, so
 uploads no row points at cannot leak.
 
-Artifact content is user-published. Model tools write `draft_content_json` and
-the tool list has no save operation, and the conversation's editing surfaces
-(panel, inline editor, and full editor) stage their edits through the draft
-endpoint. `update_artifact` takes a `patch`: fields it omits keep their current
-value, an empty string or list clears a field, `content_edits` replaces exact
-body snippets (`old_text`/`new_text`, unique match required unless `replace_all` is set) so a long article
-never travels back in full for one paragraph, and only a changed
-`artifact_type` replaces the whole content. `content_json` changes only when the user publishes a draft with the
-save endpoint or edits a library document from the Library view; both writes
-mirror the published content into `draft_content_json`, so the draft is always
-the working copy and matches `content_json` right after a save. An empty
-`content_json` means the artifact was never published.
+Artifact creation writes the supplied content directly to `content_json`
+because there is no existing user version to protect. Later model updates write
+only `draft_content_json`, and the tool list has no save operation. The
+conversation's editing surfaces (panel, inline editor, and full editor) stage
+their edits through the draft endpoint. `update_artifact` takes a `patch`:
+fields it omits keep their current value, an empty string or list clears a
+field, `content_edits` replaces exact body snippets (`old_text`/`new_text`,
+unique match required unless `replace_all` is set) so a long article never
+travels back in full for one paragraph, and only a changed `artifact_type`
+replaces the whole content. `update_artifact` accepts an artifact ID from
+another session, preserves that artifact's owning session, and still writes
+only its draft. `content_json` otherwise changes when the user publishes a
+draft with the save endpoint or edits a library document from the Library view;
+those writes mirror the published content into `draft_content_json`, so the
+draft is always the working copy and matches `content_json` right after a save.
+An empty `content_json` means the artifact has no initial or published content.
 `AgentArtifactEntity.editable_content` is the draft-first view shared by the
 conversation UI, previews, search, and the draft-versus-published diff, and
 `ArtifactPruner` returns `published_content` and `draft_content` previews

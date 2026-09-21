@@ -85,15 +85,17 @@ class ArtifactQueryModel:
                     )
                 )
             case 2:
-                assert str(_tool_payload(request)["draft_content"]["title"]) == "Rust ownership"
+                created = _tool_payload(request)
+                assert str(created["content"]["title"]) == "Rust ownership"
+                assert created["draft_content"] is None
                 message = AssistantMessage(
                     tool_calls=(ToolCall("get", "get_artifact", {"artifact_id": self.first_id}),)
                 )
             case 3:
                 fetched = _tool_payload(request)
                 assert fetched["id"] == self.first_id
-                assert fetched["content"] is None
-                assert fetched["draft_content"]["title"] == "Python process"
+                assert fetched["content"]["title"] == "Python process"
+                assert fetched["draft_content"] is None
                 message = AssistantMessage(
                     tool_calls=(
                         ToolCall(
@@ -105,9 +107,9 @@ class ArtifactQueryModel:
                 )
             case 4:
                 matched = _tool_items(request)
-                assert [item["draft_content"]["title"] for item in matched] == ["Rust ownership"]
-                assert matched[0]["draft_content"]["content_preview"] == "Another idea"
-                assert matched[0]["draft_content"]["content_truncated"] is False
+                assert [item["published_content"]["title"] for item in matched] == ["Rust ownership"]
+                assert matched[0]["published_content"]["content_preview"] == "Another idea"
+                assert matched[0]["published_content"]["content_truncated"] is False
                 assert "raw_content" not in matched[0]
                 assert "metadata" not in matched[0]
                 message = AssistantMessage(
@@ -129,7 +131,7 @@ class ArtifactQueryModel:
                 )
             case 6:
                 latest = _tool_payload(request)
-                assert latest["content"] is None
+                assert latest["content"]["content"] == "One idea"
                 assert latest["draft_content"]["content"] == "Updated idea"
                 assert latest["draft_content"]["title"] == "Python process"
                 assert latest["version"] == 2
@@ -154,12 +156,13 @@ async def test_artifact_query_tools_run_complete_session_scoped_lifecycle() -> N
     assert model.step == 8
     written = await artifact_storage.list()
     assert len(written) == 2
-    # The model proposes drafts only; nothing it wrote is published content.
-    assert all(artifact.content is None for artifact in written)
-    assert {artifact.draft_content.title for artifact in written if artifact.draft_content} == {
-        "Python process",
-        "Rust ownership",
-    }
+    by_title = {artifact.content.title: artifact for artifact in written if artifact.content is not None}
+    assert set(by_title) == {"Python process", "Rust ownership"}
+    # Creation writes content directly; a later model update stages a draft.
+    python_process = by_title["Python process"]
+    assert python_process.draft_content is not None
+    assert python_process.draft_content.content == "Updated idea"
+    assert by_title["Rust ownership"].draft_content is None
 
 
 async def test_artifact_queries_are_scoped_to_the_owning_session() -> None:
@@ -217,6 +220,58 @@ async def test_artifact_queries_are_scoped_to_the_owning_session() -> None:
 
     assert result.content == "Global search found the artifact."
     assert await artifact_storage.get_for_session(owner, secret.id) is not None
+
+
+async def test_update_artifact_can_target_an_artifact_from_another_session() -> None:
+    owner = (await session_storage.create(AgentSessionCreate())).session_id
+    other = (await session_storage.create(AgentSessionCreate())).session_id
+    secret = await artifact_storage.create(
+        AgentArtifactWrite(
+            session_id=owner,
+            content=CardArtifactContent(artifact_type="card", title="Other session", content="Original"),
+        )
+    )
+
+    class CrossSessionUpdateModel:
+        def __init__(self) -> None:
+            self.step = 0
+
+        async def stream(self, request: ModelRequest) -> AsyncIterator[ModelEvent]:
+            if self.step == 0:
+                message = AssistantMessage(
+                    tool_calls=(
+                        ToolCall(
+                            "cross-update",
+                            "update_artifact",
+                            {
+                                "artifact_id": secret.id,
+                                "patch": {"artifact_type": "card", "title": "Updated across sessions"},
+                            },
+                        ),
+                    )
+                )
+            else:
+                updated = _tool_payload(request)
+                assert updated["session_id"] == owner
+                assert updated["content"]["title"] == "Other session"
+                assert updated["draft_content"]["title"] == "Updated across sessions"
+                message = AssistantMessage(content="Cross-session update complete.")
+            self.step += 1
+            yield ModelEvent.completed(ModelResponse(message))
+
+    agent = await Agent.create(
+        CrossSessionUpdateModel(),
+        config=AgentRunConfig(session_id=other),
+        extensions=[ArtifactExtension()],
+    )
+    result = await agent.run("Update the other session's artifact")
+
+    assert result.content == "Cross-session update complete."
+    updated = await artifact_storage.get(secret.id)
+    assert updated is not None
+    assert updated.session_id == owner
+    assert updated.content is not None and updated.content.title == "Other session"
+    assert updated.draft_content is not None and updated.draft_content.title == "Updated across sessions"
 
 
 async def test_model_drafts_stay_unpublished_until_the_user_saves() -> None:

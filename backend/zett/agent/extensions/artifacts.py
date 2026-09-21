@@ -51,7 +51,8 @@ class ArtifactExtension(AgentExtension):
 
             Guidelines:
                 - Create an artifact only when it is a useful output of the conversation.
-                - Creation writes draft content only. The user publishes it; never claim an artifact is saved.
+                - Creation is an initial write, not an edit, so store the supplied content directly.
+                - Later update_artifact calls write draft content only; never claim an artifact is saved unless the user saves it.
                 - To start a LaTeX project, call create_artifact(content={"artifact_type": "latex_pdf", "pdf_name": "paper.pdf"}). Do not supply project_path, title, summary, or source text.
                 - Creation allocates a project directory and returns content.project_path as an object key relative to ZETT_STORAGE_ROOT. Treat that returned key as authoritative: never guess it or reconstruct it from the session ID or PDF name.
                 - Filesystem/shell tools run from the repository directory, so resolve the returned key under `Path.home() / ".zettelekasten"` before writing project sources and compiling the returned pdf_name.
@@ -90,7 +91,7 @@ class ArtifactExtension(AgentExtension):
                 - Keep each slide concise: one idea, a short heading, and no more than six brief bullets.
             """
             created = await artifact_storage.create(
-                AgentArtifactWrite(session_id=session_id, draft_content=content, raw_content=raw_content)
+                AgentArtifactWrite(session_id=session_id, content=content, raw_content=raw_content)
             )
             return await tag_service.sync_confirmed_suggestions(created)
 
@@ -154,7 +155,7 @@ class ArtifactExtension(AgentExtension):
 
         @tool
         async def update_artifact(artifact_id: str, patch: ArtifactContentPatch) -> AgentArtifactEntity:
-            """Change part of one conversation artifact's draft.
+            """Change part of one artifact's draft, including an artifact from another conversation.
 
             Args:
                 artifact_id: Stable ID of an artifact in this conversation.
@@ -172,6 +173,8 @@ class ArtifactExtension(AgentExtension):
                 update_artifact(artifact_id="...", patch={"artifact_type": "slides", "content": "<!-- slide:cover -->\\n# Processes\\n\\n## Optional subtitle\\n\\n---\\n# Overview\\n\\n--\\n## Details"})
 
             Guidelines:
+                - The artifact may belong to another conversation when its ID came from query_artifacts(all_sessions=True).
+                - Updates preserve the artifact's owning session and write draft content only.
                 - Send only the fields you change; untouched fields keep their current value.
                 - Fix a paragraph with content_edits instead of resending a long body; old_text must appear exactly once, so include enough surrounding words, or set replace_all when every occurrence should change.
                 - Send either content or content_edits for one update, never both.
@@ -197,14 +200,16 @@ class ArtifactExtension(AgentExtension):
                 - Ordinary pages retain Markdown headings and ordinary horizontal sections retain title-only openers followed by '--' and content. These rules do not add extra headings or openers to explicit HTML or cover pages.
                 - Slide separators must be exact unpadded lines; never use standalone '--' or '---' as decoration or code inside a deck.
             """
-            current = await self._artifact(session_id, artifact_id)
+            current = await artifact_storage.get(artifact_id)
+            if current is None:
+                raise ValueError(f"Artifact not found: {artifact_id}")
             base = current.editable_content
             if base is None:
                 raise ValueError(f"Artifact has no content to update: {artifact_id}")
             updated = await artifact_storage.update(
                 artifact_id,
                 AgentArtifactWrite(
-                    session_id=session_id,
+                    session_id=current.session_id,
                     content=current.content,
                     draft_content=apply_artifact_patch(base, patch),
                     raw_content=current.raw_content,

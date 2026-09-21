@@ -115,6 +115,6 @@ def test_artifact_preview_returns_published_content_and_draft_together() -> None
     assert pending.draft_content is not None and pending.draft_content.title == "Draft card"
     # After a save the draft mirrors the published content instead of disappearing.
     assert saved.published_content == saved.draft_content
-    # A model-created artifact has no published side yet.
+    # A draft-only artifact has no published side yet.
     assert unsaved.published_content is None
     assert unsaved.draft_content is not None and unsaved.draft_content.title == "Draft card"
