@@ -2,9 +2,9 @@
 
 from fastapi import APIRouter, HTTPException, Query, status
 
-from ...schemas import AgentArtifactEntity, TagEntity, TagTreeEntity
+from ....schemas import AgentArtifactEntity, TagEntity, TagTreeEntity
+from ...tags.tagging import tag_service
 from ..schemas import ArtifactTagsIn, TagCreateIn, TagUpdateIn
-from ..tags.tagging import tag_service
 
 router = APIRouter(prefix="/library/tags", tags=["library-tags"])
 

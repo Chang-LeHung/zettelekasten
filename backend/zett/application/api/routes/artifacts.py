@@ -2,10 +2,10 @@
 
 from fastapi import APIRouter, HTTPException, Query, status
 
-from ...infra.persistence.dao import artifact_storage, session_storage
-from ...schemas import AgentArtifactEntity, AgentArtifactWrite, ArtifactListOptions, ArtifactStatus, ArtifactType
+from ....infra.persistence.dao import artifact_storage, session_storage
+from ....schemas import AgentArtifactEntity, AgentArtifactWrite, ArtifactListOptions, ArtifactStatus, ArtifactType
+from ...tags.tagging import tag_service
 from ..schemas import ArtifactCreateIn, ArtifactUpdateIn, DeleteResponse
-from ..tags.tagging import tag_service
 
 router = APIRouter(tags=["artifacts"])
 

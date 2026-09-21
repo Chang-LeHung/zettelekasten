@@ -24,7 +24,7 @@ from zett.agent import (
     at_command_message,
     stable_at_command_id,
 )
-from zett.application.routes import agent as agent_routes
+from zett.application.api.routes import agent as agent_routes
 from zett.infra.persistence.dao import artifact_storage, session_asset_storage, session_storage
 from zett.main import app
 from zett.schemas import (

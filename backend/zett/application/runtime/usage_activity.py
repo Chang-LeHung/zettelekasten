@@ -6,7 +6,7 @@ from datetime import UTC, date, datetime, timedelta
 from zett_agent import ModelUsageActivityStorage
 
 from ...infra.persistence.dao import model_usage_activity_storage
-from ..schemas import ModelUsageActivitySeriesOut, UsageActivityDayOut
+from ..api.schemas import ModelUsageActivitySeriesOut, UsageActivityDayOut
 
 
 class UsageActivityService:

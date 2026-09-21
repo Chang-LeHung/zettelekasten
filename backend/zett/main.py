@@ -8,8 +8,8 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
+from .application.api.router import api_router
 from .application.health import ProcessSupervisor, process_heartbeat_registry
-from .application.router import api_router
 from .infra.agent.runtime import close_agent_runtime_storage, get_agent_runtime_storage
 from .infra.log import configure_logging, get_logger, shutdown_logging
 from .infra.persistence.database import init_db

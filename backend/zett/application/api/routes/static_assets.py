@@ -2,8 +2,8 @@
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
-from ...schemas import StaticAssetEntity, StaticAssetListOptions
-from ..assets.static_assets import static_asset_service
+from ....schemas import StaticAssetEntity, StaticAssetListOptions
+from ...assets.static_assets import static_asset_service
 from ..schemas import DeleteResponse
 
 router = APIRouter(prefix="/assets", tags=["assets"])

@@ -5,8 +5,8 @@ import mimetypes
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import FileResponse
 
-from ...infra.files.object_store import get_object_store
-from ..files.object_store import InvalidObjectKey, public_object_key
+from ....infra.files.object_store import get_object_store
+from ...files.object_store import InvalidObjectKey, public_object_key
 
 router = APIRouter(tags=["files"])
 

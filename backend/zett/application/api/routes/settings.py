@@ -4,8 +4,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query
 
-from ..runtime.settings import RuntimeSettings, runtime_settings_service
-from ..runtime.usage_activity import usage_activity_service
+from ...runtime.settings import RuntimeSettings, runtime_settings_service
+from ...runtime.usage_activity import usage_activity_service
 from ..schemas import ModelUsageActivitySeriesOut, UsageActivityDayOut
 
 router = APIRouter(prefix="/settings", tags=["settings"])

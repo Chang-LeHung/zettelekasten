@@ -10,7 +10,7 @@ from zett_agent import (
 )
 
 from ...messages import FrontMessagePart, MessagePartCodec
-from ..schemas import (
+from ..api.schemas import (
     PersistedMessageOut,
     PersistedToolCallOut,
     SessionOut,

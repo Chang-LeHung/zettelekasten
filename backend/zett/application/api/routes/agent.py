@@ -20,7 +20,7 @@ from zett_agent import (
     UserMessage,
 )
 
-from ...agent import (
+from ....agent import (
     AtCommandInvocation,
     SlashCommandInvocation,
     ZettelkastenAgent,
@@ -29,19 +29,19 @@ from ...agent import (
     encode_sse,
     event_payload,
 )
-from ...agent.model_factory import ProviderAdapter, create_model
-from ...infra.agent.runtime import get_agent_runtime_storage
-from ...infra.agent.shell_approval import shell_approval_storage
-from ...infra.log import get_logger
-from ...infra.persistence.dao import model_usage_activity_storage, provider_storage, session_storage
-from ...messages import MessageImageSizeExceeded, MessagePartCodec, MessagePartError
-from ...schemas import ProviderConnection
-from ..agent.session_context import session_context_composition_service
-from ..agent.session_preferences import session_model_preference_service
-from ..agent.session_titles import generate_initial_session_title
-from ..agent.turns import AgentTurn
-from ..assets.message_files import store_message_images
-from ..runtime.settings import RuntimeSettings, runtime_settings_service
+from ....agent.model_factory import ProviderAdapter, create_model
+from ....infra.agent.runtime import get_agent_runtime_storage
+from ....infra.agent.shell_approval import shell_approval_storage
+from ....infra.log import get_logger
+from ....infra.persistence.dao import model_usage_activity_storage, provider_storage, session_storage
+from ....messages import MessageImageSizeExceeded, MessagePartCodec, MessagePartError
+from ....schemas import ProviderConnection
+from ...agent.session_context import session_context_composition_service
+from ...agent.session_preferences import session_model_preference_service
+from ...agent.session_titles import generate_initial_session_title
+from ...agent.turns import AgentTurn
+from ...assets.message_files import store_message_images
+from ...runtime.settings import RuntimeSettings, runtime_settings_service
 from ..schemas import (
     AnalyzeRequest,
     AtCommandOut,

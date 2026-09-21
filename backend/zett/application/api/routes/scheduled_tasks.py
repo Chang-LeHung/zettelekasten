@@ -3,7 +3,7 @@
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
 
-from ...schemas import (
+from ....schemas import (
     AGENT_PROMPT_ACTION_KIND,
     AgentPromptAction,
     ScheduledTaskCreate,
@@ -13,7 +13,7 @@ from ...schemas import (
     ScheduledTaskRunListOptions,
     ScheduledTaskRunStatus,
 )
-from ..scheduled_tasks import scheduled_task_service
+from ...scheduled_tasks import scheduled_task_service
 
 router = APIRouter(prefix="/scheduled-tasks", tags=["scheduled-tasks"])
 

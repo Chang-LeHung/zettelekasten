@@ -3,10 +3,10 @@
 from fastapi import APIRouter, HTTPException, Query, status
 from zett_agent import ProviderAuthError, ProviderResponseError
 
-from ...infra.log import get_logger
-from ...infra.persistence.dao import provider_storage
-from ...schemas import ProviderConnection, ProviderEntity, ProviderListOptions, ProviderWrite
-from ..providers.provider_connections import ProviderConnectionTestError, verify_provider_connection
+from ....infra.log import get_logger
+from ....infra.persistence.dao import provider_storage
+from ....schemas import ProviderConnection, ProviderEntity, ProviderListOptions, ProviderWrite
+from ...providers.provider_connections import ProviderConnectionTestError, verify_provider_connection
 from ..schemas import DeleteResponse, ProviderDetailResponse, ProviderIn, ProviderResponse
 
 router = APIRouter(prefix="/ai/providers", tags=["providers"])

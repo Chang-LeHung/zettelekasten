@@ -2,8 +2,8 @@
 
 from fastapi import APIRouter, status
 
-from ...schemas import ProcessHealthReport, ProcessHeartbeatIn, ProcessHeartbeatRecord
-from ..health import process_health_service, process_heartbeat_registry
+from ....schemas import ProcessHealthReport, ProcessHeartbeatIn, ProcessHeartbeatRecord
+from ...health import process_health_service, process_heartbeat_registry
 
 router = APIRouter(prefix="/health", tags=["health"])
 

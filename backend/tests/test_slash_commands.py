@@ -25,7 +25,7 @@ from zett.agent import (
     ZettelkastenContainer,
     ZettelkastenExt,
 )
-from zett.application.routes import agent as agent_routes
+from zett.application.api.routes import agent as agent_routes
 from zett.main import app
 
 
