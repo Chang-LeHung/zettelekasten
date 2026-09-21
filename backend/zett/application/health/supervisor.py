@@ -10,6 +10,7 @@ from zett_agent import new_uuid7
 from ...config import settings
 from ...infra.log import get_logger
 from ...infra.scheduler.processes import ManagedProcess, SubprocessLauncher
+from ...infra.scheduler.runtime_state import RuntimeStateStore
 from ...schemas import ProcessRole
 from .registry import ProcessHeartbeatRegistry, process_heartbeat_registry
 
@@ -40,6 +41,7 @@ class ProcessSupervisor:
         poll_seconds: float = settings.supervisor_poll_seconds,
         heartbeat_timeout_seconds: float = settings.heartbeat_timeout_seconds,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        runtime_state_store: RuntimeStateStore | None = None,
     ) -> None:
         self.launcher = launcher or SubprocessLauncher()
         self.registry = registry or process_heartbeat_registry
@@ -47,6 +49,7 @@ class ProcessSupervisor:
         self.poll_seconds = max(0.1, poll_seconds)
         self.heartbeat_timeout_seconds = max(0.1, heartbeat_timeout_seconds)
         self.clock = clock
+        self.runtime_state_store = runtime_state_store
         self.instance_id = new_uuid7()
         self._task: asyncio.Task[None] | None = None
         self._managed: dict[ProcessRole, dict[str, ManagedProcess]] = {
@@ -77,6 +80,7 @@ class ProcessSupervisor:
             for managed in tuple(self._managed[role].values()):
                 await self._terminate(managed)
             self._managed[role].clear()
+        await self._persist_child_state()
         logger.info("Process supervisor stopped; instance_id=%s", self.instance_id)
 
     async def run_once(self, now: datetime | None = None) -> None:
@@ -90,6 +94,7 @@ class ProcessSupervisor:
             required=self.required_workers,
             stale_before=stale_before,
         )
+        await self._persist_child_state()
 
     async def _run(self) -> None:
         while True:
@@ -151,6 +156,30 @@ class ProcessSupervisor:
                 )
                 continue
             self._managed[role][instance_id] = managed
+
+    async def _persist_child_state(self) -> None:
+        if self.runtime_state_store is None:
+            return
+        current = _normalize(self.clock())
+        stale_before = current - timedelta(seconds=self.heartbeat_timeout_seconds)
+        scheduler_heartbeats = await self.registry.list_fresh(
+            role=ProcessRole.SCHEDULER,
+            stale_before=stale_before,
+        )
+        worker_heartbeats = await self.registry.list_fresh(
+            role=ProcessRole.WORKER,
+            stale_before=stale_before,
+        )
+        scheduler_pids = [
+            managed.pid for managed in self._managed[ProcessRole.SCHEDULER].values() if managed.is_running()
+        ]
+        worker_pids = [managed.pid for managed in self._managed[ProcessRole.WORKER].values() if managed.is_running()]
+        scheduler_pids.extend(heartbeat.pid for heartbeat in scheduler_heartbeats)
+        worker_pids.extend(heartbeat.pid for heartbeat in worker_heartbeats)
+        await self.runtime_state_store.update_children(
+            scheduler_pids=scheduler_pids,
+            worker_pids=worker_pids,
+        )
 
     async def _terminate(self, managed: ManagedProcess) -> None:
         if not managed.is_running():

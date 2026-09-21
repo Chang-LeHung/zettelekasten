@@ -15,6 +15,7 @@ class Settings:
     log_level: str = os.getenv("ZETT_LOG_LEVEL", "INFO").upper()
     host: str = os.getenv("ZETT_HOST", "127.0.0.1")
     port: int = int(os.getenv("ZETT_PORT", "6280"))
+    runtime_state_path: Path = Path(os.getenv("ZETT_RUNTIME_STATE_PATH", storage_root / "runtime.json"))
     process_supervisor_enabled: bool = os.getenv("ZETT_PROCESS_SUPERVISOR_ENABLED", "true").lower() in {
         "1",
         "true",

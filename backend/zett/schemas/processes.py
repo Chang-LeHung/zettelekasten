@@ -73,3 +73,15 @@ class ProcessHealthReport(BaseModel):
     healthy: bool
     checked_at: datetime
     roles: list[ProcessRoleHealth]
+
+
+class ServerRuntimeState(BaseModel):
+    """Best-effort process state persisted for ``zett stop`` and restart checks."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    server_pid: int | None = Field(default=None, ge=1)
+    port: int | None = Field(default=None, ge=1, le=65_535)
+    scheduler_pids: list[int] = Field(default_factory=list)
+    worker_pids: list[int] = Field(default_factory=list)
+    started_at: datetime | None = None

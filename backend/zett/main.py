@@ -1,7 +1,9 @@
 """Asynchronous FastAPI entry point and packaged Vue frontend."""
 
+import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -10,11 +12,24 @@ from starlette.concurrency import run_in_threadpool
 
 from .application.api.router import api_router
 from .application.health import ProcessSupervisor, process_heartbeat_registry
+from .config import settings
 from .infra.agent.runtime import close_agent_runtime_storage, get_agent_runtime_storage
 from .infra.log import configure_logging, get_logger, shutdown_logging
 from .infra.persistence.database import init_db
+from .infra.scheduler.runtime_state import RuntimeStateStore
+from .schemas import ServerRuntimeState
 
 logger = get_logger(__name__)
+
+
+def _pid_running(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
 
 
 @asynccontextmanager
@@ -25,13 +40,33 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
         await init_db()
         get_agent_runtime_storage()
         await process_heartbeat_registry.clear()
-        supervisor = ProcessSupervisor()
+        runtime_state_store = RuntimeStateStore()
+        existing_state = await runtime_state_store.read()
+        server_pid = os.getpid()
+        if (
+            existing_state is not None
+            and existing_state.port == settings.port
+            and existing_state.server_pid is not None
+            and _pid_running(existing_state.server_pid)
+        ):
+            server_pid = existing_state.server_pid
+        await runtime_state_store.write(
+            ServerRuntimeState(
+                server_pid=server_pid,
+                port=settings.port,
+                scheduler_pids=existing_state.scheduler_pids if existing_state is not None else [],
+                worker_pids=existing_state.worker_pids if existing_state is not None else [],
+                started_at=datetime.now(UTC),
+            )
+        )
+        supervisor = ProcessSupervisor(runtime_state_store=runtime_state_store)
         await supervisor.start()
         logger.info("Zett service started; log_file=%s", log_path)
         try:
             yield
         finally:
             await supervisor.stop()
+            await runtime_state_store.remove()
     finally:
         logger.info("Zett service stopped")
         try:

@@ -44,6 +44,7 @@ async def isolated_database(tmp_path, monkeypatch: pytest.MonkeyPatch) -> AsyncI
     monkeypatch.setattr(config.settings, "storage_root", tmp_path)
     monkeypatch.setattr(config.settings, "provider_key_path", tmp_path / "provider.key")
     monkeypatch.setattr(config.settings, "log_directory", tmp_path / "logs")
+    monkeypatch.setattr(config.settings, "runtime_state_path", tmp_path / "runtime.json")
     monkeypatch.setattr(config.settings, "process_supervisor_enabled", False)
     monkeypatch.setattr(object_store_module, "_object_store", LocalObjectStore(tmp_path))
     monkeypatch.setattr(database, "engine", engine)

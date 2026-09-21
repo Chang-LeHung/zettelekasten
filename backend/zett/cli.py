@@ -1,6 +1,8 @@
 """Launch the storage foundation and unchanged frontend."""
 
 import asyncio
+import os
+from datetime import UTC, datetime
 
 import typer
 import uvicorn
@@ -11,7 +13,8 @@ from .infra.log import configure_logging, get_logger, uvicorn_log_config
 from .infra.persistence.database import init_db
 from .infra.scheduler import ActionExecutorRegistry, SchedulerRunner, WorkerRunner
 from .infra.scheduler.processes import ProcessHeartbeatPublisher
-from .schemas import ProcessRole
+from .infra.scheduler.runtime_state import RuntimeProcessController, RuntimeStateStore
+from .schemas import ProcessRole, ServerRuntimeState
 
 app = typer.Typer(help="Zett")
 logger = get_logger(__name__)
@@ -31,6 +34,22 @@ def start(
     reload: bool = typer.Option(False, "--reload", help="Reload on source changes"),
 ) -> None:
     """Serve the storage foundation and existing frontend."""
+    settings.host = host
+    settings.port = port
+    try:
+        asyncio.run(RuntimeProcessController().prepare_start(port=port))
+    except RuntimeError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=1) from error
+    asyncio.run(
+        RuntimeStateStore().write(
+            ServerRuntimeState(
+                server_pid=os.getpid(),
+                port=port,
+                started_at=datetime.now(UTC),
+            )
+        )
+    )
     # Prepare the schema before Uvicorn owns a loop; the lifespan repeats it
     # idempotently for `uvicorn zett.main:app` and test clients.
     asyncio.run(init_db())
@@ -38,6 +57,22 @@ def start(
     logger.info("Starting Zett service; host=%s port=%d reload=%s", host, port, reload)
     typer.echo(f"http://{display_host}:{port}")
     uvicorn.run("zett.main:app", host=host, port=port, reload=reload, log_config=uvicorn_log_config())
+
+
+@app.command()
+def stop(
+    timeout: float = typer.Option(10.0, "--timeout", min=1.0, max=60.0),
+) -> None:
+    """Stop the recorded FastAPI, scheduler, and worker processes."""
+    configure_logging()
+    state = asyncio.run(RuntimeProcessController().stop(timeout=timeout))
+    if state is None:
+        typer.echo("Zett is not running")
+        return
+    typer.echo(
+        f"Stopped Zett; server_pid={state.server_pid} "
+        f"scheduler_pids={state.scheduler_pids} worker_pids={state.worker_pids}"
+    )
 
 
 @app.command()

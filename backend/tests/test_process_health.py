@@ -14,8 +14,9 @@ from zett.application.health import (
 )
 from zett.config import settings
 from zett.infra.scheduler.processes import HeartbeatReporter, ProcessHeartbeatPublisher
+from zett.infra.scheduler.runtime_state import RuntimeStateStore
 from zett.main import app
-from zett.schemas import ProcessHeartbeatIn, ProcessHeartbeatStatus, ProcessRole
+from zett.schemas import ProcessHeartbeatIn, ProcessHeartbeatStatus, ProcessRole, ServerRuntimeState
 
 
 async def test_heartbeat_registry_preserves_started_at_and_health() -> None:
@@ -195,6 +196,32 @@ async def test_supervisor_does_not_duplicate_fresh_processes(monkeypatch: pytest
     await supervisor.stop()
 
     assert launcher.started == []
+
+
+async def test_supervisor_persists_managed_child_pids(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setattr(settings, "process_supervisor_enabled", True)
+    registry = ProcessHeartbeatRegistry()
+    runtime_store = RuntimeStateStore(tmp_path / "runtime.json")
+    await runtime_store.write(ServerRuntimeState(server_pid=123, port=6280))
+    launcher = FakeLauncher()
+    supervisor = ProcessSupervisor(
+        launcher=launcher,
+        registry=registry,
+        runtime_state_store=runtime_store,
+        required_workers=1,
+        heartbeat_timeout_seconds=20,
+    )
+
+    await supervisor.run_once(datetime(2026, 1, 1, tzinfo=UTC))
+    state = await runtime_store.read()
+
+    assert state is not None
+    assert len(state.scheduler_pids) == 1
+    assert len(state.worker_pids) == 1
+    await supervisor.stop()
 
 
 def test_process_health_endpoint_receives_in_memory_heartbeats() -> None:
