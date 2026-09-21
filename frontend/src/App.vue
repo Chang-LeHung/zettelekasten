@@ -47,8 +47,9 @@ const InteractionTrace = defineAsyncComponent(() => import('./components/Interac
 const ModelUsageTrend = defineAsyncComponent(() => import('./components/ModelUsageTrend.vue'))
 const StaticAssetsView = defineAsyncComponent(() => import('./components/StaticAssetsView.vue'))
 const StaticAssetImportDialog = defineAsyncComponent(() => import('./components/StaticAssetImportDialog.vue'))
+const ScheduledTasksView = defineAsyncComponent(() => import('./components/ScheduledTasksView.vue'))
 
-type View = 'library' | 'search' | 'new' | 'assets' | 'settings'
+type View = 'library' | 'search' | 'new' | 'assets' | 'scheduledTasks' | 'settings'
 type NoticeKind = 'success' | 'error'
 type AssetEditorMode = 'closed' | 'text' | 'link'
 type AssetFilter = 'all' | 'documents' | 'images' | 'links' | 'notes' | 'code'
@@ -3037,6 +3038,7 @@ onBeforeUnmount(() => {
       <symbol id="icon-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></symbol>
       <symbol id="icon-add" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
       <symbol id="icon-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 13.5v-3l-2.1-.5a7 7 0 0 0-.7-1.7l1.1-1.8-2.1-2.1-1.8 1.1a7 7 0 0 0-1.7-.7L11.2 3h-3l-.5 2.1a7 7 0 0 0-1.7.7L4.2 4.7 2.1 6.8l1.1 1.8a7 7 0 0 0-.7 1.7L.5 10.8v3l2.1.5a7 7 0 0 0 .7 1.7l-1.1 1.8 2.1 2.1 1.8-1.1a7 7 0 0 0 1.7.7l.5 2.1h3l.5-2.1a7 7 0 0 0 1.7-.7l1.8 1.1 2.1-2.1-1.1-1.8a7 7 0 0 0 .7-1.7z" transform="translate(1.5 -0.25) scale(.88)"/></symbol>
+      <symbol id="icon-schedule" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M8 3h8M5 6l-2 2m16-2 2 2"/></symbol>
       <symbol id="icon-spark" viewBox="0 0 24 24"><path d="m12 2 1.3 5.1L18 9l-4.7 1.9L12 16l-1.3-5.1L6 9l4.7-1.9zM19 15l.7 2.3L22 18l-2.3.7L19 21l-.7-2.3L16 18l2.3-.7z"/></symbol>
       <symbol id="icon-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></symbol>
       <symbol id="icon-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1.5"/></symbol>
@@ -3155,6 +3157,9 @@ onBeforeUnmount(() => {
             <option value="zh">{{ $t('settings.chinese') }}</option>
           </select>
         </label>
+        <button :class="{ active: view === 'scheduledTasks' }" type="button" @click="navigate('scheduledTasks')">
+          <svg><use href="#icon-schedule" /></svg><span>{{ $t('nav.scheduledTasks') }}</span>
+        </button>
         <button :class="{ active: view === 'settings' }" type="button" @click="navigate('settings')">
           <svg><use href="#icon-settings" /></svg><span>{{ $t('nav.settings') }}</span>
           <span class="status-dot" :class="{ online: providers.some((provider) => provider.enabled) }" />
@@ -3785,6 +3790,10 @@ onBeforeUnmount(() => {
 
       <template v-else-if="view === 'assets'">
         <StaticAssetsView />
+      </template>
+
+      <template v-else-if="view === 'scheduledTasks'">
+        <ScheduledTasksView @open-session="openSession" />
       </template>
 
       <template v-else>
@@ -4633,11 +4642,11 @@ kbd, .card-type, .card-tags span { font-size: .69rem; }
   .app-shell { display: block; padding-bottom: 4.6rem; }
   .sidebar { position: fixed; top: auto; bottom: 0; width: 100%; height: 4.25rem; display: block; padding: .45rem max(.65rem, env(safe-area-inset-right)) max(.45rem, env(safe-area-inset-bottom)) max(.65rem, env(safe-area-inset-left)); border: 0; border-top: 1px solid rgba(255,255,255,.7); box-shadow: 0 -1px rgba(29,29,31,.07); }
   .brand, .sidebar-section { display: none; }
-  .primary-nav { display: grid; grid-template-columns: repeat(3, 1fr); width: 75%; }
+  .primary-nav { display: grid; grid-template-columns: repeat(3, 1fr); width: 50%; }
   .primary-nav button, .sidebar-footer button { height: 3.25rem; flex-direction: column; justify-content: center; gap: .2rem; padding: 0; font-size: .68rem; }
   .primary-nav button small, .primary-nav kbd, .status-dot { display: none; }
   .primary-nav button svg, .sidebar-footer button svg { width: 1.15rem; height: 1.15rem; }
-  .sidebar-footer { position: absolute; right: .65rem; bottom: max(.45rem, env(safe-area-inset-bottom)); width: calc((100% - 1.3rem) / 4); padding: 0; border: 0; }
+  .sidebar-footer { position: absolute; right: .65rem; bottom: max(.45rem, env(safe-area-inset-bottom)); width: calc((100% - 1.3rem) / 2); display: grid; grid-template-columns: repeat(2, 1fr); padding: 0; border: 0; }
   .locale-control { display: none; }
   .topbar { min-height: 4.5rem; padding: .8rem 1rem; }
   .topbar .primary-action { width: 2.65rem; padding: 0; font-size: 0; }
