@@ -8,7 +8,7 @@ from zett_agent import AgentRunConfig, ReasoningEffort, UserMessage
 from ...agent.config import ZettelkastenAgentConfig
 from ...agent.model_factory import create_model
 from ...agent.zettelkasten import ZettelkastenAgent
-from ...application.session_context import session_context_composition_service
+from ...application.agent.session_context import session_context_composition_service
 from ...application.settings import runtime_settings_service
 from ...infra.agent.runtime import get_agent_runtime_storage
 from ...infra.log import get_logger

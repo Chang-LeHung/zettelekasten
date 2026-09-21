@@ -30,7 +30,7 @@ from zett_agent import (
     UserMessage,
 )
 
-from ..application.turns import AgentTurn
+from ..application.agent.turns import AgentTurn
 from ..messages import MessagePartCodec
 
 AT_COMMAND_NAMESPACE = UUID("7f0b0be6-9d3f-5a3f-8f1e-1b7f2f6c4a11")

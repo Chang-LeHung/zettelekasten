@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 import pytest
 from zett_agent import AgentEvent, AgentEventType, AgentRunConfig, ReasoningEffort, UserMessage
 
-from zett.application.turns import AgentTurn, TurnAlreadyPromptedError
+from zett.application.agent.turns import AgentTurn, TurnAlreadyPromptedError
 
 
 class RecordingClient:

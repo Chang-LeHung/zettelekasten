@@ -2,7 +2,7 @@
 
 from fastapi.testclient import TestClient
 
-from zett.application.session_context import session_context_composition_service
+from zett.application.agent.session_context import session_context_composition_service
 from zett.main import app
 
 

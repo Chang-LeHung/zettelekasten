@@ -70,7 +70,7 @@ def _session_files_messages(request: ModelRequest) -> list[SystemMessage]:
 def _offline_models(monkeypatch, model: RecordingModel) -> None:
     """Keep both the turn and the background title task off the network."""
     monkeypatch.setattr(agent_routes, "create_model", lambda _connection: model)
-    monkeypatch.setattr("zett.application.session_titles.create_model", lambda _connection: RecordingModel())
+    monkeypatch.setattr("zett.application.agent.session_titles.create_model", lambda _connection: RecordingModel())
 
 
 def test_submitted_message_images_are_written_under_the_session_directory(monkeypatch) -> None:

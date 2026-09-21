@@ -45,7 +45,7 @@ from zett.agent import (
     event_payload,
 )
 from zett.agent.extensions import TagExtension
-from zett.application.presentation import message_out
+from zett.application.agent.presentation import message_out
 from zett.infra.agent.runtime import get_agent_runtime_storage
 
 

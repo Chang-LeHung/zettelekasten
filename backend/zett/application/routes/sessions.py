@@ -10,11 +10,11 @@ from ...infra.agent.runtime import get_agent_runtime_storage
 from ...infra.agent.shell_approval import shell_approval_storage
 from ...infra.persistence.dao import artifact_storage, session_asset_storage, session_storage
 from ...schemas import AgentSessionCreate, ArtifactListOptions, SessionAssetListOptions, SessionListOptions
-from ..presentation import message_out, session_out
+from ..agent.presentation import message_out, session_out
+from ..agent.session_context import SessionContextComposition, session_context_composition_service
+from ..agent.session_preferences import SessionModelPreference, session_model_preference_service
+from ..agent.session_titles import DEFAULT_SESSION_TITLE
 from ..schemas import AgentStartOut, DeleteResponse, PersistedMessageOut, SessionOut, ShellApprovalSettings
-from ..session_context import SessionContextComposition, session_context_composition_service
-from ..session_preferences import SessionModelPreference, session_model_preference_service
-from ..session_titles import DEFAULT_SESSION_TITLE
 
 router = APIRouter(prefix="/agent", tags=["sessions"])
 

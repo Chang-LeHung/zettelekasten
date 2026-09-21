@@ -36,6 +36,10 @@ from ...infra.log import get_logger
 from ...infra.persistence.dao import model_usage_activity_storage, provider_storage, session_storage
 from ...messages import MessageImageSizeExceeded, MessagePartCodec, MessagePartError
 from ...schemas import ProviderConnection
+from ..agent.session_context import session_context_composition_service
+from ..agent.session_preferences import session_model_preference_service
+from ..agent.session_titles import generate_initial_session_title
+from ..agent.turns import AgentTurn
 from ..message_files import store_message_images
 from ..schemas import (
     AnalyzeRequest,
@@ -46,11 +50,7 @@ from ..schemas import (
     SteerRequest,
     UserMessageIn,
 )
-from ..session_context import session_context_composition_service
-from ..session_preferences import session_model_preference_service
-from ..session_titles import generate_initial_session_title
 from ..settings import RuntimeSettings, runtime_settings_service
-from ..turns import AgentTurn
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 logger = get_logger(__name__)

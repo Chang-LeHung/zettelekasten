@@ -27,11 +27,11 @@ from zett_agent import (
     UserMessage,
 )
 
+from zett.application.agent.session_context import SESSION_CONTEXT_KEY_PREFIX
+from zett.application.agent.session_preferences import SESSION_MODEL_KEY_PREFIX
 from zett.application.provider_connections import ProviderConnectionTestError
 from zett.application.routes import agent as agent_routes
 from zett.application.routes import providers as provider_routes
-from zett.application.session_context import SESSION_CONTEXT_KEY_PREFIX
-from zett.application.session_preferences import SESSION_MODEL_KEY_PREFIX
 from zett.infra.persistence.dao import artifact_storage, provider_storage, session_storage
 from zett.infra.persistence.database import session_scope
 from zett.infra.persistence.tables import KeyValueRow
@@ -834,7 +834,7 @@ async def test_first_successful_turn_generates_the_session_title_once(monkeypatc
 
     monkeypatch.setattr(agent_routes, "create_model", model_factory)
     monkeypatch.setattr(agent_routes.ZettelkastenAgent, "initialize", initialize_agent)
-    monkeypatch.setattr("zett.application.session_titles.create_model", model_factory)
+    monkeypatch.setattr("zett.application.agent.session_titles.create_model", model_factory)
     with TestClient(app) as client:
         session_id = client.post("/api/agent/start").json()["conversation_id"]
         assert client.get(f"/api/agent/sessions/{session_id}").json()["title"] == "新会话"
