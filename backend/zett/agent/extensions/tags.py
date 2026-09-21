@@ -2,7 +2,7 @@
 
 from zett_agent import AgentExtension, AgentRunContext, tool
 
-from ...application.tagging import tag_service
+from ...application.tags.tagging import tag_service
 from ...infra.persistence.dao import artifact_storage
 from ...schemas import AgentArtifactEntity, TagEntity, TagTreeEntity
 

@@ -2,8 +2,8 @@
 
 from dataclasses import dataclass
 
-from ..infra.persistence.dao import artifact_storage, tag_storage
-from ..schemas import AgentArtifactEntity, ArtifactStatus, TagEntity, TagListOptions, TagTreeEntity, TagWrite
+from ...infra.persistence.dao import artifact_storage, tag_storage
+from ...schemas import AgentArtifactEntity, ArtifactStatus, TagEntity, TagListOptions, TagTreeEntity, TagWrite
 
 
 def normalize_tag_path(path: str) -> tuple[str, str, tuple[str, ...]]:

@@ -4,8 +4,8 @@ from typing import Annotated
 
 from pydantic import BaseModel, StringConstraints
 
-from ..infra.persistence.dao import session_asset_storage
-from ..schemas import SessionAssetEntity
+from ...infra.persistence.dao import session_asset_storage
+from ...schemas import SessionAssetEntity
 
 
 class AssetRenameIn(BaseModel):

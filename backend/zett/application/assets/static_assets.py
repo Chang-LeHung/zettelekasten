@@ -2,9 +2,9 @@
 
 from pathlib import Path
 
-from ..infra.persistence.dao import static_asset_storage
-from ..schemas import StaticAssetCreate, StaticAssetEntity, StaticAssetListOptions
-from .settings import runtime_settings_service
+from ...infra.persistence.dao import static_asset_storage
+from ...schemas import StaticAssetCreate, StaticAssetEntity, StaticAssetListOptions
+from ..settings import runtime_settings_service
 
 
 class StaticAssetService:

@@ -5,8 +5,8 @@ from typing import Annotated
 from pydantic import Field
 from zett_agent import AgentExtension, AgentRunContext, tool
 
-from ...application.artifact_pruner import AgentArtifactPreview, ArtifactPruner
-from ...application.tagging import tag_service
+from ...application.artifacts.artifact_pruner import AgentArtifactPreview, ArtifactPruner
+from ...application.tags.tagging import tag_service
 from ...infra.persistence.dao import artifact_storage
 from ...schemas import (
     AgentArtifactEntity,

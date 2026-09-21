@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from zett.application.artifact_pruner import (
+from zett.application.artifacts.artifact_pruner import (
     ArticleArtifactPreviewContent,
     ArtifactPruner,
     CardArtifactPreviewContent,

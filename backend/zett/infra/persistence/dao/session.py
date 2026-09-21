@@ -2,7 +2,7 @@
 
 from zett_agent import RawMessageRecord, SessionSummary
 
-from ....application.message_files import delete_session_files
+from ....application.assets.message_files import delete_session_files
 from ....schemas import AgentSessionCreate, SessionListOptions
 from ...agent.runtime import get_agent_runtime_storage
 from ..storage import AsyncStorage

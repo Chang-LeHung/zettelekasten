@@ -4,10 +4,10 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from ...infra.persistence.dao import session_asset_storage, session_storage
 from ...schemas import SessionAssetCreate, SessionAssetEntity, SessionAssetListOptions, SessionAssetType
-from ..asset_names import AssetRenameIn, rename_asset
+from ..assets.asset_names import AssetRenameIn, rename_asset
+from ..assets.static_assets import static_asset_service
 from ..schemas import DeleteResponse, LinkAssetIn, TextAssetIn
 from ..settings import runtime_settings_service
-from ..static_assets import static_asset_service
 
 router = APIRouter(prefix="/agent/{session_id}/assets", tags=["assets"])
 

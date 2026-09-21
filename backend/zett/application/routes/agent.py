@@ -40,7 +40,7 @@ from ..agent.session_context import session_context_composition_service
 from ..agent.session_preferences import session_model_preference_service
 from ..agent.session_titles import generate_initial_session_title
 from ..agent.turns import AgentTurn
-from ..message_files import store_message_images
+from ..assets.message_files import store_message_images
 from ..schemas import (
     AnalyzeRequest,
     AtCommandOut,
