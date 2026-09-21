@@ -21,6 +21,7 @@ const selectedTaskId = ref<string | null>(null)
 const loading = ref(false)
 const runsLoading = ref(false)
 const saving = ref(false)
+const formOpen = ref(false)
 const busyTaskId = ref<string | null>(null)
 const error = ref('')
 const form = reactive({
@@ -164,6 +165,7 @@ async function createTask(): Promise<void> {
     const created = await scheduledTaskClient.create(payload)
     form.name = ''
     form.prompt = ''
+    formOpen.value = false
     await loadTasks(created.id)
   } catch (errorValue) {
     error.value = message(errorValue)
@@ -217,10 +219,16 @@ onMounted(() => {
 <template>
   <header class="topbar compact">
     <div><p class="eyebrow">Automation</p><h1>Scheduled tasks</h1></div>
-    <button class="primary-action" type="button" :disabled="loading" @click="loadTasks()">
-      <span v-if="loading" class="button-spinner" aria-hidden="true" />
-      Refresh
-    </button>
+    <div class="scheduled-topbar-actions">
+      <button class="secondary-action new-scheduled-task-button" type="button" @click="formOpen = true">
+        <svg><use href="#icon-add" /></svg>
+        New task
+      </button>
+      <button class="primary-action" type="button" :disabled="loading" @click="loadTasks()">
+        <span v-if="loading" class="button-spinner" aria-hidden="true" />
+        Refresh
+      </button>
+    </div>
   </header>
 
   <section class="content scheduled-view">
@@ -331,34 +339,51 @@ onMounted(() => {
           <div v-else class="scheduled-empty">No runs recorded for this task.</div>
         </article>
 
-        <form class="scheduled-card scheduled-create" @submit.prevent="createTask">
-          <header class="scheduled-card-header">
-            <div><h2>New scheduled task</h2><p>Run one Agent prompt in a new session on a Cron schedule.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <Teleport to="body">
+    <Transition name="scheduled-dialog">
+      <div v-if="formOpen" class="scheduled-modal-backdrop" @click.self="formOpen = false" @keydown.esc.stop.prevent="formOpen = false">
+        <form class="scheduled-modal scheduled-create" role="dialog" aria-modal="true" aria-labelledby="new-scheduled-task-title" @submit.prevent="createTask">
+          <header class="scheduled-modal-header">
+            <div>
+              <span>Automation</span>
+              <h2 id="new-scheduled-task-title">New scheduled task</h2>
+              <p>Run one Agent prompt in a new session on a Cron schedule.</p>
+            </div>
+            <button class="scheduled-modal-close" type="button" aria-label="Close" @click="formOpen = false">×</button>
           </header>
           <div class="scheduled-form-grid">
-            <label><span>Name</span><input v-model="form.name" placeholder="Daily knowledge review" /></label>
+            <label><span>Name</span><input v-model="form.name" placeholder="Daily knowledge review" autofocus /></label>
             <label><span>Cron expression</span><input v-model="form.expression" placeholder="0 9 * * *" /></label>
             <label><span>Timezone</span><input v-model="form.timezone" placeholder="Asia/Shanghai" /></label>
             <label><span>Provider</span><select v-model="form.providerId"><option value="" disabled>Select a provider</option><option v-for="provider in enabledProviders" :key="provider.id" :value="provider.id">{{ provider.name }} · {{ provider.model }}</option></select></label>
             <label><span>Reasoning</span><select v-model="form.reasoningEffort"><option value="off">Off</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
             <label><span>Timeout seconds</span><input v-model.number="form.timeoutSeconds" type="number" min="1" max="86400" /></label>
-            <label class="full"><span>Prompt</span><textarea v-model="form.prompt" rows="5" placeholder="Review recent notes and create a concise summary artifact." /></label>
+            <label class="full"><span>Prompt</span><textarea v-model="form.prompt" rows="6" placeholder="Review recent notes and create a concise summary artifact." /></label>
           </div>
           <footer>
             <label class="task-enabled"><input v-model="form.enabled" type="checkbox" /> Enable immediately</label>
-            <button class="primary-action" type="submit" :disabled="saving || !form.name.trim() || !form.providerId || !form.prompt.trim()">
-              <span v-if="saving" class="button-spinner" aria-hidden="true" />
-              {{ saving ? 'Creating…' : 'Create task' }}
-            </button>
+            <div>
+              <button class="secondary-action" type="button" @click="formOpen = false">Cancel</button>
+              <button class="primary-action" type="submit" :disabled="saving || !form.name.trim() || !form.providerId || !form.prompt.trim()">
+                <span v-if="saving" class="button-spinner" aria-hidden="true" />
+                {{ saving ? 'Creating…' : 'Create task' }}
+              </button>
+            </div>
           </footer>
         </form>
       </div>
-    </div>
-  </section>
+    </Transition>
+  </Teleport>
 </template>
 
 <style scoped>
 .scheduled-view { max-width: 74rem; }
+.scheduled-topbar-actions { display: flex; align-items: center; gap: .55rem; }
+.scheduled-topbar-actions .secondary-action { min-height: 2.45rem; }
 .scheduled-error { margin: 0 0 1rem; padding: .75rem .9rem; border-radius: .7rem; color: #963f3f; background: #faeded; font-size: .72rem; }
 .scheduled-layout { display: grid; grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr); align-items: start; gap: 1rem; }
 .scheduled-list-panel, .scheduled-card { border: 1px solid rgba(29,29,31,.08); border-radius: .85rem; background: rgba(255,255,255,.9); box-shadow: 0 2px 12px rgba(0,0,0,.025); }
@@ -415,7 +440,14 @@ onMounted(() => {
 .run-raw summary { color: #7c867f; cursor: pointer; font-size: .62rem; }
 .run-raw pre { max-height: 14rem; margin: .45rem 0 0; padding: .7rem; overflow: auto; border-radius: .55rem; color: #5f6863; background: #f4f6f4; font-size: .62rem; line-height: 1.45; white-space: pre-wrap; }
 .run-waiting { color: #8b938e; font-size: .66rem; }
-.scheduled-create { padding-bottom: .2rem; }
+.scheduled-modal-backdrop { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 1.25rem; background: rgba(27,35,30,.28); backdrop-filter: blur(12px) saturate(115%); }
+.scheduled-modal { width: min(100%, 42rem); max-height: min(48rem, calc(100vh - 2rem)); overflow-y: auto; border: 1px solid rgba(38,52,43,.14); border-radius: 1rem; background: #fff; box-shadow: 0 28px 80px rgba(28,39,32,.22); }
+.scheduled-modal-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding: 1.25rem 1.35rem 1rem; border-bottom: 1px solid rgba(29,29,31,.07); }
+.scheduled-modal-header span { color: #557662; font-size: .61rem; font-weight: 750; letter-spacing: .09em; text-transform: uppercase; }
+.scheduled-modal-header h2 { margin: .25rem 0 .24rem; color: #2d342f; font-size: 1.2rem; }
+.scheduled-modal-header p { margin: 0; color: #858d88; font-size: .7rem; }
+.scheduled-modal-close { width: 2rem; height: 2rem; flex: 0 0 auto; border: 1px solid #e1e6e2; border-radius: .62rem; color: #69726c; background: #f8f9f8; cursor: pointer; font-size: 1.2rem; line-height: 1; }
+.scheduled-modal-close:hover { color: #35453b; background: #f0f4f1; }
 .scheduled-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem; padding: 1rem 1.1rem; }
 .scheduled-form-grid label { min-width: 0; display: grid; gap: .35rem; }
 .scheduled-form-grid label.full { grid-column: 1 / -1; }
@@ -425,7 +457,12 @@ onMounted(() => {
 .scheduled-form-grid textarea { resize: vertical; padding: .65rem .7rem; line-height: 1.5; }
 .scheduled-form-grid input:focus, .scheduled-form-grid select:focus, .scheduled-form-grid textarea:focus { border-color: #8fab99; box-shadow: 0 0 0 3px rgba(76,119,94,.1); background: #fff; }
 .scheduled-create footer { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .9rem 1.1rem 1.05rem; border-top: 1px solid rgba(29,29,31,.07); }
+.scheduled-create footer > div { display: flex; align-items: center; gap: .5rem; }
 .task-enabled { display: flex; align-items: center; gap: .42rem; color: #69726c; font-size: .68rem; }
+.scheduled-dialog-enter-active, .scheduled-dialog-leave-active { transition: opacity 170ms ease; }
+.scheduled-dialog-enter-active .scheduled-modal, .scheduled-dialog-leave-active .scheduled-modal { transition: transform 210ms cubic-bezier(.2,.8,.2,1), opacity 170ms ease; }
+.scheduled-dialog-enter-from, .scheduled-dialog-leave-to { opacity: 0; }
+.scheduled-dialog-enter-from .scheduled-modal, .scheduled-dialog-leave-to .scheduled-modal { opacity: 0; transform: translateY(.55rem) scale(.985); }
 @media (max-width: 820px) {
   .scheduled-layout { grid-template-columns: 1fr; }
   .scheduled-list-panel { position: static; }
@@ -435,5 +472,13 @@ onMounted(() => {
   .scheduled-form-grid { grid-template-columns: 1fr; }
   .scheduled-card-header, .scheduled-create footer { align-items: stretch; flex-direction: column; }
   .scheduled-actions { justify-content: flex-start; }
+  .scheduled-topbar-actions { align-items: stretch; flex-direction: column-reverse; }
+}
+@media (max-width: 560px) {
+  .scheduled-modal-backdrop { align-items: end; padding: .7rem; }
+  .scheduled-modal { max-height: calc(100vh - 1.4rem); border-radius: .9rem; }
+  .scheduled-form-grid { grid-template-columns: 1fr; }
+  .scheduled-create footer { align-items: stretch; flex-direction: column; }
+  .scheduled-create footer > div { justify-content: flex-end; }
 }
 </style>

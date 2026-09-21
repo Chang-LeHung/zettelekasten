@@ -106,14 +106,16 @@ it('lists scheduled tasks, runs, and creates an Agent prompt task', async () => 
     host.querySelector<HTMLButtonElement>('.run-session-button')!.click()
     expect(opened).toHaveBeenCalledWith('session-1')
 
-    const name = host.querySelector<HTMLInputElement>('input[placeholder="Daily knowledge review"]')!
-    const prompt = host.querySelector<HTMLTextAreaElement>('textarea')!
+    host.querySelector<HTMLButtonElement>('.new-scheduled-task-button')!.click()
+    await nextTick()
+    const name = document.body.querySelector<HTMLInputElement>('input[placeholder="Daily knowledge review"]')!
+    const prompt = document.body.querySelector<HTMLTextAreaElement>('textarea')!
     name.value = 'Morning review'
     name.dispatchEvent(new Event('input', { bubbles: true }))
     prompt.value = 'Summarize yesterday.'
     prompt.dispatchEvent(new Event('input', { bubbles: true }))
     await nextTick()
-    host.querySelector<HTMLFormElement>('.scheduled-create')!.dispatchEvent(
+    document.body.querySelector<HTMLFormElement>('.scheduled-create')!.dispatchEvent(
       new Event('submit', { bubbles: true, cancelable: true }),
     )
 
