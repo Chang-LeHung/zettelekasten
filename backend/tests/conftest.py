@@ -8,8 +8,8 @@ from sqlalchemy.pool import NullPool
 from zett_agent import AssistantMessage, ModelEvent, ModelRequest, ModelResponse
 
 from zett import config
-from zett.application import provider_connections
 from zett.application.health import process_heartbeat_registry
+from zett.application.providers import provider_connections
 from zett.infra.artifacts.search import ensure_artifact_search
 from zett.infra.files import object_store as object_store_module
 from zett.infra.files.object_store import LocalObjectStore

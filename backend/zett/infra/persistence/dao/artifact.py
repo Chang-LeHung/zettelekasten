@@ -7,7 +7,7 @@ from sqlalchemy import Float, String, or_, select, text
 from sqlalchemy import delete as sql_delete
 from zett_agent import new_uuid7
 
-from ....application.object_store import ObjectKey
+from ....application.files.object_store import ObjectKey
 from ....schemas import (
     AgentArtifactEntity,
     AgentArtifactWrite,

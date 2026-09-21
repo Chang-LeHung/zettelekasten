@@ -5,9 +5,9 @@ from contextlib import aclosing
 
 from zett_agent import ModelEventType, ModelRequest, ReasoningEffort, UserMessage
 
-from ..agent.model_factory import create_model
-from ..infra.log import get_logger
-from ..schemas import ProviderConnection
+from ...agent.model_factory import create_model
+from ...infra.log import get_logger
+from ...schemas import ProviderConnection
 
 logger = get_logger(__name__)
 

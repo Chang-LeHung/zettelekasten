@@ -9,7 +9,7 @@ from pathlib import Path
 from sqlalchemy import select
 from zett_agent import new_uuid7
 
-from ....application.object_store import static_asset_key
+from ....application.files.object_store import static_asset_key
 from ....schemas import StaticAssetCreate, StaticAssetEntity, StaticAssetListOptions
 from ...files.object_store import get_object_store
 from ..database import session_scope

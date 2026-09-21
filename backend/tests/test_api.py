@@ -29,7 +29,7 @@ from zett_agent import (
 
 from zett.application.agent.session_context import SESSION_CONTEXT_KEY_PREFIX
 from zett.application.agent.session_preferences import SESSION_MODEL_KEY_PREFIX
-from zett.application.provider_connections import ProviderConnectionTestError
+from zett.application.providers.provider_connections import ProviderConnectionTestError
 from zett.application.routes import agent as agent_routes
 from zett.application.routes import providers as provider_routes
 from zett.infra.persistence.dao import artifact_storage, provider_storage, session_storage

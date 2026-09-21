@@ -41,6 +41,7 @@ from ..agent.session_preferences import session_model_preference_service
 from ..agent.session_titles import generate_initial_session_title
 from ..agent.turns import AgentTurn
 from ..assets.message_files import store_message_images
+from ..runtime.settings import RuntimeSettings, runtime_settings_service
 from ..schemas import (
     AnalyzeRequest,
     AtCommandOut,
@@ -50,7 +51,6 @@ from ..schemas import (
     SteerRequest,
     UserMessageIn,
 )
-from ..settings import RuntimeSettings, runtime_settings_service
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 logger = get_logger(__name__)

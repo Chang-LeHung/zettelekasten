@@ -9,7 +9,7 @@ from sqlalchemy import delete as sql_delete
 from sqlalchemy import select
 from zett_agent import new_uuid7
 
-from ....application.object_store import session_asset_key
+from ....application.files.object_store import session_asset_key
 from ....schemas import SessionAssetCreate, SessionAssetEntity, SessionAssetListOptions, SessionAssetType
 from ...files.object_store import get_object_store
 from ..database import session_scope

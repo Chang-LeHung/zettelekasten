@@ -2,8 +2,8 @@
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from ..config import settings
-from ..infra.persistence.dao import KeyValueStorage, key_value_storage
+from ...config import settings
+from ...infra.persistence.dao import KeyValueStorage, key_value_storage
 
 RUNTIME_SETTINGS_KEY = "settings.runtime"
 

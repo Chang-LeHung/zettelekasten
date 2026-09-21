@@ -4,7 +4,7 @@ import json
 
 from zett_agent import AgentExtension, AgentRunContext, SystemMessage
 
-from ...application.object_store import session_directory_key
+from ...application.files.object_store import session_directory_key
 from ...infra.files.object_store import get_object_store
 
 

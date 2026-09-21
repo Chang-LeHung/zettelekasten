@@ -6,8 +6,8 @@ from ...infra.persistence.dao import session_asset_storage, session_storage
 from ...schemas import SessionAssetCreate, SessionAssetEntity, SessionAssetListOptions, SessionAssetType
 from ..assets.asset_names import AssetRenameIn, rename_asset
 from ..assets.static_assets import static_asset_service
+from ..runtime.settings import runtime_settings_service
 from ..schemas import DeleteResponse, LinkAssetIn, TextAssetIn
-from ..settings import runtime_settings_service
 
 router = APIRouter(prefix="/agent/{session_id}/assets", tags=["assets"])
 

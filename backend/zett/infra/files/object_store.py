@@ -4,7 +4,7 @@ import os
 import tempfile
 from pathlib import Path, PurePosixPath
 
-from ...application.object_store import (
+from ...application.files.object_store import (
     ObjectKey,
     ObjectStore,
     StoredObject,

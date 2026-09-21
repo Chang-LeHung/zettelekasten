@@ -7,7 +7,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 from zett_agent import AssistantMessage, ModelEvent, ModelRequest, ModelResponse, SystemMessage
 
-from zett.application.object_store import session_directory_key
+from zett.application.files.object_store import session_directory_key
 from zett.application.routes import agent as agent_routes
 from zett.infra.files.object_store import get_object_store
 from zett.main import app

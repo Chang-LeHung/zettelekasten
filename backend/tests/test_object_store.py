@@ -3,7 +3,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from zett.application.object_store import ObjectKey
+from zett.application.files.object_store import ObjectKey
 from zett.infra.files.object_store import LocalObjectStore
 from zett.main import app
 
