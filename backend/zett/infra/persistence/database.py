@@ -51,6 +51,12 @@ async def ensure_indexes(connection: AsyncConnection) -> None:
 #: types come from the ORM model so the DDL cannot drift from the schema.
 _ADDED_COLUMNS = (("session_artifacts", "draft_content_json"),)
 
+#: Columns removed from the ORM after an earlier release. ``create_all`` does
+#: not drop existing columns, so old NOT NULL columns continue to reject inserts
+#: that no longer provide a value. Name them here so startup performs the SQLite
+#: DDL migration idempotently before the application serves requests.
+_REMOVED_COLUMNS = (("scheduled_tasks", "misfire_grace_seconds"),)
+
 
 async def ensure_columns(connection: AsyncConnection) -> None:
     """Add columns missing from databases created by an older application version.
@@ -68,6 +74,15 @@ async def ensure_columns(connection: AsyncConnection) -> None:
         await connection.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN {definition}")
 
 
+async def remove_columns(connection: AsyncConnection) -> None:
+    """Drop columns retired from the ORM by an earlier application version."""
+    for table_name, column_name in _REMOVED_COLUMNS:
+        existing = {row[1] for row in (await connection.exec_driver_sql(f"PRAGMA table_info({table_name})")).fetchall()}
+        if column_name not in existing:
+            continue
+        await connection.exec_driver_sql(f'ALTER TABLE "{table_name}" DROP COLUMN "{column_name}"')
+
+
 async def init_db() -> None:
     """Create the current schema; do not migrate retired application tables."""
     settings.database_path.parent.mkdir(parents=True, exist_ok=True)
@@ -75,6 +90,7 @@ async def init_db() -> None:
         await connection.run_sync(Base.metadata.create_all)
         await ensure_indexes(connection)
         await ensure_columns(connection)
+        await remove_columns(connection)
         await ensure_artifact_search(connection)
 
 

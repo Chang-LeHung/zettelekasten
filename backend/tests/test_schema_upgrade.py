@@ -1,9 +1,17 @@
 """Idempotent schema upgrades for databases created by an older version."""
 
+from datetime import UTC, datetime, timedelta
+
 from sqlalchemy import text
 
 from zett.infra.persistence import database
+from zett.infra.persistence.dao import scheduled_task_storage
 from zett.infra.persistence.database import init_db, session_scope
+from zett.schemas import (
+    CronSchedule,
+    ScheduledTaskAction,
+    ScheduledTaskWrite,
+)
 
 
 async def _columns(table: str) -> set[str]:
@@ -49,3 +57,29 @@ async def test_ensure_columns_keeps_existing_artifact_rows_readable() -> None:
     assert artifact is not None
     assert artifact.content is not None and artifact.content.title == "Legacy card"
     assert artifact.draft_content is None
+
+
+async def test_init_db_removes_the_retired_scheduled_task_misfire_column_once() -> None:
+    await init_db()
+    async with database.engine.begin() as connection:
+        await connection.execute(text("ALTER TABLE scheduled_tasks ADD COLUMN misfire_grace_seconds INTEGER NOT NULL"))
+
+    assert "misfire_grace_seconds" in await _columns("scheduled_tasks")
+
+    await init_db()
+    await init_db()
+
+    assert "misfire_grace_seconds" not in await _columns("scheduled_tasks")
+    now = datetime.now(UTC)
+    created = await scheduled_task_storage.create(
+        ScheduledTaskWrite(
+            name="After migration",
+            enabled=True,
+            schedule=CronSchedule(expression="0 9 * * *", timezone="UTC"),
+            action=ScheduledTaskAction(kind="probe", payload={}),
+            next_run_at=now + timedelta(minutes=1),
+            timeout_seconds=60,
+            overlap_policy="skip",
+        )
+    )
+    assert created.name == "After migration"
