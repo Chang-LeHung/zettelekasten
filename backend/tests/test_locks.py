@@ -8,7 +8,7 @@ from threading import Barrier, Lock
 
 import pytest
 
-from zett.infra.locks import synchronized
+from zett.infra.common.locks import synchronized
 
 
 def test_same_name_serializes_different_decorated_functions() -> None:
