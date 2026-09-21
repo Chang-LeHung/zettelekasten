@@ -10,7 +10,7 @@ from ...agent.model_factory import create_model
 from ...agent.zettelkasten import ZettelkastenAgent
 from ...application.session_context import session_context_composition_service
 from ...application.settings import runtime_settings_service
-from ...infra.agent_runtime import get_agent_runtime_storage
+from ...infra.agent.runtime import get_agent_runtime_storage
 from ...infra.dao import (
     model_usage_activity_storage,
     provider_storage,

@@ -46,7 +46,7 @@ from zett.agent import (
 )
 from zett.agent.extensions import TagExtension
 from zett.application.presentation import message_out
-from zett.infra.agent_runtime import get_agent_runtime_storage
+from zett.infra.agent.runtime import get_agent_runtime_storage
 
 
 class StreamingModel:

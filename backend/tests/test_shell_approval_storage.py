@@ -3,7 +3,7 @@
 import pytest
 from zett_agent import ShellApprovalMode
 
-from zett.infra.shell_approval import SQLiteShellApprovalStorage
+from zett.infra.agent.shell_approval import SQLiteShellApprovalStorage
 
 
 async def test_shell_approval_storage_persists_exact_commands() -> None:

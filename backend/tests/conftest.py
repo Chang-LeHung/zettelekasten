@@ -53,7 +53,7 @@ async def isolated_database(tmp_path, monkeypatch: pytest.MonkeyPatch) -> AsyncI
         await ensure_artifact_search(connection)
     await process_heartbeat_registry.clear()
     yield database_path
-    from zett.infra.agent_runtime import close_agent_runtime_storage
+    from zett.infra.agent.runtime import close_agent_runtime_storage
 
     await close_agent_runtime_storage()
     await engine.dispose()

@@ -9,7 +9,7 @@ from typing import Self
 
 import pytest
 
-from zett.infra import agent_runtime
+from zett.infra.agent import runtime as agent_runtime
 
 
 class FakeStorage:

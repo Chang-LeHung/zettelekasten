@@ -116,7 +116,7 @@ class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifactEntity, str,
 
     async def create(self, entity: AgentArtifactWrite) -> AgentArtifactEntity:
         """Persist one artifact after confirming its Agent session exists."""
-        from ..agent_runtime import get_agent_runtime_storage
+        from ..agent.runtime import get_agent_runtime_storage
 
         if await get_agent_runtime_storage().get_session(entity.session_id) is None:
             raise KeyError(f"Agent session not found: {entity.session_id}")

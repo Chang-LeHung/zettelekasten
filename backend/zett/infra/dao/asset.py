@@ -92,7 +92,7 @@ class SessionAssetStorage(AsyncStorage[SessionAssetCreate, SessionAssetEntity, s
     async def create(self, entity: SessionAssetCreate) -> SessionAssetEntity:
         """Store one asset after confirming its Agent session exists."""
         _validate_payload(entity)
-        from ..agent_runtime import get_agent_runtime_storage
+        from ..agent.runtime import get_agent_runtime_storage
 
         if await get_agent_runtime_storage().get_session(entity.session_id) is None:
             raise KeyError(f"Agent session not found: {entity.session_id}")

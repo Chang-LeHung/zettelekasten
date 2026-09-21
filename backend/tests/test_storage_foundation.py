@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from zett_agent import UserMessage
 
 from zett.config import settings
-from zett.infra.agent_runtime import get_agent_runtime_storage
+from zett.infra.agent.runtime import get_agent_runtime_storage
 from zett.infra.dao.artifact import artifact_storage
 from zett.infra.dao.asset import session_asset_storage
 from zett.infra.dao.session import session_storage

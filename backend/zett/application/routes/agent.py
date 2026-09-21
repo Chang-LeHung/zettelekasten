@@ -30,10 +30,10 @@ from ...agent import (
     event_payload,
 )
 from ...agent.model_factory import ProviderAdapter, create_model
-from ...infra.agent_runtime import get_agent_runtime_storage
+from ...infra.agent.runtime import get_agent_runtime_storage
+from ...infra.agent.shell_approval import shell_approval_storage
 from ...infra.dao import model_usage_activity_storage, provider_storage, session_storage
 from ...infra.log import get_logger
-from ...infra.shell_approval import shell_approval_storage
 from ...messages import MessageImageSizeExceeded, MessagePartCodec, MessagePartError
 from ...schemas import ProviderConnection
 from ..message_files import store_message_images

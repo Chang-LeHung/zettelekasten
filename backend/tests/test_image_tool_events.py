@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from zett_agent import ImageBytesSource, ImageContent, TextContent, ToolMessage
 
 from zett.agent.dispatcher import _message, encode_sse
-from zett.infra.agent_runtime import get_agent_runtime_storage
+from zett.infra.agent.runtime import get_agent_runtime_storage
 from zett.main import app
 
 

@@ -5,7 +5,7 @@ from threading import RLock
 
 from zett_agent import SQLiteSessionStorage
 
-from ..config import settings
+from ...config import settings
 
 _storage: SQLiteSessionStorage | None = None
 _storage_path: Path | None = None
