@@ -19,7 +19,7 @@ when a build exists.
 | `zett/main.py`, `zett/cli.py` | ASGI entry point and the packaged `zett` command |
 
 Domain rules currently live in `schemas.py`, storage contracts in
-`infra/storage.py`, and services in `application/`; there is no separate
+`infra/persistence/storage.py`, and services in `application/`; there is no separate
 `domain/` package.
 
 ## Storage boundaries
