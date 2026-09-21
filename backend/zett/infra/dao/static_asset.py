@@ -12,7 +12,7 @@ from zett_agent import new_uuid7
 from ...application.object_store import static_asset_key
 from ...schemas import StaticAssetCreate, StaticAssetEntity, StaticAssetListOptions
 from ..database import session_scope
-from ..object_store import get_object_store
+from ..files.object_store import get_object_store
 from ..storage import AsyncStorage
 from ..tables import StaticAssetRow
 

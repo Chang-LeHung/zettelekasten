@@ -3,9 +3,9 @@
 from pathlib import Path
 from uuid import UUID
 
-from ..application.object_store import ObjectKey, latex_project_key
-from ..schemas import LatexPdfArtifactContent, LatexPdfArtifactCreate
-from .object_store import get_object_store
+from ...application.object_store import ObjectKey, latex_project_key
+from ...schemas import LatexPdfArtifactContent, LatexPdfArtifactCreate
+from ..files.object_store import get_object_store
 
 
 def create_latex_project(session_id: str, content: LatexPdfArtifactCreate) -> LatexPdfArtifactContent:

@@ -9,7 +9,7 @@ from zett_agent import AssistantMessage, ModelEvent, ModelRequest, ModelResponse
 
 from zett.application.object_store import session_directory_key
 from zett.application.routes import agent as agent_routes
-from zett.infra.object_store import get_object_store
+from zett.infra.files.object_store import get_object_store
 from zett.main import app
 
 IMAGE_BYTES = b"\x89PNG\r\n\x1a\n session upload payload"

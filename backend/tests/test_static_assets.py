@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from zett.config import settings
 from zett.infra.dao import static_asset_storage
-from zett.infra.object_store import get_object_store
+from zett.infra.files.object_store import get_object_store
 from zett.main import app
 from zett.schemas import StaticAssetCreate, StaticAssetListOptions
 

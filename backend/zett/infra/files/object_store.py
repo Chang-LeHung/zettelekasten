@@ -4,14 +4,14 @@ import os
 import tempfile
 from pathlib import Path, PurePosixPath
 
-from ..application.object_store import (
+from ...application.object_store import (
     ObjectKey,
     ObjectStore,
     StoredObject,
     content_digest,
     object_url,
 )
-from ..config import settings
+from ...config import settings
 
 
 class LocalObjectStore(ObjectStore):

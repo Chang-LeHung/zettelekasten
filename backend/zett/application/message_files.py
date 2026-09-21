@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from mimetypes import guess_extension
 from pathlib import Path
 
-from ..infra.object_store import get_object_store
+from ..infra.files.object_store import get_object_store
 from ..messages import FrontUserMessage, MessagePartCodec
 from .object_store import session_directory_key, session_upload_key
 

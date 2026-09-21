@@ -9,7 +9,7 @@ from pydantic import TypeAdapter
 from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 
-from ..schemas import ArtifactContent
+from ...schemas import ArtifactContent
 
 _CONTENT_ADAPTER = TypeAdapter(ArtifactContent)
 

@@ -8,10 +8,10 @@ from pydantic import ValidationError
 from sqlalchemy import select
 
 from zett.config import settings
-from zett.infra import object_store as object_store_module
 from zett.infra.dao import artifact_storage, session_storage
 from zett.infra.database import session_scope
-from zett.infra.object_store import LocalObjectStore, get_object_store
+from zett.infra.files import object_store as object_store_module
+from zett.infra.files.object_store import LocalObjectStore, get_object_store
 from zett.infra.tables import SessionArtifactRow
 from zett.main import app
 from zett.schemas import (

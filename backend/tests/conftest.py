@@ -11,9 +11,9 @@ from zett import config
 from zett.application import provider_connections
 from zett.application.health import process_heartbeat_registry
 from zett.infra import database
-from zett.infra import object_store as object_store_module
-from zett.infra.artifact_search import ensure_artifact_search
-from zett.infra.object_store import LocalObjectStore
+from zett.infra.artifacts.search import ensure_artifact_search
+from zett.infra.files import object_store as object_store_module
+from zett.infra.files.object_store import LocalObjectStore
 from zett.infra.tables import Base
 
 

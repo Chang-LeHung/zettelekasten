@@ -20,15 +20,15 @@ from ...schemas import (
     LatexPdfArtifactContent,
     LatexPdfArtifactCreate,
 )
-from ..artifact_search import (
+from ..artifacts.latex_projects import create_latex_project, validate_latex_project_path
+from ..artifacts.search import (
     build_fts_query,
     delete_artifact_search,
     delete_artifacts_search,
     upsert_artifact_search,
 )
 from ..database import session_scope
-from ..latex_projects import create_latex_project, validate_latex_project_path
-from ..object_store import get_object_store
+from ..files.object_store import get_object_store
 from ..storage import AsyncStorage
 from ..tables import (
     CODE_TO_STATUS,
