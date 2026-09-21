@@ -102,6 +102,108 @@ export interface RuntimeSettings {
   compaction_keep_recent_tokens: number
 }
 
+export type ProcessRole = 'scheduler' | 'worker'
+export type ProcessHeartbeatStatus = 'starting' | 'running' | 'stopped'
+
+export interface ProcessHeartbeatInput {
+  role: ProcessRole
+  instance_id: string
+  pid: number
+  status: ProcessHeartbeatStatus
+  metadata?: Record<string, string>
+}
+
+export interface ProcessHeartbeatRecord extends Required<ProcessHeartbeatInput> {
+  started_at: string
+  heartbeat_at: string
+  stopped_at: string | null
+}
+
+export interface ProcessInstanceHealth {
+  instance_id: string
+  pid: number
+  status: ProcessHeartbeatStatus
+  heartbeat_at: string
+  age_seconds: number
+}
+
+export interface ProcessRoleHealth {
+  role: ProcessRole
+  healthy: boolean
+  active_processes: number
+  required_processes: number
+  stale_after_seconds: number
+  instances: ProcessInstanceHealth[]
+}
+
+export interface ProcessHealthReport {
+  healthy: boolean
+  checked_at: string
+  roles: ProcessRoleHealth[]
+}
+
+export type ScheduledTaskRunStatus =
+  | 'pending'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'skipped'
+  | 'cancelled'
+  | 'interrupted'
+
+export type ScheduledTaskTrigger = 'scheduled' | 'manual'
+
+export interface CronSchedule {
+  expression: string
+  timezone: string
+}
+
+export interface ScheduledTaskAction {
+  kind: string
+  payload: Record<string, unknown>
+}
+
+export interface ScheduledTaskInput {
+  name: string
+  schedule: CronSchedule
+  action: ScheduledTaskAction
+  enabled?: boolean
+  timeout_seconds?: number
+  overlap_policy?: 'skip'
+}
+
+export interface ScheduledTask {
+  id: string
+  name: string
+  enabled: boolean
+  schedule: CronSchedule
+  action: ScheduledTaskAction
+  next_run_at: string
+  timeout_seconds: number
+  overlap_policy: 'skip'
+  lease_run_id: string | null
+  lease_expires_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ScheduledTaskRun {
+  id: string
+  task_id: string
+  scheduled_for: string
+  trigger_kind: ScheduledTaskTrigger
+  status: ScheduledTaskRunStatus
+  idempotency_key: string
+  action: ScheduledTaskAction
+  started_at: string | null
+  completed_at: string | null
+  output: Record<string, unknown> | null
+  error_type: string | null
+  error_message: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface AgentUsageActivityDay {
   date: string
   requests: number

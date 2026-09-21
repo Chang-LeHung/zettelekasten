@@ -1,5 +1,13 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { aiClient, assetClient, libraryClient, settingsClient, tagClient } from './client'
+import {
+  aiClient,
+  assetClient,
+  healthClient,
+  libraryClient,
+  scheduledTaskClient,
+  settingsClient,
+  tagClient,
+} from './client'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -31,6 +39,106 @@ it('loads, uploads, and deletes global assets through the typed client', async (
   expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/assets/upload?name=diagram.png')
   expect(fetchMock.mock.calls[2]?.[0]).toBe('/api/files/assets/static/asset-1.png')
   expect(fetchMock.mock.calls[3]?.[0]).toBe('/api/assets/asset-1')
+})
+
+it('manages scheduled tasks through the typed client', async () => {
+  const task = {
+    id: 'task-1',
+    name: 'Daily note',
+    enabled: true,
+    schedule: { expression: '0 9 * * *', timezone: 'Asia/Shanghai' },
+    action: { kind: 'agent_prompt', payload: { provider_id: 'provider-1', message: 'Summarize today.' } },
+    next_run_at: '2026-09-22T01:00:00Z',
+    timeout_seconds: 600,
+    overlap_policy: 'skip',
+    lease_run_id: null,
+    lease_expires_at: null,
+    created_at: '2026-09-21T00:00:00Z',
+    updated_at: '2026-09-21T00:00:00Z',
+  }
+  const pendingRun = {
+    id: 'run-1',
+    task_id: 'task-1',
+    scheduled_for: '2026-09-21T00:00:00Z',
+    trigger_kind: 'manual',
+    status: 'pending',
+    idempotency_key: 'manual:run-1',
+    action: task.action,
+    started_at: null,
+    completed_at: null,
+    output: null,
+    error_type: null,
+    error_message: null,
+    created_at: '2026-09-21T00:00:00Z',
+    updated_at: '2026-09-21T00:00:00Z',
+  }
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify([task])))
+    .mockResolvedValueOnce(new Response(JSON.stringify(task), { status: 201 }))
+    .mockResolvedValueOnce(new Response(JSON.stringify(pendingRun), { status: 202 }))
+    .mockResolvedValueOnce(new Response(JSON.stringify([pendingRun])))
+  vi.stubGlobal('fetch', fetchMock)
+
+  await expect(scheduledTaskClient.list(true)).resolves.toEqual([task])
+  await expect(scheduledTaskClient.create({
+    name: task.name,
+    schedule: task.schedule,
+    action: task.action,
+  })).resolves.toEqual(task)
+  await expect(scheduledTaskClient.runNow(task.id)).resolves.toEqual(pendingRun)
+  await expect(scheduledTaskClient.listRuns(task.id, ['pending'])).resolves.toEqual([pendingRun])
+
+  expect(String(fetchMock.mock.calls[0]?.[0])).toBe('/api/scheduled-tasks?enabled=true')
+  expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: 'POST' })
+  expect(fetchMock.mock.calls[2]?.[0]).toBe('/api/scheduled-tasks/task-1/run')
+  expect(String(fetchMock.mock.calls[3]?.[0])).toBe('/api/scheduled-tasks/task-1/runs?run_status=pending')
+})
+
+it('loads supervised process health through the typed client', async () => {
+  const report = {
+    healthy: true,
+    checked_at: '2026-09-21T00:00:00Z',
+    roles: [{
+      role: 'scheduler',
+      healthy: true,
+      active_processes: 1,
+      required_processes: 1,
+      stale_after_seconds: 20,
+      instances: [{
+        instance_id: 'scheduler-1',
+        pid: 100,
+        status: 'running',
+        heartbeat_at: '2026-09-21T00:00:00Z',
+        age_seconds: 2,
+      }],
+    }],
+  }
+  const heartbeat = {
+    role: 'scheduler',
+    instance_id: 'scheduler-1',
+    pid: 100,
+    status: 'running',
+    metadata: {},
+    started_at: '2026-09-20T23:59:58Z',
+    heartbeat_at: '2026-09-21T00:00:00Z',
+    stopped_at: null,
+  }
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify(report)))
+    .mockResolvedValueOnce(new Response(JSON.stringify(heartbeat), { status: 202 }))
+  vi.stubGlobal('fetch', fetchMock)
+
+  await expect(healthClient.processes()).resolves.toEqual(report)
+  await expect(healthClient.reportHeartbeat({
+    role: 'scheduler',
+    instance_id: 'scheduler-1',
+    pid: 100,
+    status: 'running',
+  })).resolves.toEqual(heartbeat)
+  expect(fetchMock).toHaveBeenCalledWith('/api/health/processes', expect.any(Object))
+  expect(fetchMock).toHaveBeenCalledWith('/api/health/processes/heartbeat', expect.objectContaining({
+    method: 'POST',
+  }))
 })
 
 it('loads the persistent tag tree and delegates subtree filtering to the backend', async () => {

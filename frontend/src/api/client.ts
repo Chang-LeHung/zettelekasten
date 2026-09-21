@@ -21,8 +21,15 @@ import type {
   LibraryItemType,
   LibraryItemUpdate,
   MessagePart,
+  ProcessHealthReport,
+  ProcessHeartbeatInput,
+  ProcessHeartbeatRecord,
   ReasoningEffort,
   RuntimeSettings,
+  ScheduledTask,
+  ScheduledTaskInput,
+  ScheduledTaskRun,
+  ScheduledTaskRunStatus,
   SessionModelPreference,
   ShellApprovalSettings,
   ShellApprovalMode,
@@ -608,6 +615,74 @@ export const settingsClient = {
 
   getModelUsageActivity(days = 365): Promise<AgentModelUsageActivitySeries[]> {
     return request<AgentModelUsageActivitySeries[]>(`/settings/model-usage-activity?days=${days}`)
+  },
+}
+
+export const healthClient = {
+  processes(): Promise<ProcessHealthReport> {
+    return request<ProcessHealthReport>('/health/processes')
+  },
+
+  reportHeartbeat(payload: ProcessHeartbeatInput): Promise<ProcessHeartbeatRecord> {
+    return request<ProcessHeartbeatRecord>('/health/processes/heartbeat', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+}
+
+export const scheduledTaskClient = {
+  list(enabled?: boolean): Promise<ScheduledTask[]> {
+    const params = new URLSearchParams()
+    if (enabled !== undefined) params.set('enabled', String(enabled))
+    const suffix = params.size ? `?${params}` : ''
+    return request<ScheduledTask[]>(`/scheduled-tasks${suffix}`)
+  },
+
+  get(taskId: string): Promise<ScheduledTask> {
+    return request<ScheduledTask>(`/scheduled-tasks/${encodeURIComponent(taskId)}`)
+  },
+
+  create(payload: ScheduledTaskInput): Promise<ScheduledTask> {
+    return request<ScheduledTask>('/scheduled-tasks', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  update(taskId: string, payload: ScheduledTaskInput): Promise<ScheduledTask> {
+    return request<ScheduledTask>(`/scheduled-tasks/${encodeURIComponent(taskId)}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  setEnabled(taskId: string, enabled: boolean): Promise<ScheduledTask> {
+    return request<ScheduledTask>(`/scheduled-tasks/${encodeURIComponent(taskId)}/enabled`, {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled }),
+    })
+  },
+
+  runNow(taskId: string): Promise<ScheduledTaskRun> {
+    return request<ScheduledTaskRun>(`/scheduled-tasks/${encodeURIComponent(taskId)}/run`, {
+      method: 'POST',
+    })
+  },
+
+  listRuns(taskId: string, statuses: ScheduledTaskRunStatus[] = []): Promise<ScheduledTaskRun[]> {
+    const params = new URLSearchParams()
+    statuses.forEach((status) => params.append('run_status', status))
+    const suffix = params.size ? `?${params}` : ''
+    return request<ScheduledTaskRun[]>(
+      `/scheduled-tasks/${encodeURIComponent(taskId)}/runs${suffix}`,
+    )
+  },
+
+  delete(taskId: string): Promise<{ ok: boolean }> {
+    return request<{ ok: boolean }>(`/scheduled-tasks/${encodeURIComponent(taskId)}`, {
+      method: 'DELETE',
+    })
   },
 }
 
