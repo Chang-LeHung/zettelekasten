@@ -1,4 +1,4 @@
-"""OS process launchers and heartbeat publishers for background services."""
+"""OS process launchers and heartbeat publishers for scheduler services."""
 
 import asyncio
 import os
@@ -9,9 +9,9 @@ from dataclasses import dataclass
 
 import httpx
 
-from ..config import settings
-from ..schemas import ProcessHeartbeatIn, ProcessHeartbeatStatus, ProcessRole
-from .log import get_logger
+from ...config import settings
+from ...schemas import ProcessHeartbeatIn, ProcessHeartbeatStatus, ProcessRole
+from ..log import get_logger
 
 logger = get_logger(__name__)
 

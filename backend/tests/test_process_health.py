@@ -13,7 +13,7 @@ from zett.application.health import (
     ProcessSupervisor,
 )
 from zett.config import settings
-from zett.infra.processes import HeartbeatReporter, ProcessHeartbeatPublisher
+from zett.infra.scheduler.processes import HeartbeatReporter, ProcessHeartbeatPublisher
 from zett.main import app
 from zett.schemas import ProcessHeartbeatIn, ProcessHeartbeatStatus, ProcessRole
 

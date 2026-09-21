@@ -9,7 +9,7 @@ from zett_agent import new_uuid7
 
 from ...config import settings
 from ...infra.log import get_logger
-from ...infra.processes import ManagedProcess, SubprocessLauncher
+from ...infra.scheduler.processes import ManagedProcess, SubprocessLauncher
 from ...schemas import ProcessRole
 from .registry import ProcessHeartbeatRegistry, process_heartbeat_registry
 
