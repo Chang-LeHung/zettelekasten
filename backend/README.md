@@ -153,7 +153,7 @@ the model reads content with `get_asset` or `get_artifact`, and the original
 browser message is recorded as `at_command.raw_parts`.
 
 Every model call goes through `AgentTurn.prompt` in
-`zett.application.turns`. The HTTP message route, slash command handlers, and
+`zett.application.agent.turns`. The HTTP message route, slash command handlers, and
 `@` reference handlers each describe their turn as an `AgentTurn` (session,
 request-owned client, model, run config, reasoning effort, metadata, and tags),
 optionally replace its message, and prompt it; run options are assembled once

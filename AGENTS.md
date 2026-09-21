@@ -8,7 +8,7 @@
 - Put database, ORM, DAO, repository, and external-provider adapters in `zett/infra`.
 - Interfaces such as HTTP and CLI must call application services instead of DAOs directly.
 - Keep the two extension mechanisms in their own directories. Adapters to the zett-agent runtime extension point (tools and hooks implemented with `AgentExtension`) live in `zett/agent/extensions`; Zett's own container plugins (capabilities registered with `ZettelkastenExt`, such as slash commands and `@` references) live in `zett/agent/plugins`.
-- Keep one word per role in type names. Persisted domain objects are `*Entity` (`AgentArtifactEntity`), SQLAlchemy table mappings are `*Row` in `zett/infra/tables/`, storage payloads are `*Write`/`*Create`, partial tool edits are `*Patch`, query criteria are `*ListOptions` in `zett/schemas/options.py`, HTTP-only wrappers are `*In`/`*Out` in `zett/application/schemas.py`, and the word `model` is reserved for LLM and provider types such as `AgentModel` or `ModelRequest`.
+- Keep one word per role in type names. Persisted domain objects are `*Entity` (`AgentArtifactEntity`), SQLAlchemy table mappings are `*Row` in `zett/infra/persistence/tables/`, storage payloads are `*Write`/`*Create`, partial tool edits are `*Patch`, query criteria are `*ListOptions` in `zett/schemas/options.py`, HTTP-only wrappers are `*In`/`*Out` in `zett/application/api/schemas.py`, and the word `model` is reserved for LLM and provider types such as `AgentModel` or `ModelRequest`.
 
 ## Persistence
 
@@ -36,7 +36,7 @@
 - Keep model-facing artifact previews bounded: `ArtifactPruner` projects search results, complete documents are read only on explicit request, and server-owned object keys such as a LaTeX `project_path` never appear in a preview.
 - Slash commands are container capabilities registered by `ZettelkastenExt` implementations loaded from `ZettelkastenAgentConfig`. The container assigns stable IDs, the browser submits at most one ID, and the backend resolves it to a handler that sends the command's message through the prepared Agent stream.
 - `@` commands are the same kind of capability for existing conversation resources. An extension registers a kind with `register_at_command`, pairing a source that lists the session's items with the handler that runs one referenced turn; the container names the tokens, assigns stable IDs, and injects only the referenced kind and ID so the model reads content through `get_asset` or `get_artifact`.
-- Every model call goes through `AgentTurn.prompt` in `zett.application.turns`. Routes and extension handlers describe an `AgentTurn` and may replace its message; they never assemble `AgentClient.stream` options themselves. A turn is single use and a second prompt raises `TurnAlreadyPromptedError`, so a new entry point must reuse that class instead of calling the client again.
+- Every model call goes through `AgentTurn.prompt` in `zett.application.agent.turns`. Routes and extension handlers describe an `AgentTurn` and may replace its message; they never assemble `AgentClient.stream` options themselves. A turn is single use and a second prompt raises `TurnAlreadyPromptedError`, so a new entry point must reuse that class instead of calling the client again.
 - Treat generated summaries as untrusted content. Compaction checkpoints stay separate from system instructions and keep their explicit prefix.
 
 ## Tooling
