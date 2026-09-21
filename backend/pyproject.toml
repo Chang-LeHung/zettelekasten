@@ -12,6 +12,7 @@ dependencies = [
   "sqlalchemy>=2.0,<3",
   "tiktoken>=0.12,<1",
   "zett-agent==0.2.0.dev0",
+  "croniter>=6,<7",
 ]
 
 [build-system]

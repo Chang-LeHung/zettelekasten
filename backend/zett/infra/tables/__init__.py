@@ -4,6 +4,7 @@ from .base import Base
 from .key_value import KeyValueRow
 from .model_usage_activity import ModelUsageActivityRow
 from .provider import ProviderRow
+from .scheduled_task import ScheduledTaskRow, ScheduledTaskRunRow
 from .session_artifact import (
     CODE_TO_STATUS,
     CODE_TO_TYPE,
@@ -28,6 +29,8 @@ __all__ = [
     "KeyValueRow",
     "ModelUsageActivityRow",
     "ProviderRow",
+    "ScheduledTaskRow",
+    "ScheduledTaskRunRow",
     "STATUS_TO_CODE",
     "SessionArtifactRow",
     "SessionAssetRow",

@@ -41,7 +41,31 @@ from .options import (
     StaticAssetListOptions,
     TagListOptions,
 )
+from .processes import (
+    ProcessHealthReport,
+    ProcessHeartbeatIn,
+    ProcessHeartbeatRecord,
+    ProcessHeartbeatStatus,
+    ProcessInstanceHealth,
+    ProcessRole,
+    ProcessRoleHealth,
+)
 from .providers import ProviderConnection, ProviderEntity, ProviderType, ProviderWrite
+from .scheduled_actions import AGENT_PROMPT_ACTION_KIND, AgentPromptAction
+from .scheduled_tasks import (
+    CronSchedule,
+    ScheduledTaskAction,
+    ScheduledTaskCreate,
+    ScheduledTaskEntity,
+    ScheduledTaskListOptions,
+    ScheduledTaskOverlapPolicy,
+    ScheduledTaskRunCreate,
+    ScheduledTaskRunEntity,
+    ScheduledTaskRunListOptions,
+    ScheduledTaskRunStatus,
+    ScheduledTaskTrigger,
+    ScheduledTaskWrite,
+)
 from .sessions import AgentSessionCreate
 from .tags import ArtifactTagEntity, SuggestedTag, TagEntity, TagTreeEntity, TagWrite
 from .usage_activity import ModelUsageActivitySeries, UsageActivityDayRecord
@@ -50,6 +74,8 @@ __all__ = [
     "AgentArtifactEntity",
     "AgentArtifactWrite",
     "AgentSessionCreate",
+    "AGENT_PROMPT_ACTION_KIND",
+    "AgentPromptAction",
     "ArticleArtifactContent",
     "ArticleArtifactPatch",
     "ArtifactContent",
@@ -64,6 +90,7 @@ __all__ = [
     "CardArtifactContent",
     "CardArtifactPatch",
     "CardType",
+    "CronSchedule",
     "ImageArtifactContent",
     "ImageArtifactPatch",
     "JsonValue",
@@ -77,6 +104,24 @@ __all__ = [
     "ProviderListOptions",
     "ProviderType",
     "ProviderWrite",
+    "ProcessHealthReport",
+    "ProcessHeartbeatIn",
+    "ProcessHeartbeatRecord",
+    "ProcessHeartbeatStatus",
+    "ProcessInstanceHealth",
+    "ProcessRole",
+    "ProcessRoleHealth",
+    "ScheduledTaskAction",
+    "ScheduledTaskCreate",
+    "ScheduledTaskEntity",
+    "ScheduledTaskListOptions",
+    "ScheduledTaskOverlapPolicy",
+    "ScheduledTaskRunCreate",
+    "ScheduledTaskRunEntity",
+    "ScheduledTaskRunListOptions",
+    "ScheduledTaskRunStatus",
+    "ScheduledTaskTrigger",
+    "ScheduledTaskWrite",
     "SessionAssetCreate",
     "SessionAssetEntity",
     "SessionAssetListOptions",
