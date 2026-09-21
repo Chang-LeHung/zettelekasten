@@ -175,6 +175,11 @@ crashed worker therefore cannot block new scheduling decisions. The task lease
 keeps at most one run active per task, and expired leases are recovered as
 `interrupted`.
 
+The Web lifespan writes server PID, port, scheduler PIDs, and worker PIDs to
+``runtime.json`` below `storage_root`. `zett stop` reads that file, stops the
+recorded server and child processes, and removes the file. Stale or partial
+runtime state is cleaned before a new server starts.
+
 The FastAPI lifespan runs a lightweight process supervisor. Scheduler and
 worker processes post heartbeats to `/api/health/processes/heartbeat`; FastAPI
 keeps the latest values in an in-memory registry. The supervisor keeps local
@@ -200,6 +205,7 @@ transactions. The Web process writes `logs/zett.log`, the scheduler writes
 ├── assets/         `sessions/<session-id>/` binaries and `static/` uploads
 ├── artifacts/      one directory per session and LaTeX artifact project
 ├── provider.key    local key encrypting provider credentials
+├── runtime.json    active server, scheduler, and worker process state
 └── logs/           rotating log files
 ```
 
@@ -211,6 +217,7 @@ transactions. The Web process writes `logs/zett.log`, the scheduler writes
 | `ZETT_DATABASE_PATH` | Application database file |
 | `ZETT_AGENT_DATABASE_PATH` | zett-agent session database file |
 | `ZETT_STORAGE_ROOT` | Root for every persisted object key, default `~/.zettelekasten` |
+| `ZETT_RUNTIME_STATE_PATH` | PID/port state file, default `<storage_root>/runtime.json` |
 | `ZETT_PROVIDER_KEY_PATH` | Local provider secret encryption key |
 | `ZETT_MAX_ASSET_SIZE_BYTES` | Maximum binary asset and pasted-image size |
 | `ZETT_LOG_DIR`, `ZETT_LOG_LEVEL` | Log directory and level |
@@ -231,6 +238,7 @@ that share the same `ZETT_*` paths:
 uv run --directory backend zett start
 uv run --directory backend zett scheduler
 uv run --directory backend zett worker
+uv run --directory backend zett stop
 ```
 
 ## Development
