@@ -12,6 +12,7 @@ when a build exists.
 | `zett/agent/extensions/` | Zett's adapters to the zett-agent `AgentExtension` point: the asset, artifact, tag, and context-composition tools |
 | `zett/agent/plugins/` | Zett's own `ZettelkastenExt` plugins: the skill slash commands and the `@` reference kinds |
 | `zett/application/` | Routes, use-case services, and the framework-neutral `ObjectStore` contract |
+| `zett/infra/scheduler/` | Scheduler control loop, execution worker loop, action registry, and executor contracts |
 | `zett/infra/tables/` | SQLAlchemy table mappings (`*Row`) that own the physical schema |
 | `zett/infra/` | DAOs, local ObjectStore adapter, agent runtime storage, logging |
 | `zett/schemas/` | Typed read, write, and `*ListOptions` query models shared by routes, tools, and storage |
@@ -33,6 +34,8 @@ Domain rules currently live in `schemas.py`, storage contracts in
 | Tag | Zett | `tags`, `artifact_tags` |
 | Provider | Zett | `providers`, with credentials encrypted by the local provider key |
 | Runtime settings | Zett | `key_values` under `settings.runtime` |
+| Scheduled task | Zett | `scheduled_tasks` and `scheduled_task_runs`; `zett scheduler` queues due runs and `zett worker` executes them |
+| Process heartbeat | Zett | In-memory FastAPI registry populated through `/api/health/processes/heartbeat` |
 
 `infra/dao/session.py` delegates to the package session store and does not
 create a second session table.
@@ -83,6 +86,7 @@ Everything is mounted under `/api`.
 | Route | Purpose |
 | --- | --- |
 | `GET /api/health` | Liveness probe |
+| `GET /api/health/processes` | Scheduler and worker heartbeat health |
 | `POST /api/agent/start`, `GET/DELETE /api/agent/sessions*` | Create, list, read, retitle, and delete conversations |
 | `GET /api/agent/sessions/{id}/messages` | Page the immutable Raw Log for the conversation UI |
 | `GET /api/agent/sessions/{id}/model`, `/context-composition` | Last provider choice and current context ratios |
@@ -93,6 +97,7 @@ Everything is mounted under `/api`.
 | `POST /api/agent/{id}/at-commands/{item_id}` | Run one turn that references an `@` resource and stream its Agent events |
 | `POST /api/agent/{id}/events` | Deliver one UI answer, such as an `ask_user` choice, to the active request |
 | `POST /api/agent/{id}/steer` | Insert an urgent user message into the active request |
+| `/api/scheduled-tasks*` | Manage Cron task definitions, enable or disable them, queue manual runs, and read execution history |
 | `/api/files/{key}` | The only binary content endpoint; streams one ObjectStore key |
 | `/api/agent/{id}/assets*` | Session asset CRUD, upload, rename, and Static Asset object references |
 | `/api/assets*` | Session-independent file listing, upload, metadata, and deletion |
@@ -156,6 +161,36 @@ instead of at each call site. A turn is single use, so prompting it twice raises
 `TurnAlreadyPromptedError` instead of starting a second request against the same
 reserved session.
 
+## Scheduled tasks
+
+Scheduled tasks are persisted in `zett.db`. The Web process only creates,
+updates, enables, disables, deletes, and manually queues tasks. The
+`zett scheduler` process polls for due occurrences and writes `pending` run
+rows. One or more independent `zett worker` processes claim those rows, change
+them to `running`, execute a registered `ActionExecutor`, and write the terminal
+result in `scheduled_task_runs`.
+
+The scheduler never loads action executors and never runs model work. A slow or
+crashed worker therefore cannot block new scheduling decisions. The task lease
+keeps at most one run active per task, and expired leases are recovered as
+`interrupted`.
+
+The FastAPI lifespan runs a lightweight process supervisor. Scheduler and
+worker processes post heartbeats to `/api/health/processes/heartbeat`; FastAPI
+keeps the latest values in an in-memory registry. The supervisor keeps local
+`Popen` handles, starts missing CLI processes as independent subprocesses, and
+uses `Popen.poll()` as the authoritative local liveness check. It does not
+execute scheduler or worker loops inside FastAPI.
+
+The first executor, `agent_prompt`, always creates a new isolated Agent session
+and runs a headless turn. It disables interactive `ask_user` and coding tools so
+a background job never waits for browser approval. Scheduled runs never target
+a user's existing session.
+
+All process types configure SQLite with WAL, a bounded busy timeout, and short
+transactions. The Web process writes `logs/zett.log`, the scheduler writes
+`logs/scheduler.log`, and workers write `logs/worker.log`.
+
 ## Local data
 
 ```
@@ -179,10 +214,24 @@ reserved session.
 | `ZETT_PROVIDER_KEY_PATH` | Local provider secret encryption key |
 | `ZETT_MAX_ASSET_SIZE_BYTES` | Maximum binary asset and pasted-image size |
 | `ZETT_LOG_DIR`, `ZETT_LOG_LEVEL` | Log directory and level |
+| `ZETT_PROCESS_SUPERVISOR_ENABLED` | Start missing scheduler and worker processes from the Web service |
+| `ZETT_SUPERVISOR_POLL_SECONDS` | Process supervision interval |
+| `ZETT_HEARTBEAT_INTERVAL_SECONDS` | Scheduler and worker heartbeat interval |
+| `ZETT_HEARTBEAT_TIMEOUT_SECONDS` | Age after which a process heartbeat is stale |
+| `ZETT_WORKER_PROCESSES` | Required number of execution worker processes |
 
 Conversation limits are user settings rather than environment variables:
 `max_message_images`, `max_turn_iterations`, `compaction_max_tokens`, and
 `compaction_keep_recent_tokens`, read and replaced through `/api/settings`.
+
+Run the API, scheduler, and at least one worker as separate long-lived processes
+that share the same `ZETT_*` paths:
+
+```bash
+uv run --directory backend zett start
+uv run --directory backend zett scheduler
+uv run --directory backend zett worker
+```
 
 ## Development
 

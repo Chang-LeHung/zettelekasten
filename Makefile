@@ -3,13 +3,15 @@ PORT ?= 6280
 DOCS_HOST ?= 127.0.0.1
 DOCS_PORT ?= 8000
 
-.PHONY: help install backend-install zett-agent-install zettcode-install frontend-install frontend-build start dev check \
+.PHONY: help install backend-install zett-agent-install zettcode-install frontend-install frontend-build start scheduler worker dev check \
 	zett-agent-check zettcode-check ruff-check typecheck pre-commit-install docs docs-serve docs-check docs-examples docs-ui-check
 
 help:
 	@echo "Available targets:"
 	@echo "  make install   Build the frontend, install the zett command, and sync the zett-agent runtime"
 	@echo "  make start     Start the installed application"
+	@echo "  make scheduler Start the scheduling control process"
+	@echo "  make worker    Start an execution worker"
 	@echo "  make dev       Build and start the application from source"
 	@echo "  make check     Run backend lint and frontend type/build checks"
 	@echo "  make zett-agent-check  Verify the standalone agent runtime"
@@ -45,6 +47,12 @@ frontend-build:
 
 start:
 	zett start --host $(HOST) --port $(PORT)
+
+scheduler: backend-install
+	uv run --directory backend zett scheduler
+
+worker: backend-install
+	uv run --directory backend zett worker
 
 dev: backend-install frontend-build
 	uv run --directory backend zett start --host $(HOST) --port $(PORT) --reload

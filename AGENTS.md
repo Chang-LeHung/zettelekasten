@@ -59,7 +59,7 @@
 
 ## Current Scope
 
-- Retain the Session, Asset, Static Asset, Artifact, Tag, and Provider storage boundaries.
+- Retain the Session, Asset, Static Asset, Artifact, Tag, Provider, and Scheduled Task storage boundaries.
 - Session records, immutable raw messages, and versioned context snapshots belong to zett-agent; do not duplicate their tables in Zett.
 - Cards, articles, images, slide decks, and LaTeX PDFs are Artifact content variants, not separate library resources.
 - Tag taxonomy is a first-class boundary again: write through `TagService` so paths stay normalized and missing ancestors are created, and remove `artifact_tags` rows explicitly when an artifact is deleted. Suggested tags stay proposals until a save confirms them.
@@ -68,6 +68,10 @@
 - Serve the frontend and the API from `zett.main`; new behavior is added as application services and routes, not as compatibility shims.
 - Asset and Static Asset metadata, Artifact records, Tag records, and encrypted Provider configurations use SQLAlchemy in the application database.
 - Persist every file location as an `ObjectKey` relative to `settings.storage_root`; never store absolute paths or entity-specific content URLs. `ObjectStore` owns path containment, filesystem access, and unified `/api/files/{key}` URL generation.
+- Keep scheduling and execution in separate processes, never inside the FastAPI lifespan. `zett scheduler` writes pending run rows only; one or more `zett worker` processes claim and execute them. Keep the scheduler control loop, worker loop, action registry, executor contracts, and lease semantics under `zett/infra/scheduler`.
+- The FastAPI lifespan may supervise those processes by starting the CLI as independent subprocesses, but it must not run their scheduler or worker loops in the ASGI event loop. Keep local `Popen` handles as the authority for child liveness, use heartbeats only for observability, and receive them through the in-memory FastAPI health endpoint; do not persist process heartbeats, add a process-heartbeat table, or implement a database supervisor lease.
+- Scheduled `agent_prompt` actions always create a new isolated Session and run non-interactively; they must not target an existing user Session or wait for browser approval.
+- Keep SQLite access safe across the Web, scheduler, and worker processes with WAL and bounded busy waits. Write scheduler and worker logs to separate process-owned files rather than sharing the rotating Web log.
 - The default `storage_root` is `~/.zettelekasten`; there is no legacy `~/.zett` compatibility path.
 - Store session binary assets under `assets/sessions/{session_id}/` and session-independent uploads under `assets/static/`.
 - Images submitted with a message are written at submit time under `assets/sessions/{session_id}/uploads/`, named by submission time. They are session files, not Session Assets: the message keeps its inline data URL, no `session_assets` row is created, and the model reaches the bytes through the path rather than through `list_assets`.
