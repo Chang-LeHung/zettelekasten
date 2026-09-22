@@ -268,7 +268,7 @@ const ai = ref<AIProviderInput>({
 })
 const runtimeSettings = ref<RuntimeSettings>({
   max_message_images: 32,
-  max_turn_iterations: 128,
+  max_turn_iterations: 256,
   max_asset_size_bytes: 250 * 1024 * 1024,
   compaction_max_tokens: 800_000,
   compaction_keep_recent_tokens: 64_000,
@@ -3837,7 +3837,7 @@ onBeforeUnmount(() => {
               </label>
               <label class="field">
                 <span>{{ $t('Model steps per turn') }}</span>
-                <input v-model.number="runtimeSettings.max_turn_iterations" type="number" min="1" max="256" step="1" />
+                <input v-model.number="runtimeSettings.max_turn_iterations" type="number" min="1" max="512" step="1" />
                 <small>Maximum model calls, including tool-loop continuations, allowed in one turn.</small>
               </label>
               <label class="field">
