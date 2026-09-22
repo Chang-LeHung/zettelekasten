@@ -1,6 +1,7 @@
 """In-memory heartbeat, health, and process-supervision behavior."""
 
 import asyncio
+import time
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -134,6 +135,7 @@ class FakeManagedProcess:
         self.instance_id = instance_id
         self.process = FakeProcess(pid)
         self.pid = pid
+        self.started_at = time.monotonic()
 
     def is_running(self) -> bool:
         return self.process.poll() is None

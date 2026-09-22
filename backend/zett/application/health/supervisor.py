@@ -1,6 +1,7 @@
 """Local subprocess supervision for scheduler and worker services."""
 
 import asyncio
+import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -121,7 +122,24 @@ class ProcessSupervisor:
                     managed_by_id.pop(instance_id, None)
                     continue
                 heartbeat = await self.registry.get(instance_id)
-                if heartbeat is None or heartbeat.heartbeat_at < stale_before:
+                if heartbeat is None:
+                    # A freshly spawned child may still be importing modules or
+                    # initializing SQLite before it can publish its first
+                    # heartbeat. Treating that startup window as stale causes
+                    # an immediate terminate/restart loop, so allow one full
+                    # heartbeat timeout before requiring the first report.
+                    if time.monotonic() - managed.started_at < self.heartbeat_timeout_seconds:
+                        continue
+                    logger.error(
+                        "Supervised process never reported a heartbeat; terminating; role=%s instance_id=%s pid=%d",
+                        role.value,
+                        instance_id,
+                        managed.pid,
+                    )
+                    await self._terminate(managed)
+                    managed_by_id.pop(instance_id, None)
+                    continue
+                if heartbeat.heartbeat_at < stale_before:
                     logger.error(
                         "Supervised process heartbeat is stale; terminating; role=%s instance_id=%s pid=%d",
                         role.value,

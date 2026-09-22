@@ -4,8 +4,9 @@ import asyncio
 import os
 import subprocess  # noqa: S404
 import sys
+import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import httpx
 
@@ -23,6 +24,9 @@ class ManagedProcess:
     role: ProcessRole
     instance_id: str
     process: subprocess.Popen[bytes]
+    # Monotonic launch time lets the supervisor distinguish a child that is
+    # still starting from one that stopped reporting heartbeats later.
+    started_at: float = field(default_factory=time.monotonic)
 
     @property
     def pid(self) -> int:
