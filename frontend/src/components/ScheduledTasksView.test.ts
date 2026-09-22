@@ -116,6 +116,13 @@ it('lists scheduled tasks, runs, and creates an Agent prompt task', async () => 
 
     host.querySelector<HTMLButtonElement>('.new-scheduled-task-button')!.click()
     await nextTick()
+    const expression = document.body.querySelector<HTMLInputElement>('input[placeholder="0 9 * * *"]')!
+    expression.value = 'not cron'
+    expression.dispatchEvent(new Event('input', { bubbles: true }))
+    await nextTick()
+    expect(document.body.querySelector<HTMLButtonElement>('.scheduled-create button[type="submit"]')!.disabled).toBe(true)
+    expression.value = '0 9 * * *'
+    expression.dispatchEvent(new Event('input', { bubbles: true }))
     const name = document.body.querySelector<HTMLInputElement>('input[placeholder="Daily knowledge review"]')!
     const prompt = document.body.querySelector<HTMLTextAreaElement>('textarea')!
     name.value = 'Morning review'

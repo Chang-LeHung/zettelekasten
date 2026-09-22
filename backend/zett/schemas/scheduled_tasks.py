@@ -4,6 +4,7 @@ from datetime import datetime
 from enum import StrEnum
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from croniter import croniter
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .common import JsonValue
@@ -85,6 +86,14 @@ class CronSchedule(BaseModel):
             ZoneInfo(value)
         except (ZoneInfoNotFoundError, ValueError) as error:
             raise ValueError(f"Unknown timezone: {value}") from error
+        return value
+
+    @field_validator("expression")
+    @classmethod
+    def validate_expression(cls, value: str) -> str:
+        """Reject malformed Cron expressions before they reach the scheduler."""
+        if not croniter.is_valid(value):
+            raise ValueError(f"Invalid cron expression: {value}")
         return value
 
 

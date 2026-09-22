@@ -5,9 +5,11 @@ from datetime import UTC, datetime
 
 from zett_agent import new_uuid7
 
-from ...infra.persistence.dao import ScheduledTaskStorage, scheduled_task_storage
+from ...infra.persistence.dao import ProviderStorage, ScheduledTaskStorage, provider_storage, scheduled_task_storage
 from ...infra.scheduler import next_run_after
 from ...schemas import (
+    AGENT_PROMPT_ACTION_KIND,
+    AgentPromptAction,
     ScheduledTaskCreate,
     ScheduledTaskEntity,
     ScheduledTaskListOptions,
@@ -27,12 +29,15 @@ class ScheduledTaskService:
         self,
         storage: ScheduledTaskStorage = scheduled_task_storage,
         *,
+        provider_validation_storage: ProviderStorage = provider_storage,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._storage = storage
+        self._provider_validation_storage = provider_validation_storage
         self._clock = clock
 
     async def create(self, entity: ScheduledTaskCreate) -> ScheduledTaskEntity:
+        await self._validate_provider(entity)
         now = self._now()
         return await self._storage.create(
             ScheduledTaskWrite(
@@ -53,6 +58,7 @@ class ScheduledTaskService:
         return await self._storage.list(options)
 
     async def update(self, task_id: str, entity: ScheduledTaskCreate) -> ScheduledTaskEntity:
+        await self._validate_provider(entity)
         return await self._storage.update(
             task_id,
             ScheduledTaskWrite(
@@ -86,6 +92,16 @@ class ScheduledTaskService:
 
     async def run_now(self, task_id: str) -> ScheduledTaskRunEntity:
         task = await self._require(task_id)
+        await self._validate_provider(
+            ScheduledTaskCreate(
+                name=task.name,
+                schedule=task.schedule,
+                action=task.action,
+                enabled=task.enabled,
+                timeout_seconds=task.timeout_seconds,
+                overlap_policy=task.overlap_policy,
+            )
+        )
         now = self._now()
         run_id = new_uuid7()
         return await self._storage.create_run(
@@ -115,6 +131,14 @@ class ScheduledTaskService:
     def _now(self) -> datetime:
         value = self._clock()
         return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+    async def _validate_provider(self, entity: ScheduledTaskCreate) -> None:
+        """Require the action's provider to exist and be enabled before persistence."""
+        if entity.action.kind != AGENT_PROMPT_ACTION_KIND:
+            return
+        prompt = AgentPromptAction.model_validate(entity.action.payload)
+        if await self._provider_validation_storage.resolve_connection(prompt.provider_id) is None:
+            raise ValueError("Enabled provider not found")
 
 
 scheduled_task_service = ScheduledTaskService()

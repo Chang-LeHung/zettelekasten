@@ -50,7 +50,7 @@ class ScheduledTaskPatch(BaseModel):
     @model_validator(mode="after")
     def require_change(self) -> Self:
         """Reject an empty patch so updates always express a real intent."""
-        if not self.model_fields_set:
+        if not any(value is not None for value in self.model_dump().values()):
             raise ValueError("At least one scheduled-task field must be supplied")
         return self
 

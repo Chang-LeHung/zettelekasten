@@ -42,9 +42,40 @@ const form = reactive({
 
 const selectedTask = computed(() => tasks.value.find((task) => task.id === selectedTaskId.value) ?? null)
 const enabledProviders = computed(() => providers.value.filter((provider) => provider.enabled))
+const nameValid = computed(() => form.name.trim().length > 0 && form.name.trim().length <= 200)
+const expressionValid = computed(() => validCronShape(form.expression))
+const timezoneValid = computed(() => validTimeZone(form.timezone))
+const timeoutValid = computed(() => Number.isInteger(form.timeoutSeconds) && form.timeoutSeconds >= 1 && form.timeoutSeconds <= 86_400)
+const promptValid = computed(() => form.prompt.trim().length > 0 && form.prompt.length <= 100_000)
+const canCreateTask = computed(() => (
+  nameValid.value
+  && expressionValid.value
+  && timezoneValid.value
+  && timeoutValid.value
+  && promptValid.value
+  && enabledProviders.value.some((provider) => provider.id === form.providerId)
+))
 
 function message(errorValue: unknown): string {
   return errorValue instanceof Error ? errorValue.message : 'Scheduled task request failed'
+}
+
+function validCronShape(value: string): boolean {
+  const fields = value.trim().split(/\s+/).filter(Boolean)
+  if (fields.length === 1 && fields[0]!.startsWith('@')) return /^@[a-z]+$/i.test(fields[0]!)
+  if (fields.length !== 5 && fields.length !== 6) return false
+  return fields.every((field) => /^[0-9A-Za-z*?/,\-#]+$/.test(field))
+}
+
+function validTimeZone(value: string): boolean {
+  const normalized = value.trim()
+  if (!normalized) return false
+  try {
+    new Intl.DateTimeFormat(undefined, { timeZone: normalized })
+    return true
+  } catch {
+    return false
+  }
 }
 
 function actionPayload(task: ScheduledTask): Record<string, unknown> {
@@ -162,7 +193,7 @@ async function selectTask(task: ScheduledTask): Promise<void> {
 
 async function createTask(): Promise<void> {
   if (saving.value) return
-  if (!form.name.trim() || !form.providerId || !form.prompt.trim()) return
+  if (!canCreateTask.value) return
   saving.value = true
   error.value = ''
   try {
@@ -428,19 +459,31 @@ onBeforeUnmount(() => {
             <button class="scheduled-modal-close" type="button" aria-label="Close" @click="formOpen = false">×</button>
           </header>
           <div class="scheduled-form-grid">
-            <label><span>Name</span><input v-model="form.name" placeholder="Daily knowledge review" autofocus /></label>
-            <label><span>Cron expression</span><input v-model="form.expression" placeholder="0 9 * * *" /></label>
-            <label><span>Timezone</span><input v-model="form.timezone" placeholder="Asia/Shanghai" /></label>
+            <label><span>Name</span><input v-model="form.name" maxlength="200" placeholder="Daily knowledge review" autofocus /></label>
+            <label>
+              <span>Cron expression</span>
+              <input v-model="form.expression" maxlength="200" placeholder="0 9 * * *" :aria-invalid="!expressionValid" />
+              <small v-if="!expressionValid" class="field-error">Use a 5- or 6-field Cron expression.</small>
+            </label>
+            <label>
+              <span>Timezone</span>
+              <input v-model="form.timezone" maxlength="100" spellcheck="false" placeholder="Asia/Shanghai" :aria-invalid="!timezoneValid" />
+              <small v-if="!timezoneValid" class="field-error">Use a valid IANA timezone such as Asia/Shanghai.</small>
+            </label>
             <label><span>Provider</span><select v-model="form.providerId"><option value="" disabled>Select a provider</option><option v-for="provider in enabledProviders" :key="provider.id" :value="provider.id">{{ provider.name }} · {{ provider.model }}</option></select></label>
             <label><span>Reasoning</span><select v-model="form.reasoningEffort"><option value="off">Off</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
-            <label><span>Timeout seconds</span><input v-model.number="form.timeoutSeconds" type="number" min="1" max="86400" /></label>
-            <label class="full"><span>Prompt</span><textarea v-model="form.prompt" rows="6" placeholder="Review recent notes and create a concise summary artifact." /></label>
+            <label>
+              <span>Timeout seconds</span>
+              <input v-model.number="form.timeoutSeconds" type="number" min="1" max="86400" step="1" :aria-invalid="!timeoutValid" />
+              <small v-if="!timeoutValid" class="field-error">Use a whole number from 1 to 86400.</small>
+            </label>
+            <label class="full"><span>Prompt</span><textarea v-model="form.prompt" maxlength="100000" rows="6" placeholder="Review recent notes and create a concise summary artifact." /></label>
           </div>
           <footer>
             <label class="task-enabled"><input v-model="form.enabled" type="checkbox" /> Enable immediately</label>
             <div>
               <button class="secondary-action" type="button" @click="formOpen = false">Cancel</button>
-              <button class="primary-action" type="submit" :disabled="saving || !form.name.trim() || !form.providerId || !form.prompt.trim()">
+              <button class="primary-action" type="submit" :disabled="saving || !canCreateTask">
                 <span v-if="saving" class="button-spinner" aria-hidden="true" />
                 {{ saving ? 'Creating…' : 'Create task' }}
               </button>
@@ -608,6 +651,8 @@ onBeforeUnmount(() => {
 .scheduled-form-grid input, .scheduled-form-grid select { height: 2.55rem; padding: 0 .7rem; }
 .scheduled-form-grid textarea { resize: vertical; padding: .65rem .7rem; line-height: 1.5; }
 .scheduled-form-grid input:focus, .scheduled-form-grid select:focus, .scheduled-form-grid textarea:focus { border-color: #8fab99; box-shadow: 0 0 0 3px rgba(76,119,94,.1); background: #fff; }
+.scheduled-form-grid .field-error { color: #a05050; font-size: .6rem; line-height: 1.35; }
+.scheduled-form-grid [aria-invalid="true"] { border-color: #d8aaaa; background: #fffafa; }
 .scheduled-create footer { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .9rem 1.1rem 1.05rem; border-top: 1px solid rgba(29,29,31,.07); }
 .scheduled-create footer > div { display: flex; align-items: center; gap: .5rem; }
 .task-enabled { display: flex; align-items: center; gap: .42rem; color: #69726c; font-size: .68rem; }

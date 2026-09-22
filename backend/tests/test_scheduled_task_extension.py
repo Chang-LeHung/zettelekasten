@@ -15,7 +15,8 @@ from zett_agent import (
 )
 
 from zett.agent.extensions import ScheduledTaskExtension
-from zett.infra.persistence.dao import scheduled_task_storage
+from zett.infra.persistence.dao import provider_storage, scheduled_task_storage
+from zett.schemas import ProviderType, ProviderWrite
 
 
 def _tool_payload(request: ModelRequest) -> dict[str, object]:
@@ -41,9 +42,10 @@ def _tool_items(request: ModelRequest) -> list[dict[str, object]]:
 class ScheduledTaskManagementModel:
     """Exercise create, read, update, and disable in one Agent run."""
 
-    def __init__(self) -> None:
+    def __init__(self, provider_id: str) -> None:
         self.step = 0
         self.task_id: str | None = None
+        self.provider_id = provider_id
 
     async def stream(self, request: ModelRequest) -> AsyncIterator[ModelEvent]:
         names = {definition.name for definition in request.tools}
@@ -67,7 +69,7 @@ class ScheduledTaskManagementModel:
                                 "task": {
                                     "name": "Daily review",
                                     "schedule": {"expression": "0 9 * * *", "timezone": "Asia/Shanghai"},
-                                    "provider_id": "provider-1",
+                                    "provider_id": self.provider_id,
                                     "message": "Review yesterday's notes.",
                                 },
                             },
@@ -118,7 +120,14 @@ class ScheduledTaskManagementModel:
 
 
 async def test_scheduled_task_tools_manage_without_exposing_physical_delete() -> None:
-    model = ScheduledTaskManagementModel()
+    provider = await provider_storage.create(
+        ProviderWrite(
+            name="Scheduled provider",
+            provider=ProviderType.OPENAI_COMPATIBLE,
+            model="test-model",
+        )
+    )
+    model = ScheduledTaskManagementModel(provider.id)
     agent = await Agent.create(
         model,
         config=AgentRunConfig(session_id="scheduled-task-tools"),

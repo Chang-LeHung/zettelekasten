@@ -383,6 +383,19 @@ async def test_worker_run_forever_retries_after_a_scan_error(monkeypatch) -> Non
 
 def test_scheduled_task_http_control_plane() -> None:
     with TestClient(app) as client:
+        provider = client.post(
+            "/api/ai/providers",
+            json={
+                "name": "Scheduled provider",
+                "provider": "openai_compatible",
+                "model": "test-model",
+                "base_url": "https://example.invalid/v1",
+                "api_key": "secret",
+                "enabled": True,
+            },
+        )
+        assert provider.status_code == 201
+        provider_id = provider.json()["id"]
         created = client.post(
             "/api/scheduled-tasks",
             json={
@@ -391,7 +404,7 @@ def test_scheduled_task_http_control_plane() -> None:
                 "action": {
                     "kind": "agent_prompt",
                     "payload": {
-                        "provider_id": "provider-id",
+                        "provider_id": provider_id,
                         "message": "Create a daily note.",
                     },
                 },
@@ -423,6 +436,30 @@ def test_scheduled_task_http_control_plane() -> None:
             },
         )
         assert invalid.status_code == 422
+
+        missing_provider = client.post(
+            "/api/scheduled-tasks",
+            json={
+                "name": "Missing provider",
+                "schedule": {"expression": "0 9 * * *", "timezone": "UTC"},
+                "action": {"kind": "agent_prompt", "payload": {"provider_id": "missing", "message": "x"}},
+            },
+        )
+        assert missing_provider.status_code == 422
+        assert "Enabled provider not found" in missing_provider.text
+
+        invalid_effort = client.post(
+            "/api/scheduled-tasks",
+            json={
+                "name": "Invalid effort",
+                "schedule": {"expression": "0 9 * * *", "timezone": "UTC"},
+                "action": {
+                    "kind": "agent_prompt",
+                    "payload": {"provider_id": provider_id, "message": "x", "reasoning_effort": "impossible"},
+                },
+            },
+        )
+        assert invalid_effort.status_code == 422
         assert client.delete(f"/api/scheduled-tasks/{task['id']}").json() == {"ok": True}
 
 
