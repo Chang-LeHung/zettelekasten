@@ -10,7 +10,7 @@ router = APIRouter(prefix="/health", tags=["health"])
 
 @router.get("/processes", response_model=ProcessHealthReport)
 async def process_health() -> ProcessHealthReport:
-    """Report whether scheduler and worker heartbeat requirements are met."""
+    """Report whether supervised process heartbeat requirements are met."""
     return await process_health_service.report()
 
 
@@ -20,5 +20,5 @@ async def process_health() -> ProcessHealthReport:
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def report_process_heartbeat(payload: ProcessHeartbeatIn) -> ProcessHeartbeatRecord:
-    """Receive one in-memory scheduler or worker heartbeat."""
+    """Receive one in-memory supervised-process heartbeat."""
     return await process_heartbeat_registry.record(payload)
