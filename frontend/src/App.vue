@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ApiError, aiClient, assetClient, libraryClient, settingsClient, tagClient } from './api/client'
-import type { AgentArtifact, AgentAtCommand, AgentCompactionActivity, AgentContextComposition, AgentCustomEvent, AgentModelUsage, AgentModelUsageActivitySeries, AgentPersistedMessage, AgentServerToolActivity, AgentSession, AgentSlashCommand, AgentSteeringMessage, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AgentUsageActivityDay, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageImagePart, MessagePart, ReasoningEffort, RuntimeSettings, SessionAsset, ShellApprovalMode, StaticAsset, Tag } from './api/types'
+import type { AgentArtifact, AgentAtCommand, AgentCompactionActivity, AgentContextComposition, AgentCustomEvent, AgentModelUsage, AgentModelUsageActivitySeries, AgentPersistedMessage, AgentServerToolActivity, AgentSession, AgentSlashCommand, AgentSteeringMessage, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AgentUsageActivityDay, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageImagePart, MessagePart, ReasoningEffort, RuntimeSettings, SessionAsset, SessionType, ShellApprovalMode, StaticAsset, Tag } from './api/types'
 import AgentComposerControls from './components/AgentComposerControls.vue'
 import ArtifactDiffView from './components/ArtifactDiffView.vue'
 import ComposerCommandMenu from './components/ComposerCommandMenu.vue'
@@ -50,6 +50,7 @@ const StaticAssetImportDialog = defineAsyncComponent(() => import('./components/
 const ScheduledTasksView = defineAsyncComponent(() => import('./components/ScheduledTasksView.vue'))
 
 type View = 'library' | 'search' | 'new' | 'assets' | 'scheduledTasks' | 'settings'
+type SessionScope = Extract<SessionType, 'normal' | 'scheduled'>
 type NoticeKind = 'success' | 'error'
 type AssetEditorMode = 'closed' | 'text' | 'link'
 type AssetFilter = 'all' | 'documents' | 'images' | 'links' | 'notes' | 'code'
@@ -235,10 +236,14 @@ const staticAssets = ref<StaticAsset[]>([])
 const staticAssetsLoading = ref(false)
 const staticAssetImportingId = ref<string | null>(null)
 const sessions = ref<AgentSession[]>([])
+const scheduledSessions = ref<AgentSession[]>([])
+const sessionScope = ref<SessionScope>('normal')
 const sessionsLoading = ref(false)
+const scheduledSessionsLoading = ref(false)
 const switchingSessionId = ref<string | null>(null)
 const sessionDetailRequests = new Map<string, Promise<AgentSession>>()
 const sessionsHaveMore = ref(true)
+const scheduledSessionsHaveMore = ref(true)
 const sessionPageSize = 20
 const selectedArtifactId = ref<string | null>(null)
 const loading = ref(false)
@@ -416,7 +421,16 @@ function libraryExcerpt(item: LibraryItem): string {
   const source = item.summary || (item.item_type === 'slides' ? item.subtitle : '') || item.content
   return libraryExcerptText(source) || 'Open to explore this item.'
 }
-const visibleSessions = computed(() => sessions.value.filter((session) => (
+const activeSessions = computed(() => (
+  sessionScope.value === 'scheduled' ? scheduledSessions.value : sessions.value
+))
+const activeSessionsLoading = computed(() => (
+  sessionScope.value === 'scheduled' ? scheduledSessionsLoading.value : sessionsLoading.value
+))
+const activeSessionsHaveMore = computed(() => (
+  sessionScope.value === 'scheduled' ? scheduledSessionsHaveMore.value : sessionsHaveMore.value
+))
+const visibleSessions = computed(() => activeSessions.value.filter((session) => (
   session.message_count > 0
   || session.id === conversationId.value
 )))
@@ -1283,7 +1297,13 @@ function navigate(nextView: View): void {
   view.value = nextView
   notice.value = ''
   if (nextView !== 'new') clearTraceHash()
-  if (nextView === 'new' && conversationStarted.value) scrollAgentThread(true)
+  if (nextView === 'new') {
+    sessionScope.value = 'normal'
+    if (conversationStarted.value) scrollAgentThread(true)
+  } else if (nextView === 'scheduledTasks') {
+    sessionScope.value = 'scheduled'
+    void loadScheduledSessions(true)
+  }
   if (nextView === 'library') {
     activeQuery.value = ''
     query.value = ''
@@ -1963,7 +1983,7 @@ function prefetchSession(sessionId: string): void {
 async function openSession(sessionId: string): Promise<void> {
   if (sessionId === conversationId.value) {
     selectedLibraryItem.value = null
-    navigate('new')
+    view.value = 'new'
     await nextTick()
     scrollAgentThread(true)
     return
@@ -1976,6 +1996,10 @@ async function openSession(sessionId: string): Promise<void> {
     const session = await loadSessionDetail(sessionId)
     if (generation !== sessionSwitchGeneration) return
     applySession(session)
+    const targetSessions = sessionScope.value === 'scheduled' ? scheduledSessions : sessions
+    if (!targetSessions.value.some((item) => item.id === session.id)) {
+      targetSessions.value = [session, ...targetSessions.value]
+    }
     switchingSessionId.value = null
     await restoreSessionRuntime(session.id)
   } catch (error) {
@@ -1983,6 +2007,11 @@ async function openSession(sessionId: string): Promise<void> {
   } finally {
     if (generation === sessionSwitchGeneration) switchingSessionId.value = null
   }
+}
+
+async function openScheduledSession(sessionId: string): Promise<void> {
+  sessionScope.value = 'scheduled'
+  await openSession(sessionId)
 }
 
 async function openArtifactSession(item: LibraryItem): Promise<void> {
@@ -2015,6 +2044,7 @@ async function saveSessionTitle(sessionId: string): Promise<void> {
   try {
     const updated = await aiClient.updateAgentSessionTitle(sessionId, title)
     sessions.value = sessions.value.map((session) => session.id === updated.id ? updated : session)
+    scheduledSessions.value = scheduledSessions.value.map((session) => session.id === updated.id ? updated : session)
     cancelSessionTitleEdit()
   } catch (error) {
     showNotice(errorMessage(error), 'error')
@@ -2032,10 +2062,12 @@ async function deleteSession(session: AgentSession): Promise<void> {
   try {
     await aiClient.deleteAgentSession(session.id)
     sessions.value = sessions.value.filter((item) => item.id !== session.id)
+    scheduledSessions.value = scheduledSessions.value.filter((item) => item.id !== session.id)
     if (editingSessionId.value === session.id) cancelSessionTitleEdit()
     if (conversationId.value === session.id) {
       clearWorkspaceState()
-      await loadSessions(true)
+      if (sessionScope.value === 'scheduled') await loadScheduledSessions(true)
+      else await loadSessions(true)
     }
     showNotice('Conversation deleted')
   } catch (error) {
@@ -2056,6 +2088,26 @@ async function loadSessions(reset = false): Promise<void> {
   } finally {
     sessionsLoading.value = false
   }
+}
+
+async function loadScheduledSessions(reset = false): Promise<void> {
+  if (scheduledSessionsLoading.value) return
+  scheduledSessionsLoading.value = true
+  try {
+    const offset = reset ? 0 : scheduledSessions.value.length
+    const nextSessions = await aiClient.listAgentSessions(sessionPageSize, offset, ['scheduled'])
+    scheduledSessions.value = reset ? nextSessions : [...scheduledSessions.value, ...nextSessions]
+    scheduledSessionsHaveMore.value = nextSessions.length === sessionPageSize
+  } catch (error) {
+    showNotice(errorMessage(error), 'error')
+  } finally {
+    scheduledSessionsLoading.value = false
+  }
+}
+
+function loadMoreSessions(): void {
+  if (sessionScope.value === 'scheduled') void loadScheduledSessions()
+  else void loadSessions()
 }
 
 function selectArtifact(artifact: AgentArtifact): void {
@@ -3063,8 +3115,11 @@ onBeforeUnmount(() => {
       </button>
 
       <nav class="primary-nav" aria-label="Main navigation">
-        <button :class="{ active: view === 'new' }" type="button" @click="navigate('new')">
+        <button :class="{ active: view === 'new' && sessionScope === 'normal' }" type="button" @click="navigate('new')">
           <svg><use href="#icon-spark" /></svg><span>{{ $t('nav.workspace') }}</span>
+        </button>
+        <button :class="{ active: view === 'scheduledTasks' || (view === 'new' && sessionScope === 'scheduled') }" type="button" @click="navigate('scheduledTasks')">
+          <svg><use href="#icon-schedule" /></svg><span>{{ $t('nav.scheduledTasks') }}</span>
         </button>
         <button :class="{ active: view === 'search' || (view === 'library' && selectedTag === null) }" type="button" @click="navigate('library')">
           <svg><use href="#icon-cards" /></svg><span>{{ $t('nav.artifacts') }}</span><small>{{ libraryItems.length }}</small>
@@ -3074,8 +3129,8 @@ onBeforeUnmount(() => {
         </button>
       </nav>
 
-      <div v-if="view === 'new'" class="sidebar-section session-section">
-        <div class="sidebar-heading"><span>{{ $t('nav.conversations') }}</span><button type="button" :aria-label="$t('nav.newConversation')" @click="resetWorkspace"><svg><use href="#icon-add" /></svg></button></div>
+      <div v-if="view === 'new' || view === 'scheduledTasks'" class="sidebar-section session-section">
+        <div class="sidebar-heading"><span>{{ $t('nav.conversations') }}</span><button v-if="sessionScope === 'normal'" type="button" :aria-label="$t('nav.newConversation')" @click="resetWorkspace"><svg><use href="#icon-add" /></svg></button></div>
         <div class="session-history-list">
           <div
             v-for="session in visibleSessions"
@@ -3095,8 +3150,8 @@ onBeforeUnmount(() => {
             </button>
             <button v-if="editingSessionId !== session.id" class="session-delete-button" type="button" :aria-label="`Delete ${session.title || 'conversation'}`" title="Delete conversation" @click.stop="deleteSession(session)"><svg><use href="#icon-trash" /></svg></button>
           </div>
-          <p v-if="!visibleSessions.length && !sessionsLoading" class="sidebar-empty">{{ $t('nav.noConversations') }}</p>
-          <button v-if="sessionsHaveMore" class="load-more-sessions" :disabled="sessionsLoading" type="button" @click="loadSessions()">{{ sessionsLoading ? $t('nav.loading') : $t('nav.loadMore') }}</button>
+          <p v-if="!visibleSessions.length && !activeSessionsLoading" class="sidebar-empty">{{ $t('nav.noConversations') }}</p>
+          <button v-if="activeSessionsHaveMore" class="load-more-sessions" :disabled="activeSessionsLoading" type="button" @click="loadMoreSessions">{{ activeSessionsLoading ? $t('nav.loading') : $t('nav.loadMore') }}</button>
         </div>
       </div>
 
@@ -3157,9 +3212,6 @@ onBeforeUnmount(() => {
             <option value="zh">{{ $t('settings.chinese') }}</option>
           </select>
         </label>
-        <button :class="{ active: view === 'scheduledTasks' }" type="button" @click="navigate('scheduledTasks')">
-          <svg><use href="#icon-schedule" /></svg><span>{{ $t('nav.scheduledTasks') }}</span>
-        </button>
         <button :class="{ active: view === 'settings' }" type="button" @click="navigate('settings')">
           <svg><use href="#icon-settings" /></svg><span>{{ $t('nav.settings') }}</span>
           <span class="status-dot" :class="{ online: providers.some((provider) => provider.enabled) }" />
@@ -3300,7 +3352,7 @@ onBeforeUnmount(() => {
 
       <template v-else-if="view === 'new'">
         <header class="topbar compact chat-topbar">
-          <div class="chat-topbar-title"><span class="status-dot online" /><span>AI workspace</span></div>
+          <div class="chat-topbar-title"><span class="status-dot online" /><span>{{ sessionScope === 'scheduled' ? $t('nav.scheduledConversation') : $t('nav.workspace') }}</span></div>
           <div class="workspace-view-switch" role="group" aria-label="AI workspace view">
             <button :class="{ active: workspaceView === 'workspace' }" type="button" @click="setWorkspaceView('workspace')">{{ $t('Workspace') }}</button>
             <button :class="{ active: workspaceView === 'trace' }" type="button" @click="setWorkspaceView('trace')">{{ $t('Trace') }}</button>
@@ -3793,7 +3845,7 @@ onBeforeUnmount(() => {
       </template>
 
       <template v-else-if="view === 'scheduledTasks'">
-        <ScheduledTasksView @open-session="openSession" />
+        <ScheduledTasksView @open-session="openScheduledSession" />
       </template>
 
       <template v-else>
@@ -4642,11 +4694,11 @@ kbd, .card-type, .card-tags span { font-size: .69rem; }
   .app-shell { display: block; padding-bottom: 4.6rem; }
   .sidebar { position: fixed; top: auto; bottom: 0; width: 100%; height: 4.25rem; display: block; padding: .45rem max(.65rem, env(safe-area-inset-right)) max(.45rem, env(safe-area-inset-bottom)) max(.65rem, env(safe-area-inset-left)); border: 0; border-top: 1px solid rgba(255,255,255,.7); box-shadow: 0 -1px rgba(29,29,31,.07); }
   .brand, .sidebar-section { display: none; }
-  .primary-nav { display: grid; grid-template-columns: repeat(3, 1fr); width: 50%; }
+  .primary-nav { display: grid; grid-template-columns: repeat(4, 1fr); width: 67%; }
   .primary-nav button, .sidebar-footer button { height: 3.25rem; flex-direction: column; justify-content: center; gap: .2rem; padding: 0; font-size: .68rem; }
   .primary-nav button small, .primary-nav kbd, .status-dot { display: none; }
   .primary-nav button svg, .sidebar-footer button svg { width: 1.15rem; height: 1.15rem; }
-  .sidebar-footer { position: absolute; right: .65rem; bottom: max(.45rem, env(safe-area-inset-bottom)); width: calc((100% - 1.3rem) / 2); display: grid; grid-template-columns: repeat(2, 1fr); padding: 0; border: 0; }
+  .sidebar-footer { position: absolute; right: .65rem; bottom: max(.45rem, env(safe-area-inset-bottom)); width: calc((100% - 1.3rem) / 3); display: grid; grid-template-columns: 1fr; padding: 0; border: 0; }
   .locale-control { display: none; }
   .topbar { min-height: 4.5rem; padding: .8rem 1rem; }
   .topbar .primary-action { width: 2.65rem; padding: 0; font-size: 0; }
