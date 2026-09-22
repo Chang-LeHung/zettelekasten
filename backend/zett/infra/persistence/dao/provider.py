@@ -1,17 +1,14 @@
 """Encrypted local storage for model provider configurations."""
 
 import json
-import os
 from datetime import UTC, datetime
 from enum import IntEnum
-from pathlib import Path
 
-from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import or_, select
 from zett_agent import new_uuid7
 
-from ....config import settings
 from ....schemas import ProviderConnection, ProviderEntity, ProviderListOptions, ProviderType, ProviderWrite
+from ...security.secrets import decrypt_secret, encrypt_secret
 from ..database import session_scope
 from ..storage import AsyncStorage
 from ..tables import ProviderRow
@@ -44,44 +41,6 @@ CODE_TO_TYPE = {int(code): provider for provider, code in TYPE_TO_CODE.items()}
 def _as_utc(value: datetime) -> datetime:
     """Restore the UTC marker omitted by SQLite's timestamp representation."""
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
-
-
-def _read_or_create_key(path: Path) -> bytes:
-    """Return a private Fernet key, creating it atomically with mode 0600."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    except FileExistsError:
-        key = path.read_bytes()
-    else:
-        try:
-            key = Fernet.generate_key()
-            os.write(descriptor, key)
-        finally:
-            os.close(descriptor)
-    try:
-        os.chmod(path, 0o600)
-        Fernet(key)
-    except (OSError, ValueError) as error:
-        raise RuntimeError(f"Invalid provider encryption key: {path}") from error
-    return key
-
-
-def _fernet() -> Fernet:
-    return Fernet(_read_or_create_key(settings.provider_key_path))
-
-
-def _encrypt_api_key(api_key: str | None) -> str | None:
-    return _fernet().encrypt(api_key.encode()).decode() if api_key is not None else None
-
-
-def _decrypt_api_key(ciphertext: str | None) -> str | None:
-    if ciphertext is None:
-        return None
-    try:
-        return _fernet().decrypt(ciphertext.encode()).decode()
-    except InvalidToken as error:
-        raise RuntimeError("Stored provider API key cannot be decrypted with the local key") from error
 
 
 def _provider_out(model: ProviderRow) -> ProviderEntity:
@@ -118,7 +77,7 @@ class ProviderStorage(AsyncStorage[ProviderWrite, ProviderEntity, str, ProviderL
                 provider=int(TYPE_TO_CODE[entity.provider]),
                 model=entity.model,
                 base_url=entity.base_url,
-                encrypted_api_key=_encrypt_api_key(entity.api_key),
+                encrypted_api_key=encrypt_secret(entity.api_key),
                 enabled=entity.enabled,
                 metadata_value=json.dumps(entity.metadata, ensure_ascii=False),
                 created_at=now,
@@ -142,7 +101,7 @@ class ProviderStorage(AsyncStorage[ProviderWrite, ProviderEntity, str, ProviderL
             model.provider = int(TYPE_TO_CODE[entity.provider])
             model.model = entity.model
             model.base_url = entity.base_url
-            model.encrypted_api_key = _encrypt_api_key(entity.api_key)
+            model.encrypted_api_key = encrypt_secret(entity.api_key)
             model.enabled = entity.enabled
             model.metadata_value = json.dumps(entity.metadata, ensure_ascii=False)
             model.updated_at = datetime.now(UTC)
@@ -194,7 +153,7 @@ class ProviderStorage(AsyncStorage[ProviderWrite, ProviderEntity, str, ProviderL
                 model = await session.get(ProviderRow, entity_id)
             if model is None or (enabled_only and not model.enabled):
                 return None
-            api_key = _decrypt_api_key(model.encrypted_api_key)
+            api_key = decrypt_secret(model.encrypted_api_key)
             return ProviderConnection(
                 id=model.id,
                 provider=CODE_TO_TYPE[model.provider],
