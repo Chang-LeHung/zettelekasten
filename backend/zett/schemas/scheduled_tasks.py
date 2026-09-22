@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from enum import StrEnum
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -75,6 +76,16 @@ class CronSchedule(BaseModel):
         if not normalized:
             raise ValueError("Cron schedule values cannot be blank")
         return normalized
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, value: str) -> str:
+        """Reject values that are not resolvable IANA time zones."""
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as error:
+            raise ValueError(f"Unknown timezone: {value}") from error
+        return value
 
 
 class ScheduledTaskAction(BaseModel):

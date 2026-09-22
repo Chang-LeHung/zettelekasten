@@ -5,6 +5,7 @@ import sqlite3
 from collections.abc import AsyncIterator, Mapping
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import update
 from zett_agent import (
@@ -82,6 +83,11 @@ def test_next_run_after_uses_the_task_timezone() -> None:
     result = next_run_after(schedule, datetime(2026, 1, 1, 0, 59, tzinfo=UTC))
 
     assert result == datetime(2026, 1, 1, 1, 0, tzinfo=UTC)
+
+
+def test_cron_schedule_rejects_unknown_iana_timezone() -> None:
+    with pytest.raises(ValueError, match="Unknown timezone"):
+        CronSchedule(expression="0 9 * * *", timezone="Mars/Olympus")
 
 
 def test_scheduled_task_indexes_are_independent_columns(isolated_database) -> None:
