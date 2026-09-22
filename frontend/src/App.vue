@@ -3099,7 +3099,7 @@ onBeforeUnmount(() => {
       <symbol id="icon-attachment" viewBox="0 0 24 24"><path d="m8.5 12.5 6.2-6.2a3 3 0 0 1 4.2 4.2l-8.1 8.1a5 5 0 0 1-7.1-7.1l8-8"/></symbol>
       <symbol id="icon-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.1 1.1M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.1-1.1"/></symbol>
       <symbol id="icon-text" viewBox="0 0 24 24"><path d="M5 6h14M12 6v13M8 19h8"/></symbol>
-      <symbol id="icon-import" viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 19h14"/></symbol>
+      <symbol id="icon-library-import" viewBox="0 0 24 24"><path d="M4 4h5v16H4zM11 4h5v16h-5zM18.5 8v8M22.5 12h-8"/></symbol>
       <symbol id="icon-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5"/></symbol>
       <symbol id="icon-edit" viewBox="0 0 24 24"><path d="m4 20 4.2-1 10.7-10.7a2.1 2.1 0 0 0-3-3L5.2 16zM14.7 6.5l3 3"/></symbol>
       <symbol id="icon-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
@@ -3378,8 +3378,11 @@ onBeforeUnmount(() => {
                 <div class="assets-header-actions">
                   <button type="button" :title="$t('Add text note')" :aria-label="$t('Add text note')" @click="showAssetEditor('text')"><svg><use href="#icon-text" /></svg></button>
                   <button type="button" :title="$t('Add link')" :aria-label="$t('Add link')" @click="showAssetEditor('link')"><svg><use href="#icon-link" /></svg></button>
-                  <button type="button" :title="$t('Import static asset')" :aria-label="$t('Import static asset')" @click="openStaticAssetImport"><svg><use href="#icon-import" /></svg></button>
                   <button type="button" :title="$t('Upload files')" :aria-label="$t('Upload files')" @click="assetFileInput?.click()"><svg><use href="#icon-attachment" /></svg></button>
+                  <button class="asset-import-action" type="button" :title="$t('Import static asset')" :aria-label="$t('Import static asset')" @click="openStaticAssetImport">
+                    <svg><use href="#icon-library-import" /></svg>
+                    <span>{{ $t('Import') }}</span>
+                  </button>
                 </div>
               </header>
 
@@ -4205,6 +4208,8 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .assets-header-actions button, .asset-delete { display: grid; place-items: center; width: 1.72rem; height: 1.72rem; padding: 0; border: 0; border-radius: .48rem; color: #67716b; background: transparent; cursor: pointer; }
 .assets-header-actions button:hover, .asset-delete:hover { color: #345442; background: #e5ebe7; }
 .assets-header-actions svg, .asset-delete svg { width: .82rem; height: .82rem; }
+.assets-header-actions .asset-import-action { width: auto; min-width: 1.72rem; display: flex; align-items: center; gap: .3rem; padding: 0 .48rem; color: #3f6850; background: #f2f7f4; font-size: .62rem; font-weight: 680; }
+.asset-import-action span { white-space: nowrap; }
 .assets-search { height: 2.45rem; display: flex; align-items: center; gap: .45rem; margin: .75rem .75rem .55rem; padding: 0 .65rem; border: 1px solid #dfe4e1; border-radius: .65rem; background: white; box-shadow: 0 1px 3px rgba(27,39,32,.03); }
 .assets-search:focus-within { border-color: rgba(71,105,87,.45); box-shadow: 0 0 0 3px rgba(71,105,87,.08); }
 .assets-search svg { width: .83rem; height: .83rem; flex: 0 0 auto; color: #8a928d; }
@@ -4708,6 +4713,8 @@ kbd, .card-type, .card-tags span { font-size: .69rem; }
   .card { min-height: 13rem; }
   .form-grid, .taxonomy-form { grid-template-columns: 1fr; }
   .artifact-pane .form-grid { grid-template-columns: 1fr; }
+  .assets-header-actions .asset-import-action { width: 1.72rem; padding: 0; }
+  .asset-import-action span { display: none; }
   .refinement-workspace { grid-template-columns: 1fr; }
   .initial-agent-layout.streaming { grid-template-columns: 1fr; }
   .agent-workspace { height: auto; min-height: 0; grid-template-columns: 1fr; }
