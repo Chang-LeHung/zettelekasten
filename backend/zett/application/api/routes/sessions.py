@@ -9,7 +9,14 @@ from ....agent.config import SYSTEM_PROMPT
 from ....infra.agent.runtime import get_agent_runtime_storage
 from ....infra.agent.shell_approval import shell_approval_storage
 from ....infra.persistence.dao import artifact_storage, session_asset_storage, session_storage
-from ....schemas import AgentSessionCreate, ArtifactListOptions, SessionAssetListOptions, SessionListOptions
+from ....schemas import (
+    AgentSessionCreate,
+    AgentSessionTitleUpdate,
+    ArtifactListOptions,
+    SessionAssetListOptions,
+    SessionListOptions,
+    SessionType,
+)
 from ...agent.presentation import message_out, session_out
 from ...agent.session_context import SessionContextComposition, session_context_composition_service
 from ...agent.session_preferences import SessionModelPreference, session_model_preference_service
@@ -38,17 +45,20 @@ async def _session_detail(session_id: str) -> SessionOut:
 @router.post("/start", response_model=AgentStartOut, status_code=status.HTTP_201_CREATED)
 async def start_session() -> AgentStartOut:
     """Create an empty root conversation before its first streamed turn."""
-    session = await session_storage.create(AgentSessionCreate(title=DEFAULT_SESSION_TITLE))
+    session = await session_storage.create(
+        AgentSessionCreate(title=DEFAULT_SESSION_TITLE, session_type=SessionType.NORMAL)
+    )
     return AgentStartOut(conversation_id=session.session_id)
 
 
 @router.get("/sessions", response_model=list[SessionOut])
 async def list_sessions(
+    types: list[SessionType] = Query(default=[]),
     limit: int = Query(default=20, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> list[SessionOut]:
     """List lightweight session summaries in latest-activity order."""
-    sessions = await session_storage.list(SessionListOptions(limit=limit, offset=offset))
+    sessions = await session_storage.list(SessionListOptions(session_types=tuple(types), limit=limit, offset=offset))
     return [session_out(item) for item in sessions]
 
 
@@ -110,10 +120,10 @@ async def list_session_messages(
 
 
 @router.patch("/sessions/{session_id}/title", response_model=SessionOut)
-async def update_session_title(session_id: str, payload: AgentSessionCreate) -> SessionOut:
+async def update_session_title(session_id: str, payload: AgentSessionTitleUpdate) -> SessionOut:
     """Update the title without rebuilding the full conversation."""
     try:
-        updated = await session_storage.update(session_id, payload)
+        updated = await session_storage.update(session_id, AgentSessionCreate(title=payload.title))
     except KeyError as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found") from error
     return session_out(updated)

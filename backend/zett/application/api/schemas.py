@@ -13,6 +13,7 @@ from ...schemas import (
     ArtifactStatus,
     ProviderType,
     SessionAssetEntity,
+    SessionType,
 )
 
 
@@ -89,6 +90,7 @@ class SessionOut(BaseModel):
     """Session metadata optionally enriched with UI workspace data."""
 
     id: str
+    type: SessionType
     parent_session_id: str | None = None
     agent_name: str | None = None
     title: str | None = None

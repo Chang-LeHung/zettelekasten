@@ -10,6 +10,7 @@ from zett_agent import (
 )
 
 from ...messages import FrontMessagePart, MessagePartCodec
+from ...schemas import session_type_from_code
 from ..api.schemas import (
     PersistedMessageOut,
     PersistedToolCallOut,
@@ -106,6 +107,7 @@ def session_out(summary: SessionSummary) -> SessionOut:
     """Project a lightweight session summary without loading its collections."""
     return SessionOut(
         id=summary.session_id,
+        type=session_type_from_code(summary.session_type),
         parent_session_id=summary.parent_session_id,
         agent_name=summary.agent_name,
         title=summary.title,

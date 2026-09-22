@@ -67,7 +67,14 @@ from .scheduled_tasks import (
     ScheduledTaskTrigger,
     ScheduledTaskWrite,
 )
-from .sessions import AgentSessionCreate
+from .sessions import (
+    CODE_TO_SESSION_TYPE,
+    SESSION_TYPE_TO_CODE,
+    AgentSessionCreate,
+    AgentSessionTitleUpdate,
+    SessionType,
+    session_type_from_code,
+)
 from .tags import ArtifactTagEntity, SuggestedTag, TagEntity, TagTreeEntity, TagWrite
 from .usage_activity import ModelUsageActivitySeries, UsageActivityDayRecord
 
@@ -75,6 +82,7 @@ __all__ = [
     "AgentArtifactEntity",
     "AgentArtifactWrite",
     "AgentSessionCreate",
+    "AgentSessionTitleUpdate",
     "AGENT_PROMPT_ACTION_KIND",
     "AgentPromptAction",
     "ArticleArtifactContent",
@@ -129,6 +137,10 @@ __all__ = [
     "SessionAssetListOptions",
     "SessionAssetType",
     "SessionListOptions",
+    "SessionType",
+    "SESSION_TYPE_TO_CODE",
+    "CODE_TO_SESSION_TYPE",
+    "session_type_from_code",
     "SlidesArtifactContent",
     "SlidesArtifactPatch",
     "StaticAssetCreate",

@@ -2,6 +2,8 @@
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .sessions import SessionType
+
 
 class SessionListOptions(BaseModel):
     """Pagination for sessions owned by zett-agent."""
@@ -9,6 +11,7 @@ class SessionListOptions(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     limit: int = Field(default=100, ge=1, le=500, description="Maximum sessions returned")
     offset: int = Field(default=0, ge=0, description="Number of sessions skipped")
+    session_types: tuple[SessionType, ...] = Field(default=(), description="Session origins included")
 
 
 class ArtifactListOptions(BaseModel):

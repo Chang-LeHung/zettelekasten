@@ -40,6 +40,15 @@ Domain rules currently live in `schemas.py`, storage contracts in
 `infra/dao/session.py` delegates to the package session store and does not
 create a second session table.
 
+`agent_sessions.session_type` stores an integer code (`0` standard, `1`
+automation). zett-agent owns that storage code; Zett maps it to the public
+`normal` and `scheduled` values. `POST /api/agent/start` creates `normal`
+sessions, while the scheduled Agent executor creates `scheduled` sessions. The
+conversation sidebar requests only `normal` sessions, while scheduled runs can
+still open their session by ID.
+Schema initialization adds the column to existing databases, but historical
+rows are not reclassified: they receive the default `0` code.
+
 Records reference each other by ID only: there are no foreign keys,
 `ondelete` rules, or cascades. Storage implementations clean relation rows and
 owned files explicitly. Deleting a session therefore spans two SQLite

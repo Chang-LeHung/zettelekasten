@@ -3,7 +3,7 @@
 from zett_agent import RawMessageRecord, SessionSummary
 
 from ....application.assets.message_files import delete_session_files
-from ....schemas import AgentSessionCreate, SessionListOptions
+from ....schemas import SESSION_TYPE_TO_CODE, AgentSessionCreate, SessionListOptions
 from ...agent.runtime import get_agent_runtime_storage
 from ..storage import AsyncStorage
 from .artifact import artifact_storage
@@ -25,7 +25,10 @@ class SessionStorage(AsyncStorage[AgentSessionCreate, SessionSummary, str, Sessi
     """
 
     async def create(self, entity: AgentSessionCreate) -> SessionSummary:
-        return await get_agent_runtime_storage().create_session(title=entity.title)
+        return await get_agent_runtime_storage().create_session(
+            title=entity.title,
+            session_type=SESSION_TYPE_TO_CODE[entity.session_type],
+        )
 
     async def get(self, entity_id: str) -> SessionSummary | None:
         return await get_agent_runtime_storage().get_session(entity_id)
@@ -53,7 +56,11 @@ class SessionStorage(AsyncStorage[AgentSessionCreate, SessionSummary, str, Sessi
 
     async def list(self, options: SessionListOptions | None = None) -> list[SessionSummary]:
         options = options or SessionListOptions()
-        return await get_agent_runtime_storage().list_sessions(limit=options.limit, offset=options.offset)
+        return await get_agent_runtime_storage().list_sessions(
+            session_types=tuple(SESSION_TYPE_TO_CODE[value] for value in options.session_types) or None,
+            limit=options.limit,
+            offset=options.offset,
+        )
 
     async def list_raw_messages(self, session_id: str, *, limit: int = 100, offset: int = 0) -> list[RawMessageRecord]:
         """Read immutable history without assembling a workspace aggregate."""

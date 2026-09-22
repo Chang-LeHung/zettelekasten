@@ -1,14 +1,52 @@
 """Write models for persisted Agent conversations."""
 
+from enum import StrEnum
+
 from pydantic import BaseModel, Field
+from zett_agent import SessionTypeCode
+
+
+class SessionType(StrEnum):
+    """Application-facing name for a persisted session's origin."""
+
+    NORMAL = "normal"
+    SCHEDULED = "scheduled"
+
+
+SESSION_TYPE_TO_CODE = {
+    SessionType.NORMAL: SessionTypeCode.STANDARD,
+    SessionType.SCHEDULED: SessionTypeCode.AUTOMATION,
+}
+CODE_TO_SESSION_TYPE = {
+    SessionTypeCode.STANDARD: SessionType.NORMAL,
+    SessionTypeCode.AUTOMATION: SessionType.SCHEDULED,
+}
+
+
+def session_type_from_code(value: int) -> SessionType:
+    """Map one persisted integer code to its application-facing name."""
+    try:
+        return CODE_TO_SESSION_TYPE[SessionTypeCode(value)]
+    except ValueError as error:
+        raise ValueError(f"Unknown session_type code: {value}") from error
 
 
 class AgentSessionCreate(BaseModel):
     """Complete mutable fields for a persisted Agent conversation."""
 
+    session_type: SessionType = Field(
+        default=SessionType.NORMAL,
+        description="Origin of the conversation",
+    )
     title: str | None = Field(
         default=None,
         min_length=1,
         max_length=200,
         description="Optional user-facing conversation title",
     )
+
+
+class AgentSessionTitleUpdate(BaseModel):
+    """Mutable title submitted by a conversation rename action."""
+
+    title: str = Field(min_length=1, max_length=200, description="New user-facing conversation title")

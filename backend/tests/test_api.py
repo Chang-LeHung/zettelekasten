@@ -36,7 +36,7 @@ from zett.infra.persistence.dao import artifact_storage, provider_storage, sessi
 from zett.infra.persistence.database import session_scope
 from zett.infra.persistence.tables import KeyValueRow
 from zett.main import app
-from zett.schemas import AgentArtifactWrite, AgentSessionCreate, CardArtifactContent
+from zett.schemas import AgentArtifactWrite, AgentSessionCreate, CardArtifactContent, SessionType
 
 
 def _provider_payload(**changes):
@@ -878,7 +878,7 @@ async def test_first_successful_turn_generates_the_session_title_once(monkeypatc
     assert len(models) == 3
     assert len(request_agents) == 2
     assert request_agents[0] is not request_agents[1]
-    assert [agent.agent.max_iterations for agent in request_agents] == [128, 9]
+    assert [agent.agent.max_iterations for agent in request_agents] == [256, 9]
     assert sum(model.title_requests > 0 for model in models) == 1
     assert all(model.closed for model in models)
 
@@ -895,3 +895,18 @@ def test_asset_upload_uses_runtime_size_limit():
 
         accepted = client.post(endpoint, content=b"123", headers={"content-type": "application/octet-stream"})
         assert accepted.status_code == 201
+
+
+async def test_session_type_is_exposed_and_filterable() -> None:
+    with TestClient(app) as client:
+        normal_id = client.post("/api/agent/start").json()["conversation_id"]
+        scheduled = await session_storage.create(
+            AgentSessionCreate(title="Scheduled run", session_type=SessionType.SCHEDULED)
+        )
+
+        assert client.get(f"/api/agent/sessions/{normal_id}").json()["type"] == "normal"
+        assert client.get(f"/api/agent/sessions/{scheduled.session_id}").json()["type"] == "scheduled"
+        assert {item["id"] for item in client.get("/api/agent/sessions?types=normal").json()} == {normal_id}
+        assert {item["id"] for item in client.get("/api/agent/sessions?types=scheduled").json()} == {
+            scheduled.session_id
+        }

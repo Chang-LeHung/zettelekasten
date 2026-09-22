@@ -7,7 +7,15 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
 from sqlalchemy import update
-from zett_agent import AssistantMessage, ModelEvent, ModelRequest, ModelResponse, UserMessage, new_uuid7
+from zett_agent import (
+    AssistantMessage,
+    ModelEvent,
+    ModelRequest,
+    ModelResponse,
+    SessionTypeCode,
+    UserMessage,
+    new_uuid7,
+)
 
 from zett.application.scheduled_tasks import ScheduledTaskService
 from zett.infra.persistence.dao import provider_storage, scheduled_task_storage, session_storage
@@ -463,6 +471,7 @@ async def test_agent_prompt_executor_creates_a_fresh_noninteractive_session(monk
     assert isinstance(session_id, str)
     session = await session_storage.get(session_id)
     assert session is not None and session.title == "Scheduled title"
+    assert session.session_type == int(SessionTypeCode.AUTOMATION)
     records = await session_storage.list_raw_messages(session_id)
     dialogue = [record.message for record in records if isinstance(record.message, UserMessage | AssistantMessage)]
     assert [message.text if isinstance(message, UserMessage) else message.content for message in dialogue] == [

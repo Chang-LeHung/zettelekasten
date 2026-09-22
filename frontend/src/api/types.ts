@@ -539,6 +539,7 @@ export interface AgentPersistedMessage {
 
 export interface AgentSession {
   id: string
+  type: SessionType
   parent_session_id: string | null
   agent_name: string | null
   title: string | null
@@ -549,6 +550,8 @@ export interface AgentSession {
   artifacts: AgentArtifact[]
   assets: SessionAsset[]
 }
+
+export type SessionType = 'normal' | 'scheduled'
 
 export interface SessionModelPreference {
   provider_id: string

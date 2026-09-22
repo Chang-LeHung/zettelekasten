@@ -632,6 +632,27 @@ it('loads and replaces runtime settings through the typed client', async () => {
   })
 })
 
+it('lists normal sessions by default and supports explicit type filters', async () => {
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify([])))
+    .mockResolvedValueOnce(new Response(JSON.stringify([])))
+  vi.stubGlobal('fetch', fetchMock)
+
+  await aiClient.listAgentSessions(20, 0)
+  await aiClient.listAgentSessions(10, 5, ['normal', 'scheduled'])
+
+  expect(fetchMock).toHaveBeenNthCalledWith(
+    1,
+    '/api/agent/sessions?limit=20&offset=0&types=normal',
+    expect.any(Object),
+  )
+  expect(fetchMock).toHaveBeenNthCalledWith(
+    2,
+    '/api/agent/sessions?limit=10&offset=5&types=normal&types=scheduled',
+    expect.any(Object),
+  )
+})
+
 it('loads model usage activity for the settings chart', async () => {
   const days = [{
     date: '2026-09-19',

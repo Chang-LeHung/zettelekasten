@@ -17,7 +17,13 @@ from ...infra.persistence.dao import (
     provider_storage,
     session_storage,
 )
-from ...schemas import AGENT_PROMPT_ACTION_KIND, AgentPromptAction, AgentSessionCreate, JsonValue
+from ...schemas import (
+    AGENT_PROMPT_ACTION_KIND,
+    AgentPromptAction,
+    AgentSessionCreate,
+    JsonValue,
+    SessionType,
+)
 from .contracts import ActionExecutionStatus, ActionExecutor, ActionResult, ExecutionContext
 
 logger = get_logger(__name__)
@@ -47,7 +53,9 @@ class AgentPromptExecutor(ActionExecutor):
         except ValueError as error:
             raise ValueError(f"Unsupported reasoning effort: {action.reasoning_effort}") from error
 
-        session = await session_storage.create(AgentSessionCreate(title=context.task_name))
+        session = await session_storage.create(
+            AgentSessionCreate(title=context.task_name, session_type=SessionType.SCHEDULED)
+        )
         runtime_settings = await runtime_settings_service.get()
         model = create_model(connection)
         try:

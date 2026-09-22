@@ -31,6 +31,7 @@ import type {
   ScheduledTaskRun,
   ScheduledTaskRunStatus,
   SessionModelPreference,
+  SessionType,
   ShellApprovalSettings,
   ShellApprovalMode,
   StaticAsset,
@@ -441,8 +442,9 @@ export const aiClient = {
     })
   },
 
-  listAgentSessions(limit = 20, offset = 0): Promise<AgentSession[]> {
+  listAgentSessions(limit = 20, offset = 0, types: SessionType[] = ['normal']): Promise<AgentSession[]> {
     const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+    types.forEach((type) => params.append('types', type))
     return request<AgentSession[]>(`/agent/sessions?${params}`)
   },
 
