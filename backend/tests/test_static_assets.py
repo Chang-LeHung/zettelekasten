@@ -107,3 +107,8 @@ def test_importing_static_asset_into_session_keeps_object_reference_without_copy
         }
         assert get_object_store().resolve(asset["source_path"]).read_bytes() == b"png"
         assert client.get(static_asset["content_url"]).content == b"png"
+        blocked = client.delete(f"/api/assets/{static_asset['id']}")
+        assert blocked.status_code == 409
+        assert "referenced" in blocked.text
+        assert client.delete(f"/api/agent/{owner}/assets/{asset['id']}").json() == {"ok": True}
+        assert client.delete(f"/api/assets/{static_asset['id']}").json() == {"ok": True}

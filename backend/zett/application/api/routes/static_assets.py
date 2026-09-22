@@ -25,6 +25,8 @@ async def upload_asset(
     name: str = Query(min_length=1, max_length=500),
 ) -> StaticAssetEntity:
     """Upload one file without attaching it to a conversation."""
+    if not name.strip():
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Asset name cannot be blank")
     max_size = await static_asset_service.max_upload_size()
     content = bytearray()
     async for chunk in request.stream():
@@ -32,6 +34,8 @@ async def upload_asset(
         if len(content) > max_size:
             raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "Asset exceeds the configured size limit")
     mime_type = request.headers.get("content-type", "application/octet-stream").split(";", 1)[0]
+    if len(mime_type) > 255:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "MIME type is too long")
     try:
         return await static_asset_service.upload(name=name, mime_type=mime_type, content=bytes(content))
     except ValueError as error:
@@ -50,4 +54,7 @@ async def get_asset(asset_id: str) -> StaticAssetEntity:
 @router.delete("/{asset_id}", response_model=DeleteResponse)
 async def delete_asset(asset_id: str) -> DeleteResponse:
     """Delete one global asset and its owned file."""
-    return DeleteResponse(ok=await static_asset_service.delete(asset_id))
+    try:
+        return DeleteResponse(ok=await static_asset_service.delete(asset_id))
+    except ValueError as error:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error

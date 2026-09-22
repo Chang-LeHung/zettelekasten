@@ -1,5 +1,8 @@
 """Agent extension for persistent library tag management."""
 
+from typing import Annotated
+
+from pydantic import Field
 from zett_agent import AgentExtension, AgentRunContext, tool
 
 from ...application.tags.tagging import tag_service
@@ -87,7 +90,10 @@ class TagExtension(AgentExtension):
             return await tag_service.delete(tag_id, recursive=recursive, force=force)
 
         @tool
-        async def set_artifact_tags(artifact_id: str, paths: list[str]) -> AgentArtifactEntity:
+        async def set_artifact_tags(
+            artifact_id: str,
+            paths: Annotated[list[str], Field(max_length=100)],
+        ) -> AgentArtifactEntity:
             """Replace the confirmed persistent tags assigned to one saved artifact.
 
             Args:

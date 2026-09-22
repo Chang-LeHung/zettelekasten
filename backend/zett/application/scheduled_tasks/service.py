@@ -122,6 +122,17 @@ class ScheduledTaskService:
     ) -> list[ScheduledTaskRunEntity]:
         return await self._storage.list_runs(options)
 
+    async def provider_referenced(self, provider_id: str) -> bool:
+        """Return whether any scheduled Agent prompt still uses the provider."""
+        tasks = await self._storage.list(ScheduledTaskListOptions(limit=500))
+        for task in tasks:
+            if task.action.kind != AGENT_PROMPT_ACTION_KIND:
+                continue
+            prompt = AgentPromptAction.model_validate(task.action.payload)
+            if prompt.provider_id == provider_id:
+                return True
+        return False
+
     async def _require(self, task_id: str) -> ScheduledTaskEntity:
         task = await self._storage.get(task_id)
         if task is None:

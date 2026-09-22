@@ -47,5 +47,10 @@ class SessionModelPreferenceService:
         """Remove every preference revision owned by one deleted session."""
         return await self._storage.delete(self._key(session_id))
 
+    async def provider_referenced(self, provider_id: str) -> bool:
+        """Return whether any session still prefers the provider."""
+        records = await self._storage.iter_prefix(SESSION_MODEL_KEY_PREFIX)
+        return any(SessionModelPreference.model_validate(record.value).provider_id == provider_id for record in records)
+
 
 session_model_preference_service = SessionModelPreferenceService()

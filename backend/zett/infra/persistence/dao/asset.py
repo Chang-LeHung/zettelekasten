@@ -6,7 +6,7 @@ from enum import IntEnum
 from pathlib import Path
 
 from sqlalchemy import delete as sql_delete
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from zett_agent import new_uuid7
 
 from ....application.files.object_store import session_asset_key
@@ -259,6 +259,21 @@ class SessionAssetStorage(AsyncStorage[SessionAssetCreate, SessionAssetEntity, s
         for storage_path in storage_paths:
             if storage_path is not None:
                 await object_store.delete(storage_path)
+
+    async def references_static_asset(self, static_asset_id: str, storage_path: str) -> bool:
+        """Return whether any session asset references one global object."""
+        async with session_scope() as session:
+            statement = (
+                select(SessionAssetRow.id)
+                .where(
+                    or_(
+                        SessionAssetRow.source_path == storage_path,
+                        func.json_extract(SessionAssetRow.metadata_value, "$.static_asset_id") == static_asset_id,
+                    )
+                )
+                .limit(1)
+            )
+            return await session.scalar(statement) is not None
 
 
 session_asset_storage = SessionAssetStorage()

@@ -6,7 +6,9 @@ from zett_agent import ProviderAuthError, ProviderResponseError
 from ....infra.log import get_logger
 from ....infra.persistence.dao import provider_storage
 from ....schemas import ProviderConnection, ProviderEntity, ProviderListOptions, ProviderWrite
+from ...agent.session_preferences import session_model_preference_service
 from ...providers.provider_connections import ProviderConnectionTestError, verify_provider_connection
+from ...scheduled_tasks import scheduled_task_service
 from ..schemas import DeleteResponse, ProviderDetailResponse, ProviderIn, ProviderResponse
 
 router = APIRouter(prefix="/ai/providers", tags=["providers"])
@@ -129,4 +131,14 @@ async def update_provider(provider_id: str, payload: ProviderIn) -> ProviderResp
 @router.delete("/{provider_id}", response_model=DeleteResponse)
 async def delete_provider(provider_id: str) -> DeleteResponse:
     """Delete one local provider configuration."""
+    if await session_model_preference_service.provider_referenced(provider_id):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Provider is still selected by a conversation",
+        )
+    if await scheduled_task_service.provider_referenced(provider_id):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Provider is still used by a scheduled task",
+        )
     return DeleteResponse(ok=await provider_storage.delete(provider_id))

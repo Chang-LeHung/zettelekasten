@@ -9,7 +9,14 @@ from zett_agent import AgentExtension, AgentRunContext, tool
 
 from ...config import settings
 from ...infra.persistence.dao import session_asset_storage
-from ...schemas import SessionAssetCreate, SessionAssetEntity, SessionAssetListOptions, SessionAssetType
+from ...schemas import (
+    HttpUrl,
+    NonBlankName500,
+    SessionAssetCreate,
+    SessionAssetEntity,
+    SessionAssetListOptions,
+    SessionAssetType,
+)
 
 
 class AssetInput(BaseModel):
@@ -18,10 +25,10 @@ class AssetInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     asset_type: SessionAssetType = Field(description="Asset category: text, link, image, or file")
-    name: str = Field(min_length=1, max_length=500, description="User-facing asset name")
+    name: NonBlankName500 = Field(description="User-facing asset name")
     mime_type: str | None = Field(default=None, max_length=255, description="IANA media type when known")
     text_content: str | None = Field(default=None, description="Complete content for a text asset")
-    source_url: str | None = Field(default=None, description="Complete external URL for a link asset")
+    source_url: HttpUrl | None = Field(default=None, description="Complete external URL for a link asset")
     content_base64: str | None = Field(default=None, description="Base64 payload for an image or file asset")
     metadata: dict[str, object] = Field(default_factory=dict, description="Application-specific JSON metadata")
 
@@ -110,6 +117,7 @@ class AssetExtension(AgentExtension):
                 - Create an asset only when the user requests a durable session attachment.
                 - Use text for inline source material and link for an external URL.
             """
+            self._precheck_binary_size(asset)
             return await session_asset_storage.create(self._write_model(session_id, asset))
 
         @tool
@@ -152,6 +160,7 @@ class AssetExtension(AgentExtension):
                 - Treat this as full replacement rather than a partial patch.
             """
             await self._asset(session_id, asset_id)
+            self._precheck_binary_size(asset)
             return await session_asset_storage.update(asset_id, self._write_model(session_id, asset))
 
         @tool
@@ -221,3 +230,12 @@ class AssetExtension(AgentExtension):
         if len(payload) > self._max_asset_size_bytes:
             raise ValueError(f"Asset exceeds the configured {self._max_asset_size_bytes} byte size limit")
         return entity
+
+    def _precheck_binary_size(self, asset: AssetInput) -> None:
+        """Reject oversized Base64 before decoding it into memory."""
+        if asset.content_base64 is None:
+            return
+        compact = "".join(asset.content_base64.split())
+        max_encoded = ((self._max_asset_size_bytes + 2) // 3) * 4 + 4
+        if len(compact) > max_encoded:
+            raise ValueError(f"Asset exceeds the configured {self._max_asset_size_bytes} byte size limit")

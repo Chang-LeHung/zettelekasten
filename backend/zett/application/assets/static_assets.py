@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from ...infra.persistence.dao import static_asset_storage
+from ...infra.persistence.dao import session_asset_storage, static_asset_storage
 from ...schemas import StaticAssetCreate, StaticAssetEntity, StaticAssetListOptions
 from ..runtime.settings import runtime_settings_service
 
@@ -24,6 +24,11 @@ class StaticAssetService:
         return await static_asset_storage.create(StaticAssetCreate(name=name, mime_type=mime_type, content=content))
 
     async def delete(self, asset_id: str) -> bool:
+        asset = await static_asset_storage.get(asset_id)
+        if asset is None:
+            return False
+        if await session_asset_storage.references_static_asset(asset.id, asset.storage_path):
+            raise ValueError("Static asset is still referenced by session assets")
         return await static_asset_storage.delete(asset_id)
 
     async def content_path(self, asset_id: str) -> Path | None:

@@ -75,6 +75,8 @@ class TagService:
         description: str | None = None,
         color: str | None = None,
     ) -> TagEntity:
+        if path is None and description is None and color is None:
+            raise ValueError("At least one tag field must be supplied")
         current = await self.require(tag_id)
         target_path, target_normalized, segments = normalize_tag_path(path or current.path)
         if target_normalized != current.normalized_path and await tag_storage.child_count(tag_id):

@@ -26,6 +26,7 @@
 - Each storage implementation must provide typed `create`, `get`, `update`, `delete`, and `list` methods.
 - Append-only logs and immutable snapshots use specialized `append` or versioned `create` boundaries and must not expose mutation methods.
 - Use enums for finite domain values and explicit option objects for complex queries.
+- Validate at the write-model or application-service boundary, not only in a route. Blank names, non-HTTP links, oversized artifact/text payloads, and references to missing or disabled providers must fail before persistence. Explicit cleanup boundaries must also guard referenced records: a provider cannot be deleted while sessions or scheduled tasks use it, and a Static Asset cannot be deleted while session Assets reference its object key.
 
 ## Agent Context
 

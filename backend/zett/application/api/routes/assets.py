@@ -17,6 +17,14 @@ async def _require_session(session_id: str) -> None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
 
 
+async def _enforce_asset_size(*values: str) -> None:
+    """Reject inline text or URLs that exceed the runtime asset-size limit."""
+    runtime_settings = await runtime_settings_service.get()
+    size = sum(len(value.encode()) for value in values)
+    if size > runtime_settings.max_asset_size_bytes:
+        raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "Asset exceeds the configured size limit")
+
+
 @router.get("", response_model=list[SessionAssetEntity])
 async def list_assets(
     session_id: str,
@@ -50,6 +58,7 @@ async def get_asset(session_id: str, asset_id: str) -> SessionAssetEntity:
 async def create_text_asset(session_id: str, payload: TextAssetIn) -> SessionAssetEntity:
     """Attach inline text to a session."""
     await _require_session(session_id)
+    await _enforce_asset_size(payload.content)
     entity = SessionAssetCreate(
         session_id=session_id,
         asset_type=SessionAssetType.TEXT,
@@ -65,6 +74,7 @@ async def create_text_asset(session_id: str, payload: TextAssetIn) -> SessionAss
 async def create_link_asset(session_id: str, payload: LinkAssetIn) -> SessionAssetEntity:
     """Attach an external URL without downloading its content."""
     await _require_session(session_id)
+    await _enforce_asset_size(payload.url)
     entity = SessionAssetCreate(
         session_id=session_id,
         asset_type=SessionAssetType.LINK,
@@ -104,6 +114,8 @@ async def upload_asset(
 ) -> SessionAssetEntity:
     """Store a raw request body as an image or generic file asset."""
     await _require_session(session_id)
+    if not name.strip():
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Asset name cannot be blank")
     runtime_settings = await runtime_settings_service.get()
     content = bytearray()
     async for chunk in request.stream():

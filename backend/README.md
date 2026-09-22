@@ -55,6 +55,11 @@ owned files explicitly. Deleting a session therefore spans two SQLite
 databases and the filesystem, so cleanup is idempotent and retryable rather
 than one transaction.
 
+Public write models reject blank display names, require absolute HTTP(S) link
+URLs, and bound artifact text and JSON payloads. Deleting a provider is blocked
+while a session preference or scheduled task still references it. Deleting a
+Static Asset is blocked while any session Asset references its object key.
+
 Every persisted file location is a relative `ObjectKey` below
 `settings.storage_root` (`~/.zettelekasten` by default). `ObjectStore` owns path
 validation, writes, reads, deletion, and public-URL generation; DAOs never

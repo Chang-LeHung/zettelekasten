@@ -5,6 +5,8 @@ from enum import StrEnum
 from pydantic import BaseModel, Field
 from zett_agent import SessionTypeCode
 
+from .common import NonBlankName200
+
 
 class SessionType(StrEnum):
     """Application-facing name for a persisted session's origin."""
@@ -38,15 +40,10 @@ class AgentSessionCreate(BaseModel):
         default=SessionType.NORMAL,
         description="Origin of the conversation",
     )
-    title: str | None = Field(
-        default=None,
-        min_length=1,
-        max_length=200,
-        description="Optional user-facing conversation title",
-    )
+    title: NonBlankName200 | None = Field(default=None, description="Optional user-facing conversation title")
 
 
 class AgentSessionTitleUpdate(BaseModel):
     """Mutable title submitted by a conversation rename action."""
 
-    title: str = Field(min_length=1, max_length=200, description="New user-facing conversation title")
+    title: NonBlankName200 = Field(description="New user-facing conversation title")

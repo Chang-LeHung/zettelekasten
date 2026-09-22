@@ -1,5 +1,6 @@
 """HTTP application request and response models."""
 
+import json
 from datetime import date, datetime
 from typing import Any, Literal
 
@@ -11,6 +12,10 @@ from ...schemas import (
     ArtifactContent,
     ArtifactCreateContent,
     ArtifactStatus,
+    HttpUrl,
+    NonBlankName100,
+    NonBlankName200,
+    NonBlankName500,
     ProviderType,
     SessionAssetEntity,
     SessionType,
@@ -114,7 +119,7 @@ class ArtifactCreateIn(BaseModel):
     """New draft or saved artifact scoped by the URL session."""
 
     content: ArtifactCreateContent
-    raw_content: str | None = None
+    raw_content: str | None = Field(default=None, max_length=1_000_000)
     status: ArtifactStatus = ArtifactStatus.DRAFT
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -150,7 +155,7 @@ class ArtifactTagsIn(BaseModel):
 class TextAssetIn(BaseModel):
     """Inline text asset submitted by the composer."""
 
-    name: str = Field(min_length=1, max_length=500)
+    name: NonBlankName500
     content: str
     mime_type: str = Field(default="text/plain", max_length=255)
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -159,19 +164,19 @@ class TextAssetIn(BaseModel):
 class LinkAssetIn(BaseModel):
     """External link attached to a conversation."""
 
-    name: str = Field(min_length=1, max_length=500)
-    url: str = Field(min_length=1)
+    name: NonBlankName500
+    url: HttpUrl
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ProviderIn(BaseModel):
     """Provider settings accepted from the browser preferences form."""
 
-    name: str = Field(min_length=1, max_length=100)
+    name: NonBlankName100
     provider: ProviderType
-    model: str = Field(min_length=1, max_length=200)
-    base_url: str | None = None
-    api_key: str | None = None
+    model: NonBlankName200
+    base_url: HttpUrl | None = None
+    api_key: str | None = Field(default=None, max_length=10_000)
     temperature: float | None = Field(default=None, ge=0, le=2)
     response: bool = Field(default=False, description="Use a Responses API endpoint instead of chat completions")
     enabled: bool = True
@@ -244,8 +249,8 @@ class UserMessageIn(FrontUserMessage):
 class AnalyzeRequest(UserMessageIn):
     """One user turn sent to the Zettelkasten Agent."""
 
-    provider_id: str
-    reasoning_effort: str = "medium"
+    provider_id: str = Field(min_length=1, max_length=36)
+    reasoning_effort: Literal["off", "minimal", "low", "medium", "high", "xhigh"] = "medium"
     shell_approval_mode: Literal["review", "allow_all"] = "review"
     messages: list[dict[str, Any]] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -255,8 +260,19 @@ class AnalyzeRequest(UserMessageIn):
 class ExternalEventIn(BaseModel):
     """External UI event delivered to extensions of one active request."""
 
-    name: str = Field(min_length=1)
+    name: str = Field(min_length=1, max_length=100, pattern=r"^[a-z0-9]+(?:[._-][a-z0-9]+)*$")
     payload: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def bound_payload(self) -> ExternalEventIn:
+        """Keep external UI events from becoming an unbounded transport channel."""
+        try:
+            encoded = json.dumps(self.payload, ensure_ascii=False, allow_nan=False).encode()
+        except (TypeError, ValueError) as error:
+            raise ValueError("External event payload must be JSON serializable") from error
+        if len(encoded) > 1_000_000:
+            raise ValueError("External event payload must be at most 1 MB")
+        return self
 
 
 class ExternalEventOut(BaseModel):

@@ -14,6 +14,8 @@ from ...schemas import (
     ArtifactContentPatch,
     ArtifactCreateContent,
     ArtifactListOptions,
+    ArtifactStatus,
+    ArtifactType,
     apply_artifact_patch,
 )
 
@@ -118,8 +120,8 @@ class ArtifactExtension(AgentExtension):
         @tool
         async def query_artifacts(
             query: str | None = None,
-            artifact_types: tuple[str, ...] = (),
-            statuses: tuple[str, ...] = (),
+            artifact_types: tuple[ArtifactType, ...] = (),
+            statuses: tuple[ArtifactStatus, ...] = (),
             all_sessions: bool = False,
             limit: Annotated[int, Field(ge=1, le=500)] = 20,
         ) -> list[AgentArtifactPreview]:
@@ -149,8 +151,8 @@ class ArtifactExtension(AgentExtension):
             artifacts = await artifact_storage.list(
                 ArtifactListOptions(
                     session_id=None if all_sessions else session_id,
-                    artifact_types=artifact_types,
-                    statuses=statuses,
+                    artifact_types=tuple(item.value for item in artifact_types),
+                    statuses=tuple(item.value for item in statuses),
                     query=query,
                     limit=limit,
                 )

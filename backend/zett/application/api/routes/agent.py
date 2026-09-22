@@ -412,6 +412,8 @@ async def stream_message(session_id: str, payload: AnalyzeRequest) -> StreamingR
 @router.post("/{session_id}/events", response_model=ExternalEventOut)
 async def emit_external_event(session_id: str, payload: ExternalEventIn) -> ExternalEventOut:
     """Broadcast one UI response to extensions of the active session request."""
+    if await session_storage.get(session_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
     accepted_by = await active_requests.emit(session_id, ExternalEvent(name=payload.name, payload=payload.payload))
     if accepted_by is None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Session has no active request")
@@ -421,6 +423,8 @@ async def emit_external_event(session_id: str, payload: ExternalEventIn) -> Exte
 @router.post("/{session_id}/steer", response_model=ExternalEventOut)
 async def steer_active_request(session_id: str, payload: SteerRequest) -> ExternalEventOut:
     """Route one urgent user message to the active Agent request."""
+    if await session_storage.get(session_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
     runtime_settings = await runtime_settings_service.get()
     message = _user_message(
         payload,

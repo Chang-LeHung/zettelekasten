@@ -7,6 +7,7 @@ from typing import Annotated, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator, model_validator
 
 from .cards import CardType, normalize_card_type
+from .common import ImageUrl, NonBlankName500
 from .tags import ArtifactTagEntity, SuggestedTag
 
 
@@ -30,20 +31,25 @@ class ArtifactStatus(StrEnum):
 class ArtifactContentBase(BaseModel):
     """Fields shared by all editable session artifact content."""
 
-    title: str = Field(description="User-facing artifact title")
-    summary: str = Field(default="", description="Generated summary")
-    suggested_tags: list[SuggestedTag] = Field(default_factory=list, description="Suggested tags")
-    keywords: list[str] = Field(default_factory=list, description="Extracted keywords")
+    title: NonBlankName500 = Field(description="User-facing artifact title")
+    summary: str = Field(default="", max_length=20_000, description="Generated summary")
+    suggested_tags: list[SuggestedTag] = Field(default_factory=list, max_length=100, description="Suggested tags")
+    keywords: list[str] = Field(default_factory=list, max_length=100, description="Extracted keywords")
 
 
 class CardArtifactContent(ArtifactContentBase):
     """Editable content for a knowledge-card artifact."""
 
     artifact_type: Literal[ArtifactType.CARD] = ArtifactType.CARD
-    title: str = Field(description="Short card title using only the words needed to identify its idea")
-    summary: str = Field(default="", description="One brief sentence stating the card's essential meaning")
+    title: NonBlankName500 = Field(description="Short card title using only the words needed to identify its idea")
+    summary: str = Field(
+        default="", max_length=20_000, description="One brief sentence stating the card's essential meaning"
+    )
     card_type: CardType = Field(default=CardType.NOTE, description="Normalized knowledge card category")
-    content: str = Field(description="Concise Markdown expressing one idea in the fewest words that preserve meaning")
+    content: str = Field(
+        max_length=1_000_000,
+        description="Concise Markdown expressing one idea in the fewest words that preserve meaning",
+    )
 
     @field_validator("card_type", mode="before")
     @classmethod
@@ -55,8 +61,8 @@ class ArticleArtifactContent(ArtifactContentBase):
     """Editable content for a long-form Markdown article."""
 
     artifact_type: Literal[ArtifactType.ARTICLE] = ArtifactType.ARTICLE
-    subtitle: str = Field(default="", description="Optional article subtitle")
-    content: str = Field(description="Long-form article body in Markdown")
+    subtitle: str = Field(default="", max_length=500, description="Optional article subtitle")
+    content: str = Field(max_length=1_000_000, description="Long-form article body in Markdown")
 
 
 class ImageArtifactContent(ArtifactContentBase):
@@ -69,10 +75,10 @@ class ImageArtifactContent(ArtifactContentBase):
     """
 
     artifact_type: Literal[ArtifactType.IMAGE] = ArtifactType.IMAGE
-    prompt: str = Field(default="", description="Prompt or creative direction used for the image")
-    alt_text: str = Field(default="", description="Accessible description of the image")
+    prompt: str = Field(default="", max_length=100_000, description="Prompt or creative direction used for the image")
+    alt_text: str = Field(default="", max_length=10_000, description="Accessible description of the image")
     # External URL only. Example: "https://example.com/image.png".
-    source_url: str | None = Field(default=None, description="External image URL when the image is remote")
+    source_url: ImageUrl | None = Field(default=None, description="External or data image URL")
     # Internal ObjectKey only. Example:
     # "assets/sessions/<session_id>/<asset_id>.png". It is not an entity ID
     # and it is never an absolute filesystem path.
@@ -83,12 +89,13 @@ class SlidesArtifactContent(ArtifactContentBase):
     """Editable Markdown source for a concise Reveal.js presentation."""
 
     artifact_type: Literal[ArtifactType.SLIDES] = ArtifactType.SLIDES
-    subtitle: str = Field(default="", description="Optional presentation subtitle")
+    subtitle: str = Field(default="", max_length=500, description="Optional presentation subtitle")
     content: str = Field(
+        max_length=1_000_000,
         description=(
             "Markdown deck: '---' starts a horizontal section and '--' starts a vertical slide within a section; "
             "each slide should fit one viewport"
-        )
+        ),
     )
 
     @field_validator("content")
@@ -185,8 +192,12 @@ class ArtifactTextEdit(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    old_text: str = Field(min_length=1, description="Exact text to find in the current body")
-    new_text: str = Field(default="", description="Replacement text; an empty value deletes the match")
+    old_text: str = Field(min_length=1, max_length=100_000, description="Exact text to find in the current body")
+    new_text: str = Field(
+        default="",
+        max_length=100_000,
+        description="Replacement text; an empty value deletes the match",
+    )
     replace_all: bool = Field(default=False, description="Whether every exact match should be replaced")
 
 
@@ -199,10 +210,10 @@ class ArtifactContentPatchBase(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    title: str | None = None
-    summary: str | None = None
-    suggested_tags: list[SuggestedTag] | None = None
-    keywords: list[str] | None = None
+    title: NonBlankName500 | None = None
+    summary: str | None = Field(default=None, max_length=20_000)
+    suggested_tags: list[SuggestedTag] | None = Field(default=None, max_length=100)
+    keywords: list[str] | None = Field(default=None, max_length=100)
 
 
 class ArtifactBodyPatchBase(ArtifactContentPatchBase):
@@ -213,8 +224,8 @@ class ArtifactBodyPatchBase(ArtifactContentPatchBase):
     long article or deck from being sent back in full for a small change.
     """
 
-    content: str | None = None
-    content_edits: list[ArtifactTextEdit] | None = None
+    content: str | None = Field(default=None, max_length=1_000_000)
+    content_edits: list[ArtifactTextEdit] | None = Field(default=None, max_length=100)
 
 
 class CardArtifactPatch(ArtifactBodyPatchBase):
@@ -235,23 +246,23 @@ class ArticleArtifactPatch(ArtifactBodyPatchBase):
     """Partial edit of a long-form article."""
 
     artifact_type: Literal[ArtifactType.ARTICLE]
-    subtitle: str | None = None
+    subtitle: str | None = Field(default=None, max_length=500)
 
 
 class SlidesArtifactPatch(ArtifactBodyPatchBase):
     """Partial edit of a slide deck."""
 
     artifact_type: Literal[ArtifactType.SLIDES]
-    subtitle: str | None = None
+    subtitle: str | None = Field(default=None, max_length=500)
 
 
 class ImageArtifactPatch(ArtifactContentPatchBase):
     """Partial edit of an image artifact's description or location."""
 
     artifact_type: Literal[ArtifactType.IMAGE]
-    prompt: str | None = None
-    alt_text: str | None = None
-    source_url: str | None = None
+    prompt: str | None = Field(default=None, max_length=100_000)
+    alt_text: str | None = Field(default=None, max_length=10_000)
+    source_url: ImageUrl | None = None
     asset_path: str | None = None
 
 
@@ -350,7 +361,11 @@ class AgentArtifactWrite(BaseModel):
         default=None,
         description="Model-proposed content awaiting an explicit user save",
     )
-    raw_content: str | None = Field(default=None, description="Original input associated with this artifact")
+    raw_content: str | None = Field(
+        default=None,
+        max_length=1_000_000,
+        description="Original input associated with this artifact",
+    )
     status: ArtifactStatus = Field(default=ArtifactStatus.DRAFT, description="Current artifact lifecycle state")
     metadata: dict[str, object] = Field(default_factory=dict, description="Extensible artifact metadata")
 

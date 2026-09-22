@@ -142,8 +142,9 @@ def test_steer_endpoint_routes_typed_external_event(monkeypatch) -> None:
     monkeypatch.setattr(agent_routes.active_requests, "emit", emit)
 
     with TestClient(app) as client:
+        session_id = client.post("/api/agent/start").json()["conversation_id"]
         response = client.post(
-            "/api/agent/session-1/steer",
+            f"/api/agent/{session_id}/steer",
             json={
                 "raw_content": "Explain first.",
                 "parts": [
@@ -162,11 +163,11 @@ def test_steer_endpoint_routes_typed_external_event(monkeypatch) -> None:
     assert response.json() == {"accepted": True, "accepted_by": ["SteeringExtension"]}
     assert captured == [
         (
-            "session-1",
+            session_id,
             ExternalEvent(
                 name="steering_message",
                 payload={
-                    "session_id": "session-1",
+                    "session_id": session_id,
                     "message": UserMessage(
                         content=[
                             TextContent("Explain first."),
@@ -490,6 +491,14 @@ async def test_provider_http_lifecycle_preserves_blank_update_key():
         assert updated_detail["api_key"] == "secret"
         assert client.delete(f"/api/ai/providers/{provider_id}").json() == {"ok": True}
         assert client.get(f"/api/ai/providers/{provider_id}").status_code == 404
+
+
+def test_session_title_update_rejects_blank_name() -> None:
+    with TestClient(app) as client:
+        session_id = client.post("/api/agent/start").json()["conversation_id"]
+        response = client.patch(f"/api/agent/sessions/{session_id}/title", json={"title": "   "})
+
+    assert response.status_code == 422
 
 
 async def test_provider_http_does_not_store_a_failed_connection(monkeypatch):
