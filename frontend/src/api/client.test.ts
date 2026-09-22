@@ -86,12 +86,18 @@ it('manages scheduled tasks through the typed client', async () => {
     action: task.action,
   })).resolves.toEqual(task)
   await expect(scheduledTaskClient.runNow(task.id)).resolves.toEqual(pendingRun)
-  await expect(scheduledTaskClient.listRuns(task.id, ['pending'])).resolves.toEqual([pendingRun])
+  await expect(scheduledTaskClient.listRuns(task.id, {
+    statuses: ['pending'],
+    limit: 20,
+    offset: 0,
+  })).resolves.toEqual([pendingRun])
 
   expect(String(fetchMock.mock.calls[0]?.[0])).toBe('/api/scheduled-tasks?enabled=true')
   expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: 'POST' })
   expect(fetchMock.mock.calls[2]?.[0]).toBe('/api/scheduled-tasks/task-1/run')
-  expect(String(fetchMock.mock.calls[3]?.[0])).toBe('/api/scheduled-tasks/task-1/runs?run_status=pending')
+  expect(String(fetchMock.mock.calls[3]?.[0])).toBe(
+    '/api/scheduled-tasks/task-1/runs?run_status=pending&limit=20&offset=0',
+  )
 })
 
 it('loads supervised process health through the typed client', async () => {

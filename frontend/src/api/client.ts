@@ -672,9 +672,18 @@ export const scheduledTaskClient = {
     })
   },
 
-  listRuns(taskId: string, statuses: ScheduledTaskRunStatus[] = []): Promise<ScheduledTaskRun[]> {
+  listRuns(
+    taskId: string,
+    options: {
+      statuses?: ScheduledTaskRunStatus[]
+      limit?: number
+      offset?: number
+    } = {},
+  ): Promise<ScheduledTaskRun[]> {
     const params = new URLSearchParams()
-    statuses.forEach((status) => params.append('run_status', status))
+    for (const status of options.statuses ?? []) params.append('run_status', status)
+    if (options.limit !== undefined) params.set('limit', String(options.limit))
+    if (options.offset !== undefined) params.set('offset', String(options.offset))
     const suffix = params.size ? `?${params}` : ''
     return request<ScheduledTaskRun[]>(
       `/scheduled-tasks/${encodeURIComponent(taskId)}/runs${suffix}`,
