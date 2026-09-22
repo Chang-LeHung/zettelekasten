@@ -422,11 +422,17 @@ async def test_agent_prompt_executor_creates_a_fresh_noninteractive_session(monk
             return None
 
     original_config = scheduled_agent_module.ZettelkastenAgentConfig
+    captured_config: dict[str, object] = {}
     monkeypatch.setattr(scheduled_agent_module, "create_model", lambda _connection: ProbeModel())
+
+    def config_factory(**options: object):
+        captured_config.update(options)
+        return original_config(**options, skill_roots=(), mcp_config_path=None)
+
     monkeypatch.setattr(
         scheduled_agent_module,
         "ZettelkastenAgentConfig",
-        lambda **options: original_config(**options, skill_roots=(), mcp_config_path=None),
+        config_factory,
     )
     provider = await provider_storage.create(
         ProviderWrite(
@@ -452,6 +458,7 @@ async def test_agent_prompt_executor_creates_a_fresh_noninteractive_session(monk
 
     assert result.status is ActionExecutionStatus.SUCCEEDED
     assert result.output is not None
+    assert captured_config["allow_direct_artifact_edits"] is True
     session_id = result.output["session_id"]
     assert isinstance(session_id, str)
     session = await session_storage.get(session_id)

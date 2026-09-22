@@ -274,6 +274,55 @@ async def test_update_artifact_can_target_an_artifact_from_another_session() -> 
     assert updated.draft_content is not None and updated.draft_content.title == "Updated across sessions"
 
 
+async def test_direct_current_session_edits_update_content_without_a_draft() -> None:
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
+    artifact = await artifact_storage.create(
+        AgentArtifactWrite(
+            session_id=session_id,
+            content=CardArtifactContent(artifact_type="card", title="Before", content="Original"),
+        )
+    )
+
+    class DirectUpdateModel:
+        def __init__(self) -> None:
+            self.step = 0
+
+        async def stream(self, request: ModelRequest) -> AsyncIterator[ModelEvent]:
+            if self.step == 0:
+                message = AssistantMessage(
+                    tool_calls=(
+                        ToolCall(
+                            "direct-update",
+                            "update_artifact",
+                            {
+                                "artifact_id": artifact.id,
+                                "patch": {"artifact_type": "card", "title": "After"},
+                            },
+                        ),
+                    )
+                )
+            else:
+                updated = _tool_payload(request)
+                assert updated["content"]["title"] == "After"
+                assert updated["draft_content"] is None
+                message = AssistantMessage(content="Direct update complete.")
+            self.step += 1
+            yield ModelEvent.completed(ModelResponse(message))
+
+    agent = await Agent.create(
+        DirectUpdateModel(),
+        config=AgentRunConfig(session_id=session_id),
+        extensions=[ArtifactExtension(allow_direct_current_session_edits=True)],
+    )
+    result = await agent.run("Update the current artifact directly")
+
+    assert result.content == "Direct update complete."
+    updated = await artifact_storage.get(artifact.id)
+    assert updated is not None
+    assert updated.content is not None and updated.content.title == "After"
+    assert updated.draft_content is None
+
+
 async def test_model_drafts_stay_unpublished_until_the_user_saves() -> None:
     """A draft write never becomes content; only the user's save publishes it."""
     session_id = (await session_storage.create(AgentSessionCreate())).session_id

@@ -23,6 +23,10 @@ artifact_pruner = ArtifactPruner()
 class ArtifactExtension(AgentExtension):
     """Expose typed artifact operations to the model."""
 
+    def __init__(self, *, allow_direct_current_session_edits: bool = False) -> None:
+        """Configure whether headless runs may write current-session content directly."""
+        self.allow_direct_current_session_edits = allow_direct_current_session_edits
+
     # Do not add an on_state() workspace system message. A conversation starts
     # with no artifacts, and later create/update/delete tool calls and results
     # already remain in model context. Rebuilding a full snapshot in the leading
@@ -206,18 +210,27 @@ class ArtifactExtension(AgentExtension):
             base = current.editable_content
             if base is None:
                 raise ValueError(f"Artifact has no content to update: {artifact_id}")
+            updated_content = apply_artifact_patch(base, patch)
+            direct_edit = self.allow_direct_current_session_edits and current.session_id == session_id
             updated = await artifact_storage.update(
                 artifact_id,
                 AgentArtifactWrite(
                     session_id=current.session_id,
-                    content=current.content,
-                    draft_content=apply_artifact_patch(base, patch),
+                    content=updated_content if direct_edit else current.content,
+                    draft_content=None if direct_edit else updated_content,
                     raw_content=current.raw_content,
                     status=current.status,
                     metadata=current.metadata,
                 ),
             )
             return await tag_service.sync_confirmed_suggestions(updated)
+
+        if self.allow_direct_current_session_edits:
+            update_artifact.guidelines = (
+                *update_artifact.guidelines,
+                "Direct current-session edits are enabled: updating an artifact owned by this "
+                "session replaces content directly and clears any pending draft.",
+            )
 
         @tool
         async def delete_artifact(artifact_id: str) -> bool:

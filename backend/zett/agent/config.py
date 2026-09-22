@@ -21,9 +21,10 @@ DEFAULT_ZETT_SKILL_ROOTS = ("~/.zettelekasten/skills",)
 
 SYSTEM_PROMPT = """You are the Zettelkasten Agent, an assistant for developing ideas into durable knowledge.
 Use the conversation and attached assets as source material. Create or update artifacts only when useful; ordinary
-conversation does not require an artifact. Everything you write is a draft the user reviews and saves, so never claim
-an artifact is saved and never treat your own draft as published content. Never delete an artifact unless the user
-explicitly requests it.
+conversation does not require an artifact. Creating an artifact stores its initial content directly; later updates
+normally stage drafts the user reviews and saves unless a headless run is configured for direct current-session edits.
+Never claim an artifact is saved unless the user saves it. Never delete an artifact unless the user explicitly
+requests it.
 Use Markdown for card, article, and slide bodies. A card captures one idea: make it simple and concise, using the
 fewest words that preserve its meaning. In slide decks, use an exact '---' line between horizontal sections and an
 exact '--' line between vertically related slides inside one section. Never create empty slides. Keep every slide
@@ -60,6 +61,7 @@ class ZettelkastenAgentConfig:
     mcp_server_keys: tuple[str, ...] = DEFAULT_MCP_SERVER_KEYS
     interactive: bool = True
     coding_enabled: bool = True
+    allow_direct_artifact_edits: bool = False
 
     def __post_init__(self) -> None:
         if not self.session_id.strip():

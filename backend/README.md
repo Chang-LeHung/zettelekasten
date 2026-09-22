@@ -77,6 +77,10 @@ draft with the save endpoint or edits a library document from the Library view;
 those writes mirror the published content into `draft_content_json`, so the
 draft is always the working copy and matches `content_json` right after a save.
 An empty `content_json` means the artifact has no initial or published content.
+Headless scheduled Agent runs enable direct current-session artifact edits:
+updating an artifact owned by the scheduled run's session writes `content_json`
+directly and clears any pending draft, while cross-session updates remain
+draft-only.
 `AgentArtifactEntity.editable_content` is the draft-first view shared by the
 conversation UI, previews, search, and the draft-versus-published diff, and
 `ArtifactPruner` returns `published_content` and `draft_content` previews

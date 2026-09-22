@@ -63,6 +63,7 @@ class AgentPromptExecutor(ActionExecutor):
                     context_composition_recorder=_remember_context_composition,
                     interactive=False,
                     coding_enabled=False,
+                    allow_direct_artifact_edits=True,
                 )
             )
             await agent.initialize()

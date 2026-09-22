@@ -73,7 +73,9 @@ class ZettelkastenAgent(ZettelkastenContainer):
         extensions = [
             SessionPersistenceExtension(self.storage),
             AssetExtension(max_asset_size_bytes=config.max_asset_size_bytes),
-            ArtifactExtension(),
+            ArtifactExtension(
+                allow_direct_current_session_edits=config.allow_direct_artifact_edits,
+            ),
             TagExtension(),
             TodoWriteExtension(),
             CompactionExtension(
