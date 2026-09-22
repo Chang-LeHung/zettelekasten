@@ -90,6 +90,10 @@ Headless scheduled Agent runs enable direct current-session artifact edits:
 updating an artifact owned by the scheduled run's session writes `content_json`
 directly and clears any pending draft, while cross-session updates remain
 draft-only.
+`ScheduledTaskExtension` exposes create, list, get, and update tools for
+scheduled tasks. It deliberately exposes `disable_scheduled_task` instead of a
+physical delete tool, so an Agent can stop future runs without removing the
+definition or its execution history.
 `AgentArtifactEntity.editable_content` is the draft-first view shared by the
 conversation UI, previews, search, and the draft-versus-published diff, and
 `ArtifactPruner` returns `published_content` and `draft_content` previews

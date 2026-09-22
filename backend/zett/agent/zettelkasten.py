@@ -40,6 +40,7 @@ from .extensions import (
     ArtifactExtension,
     AssetExtension,
     ContextCompositionExtension,
+    ScheduledTaskExtension,
     SessionFilesExtension,
     TagExtension,
 )
@@ -77,6 +78,7 @@ class ZettelkastenAgent(ZettelkastenContainer):
                 allow_direct_current_session_edits=config.allow_direct_artifact_edits,
             ),
             TagExtension(),
+            ScheduledTaskExtension(),
             TodoWriteExtension(),
             CompactionExtension(
                 max_tokens=config.compaction_max_tokens,

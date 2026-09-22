@@ -9,6 +9,7 @@ capabilities such as slash commands and ``@`` references live in
 from .artifacts import ArtifactExtension
 from .assets import AssetDetails, AssetExtension, AssetInput
 from .context_composition import CONTEXT_COMPOSITION_EVENT, ContextCompositionExtension, context_composition
+from .scheduled_tasks import ScheduledTaskDraft, ScheduledTaskExtension, ScheduledTaskPatch
 from .session_files import SessionFilesExtension
 from .tags import TagExtension
 
@@ -19,6 +20,9 @@ __all__ = [
     "AssetInput",
     "CONTEXT_COMPOSITION_EVENT",
     "ContextCompositionExtension",
+    "ScheduledTaskDraft",
+    "ScheduledTaskExtension",
+    "ScheduledTaskPatch",
     "SessionFilesExtension",
     "TagExtension",
     "context_composition",
