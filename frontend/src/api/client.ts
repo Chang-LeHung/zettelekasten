@@ -20,6 +20,7 @@ import type {
   Channel,
   ChannelLogin,
   ChannelLoginStart,
+  ChannelPluginInfo,
   ChannelUpdate,
   LibraryItem,
   LibraryItemType,
@@ -704,6 +705,10 @@ export const scheduledTaskClient = {
 export const channelClient = {
   list(): Promise<Channel[]> {
     return request<Channel[]>('/channels')
+  },
+
+  plugins(): Promise<ChannelPluginInfo[]> {
+    return request<ChannelPluginInfo[]>('/channels/plugins')
   },
 
   update(channelId: string, payload: ChannelUpdate): Promise<Channel> {

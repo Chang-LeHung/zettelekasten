@@ -204,7 +204,13 @@ export interface ScheduledTaskRun {
   updated_at: string
 }
 
-export type ChannelType = 'wechat'
+/** Channel plugins are discovered at runtime, so platform ids stay open. */
+export type ChannelType = string
+
+export interface ChannelPluginInfo {
+  channel_type: ChannelType
+  label: string
+}
 
 export interface Channel {
   id: string
@@ -231,6 +237,7 @@ export interface ChannelUpdate {
 export type ChannelLoginStatus = 'pending' | 'scanned' | 'verify_required' | 'connected' | 'failed' | 'expired'
 
 export interface ChannelLoginStart {
+  channel_type?: ChannelType
   provider_id: string
   name?: string
 }

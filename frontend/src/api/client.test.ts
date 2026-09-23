@@ -685,13 +685,15 @@ it('manages channels through the typed client', async () => {
       created_at: '2026-09-22T00:00:00Z',
       updated_at: '2026-09-22T00:01:00Z',
     })))
+    .mockResolvedValueOnce(new Response(JSON.stringify([{ channel_type: 'wechat', label: 'WeChat' }])))
   vi.stubGlobal('fetch', fetchMock)
 
   await expect(channelClient.list()).resolves.toEqual([channel])
   await channelClient.update(channel.id, { enabled: false })
   await channelClient.delete(channel.id)
-  await channelClient.startLogin({ provider_id: 'provider-1' })
+  await channelClient.startLogin({ channel_type: 'wechat', provider_id: 'provider-1' })
   await channelClient.pollLogin('onboarding-1', '123456')
+  await expect(channelClient.plugins()).resolves.toEqual([{ channel_type: 'wechat', label: 'WeChat' }])
 
   expect(String(fetchMock.mock.calls[0]?.[0])).toBe('/api/channels')
   expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: 'PUT' })
@@ -700,6 +702,7 @@ it('manages channels through the typed client', async () => {
   expect(String(fetchMock.mock.calls[3]?.[0])).toBe('/api/channels/login/start')
   expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({ method: 'POST' })
   expect(String(fetchMock.mock.calls[4]?.[0])).toBe('/api/channels/login/onboarding-1?verify_code=123456')
+  expect(String(fetchMock.mock.calls[5]?.[0])).toBe('/api/channels/plugins')
 })
 
 it('lists normal sessions by default and supports explicit type filters', async () => {

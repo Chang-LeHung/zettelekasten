@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { aiClient, channelClient } from '../api/client'
-import type { AIProvider, Channel, ChannelLogin, ChannelType, ReasoningEffort } from '../api/types'
+import type { AIProvider, Channel, ChannelLogin, ChannelPluginInfo, ChannelType, ReasoningEffort } from '../api/types'
 import { useI18n } from '../i18n'
 
 const { t } = useI18n()
 
 const channels = ref<Channel[]>([])
 const providers = ref<AIProvider[]>([])
+const plugins = ref<ChannelPluginInfo[]>([])
 const loading = ref(false)
 const connecting = ref(false)
 const busyId = ref<string | null>(null)
@@ -16,6 +17,7 @@ const setupOpen = ref(false)
 const loginOpen = ref(false)
 const login = ref<ChannelLogin | null>(null)
 const verifyCode = ref('')
+const selectedType = ref<ChannelType>('')
 let loginPoll: number | null = null
 
 const form = reactive({
@@ -27,7 +29,8 @@ const form = reactive({
 
 const enabledProviders = computed(() => providers.value.filter((provider) => provider.enabled))
 const canConnect = computed(() => (
-  form.providerId.length > 0
+  selectedType.value.length > 0
+  && form.providerId.length > 0
   && enabledProviders.value.some((provider) => provider.id === form.providerId)
 ))
 const providerName = (providerId: string): string => (
@@ -43,7 +46,11 @@ function message(errorValue: unknown): string {
 }
 
 function typeLabel(channelType: ChannelType): string {
-  return channelType === 'wechat' ? t('channels.type.wechat') : channelType
+  const known = plugins.value.find((plugin) => plugin.channel_type === channelType)?.label
+  if (known) return known
+  const key = `channels.type.${channelType}`
+  const localized = t(key)
+  return localized === key ? channelType : localized
 }
 
 function loginStatusText(value: ChannelLogin): string {
@@ -56,13 +63,16 @@ async function load(): Promise<void> {
   loading.value = true
   error.value = ''
   try {
-    const [channelData, providerData] = await Promise.all([
+    const [channelData, providerData, pluginData] = await Promise.all([
       channelClient.list(),
       aiClient.listProviders(),
+      channelClient.plugins(),
     ])
     channels.value = channelData
     providers.value = providerData
+    plugins.value = pluginData
     if (!form.providerId && enabledProviders.value[0]) form.providerId = enabledProviders.value[0].id
+    if (!selectedType.value && pluginData[0]) selectedType.value = pluginData[0].channel_type
   } catch (errorValue) {
     error.value = message(errorValue)
   } finally {
@@ -70,17 +80,19 @@ async function load(): Promise<void> {
   }
 }
 
-async function connectWeChat(): Promise<void> {
+async function connectChannel(): Promise<void> {
   if (!canConnect.value || connecting.value) return
   connecting.value = true
   error.value = ''
   try {
     const created = await channelClient.startLogin({
+      channel_type: selectedType.value,
       provider_id: form.providerId,
       name: form.name.trim() || undefined,
     })
     login.value = {
       ...created,
+      channel_type: selectedType.value,
       provider_id: form.providerId,
       name: form.name.trim() || created.name,
     }
@@ -251,16 +263,24 @@ onBeforeUnmount(() => {
 
   <Teleport to="body">
     <div v-if="setupOpen" class="channel-modal-backdrop" @click.self="setupOpen = false">
-      <form class="channel-modal setup-modal" role="dialog" aria-modal="true" aria-labelledby="connect-title" @submit.prevent="connectWeChat">
+      <form class="channel-modal setup-modal" role="dialog" aria-modal="true" aria-labelledby="connect-title" @submit.prevent="connectChannel">
         <header>
           <div>
-            <span>{{ t('channels.type.wechat') }}</span>
+            <span>{{ plugins.length > 1 || !selectedType ? t('channels.title') : typeLabel(selectedType) }}</span>
             <h2 id="connect-title">{{ t('channels.setup.title') }}</h2>
             <p>{{ t('channels.setup.body') }}</p>
           </div>
           <button type="button" :aria-label="t('channels.login.close')" @click="setupOpen = false">×</button>
         </header>
         <div class="channel-form">
+          <label v-if="plugins.length > 1">
+            <span>{{ t('channels.field.type') }}</span>
+            <select v-model="selectedType" required>
+              <option v-for="plugin in plugins" :key="plugin.channel_type" :value="plugin.channel_type">
+                {{ plugin.label }}
+              </option>
+            </select>
+          </label>
           <label>
             <span>{{ t('channels.setup.name') }}</span>
             <input v-model="form.name" maxlength="100" :placeholder="t('channels.setup.namePlaceholder')" />
@@ -304,13 +324,17 @@ onBeforeUnmount(() => {
         <header>
           <div>
             <span>{{ t('channels.login.eyebrow') }}</span>
-            <h2 id="login-title">{{ t('channels.login.title') }}</h2>
+            <h2 id="login-title">{{ t('channels.login.title', { platform: typeLabel(login.channel_type) }) }}</h2>
             <p>{{ loginStatusText(login) }}</p>
           </div>
           <button type="button" :aria-label="t('channels.login.close')" @click="closeLogin">×</button>
         </header>
         <div class="onboarding-body">
-          <img v-if="login.qr_data_url" :src="login.qr_data_url" :alt="t('channels.login.qrAlt')" />
+          <img
+            v-if="login.qr_data_url"
+            :src="login.qr_data_url"
+            :alt="t('channels.login.qrAlt', { platform: typeLabel(login.channel_type) })"
+          />
           <div v-else class="onboarding-placeholder">{{ t('channels.login.qrUnavailable') }}</div>
           <label v-if="login.status === 'verify_required'" class="wechat-verify">
             <span>{{ t('channels.login.pairingLabel') }}</span>
@@ -326,7 +350,7 @@ onBeforeUnmount(() => {
             <span>{{ loginStatusText(login) }}</span>
           </div>
           <a v-if="login.qr_url" :href="login.qr_url" target="_blank" rel="noopener noreferrer">
-            {{ t('channels.login.openInWeChat') }}
+            {{ t('channels.login.openLink') }}
           </a>
         </div>
         <footer>
