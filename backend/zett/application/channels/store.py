@@ -53,6 +53,10 @@ class ChannelStore:
 
     async def create_channel(self, draft: ChannelDraft) -> Channel:
         """Create one channel account and encrypt its secrets."""
+        if not draft.name.strip():
+            raise ValueError("Channel name cannot be blank")
+        if not draft.provider_id.strip():
+            raise ValueError("Channel provider id cannot be blank")
         now = datetime.now(UTC)
         channel = Channel(
             id=str(uuid.uuid7()),
@@ -78,11 +82,15 @@ class ChannelStore:
 
     async def get_channel(self, channel_id: str) -> Channel | None:
         """Return one public channel model."""
+        if not channel_id.strip():
+            return None
         payload = await self._kv.get(f"{CHANNEL_PREFIX}{channel_id}")
         return Channel.model_validate(payload["channel"]) if payload is not None else None
 
     async def update_channel(self, channel_id: str, payload: ChannelUpdate) -> Channel:
         """Apply a partial update while preserving platform credentials."""
+        if not channel_id.strip():
+            raise KeyError("Channel id cannot be blank")
         stored = await self._read(channel_id)
         if stored is None:
             raise KeyError(f"Channel not found: {channel_id}")
@@ -102,6 +110,8 @@ class ChannelStore:
 
     async def delete_channel(self, channel_id: str) -> bool:
         """Delete one channel with its dedup markers and session bindings."""
+        if not channel_id.strip():
+            return False
         if await self._kv.get(f"{CHANNEL_PREFIX}{channel_id}") is None:
             return False
         await self._kv.delete(f"{CHANNEL_PREFIX}{channel_id}")
@@ -124,6 +134,8 @@ class ChannelStore:
 
     async def get_runtime_channel(self, channel_id: str) -> ChannelRuntime | None:
         """Return one enabled channel with decrypted plugin credentials."""
+        if not channel_id.strip():
+            return None
         stored = await self._read(channel_id)
         if stored is None:
             return None
@@ -134,6 +146,8 @@ class ChannelStore:
 
     async def save_login(self, login: ChannelLogin, *, state: dict[str, JsonValue]) -> None:
         """Persist one QR login session and its provider continuation state."""
+        if not login.id.strip():
+            raise ValueError("Channel login id cannot be blank")
         await self._kv.set(
             f"{LOGIN_PREFIX}{login.id}",
             {"login": login.model_dump(mode="json"), "state": state},
@@ -141,6 +155,8 @@ class ChannelStore:
 
     async def get_login(self, login_id: str) -> tuple[ChannelLogin, dict[str, JsonValue]] | None:
         """Return one stored login session with its provider state."""
+        if not login_id.strip():
+            return None
         payload = await self._kv.get(f"{LOGIN_PREFIX}{login_id}")
         if payload is None:
             return None
@@ -148,6 +164,8 @@ class ChannelStore:
 
     async def claim_event(self, channel_id: str, event_id: str) -> bool:
         """Return ``True`` the first time an inbound event is seen."""
+        if not channel_id.strip() or not event_id.strip():
+            return False
         key = f"{EVENT_PREFIX}{channel_id}:{event_id}"
         if await self._kv.get(key) is not None:
             return False
@@ -156,11 +174,15 @@ class ChannelStore:
 
     async def agent_session_for(self, channel_id: str, chat_id: str) -> str | None:
         """Return the Agent session bound to one external conversation."""
+        if not channel_id.strip() or not chat_id.strip():
+            return None
         value = await self._kv.get(f"{SESSION_PREFIX}{channel_id}:{chat_id}")
         return value if isinstance(value, str) else None
 
     async def bind_agent_session(self, channel_id: str, chat_id: str, session_id: str) -> None:
         """Bind one external conversation to its Agent session."""
+        if not channel_id.strip() or not chat_id.strip() or not session_id.strip():
+            return
         await self._kv.set(f"{SESSION_PREFIX}{channel_id}:{chat_id}", session_id)
 
     async def _read(self, channel_id: str) -> tuple[Channel, dict[str, str]] | None:

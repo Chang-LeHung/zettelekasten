@@ -13,7 +13,16 @@ from .channels import (
     ChannelLoginStatus,
     ChannelPlugin,
 )
-from .contract import JsonValue, KVStorage, NamespacedKV, Plugin, PluginContext, PluginKind
+from .contract import (
+    JsonValue,
+    KVStorage,
+    NamespacedKV,
+    Plugin,
+    PluginContext,
+    PluginError,
+    PluginKind,
+    PluginLoadError,
+)
 
 __all__ = [
     "ChannelCredentials",
@@ -27,5 +36,7 @@ __all__ = [
     "NamespacedKV",
     "Plugin",
     "PluginContext",
+    "PluginError",
     "PluginKind",
+    "PluginLoadError",
 ]

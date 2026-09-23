@@ -15,6 +15,18 @@ class PluginKind(StrEnum):
     CHANNEL = "channel"
 
 
+class PluginError(RuntimeError):
+    """Raised when a plugin fails at the boundary Zett controls.
+
+    Plugin code is third-party code, so its failures are contained and
+    re-raised as this type instead of leaking arbitrary exceptions into Zett.
+    """
+
+
+class PluginLoadError(PluginError):
+    """Raised when a plugin cannot be discovered or constructed."""
+
+
 class KVStorage(ABC):
     """Key-value store a plugin persists through, owned and provided by Zett."""
 
@@ -82,4 +94,13 @@ class Plugin(ABC):
         """Release resources opened during ``start``."""
 
 
-__all__ = ["JsonValue", "KVStorage", "NamespacedKV", "Plugin", "PluginContext", "PluginKind"]
+__all__ = [
+    "JsonValue",
+    "KVStorage",
+    "NamespacedKV",
+    "Plugin",
+    "PluginContext",
+    "PluginError",
+    "PluginKind",
+    "PluginLoadError",
+]

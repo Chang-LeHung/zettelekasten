@@ -1,8 +1,9 @@
-"""HTTP management endpoints for the in-process IM gateway package."""
+"""HTTP management endpoints for channel plugins."""
 
 from fastapi import APIRouter, HTTPException, Query, status
 
 from ....infra.persistence.dao import provider_storage
+from ....plugins import PluginError
 from ....schemas import (
     Channel,
     ChannelLogin,
@@ -46,6 +47,8 @@ async def start_channel_login(payload: ChannelLoginStart) -> ChannelLogin:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Enabled provider not found")
     try:
         return await channel_service.start_login(payload)
+    except PluginError as error:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(error)) from error
     except ValueError as error:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
 

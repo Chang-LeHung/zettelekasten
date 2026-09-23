@@ -18,7 +18,15 @@ from qrcode.image.svg import SvgPathImage
 
 from ...infra.log import get_logger
 from ...infra.plugins import PluginRegistry, ZettKVStorage, build_registry
-from ...plugins import ChannelInboundMessage, ChannelPlugin, KVStorage
+from ...plugins import (
+    ChannelInboundMessage,
+    ChannelLoginChallenge,
+    ChannelLoginState,
+    ChannelPlugin,
+    KVStorage,
+    PluginError,
+    PluginLoadError,
+)
 from ...schemas import (
     Channel,
     ChannelLogin,
@@ -72,14 +80,19 @@ class ChannelService:
 
     async def initialize(self) -> None:
         """Start a receive loop for every enabled channel."""
+        plugin_ids = self._registry.ids()
+        if plugin_ids:
+            logger.info("Channel plugins available: %s", ", ".join(plugin_ids))
+        else:
+            logger.warning("No channel plugins are installed; channel APIs will report failures")
         await self.reload()
 
     async def shutdown(self) -> None:
         """Stop every receive loop and close every plugin."""
         for channel_id in list(self._runners):
             await self._stop_runner(channel_id)
-        for plugin in list(self._logins.values()):
-            await plugin.stop()
+        for login_id, plugin in list(self._logins.items()):
+            await self._safe_stop(plugin, scope=f"login:{login_id}")
         self._logins.clear()
 
     async def reload(self) -> None:
@@ -97,16 +110,21 @@ class ChannelService:
 
     async def update_channel(self, channel_id: str, payload: ChannelUpdate) -> Channel:
         """Update channel policy and restart its receive loop."""
+        if not channel_id.strip():
+            raise KeyError("Channel id cannot be blank")
         updated = await self._store.update_channel(channel_id, payload)
         await self._stop_runner(channel_id)
         if updated.enabled:
             runtime = await self._store.get_runtime_channel(channel_id)
-            if runtime is not None:
-                await self._start_runner(runtime)
+            if runtime is None:
+                return updated
+            await self._start_runner(runtime)
         return updated
 
     async def delete_channel(self, channel_id: str) -> bool:
         """Stop one channel and remove its record, markers, and bindings."""
+        if not channel_id.strip():
+            return False
         await self._stop_runner(channel_id)
         return await self._store.delete_channel(channel_id)
 
@@ -116,9 +134,19 @@ class ChannelService:
 
     async def start_login(self, payload: ChannelLoginStart) -> ChannelLogin:
         """Start one QR flow through the plugin registered for its channel type."""
+        if not payload.provider_id.strip():
+            raise ValueError("Channel login requires a provider id")
         login_id = str(uuid.uuid7())
-        plugin = self._registry.create(payload.channel_type.value, scope_id=login_id, kv=self._kv)
-        challenge = await plugin.login()
+        try:
+            plugin = self._registry.create(payload.channel_type.value, scope_id=login_id, kv=self._kv)
+        except (PluginLoadError, KeyError) as error:
+            raise PluginError(f"Channel plugin unavailable: {payload.channel_type.value}") from error
+        try:
+            challenge = ChannelLoginChallenge.model_validate(await plugin.login())
+        except Exception as error:
+            logger.exception("Channel plugin login failed; login_id=%s", login_id)
+            await self._safe_stop(plugin, scope=f"login:{login_id}")
+            raise PluginError("Channel plugin failed to start login") from error
         now = datetime.now(UTC)
         login = ChannelLogin(
             id=login_id,
@@ -139,6 +167,8 @@ class ChannelService:
 
     async def poll_login(self, login_id: str, *, verify_code: str | None = None) -> ChannelLogin | None:
         """Poll one QR flow and create its channel after authorization."""
+        if not login_id.strip():
+            return None
         stored = await self._store.get_login(login_id)
         if stored is None:
             return None
@@ -163,9 +193,9 @@ class ChannelService:
                 message="登录会话已失效，请重新生成二维码。",
             )
         if verify_code:
-            await plugin.submit_login_code(verify_code)
+            await self._submit_login_code(plugin, verify_code, login_id)
         try:
-            state = await plugin.is_login()
+            state = ChannelLoginState.model_validate(await plugin.is_login())
         except Exception as error:
             logger.exception("IM login poll failed; login_id=%s", login_id)
             return await self._finish_login(login, status=ChannelLoginStatus.FAILED, message=str(error))
@@ -176,6 +206,12 @@ class ChannelService:
                 login,
                 status=ChannelLoginStatus.FAILED,
                 message="登录成功但插件未返回凭据。",
+            )
+        if not state.credentials.secrets:
+            return await self._finish_login(
+                login,
+                status=ChannelLoginStatus.FAILED,
+                message="登录成功但插件未返回密钥。",
             )
         channel = await self._store.create_channel(
             ChannelDraft(
@@ -193,7 +229,7 @@ class ChannelService:
             channel_id=channel.id,
         )
         self._logins.pop(login_id, None)
-        await plugin.stop()
+        await self._safe_stop(plugin, scope=f"login:{login_id}")
         try:
             await self.reload()
         except Exception:
@@ -203,10 +239,18 @@ class ChannelService:
 
     async def send_message(self, channel_id: str, chat_id: str, text: str) -> None:
         """Deliver one proactive message through a running channel."""
+        if not channel_id.strip() or not chat_id.strip():
+            raise ValueError("Channel and chat id cannot be blank")
+        if not text.strip():
+            raise ValueError("Channel message cannot be blank")
         runner = self._runners.get(channel_id)
         if runner is None:
             raise KeyError(f"Active channel not found: {channel_id}")
-        await runner.plugin.send(chat_id, text)
+        try:
+            await runner.plugin.send(chat_id, text)
+        except Exception as error:
+            logger.exception("Channel plugin send failed; channel_id=%s", channel_id)
+            raise PluginError("Channel plugin failed to send the message") from error
 
     async def _finish_login(
         self,
@@ -228,15 +272,27 @@ class ChannelService:
         return updated
 
     async def _start_runner(self, runtime: ChannelRuntime) -> None:
+        """Start one channel plugin, skipping the channel if the plugin fails.
+
+        A broken plugin must not abort startup or block the other channels, so
+        construction and ``start`` failures are logged and swallowed here.
+        """
         channel_id = runtime.channel.id
-        plugin = self._registry.create(
-            runtime.channel.channel_type.value,
-            scope_id=channel_id,
-            kv=self._kv,
-            config=runtime.config,
-            secrets=runtime.secrets,
-        )
-        await plugin.start()
+        plugin: ChannelPlugin | None = None
+        try:
+            plugin = self._registry.create(
+                runtime.channel.channel_type.value,
+                scope_id=channel_id,
+                kv=self._kv,
+                config=runtime.config,
+                secrets=runtime.secrets,
+            )
+            await plugin.start()
+        except Exception:
+            logger.exception("Channel plugin failed to start; channel_id=%s", channel_id)
+            if plugin is not None:
+                await self._safe_stop(plugin, scope=f"channel:{channel_id}")
+            return
         task = asyncio.create_task(self._consume(channel_id, plugin), name=f"im-channel:{channel_id}")
         self._runners[channel_id] = _ChannelRunner(plugin=plugin, task=task)
 
@@ -246,18 +302,34 @@ class ChannelService:
             return
         runner.task.cancel()
         await asyncio.gather(runner.task, return_exceptions=True)
-        await runner.plugin.stop()
+        await self._safe_stop(runner.plugin, scope=f"channel:{channel_id}")
+
+    async def _safe_stop(self, plugin: ChannelPlugin, *, scope: str) -> None:
+        """Close one plugin without letting its failure escape the boundary."""
+        try:
+            await plugin.stop()
+        except Exception:
+            logger.exception("Channel plugin failed to stop; scope=%s", scope)
+
+    async def _submit_login_code(self, plugin: ChannelPlugin, code: str, login_id: str) -> None:
+        """Forward a pairing code, keeping a plugin failure from failing the poll."""
+        try:
+            await plugin.submit_login_code(code)
+        except Exception:
+            logger.exception("Channel plugin rejected the login code; login_id=%s", login_id)
 
     async def _consume(self, channel_id: str, plugin: ChannelPlugin) -> None:
         """Pull inbound messages forever and answer them through the Agent."""
         while True:
             try:
-                message = await plugin.receive()
+                message = ChannelInboundMessage.model_validate(await plugin.receive())
             except asyncio.CancelledError:
                 raise
             except Exception:
                 logger.exception("IM receive failed; channel_id=%s", channel_id)
                 await asyncio.sleep(RECEIVE_RETRY_SECONDS)
+                continue
+            if not message.text.strip():
                 continue
             try:
                 reply = await self._handle_message(channel_id, message)
@@ -266,7 +338,7 @@ class ChannelService:
             except Exception:
                 logger.exception("IM turn failed; channel_id=%s event_id=%s", channel_id, message.event_id)
                 continue
-            if reply is None:
+            if reply is None or not reply.strip():
                 continue
             try:
                 await plugin.send(message.chat_id, reply)

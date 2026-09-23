@@ -63,6 +63,8 @@ class WeChatPlugin(ChannelPlugin):
 
     async def submit_login_code(self, code: str) -> None:
         """Persist the pairing code shown by WeChat for the next poll."""
+        if not code.strip():
+            return
         await self.context.kv.set(VERIFY_CODE_KEY, code)
 
     async def is_login(self) -> ChannelLoginState:
@@ -73,7 +75,13 @@ class WeChatPlugin(ChannelPlugin):
                 status=ChannelLoginStatus.EXPIRED,
                 message="登录会话已失效，请重新生成二维码。",
             )
-        handshake = agim.LoginHandshake.model_validate(raw)
+        try:
+            handshake = agim.LoginHandshake.model_validate(raw)
+        except ValueError:
+            return ChannelLoginState(
+                status=ChannelLoginStatus.EXPIRED,
+                message="登录会话已失效，请重新生成二维码。",
+            )
         verify_code = await self.context.kv.get(VERIFY_CODE_KEY)
         state = await self._auth_client().is_login(
             handshake,
@@ -108,6 +116,10 @@ class WeChatPlugin(ChannelPlugin):
 
     async def send(self, chat_id: str, text: str) -> None:
         """Send one message, reusing the context token stored for the chat."""
+        if not chat_id.strip():
+            raise ValueError("WeChat chat id cannot be blank")
+        if not text.strip():
+            raise ValueError("WeChat message cannot be blank")
         client = self._require_client()
         context_token = await self.context.kv.get(_context_key(chat_id))
         await client.send(

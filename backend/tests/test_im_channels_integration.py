@@ -3,10 +3,12 @@
 import asyncio
 from collections.abc import AsyncIterator
 
+import pytest
 from fastapi.testclient import TestClient
 
 from zett.application.channels import agent as im_agent_module
 from zett.application.channels import channel_service
+from zett.application.channels import service as channel_service_module
 from zett.application.channels.agent import (
     AgentClient,
     AgentEvent,
@@ -26,6 +28,7 @@ from zett.plugins import (
     ChannelLoginState,
     ChannelLoginStatus,
     PluginContext,
+    PluginError,
 )
 from zett.schemas import (
     ChannelLogin,
@@ -105,6 +108,73 @@ def _registry() -> PluginRegistry:
     registry = PluginRegistry()
     registry.register("wechat", FakeWeChatPlugin)
     return registry
+
+
+def _registry_for(plugin_class: type) -> PluginRegistry:
+    registry = PluginRegistry()
+    registry.register("wechat", plugin_class)
+    return registry
+
+
+class FailingStartPlugin:
+    """Channel plugin whose ``start`` raises before any receive loop runs."""
+
+    plugin_id = "wechat"
+
+    def __init__(self, context: PluginContext) -> None:
+        self.context = context
+
+    async def start(self) -> None:
+        raise RuntimeError("plugin exploded during start")
+
+    async def stop(self) -> None:
+        return None
+
+    async def login(self) -> ChannelLoginChallenge:
+        return ChannelLoginChallenge(qr_content="https://example.invalid/qr")
+
+    async def is_login(self) -> ChannelLoginState:
+        return ChannelLoginState(status=ChannelLoginStatus.CONNECTED, message="已连接")
+
+    async def receive(self) -> ChannelInboundMessage:
+        await asyncio.sleep(3600)
+        raise AssertionError("fake plugin should be cancelled before receiving")
+
+    async def send(self, chat_id: str, text: str) -> None:
+        return None
+
+
+class FailingLoginPlugin(FailingStartPlugin):
+    """Channel plugin that cannot begin a login flow."""
+
+    async def start(self) -> None:
+        return None
+
+    async def login(self) -> ChannelLoginChallenge:
+        raise RuntimeError("plugin exploded during login")
+
+
+class FailingStopPlugin(FailingStartPlugin):
+    """Channel plugin that raises while shutting down."""
+
+    async def start(self) -> None:
+        return None
+
+    async def stop(self) -> None:
+        raise RuntimeError("plugin exploded during stop")
+
+
+class OutOfContractPlugin(FailingStartPlugin):
+    """Channel plugin that returns shapes outside the plugin contract."""
+
+    async def start(self) -> None:
+        return None
+
+    async def is_login(self) -> ChannelLoginState:
+        return None  # type: ignore[return-value]
+
+    async def receive(self) -> ChannelInboundMessage:
+        return None  # type: ignore[return-value]
 
 
 async def test_zett_im_agent_client_streams_normalized_events(monkeypatch) -> None:
@@ -193,6 +263,112 @@ async def test_channel_service_login_starts_and_sends_through_a_plugin() -> None
 
     await service.shutdown()
     assert runner[0].stopped is True
+
+
+async def test_send_message_rejects_blank_input() -> None:
+    service = ChannelService(registry=_registry(), kv=ZettKVStorage(), agent=FakeAgent())
+
+    with pytest.raises(ValueError):
+        await service.send_message("channel-1", "user-1", "   ")
+    with pytest.raises(ValueError):
+        await service.send_message("channel-1", "   ", "hi")
+
+
+async def test_channel_store_ignores_blank_identifiers() -> None:
+    store = ChannelStore(ZettKVStorage())
+
+    assert await store.get_channel(" ") is None
+    assert await store.delete_channel(" ") is False
+    assert await store.get_login(" ") is None
+    assert await store.claim_event(" ", "event-1") is False
+    assert await store.claim_event("channel-1", " ") is False
+    assert await store.agent_session_for(" ", "user-1") is None
+
+    await store.bind_agent_session(" ", "user-1", "session-1")
+    assert await store.agent_session_for(" ", "user-1") is None
+
+
+async def test_login_poll_contains_a_plugin_returning_out_of_contract_data() -> None:
+    provider_id = await _provider()
+    service = ChannelService(registry=_registry_for(OutOfContractPlugin), kv=ZettKVStorage(), agent=FakeAgent())
+
+    login = await service.start_login(ChannelLoginStart(provider_id=provider_id, name="WeChat"))
+    polled = await service.poll_login(login.id)
+
+    assert polled is not None
+    assert polled.status is ChannelLoginStatus.FAILED
+
+
+async def test_receive_loop_contains_out_of_contract_messages(monkeypatch: pytest.MonkeyPatch) -> None:
+    provider_id = await _provider()
+    store = ChannelStore(ZettKVStorage())
+    channel = await store.create_channel(
+        ChannelDraft(
+            name="WeChat",
+            provider_id=provider_id,
+            config={"base_url": "https://ilink.example.invalid"},
+            secrets={"bot_token": "token-1"},
+        )
+    )
+    monkeypatch.setattr(channel_service_module, "RECEIVE_RETRY_SECONDS", 0.01)
+    service = ChannelService(registry=_registry_for(OutOfContractPlugin), kv=ZettKVStorage(), agent=FakeAgent())
+    plugin = OutOfContractPlugin(
+        PluginContext(plugin_id="wechat", scope_id=channel.id, kv=ZettKVStorage(), config={}, secrets={})
+    )
+
+    task = asyncio.create_task(service._consume(channel.id, plugin))
+    await asyncio.sleep(0.05)
+    assert task.done() is False
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+
+
+async def test_startup_survives_a_plugin_that_fails_to_start() -> None:
+    provider_id = await _provider()
+    store = ChannelStore(ZettKVStorage())
+    channel = await store.create_channel(
+        ChannelDraft(
+            name="WeChat",
+            provider_id=provider_id,
+            config={"base_url": "https://ilink.example.invalid"},
+            secrets={"bot_token": "token-1"},
+        )
+    )
+    service = ChannelService(registry=_registry_for(FailingStartPlugin), kv=ZettKVStorage(), agent=FakeAgent())
+
+    await service.initialize()
+
+    assert [record.id for record in await service.list_channels()] == [channel.id]
+    with pytest.raises(KeyError):
+        await service.send_message(channel.id, "user-1", "hi")
+    await service.shutdown()
+
+
+async def test_login_start_reports_a_plugin_failure_as_a_plugin_error() -> None:
+    provider_id = await _provider()
+    service = ChannelService(registry=_registry_for(FailingLoginPlugin), kv=ZettKVStorage(), agent=FakeAgent())
+
+    with pytest.raises(PluginError):
+        await service.start_login(ChannelLoginStart(provider_id=provider_id, name="WeChat"))
+
+
+async def test_channel_deletion_survives_a_plugin_that_fails_to_stop() -> None:
+    provider_id = await _provider()
+    store = ChannelStore(ZettKVStorage())
+    channel = await store.create_channel(
+        ChannelDraft(
+            name="WeChat",
+            provider_id=provider_id,
+            config={"base_url": "https://ilink.example.invalid"},
+            secrets={"bot_token": "token-1"},
+        )
+    )
+    service = ChannelService(registry=_registry_for(FailingStopPlugin), kv=ZettKVStorage(), agent=FakeAgent())
+    await service.initialize()
+
+    assert await service.delete_channel(channel.id) is True
+    assert await service.list_channels() == []
+    await service.shutdown()
 
 
 async def test_channel_store_persists_records_and_dedup_markers() -> None:
