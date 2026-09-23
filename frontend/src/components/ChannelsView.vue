@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { aiClient, channelClient } from '../api/client'
-import type { AIProvider, Channel, ChannelLogin, ReasoningEffort } from '../api/types'
+import type { AIProvider, Channel, ChannelLogin, ChannelType, ReasoningEffort } from '../api/types'
+import { useI18n } from '../i18n'
+
+const { t } = useI18n()
 
 const channels = ref<Channel[]>([])
 const providers = ref<AIProvider[]>([])
@@ -31,12 +34,22 @@ const providerName = (providerId: string): string => (
   providers.value.find((provider) => provider.id === providerId)?.name || providerId
 )
 const botId = (channel: Channel): string => {
-  const value = channel.config.bot_id
-  return typeof value === 'string' ? value : 'Unknown'
+  const value = channel.config.ilink_bot_id ?? channel.config.bot_id
+  return typeof value === 'string' && value ? value : t('channels.value.unknown')
 }
 
 function message(errorValue: unknown): string {
-  return errorValue instanceof Error ? errorValue.message : 'Channel request failed'
+  return errorValue instanceof Error ? errorValue.message : t('channels.error')
+}
+
+function typeLabel(channelType: ChannelType): string {
+  return channelType === 'wechat' ? t('channels.type.wechat') : channelType
+}
+
+function loginStatusText(value: ChannelLogin): string {
+  const key = `channels.login.status.${value.status}`
+  const localized = t(key)
+  return localized === key ? (value.message ?? '') : localized
 }
 
 async function load(): Promise<void> {
@@ -142,7 +155,7 @@ async function toggleChannel(channel: Channel): Promise<void> {
 }
 
 async function removeChannel(channel: Channel): Promise<void> {
-  if (!window.confirm(`删除微信机器人“${channel.name}”？`)) return
+  if (!window.confirm(t('channels.action.deleteConfirm', { name: channel.name }))) return
   busyId.value = channel.id
   error.value = ''
   try {
@@ -174,14 +187,14 @@ onBeforeUnmount(() => {
 
 <template>
   <header class="topbar compact">
-    <div><p class="eyebrow">Integrations</p><h1>Channels</h1></div>
+    <div><p class="eyebrow">{{ t('channels.eyebrow') }}</p><h1>{{ t('channels.title') }}</h1></div>
     <div class="channel-topbar-actions">
       <button class="primary-action" type="button" @click="setupOpen = true">
         <svg><use href="#icon-add" /></svg>
-        连接微信
+        {{ t('channels.connect') }}
       </button>
       <button class="secondary-action" type="button" :disabled="loading" @click="load">
-        {{ loading ? 'Loading…' : 'Refresh' }}
+        {{ loading ? t('channels.loading') : t('channels.refresh') }}
       </button>
     </div>
   </header>
@@ -192,44 +205,47 @@ onBeforeUnmount(() => {
     <section class="wechat-connect">
       <div class="wechat-mark" aria-hidden="true"><svg><use href="#icon-channels" /></svg></div>
       <div>
-        <span>个人微信机器人</span>
-        <h2>扫码即可接入</h2>
-        <p>使用微信扫码登录，Zett 会保存机器人凭据并开始接收消息。</p>
+        <span>{{ t('channels.hero.eyebrow') }}</span>
+        <h2>{{ t('channels.hero.title') }}</h2>
+        <p>{{ t('channels.hero.body') }}</p>
       </div>
-      <button class="primary-action" type="button" @click="setupOpen = true">开始连接</button>
+      <button class="primary-action" type="button" @click="setupOpen = true">{{ t('channels.hero.action') }}</button>
     </section>
 
-    <div v-if="loading" class="channel-empty">正在加载渠道…</div>
+    <div v-if="loading" class="channel-empty">{{ t('channels.loadingList') }}</div>
     <div v-else-if="channels.length" class="channel-grid">
       <article v-for="channel in channels" :key="channel.id" class="channel-card">
         <header>
           <div>
-            <span class="channel-type">微信</span>
+            <span class="channel-type">{{ typeLabel(channel.channel_type) }}</span>
             <h2>{{ channel.name }}</h2>
             <p>{{ providerName(channel.provider_id) }}</p>
           </div>
           <span class="channel-status" :class="{ disabled: !channel.enabled }">
-            {{ channel.enabled ? '已连接' : '已停用' }}
+            {{ channel.enabled ? t('channels.state.connected') : t('channels.state.disabled') }}
           </span>
         </header>
         <dl>
-          <div><dt>Bot ID</dt><dd :title="botId(channel)">{{ botId(channel) }}</dd></div>
-          <div><dt>Reasoning</dt><dd>{{ channel.reasoning_effort }}</dd></div>
-          <div><dt>Coding</dt><dd>{{ channel.allow_coding ? 'Enabled' : 'Disabled' }}</dd></div>
+          <div><dt>{{ t('channels.field.botId') }}</dt><dd :title="botId(channel)">{{ botId(channel) }}</dd></div>
+          <div><dt>{{ t('channels.field.reasoning') }}</dt><dd>{{ channel.reasoning_effort }}</dd></div>
+          <div>
+            <dt>{{ t('channels.field.coding') }}</dt>
+            <dd>{{ channel.allow_coding ? t('channels.value.enabled') : t('channels.value.disabled') }}</dd>
+          </div>
         </dl>
         <footer>
           <button type="button" :disabled="busyId === channel.id" @click="toggleChannel(channel)">
-            {{ channel.enabled ? '停用' : '启用' }}
+            {{ channel.enabled ? t('channels.action.disable') : t('channels.action.enable') }}
           </button>
           <button class="danger" type="button" :disabled="busyId === channel.id" @click="removeChannel(channel)">
-            删除
+            {{ t('channels.action.delete') }}
           </button>
         </footer>
       </article>
     </div>
     <div v-else class="channel-empty">
-      <h2>还没有微信机器人</h2>
-      <p>点击“连接微信”，使用已开通微信机器人功能的账号扫码登录。</p>
+      <h2>{{ t('channels.empty.title') }}</h2>
+      <p>{{ t('channels.empty.body') }}</p>
     </div>
   </section>
 
@@ -238,21 +254,21 @@ onBeforeUnmount(() => {
       <form class="channel-modal setup-modal" role="dialog" aria-modal="true" aria-labelledby="connect-title" @submit.prevent="connectWeChat">
         <header>
           <div>
-            <span>微信</span>
-            <h2 id="connect-title">连接智能机器人</h2>
-            <p>扫码后，Zett 会为每个单聊或群聊建立独立会话。</p>
+            <span>{{ t('channels.type.wechat') }}</span>
+            <h2 id="connect-title">{{ t('channels.setup.title') }}</h2>
+            <p>{{ t('channels.setup.body') }}</p>
           </div>
-          <button type="button" aria-label="关闭" @click="setupOpen = false">×</button>
+          <button type="button" :aria-label="t('channels.login.close')" @click="setupOpen = false">×</button>
         </header>
         <div class="channel-form">
           <label>
-            <span>名称</span>
-            <input v-model="form.name" maxlength="100" placeholder="微信机器人" />
+            <span>{{ t('channels.setup.name') }}</span>
+            <input v-model="form.name" maxlength="100" :placeholder="t('channels.setup.namePlaceholder')" />
           </label>
           <label>
-            <span>Provider</span>
+            <span>{{ t('channels.setup.provider') }}</span>
             <select v-model="form.providerId" required>
-              <option value="" disabled>选择 Provider</option>
+              <option value="" disabled>{{ t('channels.setup.providerPlaceholder') }}</option>
               <option v-for="provider in enabledProviders" :key="provider.id" :value="provider.id">
                 {{ provider.name }} · {{ provider.model }}
               </option>
@@ -269,13 +285,13 @@ onBeforeUnmount(() => {
           </label>
           <label class="channel-coding">
             <input v-model="form.allowCoding" type="checkbox" />
-            允许远程对话使用编码工具
+            {{ t('channels.setup.allowCoding') }}
           </label>
         </div>
         <footer>
-          <button class="secondary-action" type="button" @click="setupOpen = false">取消</button>
+          <button class="secondary-action" type="button" @click="setupOpen = false">{{ t('channels.setup.cancel') }}</button>
           <button class="primary-action" type="submit" :disabled="connecting || !canConnect">
-            {{ connecting ? '生成二维码…' : '生成二维码' }}
+            {{ connecting ? t('channels.setup.submitting') : t('channels.setup.submit') }}
           </button>
         </footer>
       </form>
@@ -287,30 +303,35 @@ onBeforeUnmount(() => {
       <section class="channel-modal onboarding-modal" role="dialog" aria-modal="true" aria-labelledby="login-title">
         <header>
           <div>
-            <span>扫码授权</span>
-            <h2 id="login-title">连接微信</h2>
-            <p>{{ login.message }}</p>
+            <span>{{ t('channels.login.eyebrow') }}</span>
+            <h2 id="login-title">{{ t('channels.login.title') }}</h2>
+            <p>{{ loginStatusText(login) }}</p>
           </div>
-          <button type="button" aria-label="关闭" @click="closeLogin">×</button>
+          <button type="button" :aria-label="t('channels.login.close')" @click="closeLogin">×</button>
         </header>
         <div class="onboarding-body">
-          <img v-if="login.qr_data_url" :src="login.qr_data_url" alt="微信登录二维码" />
-          <div v-else class="onboarding-placeholder">二维码不可用，请重新生成。</div>
+          <img v-if="login.qr_data_url" :src="login.qr_data_url" :alt="t('channels.login.qrAlt')" />
+          <div v-else class="onboarding-placeholder">{{ t('channels.login.qrUnavailable') }}</div>
           <label v-if="login.status === 'verify_required'" class="wechat-verify">
-            <span>配对数字</span>
-            <input v-model="verifyCode" inputmode="numeric" maxlength="100" placeholder="输入微信中显示的数字" />
+            <span>{{ t('channels.login.pairingLabel') }}</span>
+            <input
+              v-model="verifyCode"
+              inputmode="numeric"
+              maxlength="100"
+              :placeholder="t('channels.login.pairingPlaceholder')"
+            />
           </label>
           <div class="onboarding-status" :class="login.status">
             <strong>{{ login.status }}</strong>
-            <span v-if="login.status === 'pending'">等待扫码登录…</span>
-            <span v-else-if="login.status === 'connected'">机器人已创建，正在连接微信。</span>
-            <span v-else>{{ login.message }}</span>
+            <span>{{ loginStatusText(login) }}</span>
           </div>
           <a v-if="login.qr_url" :href="login.qr_url" target="_blank" rel="noopener noreferrer">
-            在微信中打开
+            {{ t('channels.login.openInWeChat') }}
           </a>
         </div>
-        <footer><button class="primary-action" type="button" @click="closeLogin">关闭</button></footer>
+        <footer>
+          <button class="primary-action" type="button" @click="closeLogin">{{ t('channels.login.close') }}</button>
+        </footer>
       </section>
     </div>
   </Teleport>
