@@ -156,7 +156,7 @@ class ChannelService:
             status=ChannelLoginStatus.PENDING,
             qr_url=challenge.qr_url,
             qr_data_url=_qr_data_url(challenge.qr_content),
-            message="请扫描二维码完成登录。",
+            message="Scan the QR code to finish signing in.",
             expires_at=now + LOGIN_TTL,
             created_at=now,
             updated_at=now,
@@ -183,14 +183,14 @@ class ChannelService:
             return await self._finish_login(
                 login,
                 status=ChannelLoginStatus.EXPIRED,
-                message="二维码已过期，请重新生成。",
+                message="QR code expired; request a new one.",
             )
         plugin = self._logins.get(login_id)
         if plugin is None:
             return await self._finish_login(
                 login,
                 status=ChannelLoginStatus.EXPIRED,
-                message="登录会话已失效，请重新生成二维码。",
+                message="Login session expired; request a new QR code.",
             )
         if verify_code:
             await self._submit_login_code(plugin, verify_code, login_id)
@@ -205,13 +205,13 @@ class ChannelService:
             return await self._finish_login(
                 login,
                 status=ChannelLoginStatus.FAILED,
-                message="登录成功但插件未返回凭据。",
+                message="Login succeeded but the plugin returned no credentials.",
             )
         if not state.credentials.secrets:
             return await self._finish_login(
                 login,
                 status=ChannelLoginStatus.FAILED,
-                message="登录成功但插件未返回密钥。",
+                message="Login succeeded but the plugin returned no secrets.",
             )
         channel = await self._store.create_channel(
             ChannelDraft(
@@ -398,7 +398,7 @@ class ChannelService:
 
 
 def _default_channel_name(channel_type: ChannelType) -> str:
-    return "微信机器人" if channel_type is ChannelType.WECHAT else f"{channel_type.value} 机器人"
+    return "WeChat bot" if channel_type is ChannelType.WECHAT else f"{channel_type.value} bot"
 
 
 channel_service = ChannelService()

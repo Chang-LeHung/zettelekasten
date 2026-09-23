@@ -89,7 +89,7 @@ class FakeWeChatPlugin:
     async def is_login(self) -> ChannelLoginState:
         return ChannelLoginState(
             status=ChannelLoginStatus.CONNECTED,
-            message="已连接",
+            message="Connected",
             credentials=ChannelCredentials(
                 config={"base_url": "https://ilink.example.invalid"},
                 secrets={"bot_token": "token-1"},
@@ -134,7 +134,7 @@ class FailingStartPlugin:
         return ChannelLoginChallenge(qr_content="https://example.invalid/qr")
 
     async def is_login(self) -> ChannelLoginState:
-        return ChannelLoginState(status=ChannelLoginStatus.CONNECTED, message="已连接")
+        return ChannelLoginState(status=ChannelLoginStatus.CONNECTED, message="Connected")
 
     async def receive(self) -> ChannelInboundMessage:
         await asyncio.sleep(3600)

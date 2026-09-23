@@ -58,7 +58,7 @@ def _text_from_message(message: dict[str, Any]) -> str | None:
             voice = item.get("voice_item")
             if isinstance(voice, dict) and isinstance(voice.get("text"), str):
                 return voice["text"]
-        labels = {2: "[图片]", 4: "[文件]", 5: "[视频]"}
+        labels = {2: "[image]", 4: "[file]", 5: "[video]"}
         if item.get("type") in labels:
             return labels[item["type"]]
     return None

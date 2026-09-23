@@ -78,7 +78,7 @@ class WeChatAuthClient:
         qrcode = handshake.state.get("qrcode")
         base_url = handshake.state.get("base_url") or ILINK_BASE_URL
         if not isinstance(qrcode, str) or not qrcode or not isinstance(base_url, str):
-            return LoginState(status=LoginStatus.EXPIRED, message="登录会话已失效，请重新生成二维码。")
+            return LoginState(status=LoginStatus.EXPIRED, message="Login session expired; request a new QR code.")
         params: dict[str, str] = {"qrcode": qrcode}
         if verify_code:
             params["verify_code"] = verify_code
@@ -91,7 +91,7 @@ class WeChatAuthClient:
             response.raise_for_status()
             payload: Any = response.json()
         except httpx.TimeoutException, httpx.NetworkError:
-            return LoginState(status=LoginStatus.PENDING, message="等待微信扫码登录中。")
+            return LoginState(status=LoginStatus.PENDING, message="Waiting for the WeChat QR code to be scanned.")
         except httpx.HTTPError as error:
             return LoginState(
                 status=LoginStatus.PENDING,
@@ -111,18 +111,18 @@ class WeChatAuthClient:
                 config["ilink_user_id"] = payload["ilink_user_id"]
             return LoginState(
                 status=LoginStatus.CONNECTED,
-                message="微信机器人已连接。",
+                message="WeChat bot connected.",
                 credentials=LoginCredentials(config=config, secrets={"bot_token": token}),
             )
         if status in {"scaned", "scaned_but_redirect"}:
-            return LoginState(status=LoginStatus.SCANNED, message="二维码已扫描，请在微信中确认。")
+            return LoginState(status=LoginStatus.SCANNED, message="QR code scanned; confirm in WeChat.")
         if status == "need_verifycode":
-            return LoginState(status=LoginStatus.VERIFY_REQUIRED, message="请输入微信中显示的配对数字。")
+            return LoginState(status=LoginStatus.VERIFY_REQUIRED, message="Enter the pairing code shown in WeChat.")
         if status in {"expired", "verify_code_blocked"}:
-            return LoginState(status=LoginStatus.EXPIRED, message="二维码已过期，请重新生成。")
+            return LoginState(status=LoginStatus.EXPIRED, message="QR code expired; request a new one.")
         if status == "binded_redirect":
-            return LoginState(status=LoginStatus.CONNECTED, message="该微信机器人已经绑定。")
-        return LoginState(status=LoginStatus.PENDING, message="请使用微信扫描二维码完成登录。")
+            return LoginState(status=LoginStatus.CONNECTED, message="This WeChat bot is already linked.")
+        return LoginState(status=LoginStatus.PENDING, message="Scan the QR code with WeChat to finish signing in.")
 
     def _get_client(self) -> httpx.AsyncClient:
         if self._client is None:

@@ -73,14 +73,14 @@ class WeChatPlugin(ChannelPlugin):
         if not isinstance(raw, dict):
             return ChannelLoginState(
                 status=ChannelLoginStatus.EXPIRED,
-                message="登录会话已失效，请重新生成二维码。",
+                message="Login session expired; request a new QR code.",
             )
         try:
             handshake = agim.LoginHandshake.model_validate(raw)
         except ValueError:
             return ChannelLoginState(
                 status=ChannelLoginStatus.EXPIRED,
-                message="登录会话已失效，请重新生成二维码。",
+                message="Login session expired; request a new QR code.",
             )
         verify_code = await self.context.kv.get(VERIFY_CODE_KEY)
         state = await self._auth_client().is_login(

@@ -57,7 +57,7 @@ class FakeClient:
         assert verify_code is None
         return LoginState(
             status=LoginStatus.CONNECTED,
-            message="已连接",
+            message="Connected",
             credentials=LoginCredentials(
                 config={"base_url": "https://ilink.example.invalid"},
                 secrets={"bot_token": "token-1"},
