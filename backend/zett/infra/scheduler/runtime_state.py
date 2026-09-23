@@ -3,9 +3,7 @@
 import asyncio
 import json
 import os
-import signal
 import socket
-import subprocess  # noqa: S404
 import tempfile
 import time
 from collections.abc import Awaitable, Callable
@@ -15,6 +13,7 @@ from pathlib import Path
 from ...config import settings
 from ...schemas import ProcessRole, ServerRuntimeState
 from ..log import get_logger
+from . import process_platform
 
 logger = get_logger(__name__)
 
@@ -72,7 +71,7 @@ class RuntimeStateStore:
         descriptor, temporary_name = tempfile.mkstemp(prefix=f".{self.path.name}.", dir=self.path.parent)
         temporary_path = Path(temporary_name)
         try:
-            os.fchmod(descriptor, 0o600)
+            process_platform.restrict_file_mode(descriptor)
             with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
                 stream.write(payload)
                 stream.flush()
@@ -141,7 +140,7 @@ class RuntimeProcessController:
                 logger.warning("Skip stopping PID %d because command does not match %r: %s", pid, expected, command)
                 return
         try:
-            os.kill(pid, signal.SIGTERM)
+            process_platform.terminate_process(pid, force=False)
         except ProcessLookupError:
             return
         deadline = time.monotonic() + timeout
@@ -150,35 +149,17 @@ class RuntimeProcessController:
                 return
             await asyncio.sleep(0.1)
         try:
-            os.kill(pid, signal.SIGKILL)
+            process_platform.terminate_process(pid, force=True)
         except ProcessLookupError:
             return
 
     @staticmethod
     def _pid_running(pid: int) -> bool:
-        if pid <= 1:
-            return False
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            return False
-        except PermissionError:
-            return True
-        return True
+        return process_platform.is_process_running(pid)
 
     @staticmethod
     def _command_line(pid: int) -> str | None:
-        try:
-            result = subprocess.run(  # noqa: S603
-                ["ps", "-p", str(pid), "-o", "command="],
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=2,
-            )
-        except OSError, subprocess.SubprocessError:
-            return None
-        return result.stdout.strip() or None
+        return process_platform.command_line(pid)
 
     @staticmethod
     def _port_open(port: int) -> bool:
@@ -190,17 +171,7 @@ class RuntimeProcessController:
 
     @staticmethod
     def _port_pids(port: int) -> list[int]:
-        try:
-            result = subprocess.run(  # noqa: S603
-                ["lsof", "-ti", f"tcp:{port}"],
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=2,
-            )
-        except OSError, subprocess.SubprocessError:
-            return []
-        return [int(value) for value in result.stdout.split() if value.isdigit()]
+        return process_platform.pids_listening_on(port)
 
 
 class RuntimeWatchdog:

@@ -13,6 +13,7 @@ import httpx
 from ...config import settings
 from ...schemas import ProcessHeartbeatIn, ProcessHeartbeatStatus, ProcessRole
 from ..log import get_logger
+from . import process_platform
 
 logger = get_logger(__name__)
 
@@ -56,7 +57,7 @@ class SubprocessLauncher:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             close_fds=True,
-            start_new_session=True,
+            **process_platform.spawn_kwargs(),
         )
         logger.info(
             "Started supervised process; role=%s instance_id=%s pid=%d",

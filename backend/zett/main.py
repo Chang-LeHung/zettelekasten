@@ -17,6 +17,7 @@ from .config import settings
 from .infra.agent.runtime import close_agent_runtime_storage, get_agent_runtime_storage
 from .infra.log import configure_logging, get_logger, shutdown_logging
 from .infra.persistence.database import init_db
+from .infra.scheduler import process_platform
 from .infra.scheduler.runtime_state import RuntimeStateStore
 from .schemas import ServerRuntimeState
 
@@ -24,13 +25,7 @@ logger = get_logger(__name__)
 
 
 def _pid_running(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+    return process_platform.is_process_running(pid)
 
 
 @asynccontextmanager
