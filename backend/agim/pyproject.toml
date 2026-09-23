@@ -1,0 +1,42 @@
+[project]
+name = "agim"
+version = "0.1.0"
+description = "Standalone plugin toolkit for IM platform login, receive, and send"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+  "httpx>=0.27,<1",
+  "pydantic>=2.12,<2.13",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agim"]
+
+[dependency-groups]
+dev = [
+  "pytest>=8,<9",
+  "pytest-asyncio>=0.26,<2",
+  "ruff>=0.11,<1",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py314"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
