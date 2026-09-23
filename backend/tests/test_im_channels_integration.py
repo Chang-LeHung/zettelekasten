@@ -33,7 +33,6 @@ from zett.plugins import (
 from zett.schemas import (
     ChannelLogin,
     ChannelLoginStart,
-    ChannelType,
     ProviderType,
     ProviderWrite,
 )
@@ -68,6 +67,7 @@ class FakeWeChatPlugin:
     """Stand-in channel plugin that reports a completed login on first poll."""
 
     plugin_id = "wechat"
+    plugin_label = "Test WeChat"
     instances: list[FakeWeChatPlugin] = []
 
     def __init__(self, context: PluginContext) -> None:
@@ -102,6 +102,14 @@ class FakeWeChatPlugin:
 
     async def send(self, chat_id: str, text: str) -> None:
         self.sent.append((chat_id, text))
+
+
+class FakeDiscordPlugin(FakeWeChatPlugin):
+    """Second platform, registered the way any third-party plugin would be."""
+
+    plugin_id = "discord"
+    plugin_label = "Discord"
+    instances: list[FakeDiscordPlugin] = []
 
 
 def _registry() -> PluginRegistry:
@@ -212,6 +220,7 @@ async def test_channel_routes_use_the_plugin_mechanism(monkeypatch) -> None:
     async def fake_start(payload) -> ChannelLogin:
         return ChannelLogin(
             id="onboarding-1",
+            channel_type="wechat",
             provider_id=payload.provider_id,
             name=payload.name,
             status=ChannelLoginStatus.PENDING,
@@ -237,6 +246,52 @@ async def test_channel_routes_use_the_plugin_mechanism(monkeypatch) -> None:
     assert started.json()["channel_type"] == "wechat"
 
 
+async def test_channel_routes_list_installed_plugins() -> None:
+    with TestClient(app) as client:
+        response = client.get("/api/channels/plugins")
+
+    assert response.status_code == 200
+    assert response.json() == [{"channel_type": "wechat", "label": "WeChat"}]
+
+
+async def test_start_login_requires_a_type_when_multiple_plugins_are_installed() -> None:
+    provider_id = await _provider()
+    registry = _registry()
+    registry.register("discord", FakeDiscordPlugin)
+    service = ChannelService(registry=registry, kv=ZettKVStorage(), agent=FakeAgent())
+
+    with pytest.raises(ValueError):
+        await service.start_login(ChannelLoginStart(provider_id=provider_id, name="WeChat"))
+
+
+async def test_channel_plugins_list_and_route_multiple_platforms() -> None:
+    provider_id = await _provider()
+    registry = _registry()
+    registry.register("discord", FakeDiscordPlugin)
+    service = ChannelService(registry=registry, kv=ZettKVStorage(), agent=FakeAgent())
+
+    plugins = await service.list_plugins()
+    assert [(item.channel_type, item.label) for item in plugins] == [
+        ("discord", "Discord"),
+        ("wechat", "Test WeChat"),
+    ]
+
+    login = await service.start_login(
+        ChannelLoginStart(provider_id=provider_id, channel_type="discord", name="Discord bot")
+    )
+
+    assert login.channel_type == "discord"
+    assert login.qr_data_url and login.qr_data_url.startswith("data:image/svg+xml;base64,")
+
+
+async def test_start_login_rejects_an_unknown_channel_type() -> None:
+    provider_id = await _provider()
+    service = ChannelService(registry=_registry(), kv=ZettKVStorage(), agent=FakeAgent())
+
+    with pytest.raises(ValueError):
+        await service.start_login(ChannelLoginStart(provider_id=provider_id, channel_type="unknown"))
+
+
 async def test_channel_service_login_starts_and_sends_through_a_plugin() -> None:
     provider_id = await _provider()
     FakeWeChatPlugin.instances.clear()
@@ -253,7 +308,7 @@ async def test_channel_service_login_starts_and_sends_through_a_plugin() -> None
     assert connected.channel_id
 
     channels = await service.list_channels()
-    assert [channel.channel_type for channel in channels] == [ChannelType.WECHAT]
+    assert [channel.channel_type for channel in channels] == ["wechat"]
     assert await service.provider_referenced(provider_id) is True
 
     runner = [plugin for plugin in FakeWeChatPlugin.instances if plugin.started]
@@ -305,6 +360,7 @@ async def test_receive_loop_contains_out_of_contract_messages(monkeypatch: pytes
     channel = await store.create_channel(
         ChannelDraft(
             name="WeChat",
+            channel_type="wechat",
             provider_id=provider_id,
             config={"base_url": "https://ilink.example.invalid"},
             secrets={"bot_token": "token-1"},
@@ -329,6 +385,7 @@ async def test_startup_survives_a_plugin_that_fails_to_start() -> None:
     channel = await store.create_channel(
         ChannelDraft(
             name="WeChat",
+            channel_type="wechat",
             provider_id=provider_id,
             config={"base_url": "https://ilink.example.invalid"},
             secrets={"bot_token": "token-1"},
@@ -358,6 +415,7 @@ async def test_channel_deletion_survives_a_plugin_that_fails_to_stop() -> None:
     channel = await store.create_channel(
         ChannelDraft(
             name="WeChat",
+            channel_type="wechat",
             provider_id=provider_id,
             config={"base_url": "https://ilink.example.invalid"},
             secrets={"bot_token": "token-1"},
@@ -376,6 +434,7 @@ async def test_channel_store_persists_records_and_dedup_markers() -> None:
     channel = await store.create_channel(
         ChannelDraft(
             name="WeChat",
+            channel_type="wechat",
             provider_id="provider-1",
             config={"base_url": "https://ilink.example.invalid"},
             secrets={"bot_token": "token-1"},
@@ -405,6 +464,7 @@ async def test_channel_service_turns_inbound_messages_into_agent_replies() -> No
     channel = await store.create_channel(
         ChannelDraft(
             name="WeChat",
+            channel_type="wechat",
             provider_id=provider_id,
             config={"base_url": "https://ilink.example.invalid"},
             secrets={"bot_token": "token-1"},

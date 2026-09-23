@@ -132,7 +132,7 @@ Everything is mounted under `/api`.
 | `/api/agent/{id}/artifacts/{artifact_id}/save` | Publish the pending draft as the artifact's content (user action) |
 | `/api/agent/{id}/artifacts/{artifact}` | Artifact metadata; `content_url` addresses its unified file key |
 | `/api/ai/providers*` | Model endpoint configuration |
-| `/api/channels*` | Personal WeChat QR login and channel management backed by the `zett-weixin` channel plugin |
+| `/api/channels*` | Channel management (list/update/delete), plugin listing at `/api/channels/plugins`, and QR login behind the installed channel plugins |
 | `/api/settings` | Read or replace runtime limits |
 | `/api/library/tags*` | Tag tree CRUD and artifact tag assignment |
 
@@ -142,10 +142,13 @@ stores nothing, so callers persist the login handshake and receive cursor.
 `backend/zett-weixin` is a channel plugin built on `agim` that registers into
 Zett through the `zett.channels` entry-point group. Zett owns the plugin
 mechanism: contracts live in `zett/plugins`, discovery and the KV adapter live
-under `zett/infra/plugins`, and `ChannelService` selects a plugin by
-`channel_type`, drives its lifecycle, and stores channel records, login records,
+under `zett/infra/plugins`, and `ChannelService` selects a plugin by the open
+`channel_type` id, drives its lifecycle, and stores channel records, login records,
 dedup markers, and Agent session bindings in the shared key-value store under
-the `im:` prefix. Zett retains ownership of Agent sessions, providers,
+the `im:` prefix. `GET /api/channels/plugins` exposes the installed platforms so
+the UI can offer a picker instead of assuming one platform, and a login request
+may omit `channel_type` only while exactly one plugin is installed. Zett retains
+ownership of Agent sessions, providers,
 artifacts, and model policy. The current platform client and plugin implement
 the personal WeChat iLink/ClawBot bot protocol; the WeChat account must have
 Tencent's "微信机器人" feature enabled.

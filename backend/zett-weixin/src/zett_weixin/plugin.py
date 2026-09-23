@@ -29,6 +29,7 @@ class WeChatPlugin(ChannelPlugin):
     """
 
     plugin_id = "wechat"
+    plugin_label = "WeChat"
 
     def __init__(self, context: PluginContext) -> None:
         self.context = context

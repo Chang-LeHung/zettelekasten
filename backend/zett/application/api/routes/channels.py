@@ -8,6 +8,7 @@ from ....schemas import (
     Channel,
     ChannelLogin,
     ChannelLoginStart,
+    ChannelPluginInfo,
     ChannelUpdate,
 )
 from ...channels import channel_service
@@ -19,6 +20,12 @@ router = APIRouter(prefix="/channels", tags=["channels"])
 async def list_channels() -> list[Channel]:
     """List configured channels."""
     return await channel_service.list_channels()
+
+
+@router.get("/plugins", response_model=list[ChannelPluginInfo])
+async def list_channel_plugins() -> list[ChannelPluginInfo]:
+    """List the channel plugins installed in this process."""
+    return await channel_service.list_plugins()
 
 
 @router.put("/{channel_id}", response_model=Channel)

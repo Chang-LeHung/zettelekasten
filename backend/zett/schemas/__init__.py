@@ -36,6 +36,7 @@ from .channels import (
     ChannelLogin,
     ChannelLoginStart,
     ChannelLoginStatus,
+    ChannelPluginInfo,
     ChannelType,
     ChannelUpdate,
 )
@@ -118,6 +119,7 @@ __all__ = [
     "ChannelLogin",
     "ChannelLoginStart",
     "ChannelLoginStatus",
+    "ChannelPluginInfo",
     "ChannelType",
     "ChannelUpdate",
     "NonBlankName100",

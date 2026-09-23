@@ -32,6 +32,7 @@ from ...schemas import (
     ChannelLogin,
     ChannelLoginStart,
     ChannelLoginStatus,
+    ChannelPluginInfo,
     ChannelType,
     ChannelUpdate,
 )
@@ -132,15 +133,23 @@ class ChannelService:
         """Return whether any channel routes turns through the provider."""
         return any(channel.provider_id == provider_id for channel in await self.list_channels())
 
+    async def list_plugins(self) -> list[ChannelPluginInfo]:
+        """List the channel plugins installed in this process."""
+        return [
+            ChannelPluginInfo(channel_type=descriptor.plugin_id, label=descriptor.label)
+            for descriptor in self._registry.describe()
+        ]
+
     async def start_login(self, payload: ChannelLoginStart) -> ChannelLogin:
         """Start one QR flow through the plugin registered for its channel type."""
         if not payload.provider_id.strip():
             raise ValueError("Channel login requires a provider id")
+        channel_type = self._resolve_channel_type(payload.channel_type)
         login_id = str(uuid.uuid7())
         try:
-            plugin = self._registry.create(payload.channel_type.value, scope_id=login_id, kv=self._kv)
+            plugin = self._registry.create(channel_type, scope_id=login_id, kv=self._kv)
         except (PluginLoadError, KeyError) as error:
-            raise PluginError(f"Channel plugin unavailable: {payload.channel_type.value}") from error
+            raise PluginError(f"Channel plugin unavailable: {channel_type}") from error
         try:
             challenge = ChannelLoginChallenge.model_validate(await plugin.login())
         except Exception as error:
@@ -150,7 +159,7 @@ class ChannelService:
         now = datetime.now(UTC)
         login = ChannelLogin(
             id=login_id,
-            channel_type=payload.channel_type,
+            channel_type=channel_type,
             provider_id=payload.provider_id,
             name=payload.name,
             status=ChannelLoginStatus.PENDING,
@@ -164,6 +173,24 @@ class ChannelService:
         await self._store.save_login(login, state={})
         self._logins[login_id] = plugin
         return login
+
+    def _resolve_channel_type(self, requested: str | None) -> str:
+        """Return the requested platform, or the only installed one.
+
+        Raises:
+            ValueError: when no platform was requested and the installed set is
+                not exactly one plugin, so the caller cannot be guessed at.
+        """
+        available = self._registry.ids()
+        if requested is not None and requested.strip():
+            if requested not in available:
+                raise ValueError(f"Unknown channel plugin: {requested}")
+            return requested
+        if len(available) == 1:
+            return available[0]
+        if not available:
+            raise ValueError("No channel plugins are installed")
+        raise ValueError("channel_type is required when multiple channel plugins are installed")
 
     async def poll_login(self, login_id: str, *, verify_code: str | None = None) -> ChannelLogin | None:
         """Poll one QR flow and create its channel after authorization."""
@@ -281,7 +308,7 @@ class ChannelService:
         plugin: ChannelPlugin | None = None
         try:
             plugin = self._registry.create(
-                runtime.channel.channel_type.value,
+                runtime.channel.channel_type,
                 scope_id=channel_id,
                 kv=self._kv,
                 config=runtime.config,
@@ -373,7 +400,7 @@ class ChannelService:
                 "source": "im",
                 "channel_id": channel_id,
                 "channel_name": runtime.channel.name,
-                "channel_type": runtime.channel.channel_type.value,
+                "channel_type": runtime.channel.channel_type,
                 "external_chat_id": message.chat_id,
                 "external_user_id": message.user_id,
             },
@@ -398,7 +425,7 @@ class ChannelService:
 
 
 def _default_channel_name(channel_type: ChannelType) -> str:
-    return "WeChat bot" if channel_type is ChannelType.WECHAT else f"{channel_type.value} bot"
+    return f"{channel_type} bot"
 
 
 channel_service = ChannelService()

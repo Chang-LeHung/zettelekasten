@@ -1,7 +1,7 @@
-"""Public channel DTOs proxied between Zett and the standalone IM gateway."""
+"""Public channel DTOs exposed by the Zett channel API."""
 
 from datetime import datetime
-from enum import StrEnum
+from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from zett_agent import ReasoningEffort
@@ -9,11 +9,16 @@ from zett_agent import ReasoningEffort
 from ..plugins import ChannelLoginStatus
 from .common import JsonValue, NonBlankName100
 
+# Channel plugins are discovered at runtime, so the set of platforms is open:
+# validate the id shape instead of freezing a member list here.
+ChannelType = Annotated[str, Field(min_length=1, max_length=50, pattern=r"^[a-z0-9][a-z0-9_-]*$")]
 
-class ChannelType(StrEnum):
-    """Supported remote chat platform."""
 
-    WECHAT = "wechat"
+class ChannelPluginInfo(BaseModel):
+    """One channel plugin installed in this Zett process."""
+
+    channel_type: ChannelType
+    label: str = Field(min_length=1, max_length=100)
 
 
 class ChannelUpdate(BaseModel):
@@ -56,7 +61,7 @@ class ChannelLoginStart(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    channel_type: ChannelType = ChannelType.WECHAT
+    channel_type: ChannelType | None = None
     provider_id: str = Field(min_length=1, max_length=36)
     name: str | None = Field(default=None, min_length=1, max_length=100)
 
@@ -65,7 +70,7 @@ class ChannelLogin(BaseModel):
     """One pending or completed channel authorization."""
 
     id: str
-    channel_type: ChannelType = ChannelType.WECHAT
+    channel_type: ChannelType
     provider_id: str
     name: str | None
     status: ChannelLoginStatus
@@ -83,6 +88,7 @@ __all__ = [
     "ChannelLogin",
     "ChannelLoginStart",
     "ChannelLoginStatus",
+    "ChannelPluginInfo",
     "ChannelType",
     "ChannelUpdate",
 ]

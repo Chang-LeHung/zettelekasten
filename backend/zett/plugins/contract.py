@@ -79,11 +79,21 @@ class PluginContext:
     secrets: Mapping[str, str]
 
 
+@dataclass(frozen=True, slots=True)
+class PluginDescriptor:
+    """Public metadata about one registered plugin."""
+
+    plugin_id: str
+    label: str
+
+
 class Plugin(ABC):
     """Lifecycle every Zett plugin shares."""
 
     kind: ClassVar[PluginKind]
     plugin_id: ClassVar[str]
+    # Display name hosts may show. Empty means "use plugin_id".
+    plugin_label: ClassVar[str] = ""
 
     @abstractmethod
     async def start(self) -> None:
@@ -100,6 +110,7 @@ __all__ = [
     "NamespacedKV",
     "Plugin",
     "PluginContext",
+    "PluginDescriptor",
     "PluginError",
     "PluginKind",
     "PluginLoadError",

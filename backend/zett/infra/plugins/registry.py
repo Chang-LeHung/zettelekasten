@@ -15,6 +15,7 @@ from ...plugins import (
     NamespacedKV,
     Plugin,
     PluginContext,
+    PluginDescriptor,
     PluginKind,
     PluginLoadError,
 )
@@ -58,6 +59,26 @@ class PluginRegistry:
     def ids(self, *, kind: PluginKind = PluginKind.CHANNEL) -> list[str]:
         """Return the registered plugin ids of one kind."""
         return sorted(plugin_id for (registered_kind, plugin_id) in self._factories if registered_kind is kind)
+
+    def describe(self, *, kind: PluginKind = PluginKind.CHANNEL) -> list[PluginDescriptor]:
+        """Return id and display label for every plugin of one kind.
+
+        Factories register as plugin classes, so the label is read off the class
+        without constructing an instance; a factory without one falls back to
+        its plugin id.
+        """
+        described: list[PluginDescriptor] = []
+        for (registered_kind, plugin_id), factory in self._factories.items():
+            if registered_kind is not kind:
+                continue
+            label = getattr(factory, "plugin_label", "")
+            described.append(
+                PluginDescriptor(
+                    plugin_id=plugin_id,
+                    label=label if isinstance(label, str) and label.strip() else plugin_id,
+                )
+            )
+        return sorted(described, key=lambda descriptor: descriptor.plugin_id)
 
     def create(
         self,

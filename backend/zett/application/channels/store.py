@@ -28,7 +28,7 @@ class ChannelDraft(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(min_length=1, max_length=100)
-    channel_type: ChannelType = ChannelType.WECHAT
+    channel_type: ChannelType
     provider_id: str = Field(min_length=1, max_length=36)
     enabled: bool = True
     reasoning_effort: str = Field(default="medium", pattern="^(off|low|medium|high)$")
