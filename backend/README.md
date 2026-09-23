@@ -132,8 +132,23 @@ Everything is mounted under `/api`.
 | `/api/agent/{id}/artifacts/{artifact_id}/save` | Publish the pending draft as the artifact's content (user action) |
 | `/api/agent/{id}/artifacts/{artifact}` | Artifact metadata; `content_url` addresses its unified file key |
 | `/api/ai/providers*` | Model endpoint configuration |
+| `/api/channels*` | Personal WeChat QR login and channel management backed by the `zett-weixin` channel plugin |
 | `/api/settings` | Read or replace runtime limits |
 | `/api/library/tags*` | Tag tree CRUD and artifact tag assignment |
+
+IM is split across three packages. `backend/agim` is a stateless SDK with one
+interface (`login` / `is_login` / `receive` / `send`) and platform clients; it
+stores nothing, so callers persist the login handshake and receive cursor.
+`backend/zett-weixin` is a channel plugin built on `agim` that registers into
+Zett through the `zett.channels` entry-point group. Zett owns the plugin
+mechanism: contracts live in `zett/plugins`, discovery and the KV adapter live
+under `zett/infra/plugins`, and `ChannelService` selects a plugin by
+`channel_type`, drives its lifecycle, and stores channel records, login records,
+dedup markers, and Agent session bindings in the shared key-value store under
+the `im:` prefix. Zett retains ownership of Agent sessions, providers,
+artifacts, and model policy. The current platform client and plugin implement
+the personal WeChat iLink/ClawBot bot protocol; the WeChat account must have
+Tencent's "微信机器人" feature enabled.
 
 `/messages`, `/events`, and `/steer` consult the same in-process
 `ActiveRequestRegistry`: at most one request per session may run, and the
@@ -201,15 +216,15 @@ crashed worker therefore cannot block new scheduling decisions. The task lease
 keeps at most one run active per task, and expired leases are recovered as
 `interrupted`.
 
-The Web lifespan writes server PID, port, scheduler PIDs, and worker PIDs to
-``runtime.json`` below `storage_root`. `zett stop` reads that file, stops the
+The Web lifespan writes the server PID, port, scheduler PIDs, and worker PIDs
+to `runtime.json` below `storage_root`. `zett stop` reads that file, stops the
 recorded server and child processes, and removes the file. Stale or partial
 runtime state is cleaned before a new server starts.
 
 Scheduler and worker processes also run a watchdog against that file. They exit
 after repeated failures when the file is missing or incomplete, when the owning
-FastAPI PID is gone, or when their own PID is no longer registered. This prevents
-orphaned workers from continuing after an unclean Web-process crash.
+FastAPI PID is gone, or when their own PID is no longer registered. This
+prevents orphaned children from continuing after an unclean Web-process crash.
 
 The FastAPI lifespan runs a lightweight process supervisor. Scheduler and
 worker processes post heartbeats to `/api/health/processes/heartbeat`; FastAPI
@@ -236,7 +251,7 @@ transactions. The Web process writes `logs/zett.log`, the scheduler writes
 ├── assets/         `sessions/<session-id>/` binaries and `static/` uploads
 ├── artifacts/      one directory per session and LaTeX artifact project
 ├── provider.key    local key encrypting provider credentials
-├── runtime.json    active server, scheduler, and worker process state
+├── runtime.json    active server and supervised child process state
 └── logs/           rotating log files
 ```
 
@@ -260,20 +275,25 @@ transactions. The Web process writes `logs/zett.log`, the scheduler writes
 | `ZETT_PROCESS_WATCHDOG_INTERVAL_SECONDS` | Interval between runtime ownership checks |
 | `ZETT_PROCESS_WATCHDOG_FAILURE_THRESHOLD` | Consecutive failures required before a child exits |
 | `ZETT_WORKER_PROCESSES` | Required number of execution worker processes |
+| `ZETT_IM_GATEWAY_DATABASE_PATH` | Imported gateway channel and route database |
+| `ZETT_IM_GATEWAY_KEY_PATH` | Local key encrypting channel credentials |
 
 Conversation limits are user settings rather than environment variables:
 `max_message_images`, `max_turn_iterations`, `compaction_max_tokens`, and
 `compaction_keep_recent_tokens`, read and replaced through `/api/settings`.
 
-Run the API, scheduler, and at least one worker as separate long-lived processes
-that share the same `ZETT_*` paths:
+`zett start` owns the API and supervises scheduler and worker child processes:
 
 ```bash
 uv run --directory backend zett start
+
+# Separate scheduler/worker debugging processes
 uv run --directory backend zett scheduler
 uv run --directory backend zett worker
-uv run --directory backend zett stop
 ```
+
+`zett stop` stops the API and every supervised child process. The IM gateway
+has no separate process to stop because it is imported directly by Zett.
 
 ## Development
 

@@ -4,7 +4,7 @@ DOCS_HOST ?= 127.0.0.1
 DOCS_PORT ?= 8000
 
 .PHONY: help install backend-install zett-agent-install zettcode-install frontend-install frontend-build start scheduler worker dev check \
-	zett-agent-check zettcode-check ruff-check typecheck pre-commit-install docs docs-serve docs-check docs-examples docs-ui-check
+	zett-agent-check zettcode-check agim-check zett-weixin-check ruff-check typecheck pre-commit-install docs docs-serve docs-check docs-examples docs-ui-check
 
 help:
 	@echo "Available targets:"
@@ -64,6 +64,10 @@ ruff-check:
 	env -u VIRTUAL_ENV uv run --directory backend/zett-agent ruff check src tests examples
 	env -u VIRTUAL_ENV uv run --directory backend/zettcode ruff format --check src tests
 	env -u VIRTUAL_ENV uv run --directory backend/zettcode ruff check src tests
+	uv run --directory backend/agim ruff format --check src tests
+	uv run --directory backend/agim ruff check src tests
+	uv run --directory backend/zett-weixin ruff format --check src tests
+	uv run --directory backend/zett-weixin ruff check src tests
 
 typecheck:
 	npm --prefix frontend run typecheck
@@ -76,6 +80,8 @@ check:
 	uv run --directory backend pytest
 	$(MAKE) zett-agent-check
 	$(MAKE) zettcode-check
+	$(MAKE) agim-check
+	$(MAKE) zett-weixin-check
 	$(MAKE) docs-check
 	npm --prefix frontend run test
 	$(MAKE) typecheck
@@ -90,6 +96,16 @@ zettcode-check:
 	env -u VIRTUAL_ENV uv run --directory backend/zettcode ruff format --check src tests
 	env -u VIRTUAL_ENV uv run --directory backend/zettcode ruff check src tests
 	env -u VIRTUAL_ENV uv run --directory backend/zettcode pytest
+
+agim-check:
+	uv run --directory backend/agim ruff format --check src tests
+	uv run --directory backend/agim ruff check src tests
+	uv run --directory backend/agim pytest
+
+zett-weixin-check:
+	uv run --directory backend/zett-weixin ruff format --check src tests
+	uv run --directory backend/zett-weixin ruff check src tests
+	uv run --directory backend/zett-weixin pytest
 
 docs:
 	env -u VIRTUAL_ENV uv run --directory backend/zett-agent --group docs sphinx-build -E -a -W --keep-going -b html docs docs/_build/html
