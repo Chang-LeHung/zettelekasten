@@ -7,6 +7,7 @@ from ....infra.log import get_logger
 from ....infra.persistence.dao import provider_storage
 from ....schemas import ProviderConnection, ProviderEntity, ProviderListOptions, ProviderWrite
 from ...agent.session_preferences import session_model_preference_service
+from ...channels import channel_service
 from ...providers.provider_connections import ProviderConnectionTestError, verify_provider_connection
 from ...scheduled_tasks import scheduled_task_service
 from ..schemas import DeleteResponse, ProviderDetailResponse, ProviderIn, ProviderResponse
@@ -140,5 +141,10 @@ async def delete_provider(provider_id: str) -> DeleteResponse:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             "Provider is still used by a scheduled task",
+        )
+    if await channel_service.provider_referenced(provider_id):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Provider is still used by a channel",
         )
     return DeleteResponse(ok=await provider_storage.delete(provider_id))

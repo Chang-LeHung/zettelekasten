@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
 from .application.api.router import api_router
+from .application.channels import channel_service
 from .application.health import ProcessSupervisor, process_heartbeat_registry
 from .config import settings
 from .infra.agent.runtime import close_agent_runtime_storage, get_agent_runtime_storage
@@ -59,13 +60,17 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
                 started_at=datetime.now(UTC),
             )
         )
-        supervisor = ProcessSupervisor(runtime_state_store=runtime_state_store)
-        await supervisor.start()
-        logger.info("Zett service started; log_file=%s", log_path)
+        supervisor: ProcessSupervisor | None = None
         try:
+            await channel_service.initialize()
+            supervisor = ProcessSupervisor(runtime_state_store=runtime_state_store)
+            await supervisor.start()
+            logger.info("Zett service started; log_file=%s", log_path)
             yield
         finally:
-            await supervisor.stop()
+            await channel_service.shutdown()
+            if supervisor is not None:
+                await supervisor.stop()
             await runtime_state_store.remove()
     finally:
         logger.info("Zett service stopped")

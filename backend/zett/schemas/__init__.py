@@ -31,6 +31,14 @@ from .assets import (
     StaticAssetEntity,
 )
 from .cards import CardType, normalize_card_type
+from .channels import (
+    Channel,
+    ChannelLogin,
+    ChannelLoginStart,
+    ChannelLoginStatus,
+    ChannelType,
+    ChannelUpdate,
+)
 from .common import DataImageUrl, HttpUrl, ImageUrl, JsonValue, NonBlankName100, NonBlankName200, NonBlankName500
 from .key_value import KeyValueRecord
 from .options import (
@@ -106,6 +114,12 @@ __all__ = [
     "HttpUrl",
     "ImageUrl",
     "DataImageUrl",
+    "Channel",
+    "ChannelLogin",
+    "ChannelLoginStart",
+    "ChannelLoginStatus",
+    "ChannelType",
+    "ChannelUpdate",
     "NonBlankName100",
     "NonBlankName200",
     "NonBlankName500",

@@ -1,0 +1,334 @@
+"""Use-case orchestration for IM login, channels, and conversations.
+
+Platform work lives in plugins registered through Zett's plugin mechanism
+(``zett.channels`` entry points, for example ``zett-weixin``). This service
+owns everything host side: which channels exist, how a login becomes a channel
+record, how inbound messages become Agent turns, and where the replies go.
+"""
+
+import asyncio
+import base64
+import uuid
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from io import BytesIO
+
+import qrcode
+from qrcode.image.svg import SvgPathImage
+
+from ...infra.log import get_logger
+from ...infra.plugins import PluginRegistry, ZettKVStorage, build_registry
+from ...plugins import ChannelInboundMessage, ChannelPlugin, KVStorage
+from ...schemas import (
+    Channel,
+    ChannelLogin,
+    ChannelLoginStart,
+    ChannelLoginStatus,
+    ChannelType,
+    ChannelUpdate,
+)
+from .agent import AgentClient, AgentEventKind, AgentTurnRequest, ZettIMAgentClient
+from .store import ChannelDraft, ChannelRuntime, ChannelStore
+
+logger = get_logger(__name__)
+
+LOGIN_TTL = timedelta(minutes=5)
+RECEIVE_RETRY_SECONDS = 2.0
+
+
+def _qr_data_url(value: str) -> str:
+    image = qrcode.make(value, image_factory=SvgPathImage)
+    buffer = BytesIO()
+    image.save(buffer)
+    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    return f"data:image/svg+xml;base64,{encoded}"
+
+
+@dataclass(slots=True)
+class _ChannelRunner:
+    """One running channel plugin plus its inbound receive loop."""
+
+    plugin: ChannelPlugin
+    task: asyncio.Task[None]
+
+
+class ChannelService:
+    """Own the plugin registry, running channels, and Agent bridge."""
+
+    def __init__(
+        self,
+        *,
+        registry: PluginRegistry | None = None,
+        kv: KVStorage | None = None,
+        agent: AgentClient | None = None,
+    ) -> None:
+        self._kv = kv or ZettKVStorage()
+        self._store = ChannelStore(self._kv)
+        self._registry = registry or build_registry()
+        self._agent = agent or ZettIMAgentClient()
+        self._runners: dict[str, _ChannelRunner] = {}
+        self._logins: dict[str, ChannelPlugin] = {}
+        self._locks: dict[tuple[str, str], asyncio.Lock] = {}
+
+    async def initialize(self) -> None:
+        """Start a receive loop for every enabled channel."""
+        await self.reload()
+
+    async def shutdown(self) -> None:
+        """Stop every receive loop and close every plugin."""
+        for channel_id in list(self._runners):
+            await self._stop_runner(channel_id)
+        for plugin in list(self._logins.values()):
+            await plugin.stop()
+        self._logins.clear()
+
+    async def reload(self) -> None:
+        """Reconcile running plugins with the persisted enabled channels."""
+        runtimes = {runtime.channel.id: runtime for runtime in await self._store.list_runtime_channels()}
+        for channel_id in set(self._runners) - set(runtimes):
+            await self._stop_runner(channel_id)
+        for channel_id, runtime in runtimes.items():
+            if channel_id not in self._runners:
+                await self._start_runner(runtime)
+
+    async def list_channels(self) -> list[Channel]:
+        """List configured channels."""
+        return await self._store.list_channels()
+
+    async def update_channel(self, channel_id: str, payload: ChannelUpdate) -> Channel:
+        """Update channel policy and restart its receive loop."""
+        updated = await self._store.update_channel(channel_id, payload)
+        await self._stop_runner(channel_id)
+        if updated.enabled:
+            runtime = await self._store.get_runtime_channel(channel_id)
+            if runtime is not None:
+                await self._start_runner(runtime)
+        return updated
+
+    async def delete_channel(self, channel_id: str) -> bool:
+        """Stop one channel and remove its record, markers, and bindings."""
+        await self._stop_runner(channel_id)
+        return await self._store.delete_channel(channel_id)
+
+    async def provider_referenced(self, provider_id: str) -> bool:
+        """Return whether any channel routes turns through the provider."""
+        return any(channel.provider_id == provider_id for channel in await self.list_channels())
+
+    async def start_login(self, payload: ChannelLoginStart) -> ChannelLogin:
+        """Start one QR flow through the plugin registered for its channel type."""
+        login_id = str(uuid.uuid7())
+        plugin = self._registry.create(payload.channel_type.value, scope_id=login_id, kv=self._kv)
+        challenge = await plugin.login()
+        now = datetime.now(UTC)
+        login = ChannelLogin(
+            id=login_id,
+            channel_type=payload.channel_type,
+            provider_id=payload.provider_id,
+            name=payload.name,
+            status=ChannelLoginStatus.PENDING,
+            qr_url=challenge.qr_url,
+            qr_data_url=_qr_data_url(challenge.qr_content),
+            message="请扫描二维码完成登录。",
+            expires_at=now + LOGIN_TTL,
+            created_at=now,
+            updated_at=now,
+        )
+        await self._store.save_login(login, state={})
+        self._logins[login_id] = plugin
+        return login
+
+    async def poll_login(self, login_id: str, *, verify_code: str | None = None) -> ChannelLogin | None:
+        """Poll one QR flow and create its channel after authorization."""
+        stored = await self._store.get_login(login_id)
+        if stored is None:
+            return None
+        login, _state = stored
+        if login.status not in {
+            ChannelLoginStatus.PENDING,
+            ChannelLoginStatus.SCANNED,
+            ChannelLoginStatus.VERIFY_REQUIRED,
+        }:
+            return login
+        if login.expires_at <= datetime.now(UTC):
+            return await self._finish_login(
+                login,
+                status=ChannelLoginStatus.EXPIRED,
+                message="二维码已过期，请重新生成。",
+            )
+        plugin = self._logins.get(login_id)
+        if plugin is None:
+            return await self._finish_login(
+                login,
+                status=ChannelLoginStatus.EXPIRED,
+                message="登录会话已失效，请重新生成二维码。",
+            )
+        if verify_code:
+            await plugin.submit_login_code(verify_code)
+        try:
+            state = await plugin.is_login()
+        except Exception as error:
+            logger.exception("IM login poll failed; login_id=%s", login_id)
+            return await self._finish_login(login, status=ChannelLoginStatus.FAILED, message=str(error))
+        if state.status is not ChannelLoginStatus.CONNECTED:
+            return await self._finish_login(login, status=state.status, message=state.message)
+        if state.credentials is None:
+            return await self._finish_login(
+                login,
+                status=ChannelLoginStatus.FAILED,
+                message="登录成功但插件未返回凭据。",
+            )
+        channel = await self._store.create_channel(
+            ChannelDraft(
+                name=login.name or _default_channel_name(login.channel_type),
+                channel_type=login.channel_type,
+                provider_id=login.provider_id,
+                config=state.credentials.config,
+                secrets=state.credentials.secrets,
+            )
+        )
+        connected = await self._finish_login(
+            login,
+            status=ChannelLoginStatus.CONNECTED,
+            message=state.message,
+            channel_id=channel.id,
+        )
+        self._logins.pop(login_id, None)
+        await plugin.stop()
+        try:
+            await self.reload()
+        except Exception:
+            # The channel is persisted; a restart is preferable to duplicating it.
+            logger.exception("IM channel reload failed after login; channel_id=%s", channel.id)
+        return connected
+
+    async def send_message(self, channel_id: str, chat_id: str, text: str) -> None:
+        """Deliver one proactive message through a running channel."""
+        runner = self._runners.get(channel_id)
+        if runner is None:
+            raise KeyError(f"Active channel not found: {channel_id}")
+        await runner.plugin.send(chat_id, text)
+
+    async def _finish_login(
+        self,
+        login: ChannelLogin,
+        *,
+        status: ChannelLoginStatus,
+        message: str,
+        channel_id: str | None = None,
+    ) -> ChannelLogin:
+        updated = login.model_copy(
+            update={
+                "status": status,
+                "message": message,
+                "channel_id": channel_id or login.channel_id,
+                "updated_at": datetime.now(UTC),
+            }
+        )
+        await self._store.save_login(updated, state={})
+        return updated
+
+    async def _start_runner(self, runtime: ChannelRuntime) -> None:
+        channel_id = runtime.channel.id
+        plugin = self._registry.create(
+            runtime.channel.channel_type.value,
+            scope_id=channel_id,
+            kv=self._kv,
+            config=runtime.config,
+            secrets=runtime.secrets,
+        )
+        await plugin.start()
+        task = asyncio.create_task(self._consume(channel_id, plugin), name=f"im-channel:{channel_id}")
+        self._runners[channel_id] = _ChannelRunner(plugin=plugin, task=task)
+
+    async def _stop_runner(self, channel_id: str) -> None:
+        runner = self._runners.pop(channel_id, None)
+        if runner is None:
+            return
+        runner.task.cancel()
+        await asyncio.gather(runner.task, return_exceptions=True)
+        await runner.plugin.stop()
+
+    async def _consume(self, channel_id: str, plugin: ChannelPlugin) -> None:
+        """Pull inbound messages forever and answer them through the Agent."""
+        while True:
+            try:
+                message = await plugin.receive()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("IM receive failed; channel_id=%s", channel_id)
+                await asyncio.sleep(RECEIVE_RETRY_SECONDS)
+                continue
+            try:
+                reply = await self._handle_message(channel_id, message)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("IM turn failed; channel_id=%s event_id=%s", channel_id, message.event_id)
+                continue
+            if reply is None:
+                continue
+            try:
+                await plugin.send(message.chat_id, reply)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("IM reply failed; channel_id=%s event_id=%s", channel_id, message.event_id)
+
+    async def _handle_message(self, channel_id: str, message: ChannelInboundMessage) -> str | None:
+        """Run one deduplicated, serialized Agent turn for an inbound message."""
+        runtime = await self._store.get_runtime_channel(channel_id)
+        if runtime is None:
+            raise KeyError(f"Enabled channel not found: {channel_id}")
+        if not await self._store.claim_event(channel_id, message.event_id):
+            return None
+        lock = self._locks.setdefault((channel_id, message.chat_id), asyncio.Lock())
+        async with lock:
+            return await self._run_turn(runtime, message)
+
+    async def _run_turn(self, runtime: ChannelRuntime, message: ChannelInboundMessage) -> str:
+        """Run one serialized Agent turn for an external conversation."""
+        channel_id = runtime.channel.id
+        agent_session_id = await self._store.agent_session_for(channel_id, message.chat_id)
+        request = AgentTurnRequest(
+            request_id=message.event_id,
+            provider_id=runtime.channel.provider_id,
+            agent_session_id=agent_session_id,
+            message=message.text,
+            reasoning_effort=runtime.channel.reasoning_effort,
+            allow_coding=runtime.channel.allow_coding,
+            metadata={
+                "source": "im",
+                "channel_id": channel_id,
+                "channel_name": runtime.channel.name,
+                "channel_type": runtime.channel.channel_type.value,
+                "external_chat_id": message.chat_id,
+                "external_user_id": message.user_id,
+            },
+        )
+        final_content: str | None = None
+        session_id: str | None = None
+        async for event in self._agent.stream_turn(request):
+            if event.session_id:
+                session_id = event.session_id
+                await self._store.bind_agent_session(channel_id, message.chat_id, event.session_id)
+            if event.type is AgentEventKind.DELTA and event.content:
+                final_content = f"{final_content or ''}{event.content}"
+            elif event.type is AgentEventKind.COMPLETED:
+                final_content = event.content or final_content
+            elif event.type is AgentEventKind.FAILED:
+                raise RuntimeError(event.error or "Agent turn failed")
+        if final_content is None:
+            raise RuntimeError("Agent turn ended without a response")
+        if session_id is None:
+            raise RuntimeError("Agent turn ended without a session ID")
+        return final_content
+
+
+def _default_channel_name(channel_type: ChannelType) -> str:
+    return "微信机器人" if channel_type is ChannelType.WECHAT else f"{channel_type.value} 机器人"
+
+
+channel_service = ChannelService()
+
+__all__ = ["ChannelService", "channel_service"]
