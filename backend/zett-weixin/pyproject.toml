@@ -1,0 +1,49 @@
+[project]
+name = "zett-weixin"
+version = "0.1.0"
+description = "Zett channel plugin for personal WeChat, built on the agim SDK"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+  "agim==0.1.0",
+]
+
+[project.entry-points."zett.channels"]
+wechat = "zett_weixin:WeChatPlugin"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/zett_weixin"]
+
+[dependency-groups]
+dev = [
+  "pytest>=8,<9",
+  "pytest-asyncio>=0.26,<2",
+  "ruff>=0.11,<1",
+  "zett==0.1.0",
+]
+
+[tool.uv.sources]
+agim = { path = "../agim", editable = true }
+zett = { path = "..", editable = true }
+
+[tool.ruff]
+line-length = 120
+target-version = "py314"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
