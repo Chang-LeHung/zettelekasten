@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import {
   aiClient,
   assetClient,
+  channelClient,
   healthClient,
   libraryClient,
   scheduledTaskClient,
@@ -636,6 +637,69 @@ it('loads and replaces runtime settings through the typed client', async () => {
     method: 'PUT',
     body: JSON.stringify(update),
   })
+})
+
+it('manages channels through the typed client', async () => {
+  const channel = {
+    id: 'channel-1',
+    name: 'WeChat bot',
+    channel_type: 'wechat' as const,
+    provider_id: 'provider-1',
+    enabled: true,
+    reasoning_effort: 'medium' as const,
+    allow_coding: false,
+    config: { bot_id: 'bot-1' },
+    secret_keys: ['bot_secret'],
+    created_at: '2026-09-22T00:00:00Z',
+    updated_at: '2026-09-22T00:00:00Z',
+  }
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify([channel])))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ ...channel, enabled: false })))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true })))
+    .mockResolvedValueOnce(new Response(JSON.stringify({
+      id: 'onboarding-1',
+      channel_type: 'wechat',
+      provider_id: 'provider-1',
+      name: null,
+      status: 'pending',
+      qr_url: 'https://work.weixin.qq.com/ai/qc/gen?scode=test',
+      qr_data_url: 'data:image/svg+xml;base64,abc',
+      message: 'Scan',
+      channel_id: null,
+      expires_at: '2026-09-22T00:15:00Z',
+      created_at: '2026-09-22T00:00:00Z',
+      updated_at: '2026-09-22T00:00:00Z',
+    }), { status: 201 }))
+    .mockResolvedValueOnce(new Response(JSON.stringify({
+      id: 'onboarding-1',
+      channel_type: 'wechat',
+      provider_id: 'provider-1',
+      name: null,
+      status: 'connected',
+      qr_url: 'https://work.weixin.qq.com/ai/qc/gen?scode=test',
+      qr_data_url: 'data:image/svg+xml;base64,abc',
+      message: 'Connected',
+      channel_id: 'channel-1',
+      expires_at: '2026-09-22T00:15:00Z',
+      created_at: '2026-09-22T00:00:00Z',
+      updated_at: '2026-09-22T00:01:00Z',
+    })))
+  vi.stubGlobal('fetch', fetchMock)
+
+  await expect(channelClient.list()).resolves.toEqual([channel])
+  await channelClient.update(channel.id, { enabled: false })
+  await channelClient.delete(channel.id)
+  await channelClient.startLogin({ provider_id: 'provider-1' })
+  await channelClient.pollLogin('onboarding-1', '123456')
+
+  expect(String(fetchMock.mock.calls[0]?.[0])).toBe('/api/channels')
+  expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: 'PUT' })
+  expect(String(fetchMock.mock.calls[2]?.[0])).toBe('/api/channels/channel-1')
+  expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({ method: 'DELETE' })
+  expect(String(fetchMock.mock.calls[3]?.[0])).toBe('/api/channels/login/start')
+  expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({ method: 'POST' })
+  expect(String(fetchMock.mock.calls[4]?.[0])).toBe('/api/channels/login/onboarding-1?verify_code=123456')
 })
 
 it('lists normal sessions by default and supports explicit type filters', async () => {

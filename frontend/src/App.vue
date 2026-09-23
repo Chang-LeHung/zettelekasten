@@ -48,8 +48,9 @@ const ModelUsageTrend = defineAsyncComponent(() => import('./components/ModelUsa
 const StaticAssetsView = defineAsyncComponent(() => import('./components/StaticAssetsView.vue'))
 const StaticAssetImportDialog = defineAsyncComponent(() => import('./components/StaticAssetImportDialog.vue'))
 const ScheduledTasksView = defineAsyncComponent(() => import('./components/ScheduledTasksView.vue'))
+const ChannelsView = defineAsyncComponent(() => import('./components/ChannelsView.vue'))
 
-type View = 'library' | 'search' | 'new' | 'assets' | 'scheduledTasks' | 'settings'
+type View = 'library' | 'search' | 'new' | 'assets' | 'scheduledTasks' | 'channels' | 'settings'
 type SessionScope = Extract<SessionType, 'normal' | 'scheduled'>
 type NoticeKind = 'success' | 'error'
 type AssetEditorMode = 'closed' | 'text' | 'link'
@@ -3091,6 +3092,7 @@ onBeforeUnmount(() => {
       <symbol id="icon-add" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
       <symbol id="icon-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 13.5v-3l-2.1-.5a7 7 0 0 0-.7-1.7l1.1-1.8-2.1-2.1-1.8 1.1a7 7 0 0 0-1.7-.7L11.2 3h-3l-.5 2.1a7 7 0 0 0-1.7.7L4.2 4.7 2.1 6.8l1.1 1.8a7 7 0 0 0-.7 1.7L.5 10.8v3l2.1.5a7 7 0 0 0 .7 1.7l-1.1 1.8 2.1 2.1 1.8-1.1a7 7 0 0 0 1.7.7l.5 2.1h3l.5-2.1a7 7 0 0 0 1.7-.7l1.8 1.1 2.1-2.1-1.1-1.8a7 7 0 0 0 .7-1.7z" transform="translate(1.5 -0.25) scale(.88)"/></symbol>
       <symbol id="icon-schedule" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M8 3h8M5 6l-2 2m16-2 2 2"/></symbol>
+      <symbol id="icon-channels" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1.5"/><path d="M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7"/></symbol>
       <symbol id="icon-spark" viewBox="0 0 24 24"><path d="m12 2 1.3 5.1L18 9l-4.7 1.9L12 16l-1.3-5.1L6 9l4.7-1.9zM19 15l.7 2.3L22 18l-2.3.7L19 21l-.7-2.3L16 18l2.3-.7z"/></symbol>
       <symbol id="icon-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></symbol>
       <symbol id="icon-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1.5"/></symbol>
@@ -3205,6 +3207,9 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="sidebar-footer">
+        <button class="channels-nav-button" :class="{ active: view === 'channels' }" type="button" @click="navigate('channels')">
+          <svg><use href="#icon-channels" /></svg><span>{{ $t('nav.channels') }}</span>
+        </button>
         <label class="locale-control">
           <span>{{ $t('settings.language') }}</span>
           <select :value="locale" @change="changeLocale">
@@ -3851,6 +3856,10 @@ onBeforeUnmount(() => {
         <ScheduledTasksView @open-session="openScheduledSession" />
       </template>
 
+      <template v-else-if="view === 'channels'">
+        <ChannelsView />
+      </template>
+
       <template v-else>
         <header class="topbar compact"><div><p class="eyebrow">{{ $t('Preferences') }}</p><h1>{{ $t('Settings') }}</h1></div></header>
         <section class="content settings-view">
@@ -4091,6 +4100,7 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .load-more-sessions:disabled { opacity: .55; cursor: wait; }
 .sidebar-empty { padding: .55rem; color: var(--tertiary); font-size: .72rem; }
 .sidebar-footer { padding: .65rem 0 .15rem; border-top: 1px solid rgba(29,29,31,.07); }
+.sidebar-footer .channels-nav-button { margin-bottom: .65rem; }
 .locale-control { display: flex; align-items: center; justify-content: space-between; gap: .45rem; margin-bottom: .3rem; padding: 0 .55rem; color: #77777c; font-size: .64rem; }
 .locale-control select { min-width: 5.4rem; height: 1.8rem; padding: 0 1.65rem 0 .55rem; border: 1px solid rgba(29,29,31,.1); border-radius: .5rem; color: #4e5651; background: rgba(255,255,255,.65); cursor: pointer; font-size: .65rem; }
 .status-dot { margin-left: auto; width: .43rem; height: .43rem; border-radius: 50%; background: #aaa; box-shadow: 0 0 0 3px rgba(0,0,0,.03); }
@@ -4703,7 +4713,8 @@ kbd, .card-type, .card-tags span { font-size: .69rem; }
   .primary-nav button, .sidebar-footer button { height: 3.25rem; flex-direction: column; justify-content: center; gap: .2rem; padding: 0; font-size: .68rem; }
   .primary-nav button small, .primary-nav kbd, .status-dot { display: none; }
   .primary-nav button svg, .sidebar-footer button svg { width: 1.15rem; height: 1.15rem; }
-  .sidebar-footer { position: absolute; right: .65rem; bottom: max(.45rem, env(safe-area-inset-bottom)); width: calc((100% - 1.3rem) / 3); display: grid; grid-template-columns: 1fr; padding: 0; border: 0; }
+  .sidebar-footer { position: absolute; right: .65rem; bottom: max(.45rem, env(safe-area-inset-bottom)); width: calc((100% - 1.3rem) / 3); display: grid; grid-template-columns: repeat(2, 1fr); padding: 0; border: 0; }
+  .sidebar-footer .channels-nav-button { margin-bottom: 0; }
   .locale-control { display: none; }
   .topbar { min-height: 4.5rem; padding: .8rem 1rem; }
   .topbar .primary-action { width: 2.65rem; padding: 0; font-size: 0; }
