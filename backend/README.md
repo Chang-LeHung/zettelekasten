@@ -298,6 +298,20 @@ uv run --directory backend zett worker
 `zett stop` stops the API and every supervised child process. The IM gateway
 has no separate process to stop because it is imported directly by Zett.
 
+### Platform support
+
+The process layer keeps every OS difference in
+`zett/infra/scheduler/process_platform.py`: children get a POSIX session or a
+Windows process group, liveness uses `kill(pid, 0)` or `GetExitCodeProcess`,
+termination uses `SIGTERM`/`SIGKILL` or `TerminateProcess`, and port lookup uses
+`lsof` or `netstat -ano`. Windows has no catchable termination signal, so
+`zett stop` ends a child immediately there, and command-line verification is not
+available.
+
+The ZettCode TUI is POSIX-only: raw mode, `SIGWINCH`, and `add_reader` on stdin
+have no Windows equivalent in the implementation. Importing ZettCode on Windows
+works; starting its TUI reports that it requires a POSIX terminal.
+
 ## Development
 
 ```bash
