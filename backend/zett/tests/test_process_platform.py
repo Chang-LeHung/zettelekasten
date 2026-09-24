@@ -103,7 +103,10 @@ def test_restrict_file_mode_avoids_fchmod_on_windows(monkeypatch: pytest.MonkeyP
 def test_restrict_file_mode_sets_owner_only_on_posix(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[tuple[int, int]] = []
     monkeypatch.setattr(process_platform, "WINDOWS", False)
-    monkeypatch.setattr(process_platform.os, "fchmod", lambda descriptor, mode: calls.append((descriptor, mode)))
+    # Windows has no os.fchmod, so the forced-POSIX branch needs the helper here.
+    monkeypatch.setattr(
+        process_platform.os, "fchmod", lambda descriptor, mode: calls.append((descriptor, mode)), raising=False
+    )
 
     process_platform.restrict_file_mode(7)
 
