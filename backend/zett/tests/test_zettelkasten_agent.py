@@ -393,6 +393,8 @@ async def test_factory_loads_default_user_skills_and_mcp_configuration(tmp_path,
         encoding="utf-8",
     )
     monkeypatch.setenv("HOME", str(home))
+    # Windows resolves ``~`` from USERPROFILE rather than HOME.
+    monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.chdir(tmp_path)
     storage = SQLiteSessionStorage(tmp_path / "agent.db")
     try:

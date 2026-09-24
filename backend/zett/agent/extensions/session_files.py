@@ -1,7 +1,5 @@
 """Name the directory that holds one conversation's submitted files."""
 
-import json
-
 from zett_agent import AgentExtension, AgentRunContext, SystemMessage
 
 from ...application.files.object_store import session_directory_key
@@ -38,7 +36,7 @@ class SessionFilesExtension(AgentExtension):
         directory = get_object_store().resolve(session_directory_key(context.config.session_id))
         return (
             "# Session files\n"
-            f"Images and other files submitted with this conversation are stored under {json.dumps(str(directory))}.\n"
+            f'Images and other files submitted with this conversation are stored under "{directory}".\n'
             "Read those paths with the filesystem tools when a task needs the file rather than the pixels."
         )
 

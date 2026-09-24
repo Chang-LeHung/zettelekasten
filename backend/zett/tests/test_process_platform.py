@@ -69,6 +69,8 @@ def test_terminate_process_escalates_only_when_forced_on_posix(monkeypatch: pyte
     calls: list[tuple[int, int]] = []
     monkeypatch.setattr(process_platform, "WINDOWS", False)
     monkeypatch.setattr(process_platform.os, "kill", lambda pid, sig: calls.append((pid, sig)))
+    # Windows has no SIGKILL, so the forced-POSIX branch needs the signal here.
+    monkeypatch.setattr(signal, "SIGKILL", 9, raising=False)
 
     process_platform.terminate_process(4242, force=False)
     process_platform.terminate_process(4242, force=True)
