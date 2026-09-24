@@ -4,13 +4,16 @@ from collections.abc import Callable
 from functools import wraps
 from inspect import iscoroutinefunction
 from threading import Lock, RLock
-from typing import cast
+from typing import ParamSpec, TypeVar, cast
 
 _locks: dict[str, RLock] = {}
 _registry_lock = Lock()
 
+ParametersT = ParamSpec("ParametersT")
+ResultT = TypeVar("ResultT")
 
-def synchronized[**ParametersT, ResultT](
+
+def synchronized(
     lock_name: str,
 ) -> Callable[[Callable[ParametersT, ResultT]], Callable[ParametersT, ResultT]]:
     """Serialize decorated synchronous functions sharing ``lock_name``.

@@ -7,12 +7,13 @@ import socket
 import subprocess
 import sys
 import threading
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
+from zett._compat import UTC
 from zett.config import settings
 from zett.infra.scheduler.runtime_state import (
     RuntimeProcessController,

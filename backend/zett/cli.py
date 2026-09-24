@@ -2,12 +2,13 @@
 
 import asyncio
 import os
-from datetime import UTC, datetime
+from datetime import datetime
 
 import typer
 import uvicorn
 from zett_agent import new_uuid7
 
+from ._compat import UTC
 from .config import settings
 from .infra.log import configure_logging, get_logger, uvicorn_log_config
 from .infra.persistence.database import init_db

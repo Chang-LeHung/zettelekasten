@@ -8,9 +8,12 @@ from zett_agent import (
     OpenAIProvider,
 )
 
+from .._compat import TypeAliasType
 from ..schemas import ProviderConnection, ProviderType
 
-type ProviderAdapter = AnthropicProvider | DeepSeekProvider | GoogleProvider | OllamaProvider | OpenAIProvider
+ProviderAdapter = TypeAliasType(
+    "ProviderAdapter", AnthropicProvider | DeepSeekProvider | GoogleProvider | OllamaProvider | OpenAIProvider
+)
 
 
 def create_model(

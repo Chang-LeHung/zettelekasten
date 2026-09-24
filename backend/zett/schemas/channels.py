@@ -1,5 +1,7 @@
 """Public channel DTOs exposed by the Zett channel API."""
 
+from __future__ import annotations
+
 from datetime import datetime
 from typing import Annotated
 

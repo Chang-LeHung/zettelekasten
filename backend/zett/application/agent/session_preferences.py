@@ -1,5 +1,7 @@
 """Per-session UI preferences backed by the versioned application KV store."""
 
+from __future__ import annotations
+
 from pydantic import BaseModel, ConfigDict
 
 from ...infra.persistence.dao import KeyValueStorage, key_value_storage

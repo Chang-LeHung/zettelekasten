@@ -1,10 +1,11 @@
 """SQLite persistence for per-request model token activity."""
 
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 
 from sqlalchemy import func, select
 from zett_agent import ModelUsageActivityDay, ModelUsageActivityRecord, new_uuid7
 
+from ...._compat import UTC
 from ....schemas import ModelUsageActivitySeries, UsageActivityDayRecord
 from ..database import session_scope
 from ..tables import ModelUsageActivityRow

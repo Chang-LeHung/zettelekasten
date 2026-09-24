@@ -24,7 +24,8 @@ class UTCFormatter(logging.Formatter):
 
 def _level_number(level: str) -> int:
     """Resolve a configured level name and fall back to INFO for invalid values."""
-    return logging.getLevelNamesMapping().get(level.upper(), logging.INFO)
+    resolved = logging.getLevelName(level.upper())
+    return resolved if isinstance(resolved, int) else logging.INFO
 
 
 def _close_handlers(logger: logging.Logger) -> None:
@@ -89,7 +90,7 @@ def configure_logging(
 def uvicorn_log_config(level: str | None = None) -> dict[str, object]:
     """Build a Uvicorn logging configuration with Zett source locations."""
     configured_level = (level or settings.log_level).upper()
-    if configured_level not in logging.getLevelNamesMapping():
+    if not isinstance(logging.getLevelName(configured_level), int):
         configured_level = "INFO"
     return {
         "version": 1,

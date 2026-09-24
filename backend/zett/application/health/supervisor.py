@@ -4,10 +4,11 @@ import asyncio
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 from zett_agent import new_uuid7
 
+from ..._compat import UTC
 from ...config import settings
 from ...infra.log import get_logger
 from ...infra.scheduler.processes import ManagedProcess, SubprocessLauncher

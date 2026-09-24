@@ -1,12 +1,15 @@
 """Encrypted local storage for model provider configurations."""
 
+from __future__ import annotations
+
 import json
-from datetime import UTC, datetime
+from datetime import datetime
 from enum import IntEnum
 
 from sqlalchemy import or_, select
 from zett_agent import new_uuid7
 
+from ...._compat import UTC
 from ....schemas import ProviderConnection, ProviderEntity, ProviderListOptions, ProviderType, ProviderWrite
 from ...security.secrets import decrypt_secret, encrypt_secret
 from ..database import session_scope

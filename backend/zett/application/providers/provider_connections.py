@@ -1,10 +1,10 @@
 """Probe provider settings with one minimal model request before persistence."""
 
-import asyncio
 from contextlib import aclosing
 
 from zett_agent import ModelEventType, ModelRequest, ReasoningEffort, UserMessage
 
+from ..._compat import timeout
 from ...agent.model_factory import create_model
 from ...infra.log import get_logger
 from ...schemas import ProviderConnection
@@ -32,7 +32,7 @@ async def verify_provider_connection(connection: ProviderConnection) -> None:
         parallel_tool_call=False,
     )
     try:
-        async with asyncio.timeout(PROVIDER_TEST_TIMEOUT_SECONDS):
+        async with timeout(PROVIDER_TEST_TIMEOUT_SECONDS):
             async with aclosing(model.stream(request)) as events:
                 async for event in events:
                     if event.type == ModelEventType.RESPONSE:

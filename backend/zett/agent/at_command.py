@@ -30,6 +30,7 @@ from zett_agent import (
     UserMessage,
 )
 
+from .._compat import TypeAliasType
 from ..application.agent.turns import AgentTurn
 from ..messages import MessagePartCodec
 
@@ -99,7 +100,7 @@ class AtCommandDefinition:
     handler: AtCommandHandler
 
 
-type AtCommandHandler = Callable[[AtCommandInvocation], AsyncIterator[AgentEvent]]
+AtCommandHandler = TypeAliasType("AtCommandHandler", Callable[[AtCommandInvocation], AsyncIterator[AgentEvent]])
 
 
 class AtCommandSource(ABC):

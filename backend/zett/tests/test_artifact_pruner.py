@@ -1,9 +1,10 @@
 """Artifact query projections stay bounded and type-specific."""
 
-from datetime import UTC, datetime
+from datetime import datetime
 
 import pytest
 
+from zett._compat import UTC
 from zett.application.artifacts.artifact_pruner import (
     ArticleArtifactPreviewContent,
     ArtifactPruner,

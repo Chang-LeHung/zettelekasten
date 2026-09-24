@@ -6,9 +6,13 @@ it to and from zett-agent's ``UserMessage``, so no other model describes the
 same parts.
 """
 
+from __future__ import annotations
+
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from .._compat import TypeAliasType
 
 IMAGE_MIME_PATTERN = r"^image/[A-Za-z0-9.+-]+$"
 
@@ -35,7 +39,9 @@ class FrontImagePart(FrontPart):
     content_url: str = Field(min_length=1)
 
 
-type FrontMessagePart = Annotated[FrontTextPart | FrontImagePart, Field(discriminator="type")]
+FrontMessagePart = TypeAliasType(
+    "FrontMessagePart", Annotated[FrontTextPart | FrontImagePart, Field(discriminator="type")]
+)
 
 
 class FrontUserMessage(FrontPart):

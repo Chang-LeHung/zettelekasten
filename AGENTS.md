@@ -58,7 +58,7 @@
 
 ## Tooling
 
-- Use Python 3.14 and `uv` for backend dependency management.
+- Support Python 3.10 through 3.14 and use `uv` for backend dependency management. `backend/.python-version` keeps local development on 3.14, so anything newer than 3.10 must go through `zett/_compat.py` (or the matching `_compat` module in `agim`) instead of the standard library directly.
 - Use Ruff for formatting and linting.
 - Use Vue 3 with TypeScript for the frontend.
 - Keep backend API calls in dedicated typed client modules under `frontend/src/api`.

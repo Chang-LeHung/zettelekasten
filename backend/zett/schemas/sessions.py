@@ -1,10 +1,9 @@
 """Write models for persisted Agent conversations."""
 
-from enum import StrEnum
-
 from pydantic import BaseModel, Field
 from zett_agent import SessionTypeCode
 
+from .._compat import StrEnum
 from .common import NonBlankName200
 
 

@@ -5,6 +5,8 @@ configured storage root. Physical layout, URL generation, and containment
 checks belong to the object-store adapter rather than individual DAOs.
 """
 
+from __future__ import annotations
+
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path

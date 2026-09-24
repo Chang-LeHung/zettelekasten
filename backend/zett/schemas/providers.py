@@ -1,9 +1,10 @@
 """Write and read models for model provider connections."""
 
 from datetime import datetime
-from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
+
+from .._compat import StrEnum
 
 
 class ProviderType(StrEnum):

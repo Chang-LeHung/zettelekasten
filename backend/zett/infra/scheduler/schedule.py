@@ -1,10 +1,11 @@
 """Cron schedule validation and next-occurrence calculation."""
 
-from datetime import UTC, datetime
+from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from croniter import croniter
 
+from ..._compat import UTC
 from ...schemas import CronSchedule
 
 

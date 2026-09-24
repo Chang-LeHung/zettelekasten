@@ -85,7 +85,7 @@ def _stored_content(value: str | None) -> ArtifactContent | None:
         return None
     try:
         return _CONTENT_ADAPTER.validate_python(json.loads(value))
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
 
 

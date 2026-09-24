@@ -1,8 +1,11 @@
 """In-memory heartbeat registry owned by the FastAPI process."""
 
-import asyncio
-from datetime import UTC, datetime
+from __future__ import annotations
 
+import asyncio
+from datetime import datetime
+
+from ..._compat import UTC
 from ...schemas import (
     ProcessHeartbeatIn,
     ProcessHeartbeatRecord,

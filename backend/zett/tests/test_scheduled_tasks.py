@@ -3,7 +3,7 @@
 import asyncio
 import sqlite3
 from collections.abc import AsyncIterator, Mapping
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -18,6 +18,7 @@ from zett_agent import (
     new_uuid7,
 )
 
+from zett._compat import UTC
 from zett.application.scheduled_tasks import ScheduledTaskService
 from zett.infra.persistence.dao import provider_storage, scheduled_task_storage, session_storage
 from zett.infra.persistence.database import session_scope

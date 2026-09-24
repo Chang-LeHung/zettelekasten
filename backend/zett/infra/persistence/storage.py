@@ -4,11 +4,19 @@ Application storage awaits one asynchronous SQLite engine, so the contract is
 asynchronous end to end and every DAO implements the same coroutine surface.
 """
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
+from typing import Generic, TypeVar
+
+WriteModelT = TypeVar("WriteModelT")
+ReadModelT = TypeVar("ReadModelT")
+ID = TypeVar("ID")
+ListOptionsT = TypeVar("ListOptionsT")
 
 
-class AsyncStorage[WriteModelT, ReadModelT, ID, ListOptionsT](ABC):
+class AsyncStorage(ABC, Generic[WriteModelT, ReadModelT, ID, ListOptionsT]):
     """Typed asynchronous create, read, update, delete, and list operations."""
 
     @abstractmethod

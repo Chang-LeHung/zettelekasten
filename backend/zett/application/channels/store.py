@@ -6,12 +6,13 @@ of dedicated SQLAlchemy tables. All keys use the ``im:`` namespace.
 """
 
 import json
-import uuid
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
+from zett_agent import new_uuid7
 
+from ..._compat import UTC
 from ...infra.security import decrypt_secret, encrypt_secret
 from ...plugins import JsonValue, KVStorage
 from ...schemas import Channel, ChannelLogin, ChannelType, ChannelUpdate
@@ -59,7 +60,7 @@ class ChannelStore:
             raise ValueError("Channel provider id cannot be blank")
         now = datetime.now(UTC)
         channel = Channel(
-            id=str(uuid.uuid7()),
+            id=new_uuid7(),
             name=draft.name,
             channel_type=draft.channel_type,
             provider_id=draft.provider_id,

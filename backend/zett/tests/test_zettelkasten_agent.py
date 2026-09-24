@@ -3,7 +3,7 @@
 import asyncio
 import json
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -36,6 +36,7 @@ from zett_agent import (
     tool,
 )
 
+from zett._compat import UTC
 from zett.agent import (
     ContextCompositionExtension,
     ZettelkastenAgent,

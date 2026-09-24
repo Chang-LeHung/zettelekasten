@@ -1,10 +1,11 @@
 """Agent tools for durable scheduled-task management."""
 
-from typing import Annotated, Self
+from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from zett_agent import AgentExtension, AgentRunContext, ReasoningEffort, tool
 
+from ..._compat import Self
 from ...application.scheduled_tasks import scheduled_task_service
 from ...schemas import (
     AGENT_PROMPT_ACTION_KIND,

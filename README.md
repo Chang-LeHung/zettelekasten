@@ -17,7 +17,7 @@
 
 <p align="center">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-476957.svg"></a>
-  <img alt="Python 3.14" src="https://img.shields.io/badge/Python-3.14-3776AB.svg?logo=python&logoColor=white">
+  <img alt="Python 3.10-3.14" src="https://img.shields.io/badge/Python-3.10%20to%203.14-3776AB.svg?logo=python&logoColor=white">
   <img alt="Vue 3" src="https://img.shields.io/badge/Vue-3-42B883.svg?logo=vuedotjs&logoColor=white">
   <img alt="Local-first" src="https://img.shields.io/badge/storage-local--first-6B7F72.svg">
 </p>
@@ -41,7 +41,7 @@ Zett combines a streamed AI conversation, durable session context, flexible arti
 
 ## Technology
 
-- Python 3.14
+- Python 3.10 to 3.14 (development and tests default to 3.14)
 - FastAPI and Typer
 - SQLAlchemy and SQLite
 - Zett Agent with native provider SDK adapters

@@ -3,7 +3,7 @@ name = "zett-weixin"
 version = "0.1.0"
 description = "Zett channel plugin for personal WeChat, built on the agim SDK"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.10"
 dependencies = [
   "agim==0.1.0",
 ]
@@ -32,7 +32,7 @@ zett = { path = "..", editable = true }
 
 [tool.ruff]
 line-length = 120
-target-version = "py314"
+target-version = "py310"
 src = ["src", "tests"]
 
 [tool.ruff.lint]

@@ -1,13 +1,16 @@
 """SQLAlchemy persistence and atomic claims for background scheduled tasks."""
 
+from __future__ import annotations
+
 import json
-from datetime import UTC, datetime
+from datetime import datetime
 
 from sqlalchemy import delete as sql_delete
 from sqlalchemy import or_, select, update
 from sqlalchemy.exc import IntegrityError
 from zett_agent import new_uuid7
 
+from ...._compat import UTC
 from ....schemas import (
     ScheduledTaskAction,
     ScheduledTaskEntity,

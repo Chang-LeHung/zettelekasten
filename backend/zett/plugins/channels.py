@@ -1,11 +1,11 @@
 """Channel plugin contract and its plugin-facing models."""
 
 from abc import ABC, abstractmethod
-from enum import StrEnum
 from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .._compat import StrEnum
 from .contract import JsonValue, Plugin, PluginKind
 
 

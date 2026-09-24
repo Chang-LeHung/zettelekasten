@@ -1,5 +1,7 @@
 """Use-case orchestration for files shared outside Agent sessions."""
 
+from __future__ import annotations
+
 from pathlib import Path
 
 from ...infra.persistence.dao import session_asset_storage, static_asset_storage

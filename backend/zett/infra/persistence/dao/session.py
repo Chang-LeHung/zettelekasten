@@ -1,5 +1,7 @@
 """Session boundary backed exclusively by the standalone Agent database."""
 
+from __future__ import annotations
+
 from zett_agent import RawMessageRecord, SessionSummary
 
 from ....application.assets.message_files import delete_session_files
