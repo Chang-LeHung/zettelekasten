@@ -1,6 +1,6 @@
 """Card-specific finite domain values."""
 
-from enum import StrEnum
+from .._compat import StrEnum
 
 
 class CardType(StrEnum):

@@ -1,5 +1,7 @@
 """Write and read models for persistent library tags."""
 
+from __future__ import annotations
+
 from datetime import datetime
 
 from pydantic import BaseModel, Field

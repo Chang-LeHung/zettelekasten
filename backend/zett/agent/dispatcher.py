@@ -17,9 +17,10 @@ from zett_agent import (
     UserMessage,
 )
 
+from .._compat import TypeAliasType
 from ..messages import FrontMessagePart, MessagePartCodec
 
-type SSESend = Callable[[str], Awaitable[None]]
+SSESend = TypeAliasType("SSESend", Callable[[str], Awaitable[None]])
 
 _CODEC = MessagePartCodec()
 

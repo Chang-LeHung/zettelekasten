@@ -1,5 +1,7 @@
 """Adapt Zett's SQLAlchemy key-value store to the plugin KVStorage contract."""
 
+from __future__ import annotations
+
 from ...plugins import JsonValue, KVStorage
 from ..persistence.dao import KeyValueStorage, key_value_storage
 

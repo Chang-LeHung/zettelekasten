@@ -8,14 +8,15 @@ record, how inbound messages become Agent turns, and where the replies go.
 
 import asyncio
 import base64
-import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from io import BytesIO
 
 import qrcode
 from qrcode.image.svg import SvgPathImage
+from zett_agent import new_uuid7
 
+from ..._compat import UTC
 from ...infra.log import get_logger
 from ...infra.plugins import PluginRegistry, ZettKVStorage, build_registry
 from ...plugins import (
@@ -145,7 +146,7 @@ class ChannelService:
         if not payload.provider_id.strip():
             raise ValueError("Channel login requires a provider id")
         channel_type = self._resolve_channel_type(payload.channel_type)
-        login_id = str(uuid.uuid7())
+        login_id = new_uuid7()
         try:
             plugin = self._registry.create(channel_type, scope_id=login_id, kv=self._kv)
         except (PluginLoadError, KeyError) as error:

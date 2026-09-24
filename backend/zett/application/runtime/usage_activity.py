@@ -1,10 +1,13 @@
 """Application view of model usage activity for the settings page."""
 
+from __future__ import annotations
+
 from collections.abc import Iterator
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from zett_agent import ModelUsageActivityStorage
 
+from ..._compat import UTC
 from ...infra.persistence.dao import model_usage_activity_storage
 from ..api.schemas import ModelUsageActivitySeriesOut, UsageActivityDayOut
 

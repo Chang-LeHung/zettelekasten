@@ -1,12 +1,12 @@
 """Typed models for persistent background scheduled tasks."""
 
 from datetime import datetime
-from enum import StrEnum
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from croniter import croniter
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from .._compat import StrEnum
 from .common import JsonValue
 
 

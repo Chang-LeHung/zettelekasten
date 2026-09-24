@@ -3,7 +3,6 @@
 import asyncio
 import re
 from collections.abc import AsyncIterator
-from typing import Self
 
 from zett_agent import (
     Agent,
@@ -25,6 +24,7 @@ from zett_agent import (
     UsageActivityExtension,
 )
 
+from .._compat import Self
 from ..infra.agent.runtime import get_agent_runtime_storage
 from .at_command import (
     AtCommandDefinition,

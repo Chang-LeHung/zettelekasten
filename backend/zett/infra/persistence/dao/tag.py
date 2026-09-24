@@ -1,12 +1,15 @@
 """SQLAlchemy persistence for stable library tags and artifact assignments."""
 
-from datetime import UTC, datetime
+from __future__ import annotations
+
+from datetime import datetime
 
 from sqlalchemy import delete as sql_delete
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from zett_agent import new_uuid7
 
+from ...._compat import UTC
 from ....schemas import ArtifactTagEntity, TagEntity, TagListOptions, TagWrite
 from ..database import session_scope
 from ..storage import AsyncStorage

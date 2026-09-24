@@ -1,5 +1,7 @@
 """Asynchronous CRUD endpoints for encrypted model provider settings."""
 
+import asyncio
+
 from fastapi import APIRouter, HTTPException, Query, status
 from zett_agent import ProviderAuthError, ProviderResponseError
 
@@ -78,7 +80,7 @@ async def _verify_provider(entity: ProviderWrite, provider_id: str) -> None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Provider rejected the API credential") from error
     except (ProviderConnectionTestError, ProviderResponseError, ValueError) as error:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
-    except TimeoutError as error:
+    except asyncio.TimeoutError as error:
         raise HTTPException(status.HTTP_504_GATEWAY_TIMEOUT, "Provider test timed out") from error
     except Exception as error:
         logger.exception("Provider connection test failed; provider_id=%s", provider_id)

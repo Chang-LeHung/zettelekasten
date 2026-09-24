@@ -3,10 +3,11 @@ name = "agim"
 version = "0.1.0"
 description = "Standalone plugin toolkit for IM platform login, receive, and send"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.10"
 dependencies = [
   "httpx>=0.27,<1",
   "pydantic>=2.12,<2.13",
+  "typing_extensions>=4.12,<5; python_version < '3.12'",
 ]
 
 [build-system]
@@ -25,7 +26,7 @@ dev = [
 
 [tool.ruff]
 line-length = 120
-target-version = "py314"
+target-version = "py310"
 src = ["src", "tests"]
 
 [tool.ruff.lint]

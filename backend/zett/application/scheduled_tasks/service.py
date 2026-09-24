@@ -1,10 +1,13 @@
 """Framework-neutral use cases for durable scheduled task definitions."""
 
+from __future__ import annotations
+
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import datetime
 
 from zett_agent import new_uuid7
 
+from ..._compat import UTC
 from ...infra.persistence.dao import ProviderStorage, ScheduledTaskStorage, provider_storage, scheduled_task_storage
 from ...infra.scheduler import next_run_after
 from ...schemas import (

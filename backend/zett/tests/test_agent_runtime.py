@@ -5,10 +5,10 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Self
 
 import pytest
 
+from zett._compat import Self
 from zett.infra.agent import runtime as agent_runtime
 
 

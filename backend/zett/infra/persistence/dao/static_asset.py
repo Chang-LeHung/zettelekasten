@@ -1,14 +1,17 @@
 """SQLite and filesystem storage for session-independent uploaded files."""
 
+from __future__ import annotations
+
 import hashlib
 import json
 import re
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
 from sqlalchemy import select
 from zett_agent import new_uuid7
 
+from ...._compat import UTC
 from ....application.files.object_store import static_asset_key
 from ....schemas import StaticAssetCreate, StaticAssetEntity, StaticAssetListOptions
 from ...files.object_store import get_object_store

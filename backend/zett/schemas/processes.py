@@ -1,9 +1,10 @@
 """Typed heartbeat and health models for background Zett processes."""
 
 from datetime import datetime
-from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from .._compat import StrEnum
 
 
 class ProcessRole(StrEnum):

@@ -1,12 +1,15 @@
+from __future__ import annotations
+
 import json
-from datetime import UTC, datetime
-from typing import cast
+from datetime import datetime
+from typing import TypeVar, cast
 
 from pydantic import TypeAdapter
 from sqlalchemy import Float, String, or_, select, text
 from sqlalchemy import delete as sql_delete
 from zett_agent import new_uuid7
 
+from ...._compat import UTC
 from ....application.files.object_store import ObjectKey
 from ....schemas import (
     AgentArtifactEntity,
@@ -41,8 +44,10 @@ from ..tables import (
 
 CONTENT_ADAPTER = TypeAdapter(ArtifactContent)
 
+JSONValueT = TypeVar("JSONValueT")
 
-def _json_load[JSONValueT](value: str | None, fallback: JSONValueT) -> JSONValueT:
+
+def _json_load(value: str | None, fallback: JSONValueT) -> JSONValueT:
     """Decode persisted JSON while preserving the caller's fallback type."""
     try:
         return cast(JSONValueT, json.loads(value)) if value else fallback

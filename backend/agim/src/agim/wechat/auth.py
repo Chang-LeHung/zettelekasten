@@ -90,7 +90,7 @@ class WeChatAuthClient:
             )
             response.raise_for_status()
             payload: Any = response.json()
-        except httpx.TimeoutException, httpx.NetworkError:
+        except (httpx.TimeoutException, httpx.NetworkError):
             return LoginState(status=LoginStatus.PENDING, message="Waiting for the WeChat QR code to be scanned.")
         except httpx.HTTPError as error:
             return LoginState(

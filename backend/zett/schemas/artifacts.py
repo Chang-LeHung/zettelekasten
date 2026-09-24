@@ -1,11 +1,11 @@
 """Write and read models for durable session artifacts."""
 
 from datetime import datetime
-from enum import StrEnum
-from typing import Annotated, Literal, Self
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator, model_validator
 
+from .._compat import Self, StrEnum
 from .cards import CardType, normalize_card_type
 from .common import ImageUrl, NonBlankName500
 from .tags import ArtifactTagEntity, SuggestedTag

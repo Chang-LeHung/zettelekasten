@@ -3,9 +3,10 @@
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from time import monotonic
 
+from ..._compat import UTC, timeout
 from ...schemas import (
     ScheduledTaskEntity,
     ScheduledTaskRunStatus,
@@ -161,13 +162,13 @@ class WorkerRunner:
                     logger.exception("Worker scan failed; retrying in %.1f seconds", backoff)
                     try:
                         await asyncio.wait_for(self._stop_event.wait(), timeout=backoff)
-                    except TimeoutError:
+                    except asyncio.TimeoutError:
                         pass
                     backoff = min(self.max_backoff_seconds, max(self.error_backoff_seconds, backoff * 2))
                     continue
                 try:
                     await asyncio.wait_for(self._stop_event.wait(), timeout=self.poll_interval)
-                except TimeoutError:
+                except asyncio.TimeoutError:
                     pass
         finally:
             await self.stop()
@@ -266,7 +267,7 @@ class WorkerRunner:
                 )
                 raise LookupError(f"No action executor registered for {task.action.kind!r}")
             payload = executor.validate_payload(task.action.payload)
-            async with asyncio.timeout(task.timeout_seconds):
+            async with timeout(task.timeout_seconds):
                 result: ActionResult = await executor.execute(context, payload)
             status = (
                 ScheduledTaskRunStatus.SUCCEEDED
@@ -296,7 +297,7 @@ class WorkerRunner:
                     task.action.kind,
                     duration_ms,
                 )
-        except TimeoutError as error:
+        except asyncio.TimeoutError as error:
             logger.error(
                 "Scheduled run timed out; task_id=%s run_id=%s action_kind=%s timeout_seconds=%d",
                 task.id,

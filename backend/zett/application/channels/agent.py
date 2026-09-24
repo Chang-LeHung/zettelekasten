@@ -6,12 +6,12 @@ out of a platform. How a message becomes an Agent turn is a host concern.
 
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
-from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
 from zett_agent import ReasoningEffort
 
+from ..._compat import StrEnum
 from ...infra.log import get_logger
 from ...infra.persistence.dao import provider_storage, session_storage
 from ...schemas import AgentSessionCreate, SessionType

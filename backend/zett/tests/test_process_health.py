@@ -2,11 +2,12 @@
 
 import asyncio
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
 
+from zett._compat import UTC
 from zett.application.health import (
     ProcessHealthService,
     ProcessHeartbeatRegistry,

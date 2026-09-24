@@ -1,8 +1,9 @@
 """Health projection for scheduler and worker heartbeat records."""
 
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import datetime
 
+from ..._compat import UTC
 from ...config import settings
 from ...schemas import (
     ProcessHealthReport,

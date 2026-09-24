@@ -1,10 +1,10 @@
 """Typed models shared by every agim client."""
 
-from enum import StrEnum
-
 from pydantic import BaseModel, ConfigDict, Field
 
-type JsonValue = str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"]
+from ._compat import StrEnum, TypeAliasType
+
+JsonValue = TypeAliasType("JsonValue", "str | int | float | bool | None | list[JsonValue] | dict[str, JsonValue]")
 
 
 class LoginStatus(StrEnum):

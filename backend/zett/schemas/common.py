@@ -5,7 +5,9 @@ from urllib.parse import urlsplit
 
 from pydantic import AfterValidator, StringConstraints
 
-type JsonValue = None | bool | int | float | str | list[JsonValue] | dict[str, JsonValue]
+from .._compat import TypeAliasType
+
+JsonValue = TypeAliasType("JsonValue", "bool | int | float | str | None | list[JsonValue] | dict[str, JsonValue]")
 
 
 def validate_http_url(value: str) -> str:

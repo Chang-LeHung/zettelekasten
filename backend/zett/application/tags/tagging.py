@@ -1,5 +1,7 @@
 """Application services for persistent library classification."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 from ...infra.persistence.dao import artifact_storage, tag_storage

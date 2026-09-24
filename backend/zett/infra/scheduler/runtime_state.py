@@ -7,9 +7,10 @@ import socket
 import tempfile
 import time
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
+from ..._compat import UTC
 from ...config import settings
 from ...schemas import ProcessRole, ServerRuntimeState
 from ..log import get_logger
@@ -56,7 +57,7 @@ class RuntimeStateStore:
             payload = json.loads(self.path.read_text(encoding="utf-8"))
         except FileNotFoundError:
             return None
-        except OSError, json.JSONDecodeError:
+        except (OSError, json.JSONDecodeError):
             logger.exception("Could not read runtime state; path=%s", self.path)
             return None
         try:

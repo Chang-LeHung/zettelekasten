@@ -1,5 +1,7 @@
 """Zett channel orchestration over the plugin mechanism."""
 
+from __future__ import annotations
+
 import asyncio
 from collections.abc import AsyncIterator
 

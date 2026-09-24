@@ -8,6 +8,7 @@ from uuid import UUID, uuid5
 
 from zett_agent import AgentEvent
 
+from .._compat import TypeAliasType
 from ..application.agent.turns import AgentTurn
 
 SLASH_COMMAND_NAMESPACE = UUID("3c9d2c8b-9f14-51a9-a759-a8c9a3bf4f8a")
@@ -40,7 +41,9 @@ class SlashCommandRegistration:
     handler: SlashCommandHandler
 
 
-type SlashCommandHandler = Callable[[SlashCommandInvocation], AsyncIterator[AgentEvent]]
+SlashCommandHandler = TypeAliasType(
+    "SlashCommandHandler", Callable[[SlashCommandInvocation], AsyncIterator[AgentEvent]]
+)
 
 
 def stable_slash_command_id(*, owner: str, command_type: str, name: str) -> str:

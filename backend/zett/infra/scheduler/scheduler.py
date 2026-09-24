@@ -3,10 +3,11 @@
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 from zett_agent import new_uuid7
 
+from ..._compat import UTC, TypeAliasType
 from ...schemas import (
     CronSchedule,
     ScheduledTaskEntity,
@@ -20,7 +21,7 @@ from .schedule import next_run_after
 
 logger = get_logger(__name__)
 
-type NextOccurrence = Callable[[CronSchedule, datetime], datetime]
+NextOccurrence = TypeAliasType("NextOccurrence", Callable[[CronSchedule, datetime], datetime])
 
 #: A queued scheduled run owns its task lease for the execution timeout plus
 #: this startup window. The worker extends the same lease when it begins.
@@ -192,13 +193,13 @@ class SchedulerRunner:
                     logger.exception("Scheduler scan failed; retrying in %.1f seconds", backoff)
                     try:
                         await asyncio.wait_for(self._stop_event.wait(), timeout=backoff)
-                    except TimeoutError:
+                    except asyncio.TimeoutError:
                         pass
                     backoff = min(self.max_backoff_seconds, max(self.error_backoff_seconds, backoff * 2))
                     continue
                 try:
                     await asyncio.wait_for(self._stop_event.wait(), timeout=self.poll_interval)
-                except TimeoutError:
+                except asyncio.TimeoutError:
                     pass
         finally:
             self.stop()

@@ -3,13 +3,14 @@
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
+from ._compat import UTC
 from .application.api.router import api_router
 from .application.channels import channel_service
 from .application.health import ProcessSupervisor, process_heartbeat_registry

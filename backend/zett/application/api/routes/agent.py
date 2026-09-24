@@ -270,7 +270,7 @@ def _stream_response(
                         # client to drain the remaining stream, which may be slow.
                         await active_requests.remove(request.config)
                     yield encode_sse(event.type.value, event_payload(event))
-        except asyncio.CancelledError, GeneratorExit:
+        except (asyncio.CancelledError, GeneratorExit):
             # Disconnects and explicit iterator closure are control flow, not
             # application errors: never attempt to yield an SSE error frame.
             raise

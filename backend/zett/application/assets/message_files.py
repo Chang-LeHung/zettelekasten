@@ -12,10 +12,11 @@ the data URL, and these files are the model-facing handle for the same bytes.
 
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from mimetypes import guess_extension
 from pathlib import Path
 
+from ..._compat import UTC
 from ...infra.files.object_store import get_object_store
 from ...messages import FrontUserMessage, MessagePartCodec
 from ..files.object_store import session_directory_key, session_upload_key

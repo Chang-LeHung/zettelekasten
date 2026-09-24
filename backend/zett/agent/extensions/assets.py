@@ -2,11 +2,12 @@
 
 import base64
 import binascii
-from typing import Annotated, Self
+from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from zett_agent import AgentExtension, AgentRunContext, tool
 
+from ..._compat import Self
 from ...config import settings
 from ...infra.persistence.dao import session_asset_storage
 from ...schemas import (

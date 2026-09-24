@@ -1,10 +1,10 @@
 """Write and read models for session and global assets."""
 
 from datetime import datetime
-from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
+from .._compat import StrEnum
 from .common import HttpUrl, NonBlankName500
 
 

@@ -1,13 +1,16 @@
 """Versioned JSON key-value storage implemented with SQLAlchemy."""
 
+from __future__ import annotations
+
 import asyncio
 import json
-from datetime import UTC, datetime
+from datetime import datetime
 from weakref import WeakKeyDictionary
 
 from sqlalchemy import select
 from zett_agent import new_uuid7
 
+from ...._compat import UTC
 from ....schemas import JsonValue, KeyValueRecord
 from ..database import session_scope
 from ..tables import KeyValueRow

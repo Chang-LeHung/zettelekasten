@@ -1,5 +1,7 @@
 """Persist and reconstruct the latest context-composition view per session."""
 
+from __future__ import annotations
+
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from zett_agent import ModelRequest, SQLiteSessionStorage, SystemMessage
 

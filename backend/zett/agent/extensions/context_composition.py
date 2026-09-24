@@ -20,11 +20,15 @@ from zett_agent import (
     UserMessage,
 )
 
+from ..._compat import TypeAliasType
+
 CONTEXT_COMPOSITION_EVENT = "context_composition"
 _ENCODING = tiktoken.get_encoding("o200k_base")
 _CATEGORIES = ("system_prompt", "tool_prompt", "tool_output", "user", "assistant")
 _IMAGE_TOKEN_ESTIMATE = 1_100
-type ContextCompositionRecorder = Callable[[str, dict[str, float]], Awaitable[None]]
+ContextCompositionRecorder = TypeAliasType(
+    "ContextCompositionRecorder", Callable[[str, dict[str, float]], Awaitable[None]]
+)
 
 
 def _content_token_count(content: object) -> int:

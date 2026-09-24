@@ -144,7 +144,7 @@ def _run_command(command: list[str], *, timeout: float = 2.0) -> str | None:
             text=True,
             timeout=timeout,
         )
-    except OSError, subprocess.SubprocessError:
+    except (OSError, subprocess.SubprocessError):
         return None
     return result.stdout
 

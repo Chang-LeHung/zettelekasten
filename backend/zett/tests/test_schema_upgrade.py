@@ -1,9 +1,10 @@
 """Idempotent schema upgrades for databases created by an older version."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 from sqlalchemy import text
 
+from zett._compat import UTC
 from zett.infra.persistence import database
 from zett.infra.persistence.dao import scheduled_task_storage
 from zett.infra.persistence.database import init_db, session_scope

@@ -1,12 +1,15 @@
 """Generic plugin contracts shared by every Zett plugin kind."""
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from dataclasses import dataclass
-from enum import StrEnum
 from typing import ClassVar
 
-type JsonValue = str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"]
+from .._compat import StrEnum, TypeAliasType
+
+JsonValue = TypeAliasType("JsonValue", "str | int | float | bool | None | list[JsonValue] | dict[str, JsonValue]")
 
 
 class PluginKind(StrEnum):
