@@ -1,0 +1,4 @@
+# Keep the checkout byte-identical on every platform: Ruff formats with LF and
+# the Python suites compare file contents, so a Windows clone must not rewrite
+# line endings on checkout.
+* text=auto eol=lf
