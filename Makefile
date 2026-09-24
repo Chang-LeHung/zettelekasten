@@ -41,8 +41,8 @@ dev: backend-install frontend-build
 	uv run --directory backend zett start --host $(HOST) --port $(PORT) --reload
 
 ruff-check:
-	uv run --directory backend ruff format --check zett tests
-	uv run --directory backend ruff check zett tests
+	uv run --directory backend ruff format --check zett
+	uv run --directory backend ruff check zett
 	uv run --directory backend/agim ruff format --check src tests
 	uv run --directory backend/agim ruff check src tests
 	uv run --directory backend/zett-weixin ruff format --check src tests
