@@ -182,9 +182,9 @@ HTTP and CLI interfaces call application services rather than storage implementa
 
 The Vue frontend keeps all backend calls in typed clients under `frontend/src/api`. Components do not hard-code backend URLs.
 
-The standalone [`zett-agent`](backend/zett-agent) package powers Zett conversations, tool execution, and streaming. Its current local development version uses direct message fields and a small model/tool loop. Zett passes prepared history from its context snapshot and raw-log tail, excluding the current input. Tools are supplied directly to the agent, with optional guidelines appended to system instructions. Title generation and compaction use schema-bound tool responses validated by Pydantic. This simplified API is not yet published; development and `make install` use the local `zett-agent` package.
+The standalone [`zett-agent`](https://github.com/Chang-LeHung/zett-agent) package powers Zett conversations, tool execution, and streaming. It lives in its own repository and is installed from PyPI (`zett-agent==0.1.0`), not from a checkout inside this repository. It uses direct message fields and a small model/tool loop: Zett passes prepared history from its context snapshot and raw-log tail, excluding the current input. Tools are supplied directly to the agent, with optional guidelines appended to system instructions. Title generation and compaction use schema-bound tool responses validated by Pydantic.
 
-The standalone [`zettcode`](backend/zettcode) package is the terminal coding agent. It composes the same agent runtime with an internally implemented differential-rendering TUI, keeps its own configuration and session database under `~/.zettcode`, and is verified by `make zettcode-check`.
+The terminal coding agent, [`zettcode`](https://github.com/Chang-LeHung/zettcode), also lives in its own repository and is published as the `zettcode` package. It composes the same agent runtime with an internally implemented differential-rendering TUI and keeps its own configuration and session database under `~/.zettcode`; it is no longer part of this repository.
 
 ## Agent Sessions and Context
 

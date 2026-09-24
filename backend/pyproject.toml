@@ -11,7 +11,7 @@ dependencies = [
   "httpx>=0.27,<1",
   "sqlalchemy>=2.0,<3",
   "tiktoken>=0.12,<1",
-  "zett-agent==0.2.0.dev0",
+  "zett-agent==0.1.0",
   "croniter>=6,<7",
   "agim==0.1.0",
   "zett-weixin==0.1.0",
@@ -29,7 +29,6 @@ packages = ["zett"]
 package = true
 
 [tool.uv.sources]
-zett-agent = { path = "zett-agent", editable = true }
 agim = { path = "agim", editable = true }
 zett-weixin = { path = "zett-weixin", editable = true }
 

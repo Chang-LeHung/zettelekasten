@@ -319,9 +319,10 @@ uv sync --directory backend
 uv run --directory backend zett start --reload
 ```
 
-`make check` runs Ruff, the backend test suite, the zett-agent and zettcode
-checks, the Sphinx documentation check, frontend tests, TypeScript
-typechecking, and the production frontend build.
+`make check` runs Ruff, the backend, agim, and zett-weixin test suites, frontend
+tests, TypeScript typechecking, and the production frontend build. The
+`zett-agent` runtime and its Sphinx documentation live in their own repository
+and are covered by that repository's checks.
 
 Tests create temporary SQLite databases and asset directories and remove them
 afterwards; they never touch the data under `~/.zettelekasten`.

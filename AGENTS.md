@@ -81,7 +81,7 @@
 - Cards, articles, images, slide decks, and LaTeX PDFs are Artifact content variants, not separate library resources.
 - Tag taxonomy is a first-class boundary again: write through `TagService` so paths stay normalized and missing ancestors are created, and remove `artifact_tags` rows explicitly when an artifact is deleted. Suggested tags stay proposals until a save confirms them.
 - Do not reintroduce Workspace or permanent Resource adapters, legacy APIs, or migration code without a new requirement.
-- Changing the standalone zett-agent package is allowed, including for runtime behavior such as steering. Keep its own Ruff and pytest checks green (`make zett-agent-check`) and keep Zett business vocabulary out of it.
+- Zett consumes the published `zett-agent` package (`zett-agent==0.1.0`) instead of a checkout inside `backend/`. Runtime changes, including steering behavior, belong in the zett-agent repository, where they must stay green and be released before Zett can pick them up; do not vendor agent code back into this repository.
 - Serve the frontend and the API from `zett.main`; new behavior is added as application services and routes, not as compatibility shims.
 - Asset and Static Asset metadata, Artifact records, Tag records, and encrypted Provider configurations use SQLAlchemy in the application database.
 - Persist every file location as an `ObjectKey` relative to `settings.storage_root`; never store absolute paths or entity-specific content URLs. `ObjectStore` owns path containment, filesystem access, and unified `/api/files/{key}` URL generation.
