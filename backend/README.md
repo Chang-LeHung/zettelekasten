@@ -205,6 +205,10 @@ instead of at each call site. A turn is single use, so prompting it twice raises
 `TurnAlreadyPromptedError` instead of starting a second request against the same
 reserved session.
 
+Every run declares its session id as the provider's prompt cache key, so the
+OpenAI-compatible adapters send `prompt_cache_key` and every step of one
+conversation routes to the same cached prefix.
+
 ## Scheduled tasks
 
 Scheduled tasks are persisted in `zett.db`. The Web process only creates,
