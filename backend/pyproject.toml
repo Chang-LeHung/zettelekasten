@@ -6,6 +6,8 @@ dependencies = [
   # Shims for the standard-library features that landed after Python 3.10.
   "async_timeout>=4,<6; python_version < '3.11'",
   "typing_extensions>=4.12,<5; python_version < '3.12'",
+  # Windows ships no IANA time zone database, so zoneinfo needs the package.
+  "tzdata>=2025.2,<2027; sys_platform == 'win32'",
   "fastapi>=0.115,<1",
   "cryptography>=43,<45",
   "pydantic>=2.12,<2.13",

@@ -69,6 +69,8 @@ def test_terminate_process_escalates_only_when_forced_on_posix(monkeypatch: pyte
     calls: list[tuple[int, int]] = []
     monkeypatch.setattr(process_platform, "WINDOWS", False)
     monkeypatch.setattr(process_platform.os, "kill", lambda pid, sig: calls.append((pid, sig)))
+    # Windows has no SIGKILL, so the forced-POSIX branch needs the signal here.
+    monkeypatch.setattr(signal, "SIGKILL", 9, raising=False)
 
     process_platform.terminate_process(4242, force=False)
     process_platform.terminate_process(4242, force=True)
@@ -101,7 +103,10 @@ def test_restrict_file_mode_avoids_fchmod_on_windows(monkeypatch: pytest.MonkeyP
 def test_restrict_file_mode_sets_owner_only_on_posix(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[tuple[int, int]] = []
     monkeypatch.setattr(process_platform, "WINDOWS", False)
-    monkeypatch.setattr(process_platform.os, "fchmod", lambda descriptor, mode: calls.append((descriptor, mode)))
+    # Windows has no os.fchmod, so the forced-POSIX branch needs the helper here.
+    monkeypatch.setattr(
+        process_platform.os, "fchmod", lambda descriptor, mode: calls.append((descriptor, mode)), raising=False
+    )
 
     process_platform.restrict_file_mode(7)
 

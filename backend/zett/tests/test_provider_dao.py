@@ -1,6 +1,7 @@
 """Encrypted provider storage behavior on an isolated SQLite database."""
 
 import stat
+import sys
 from uuid import UUID
 
 import pytest
@@ -46,7 +47,9 @@ async def test_provider_crud_encrypts_credentials_and_returns_safe_models():
     assert connection.api_key is not None
     assert connection.api_key.get_secret_value() == "test-secret-key"
     assert connection.metadata == {"reasoning": True}
-    assert stat.S_IMODE(settings.provider_key_path.stat().st_mode) == 0o600
+    if sys.platform != "win32":
+        # Owner-only permissions are a POSIX promise; Windows keeps its own ACLs.
+        assert stat.S_IMODE(settings.provider_key_path.stat().st_mode) == 0o600
 
     updated = await provider_storage.update(
         created.id,
