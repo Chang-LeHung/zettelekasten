@@ -65,6 +65,17 @@ class StreamingModel:
         )
 
 
+class PromptCacheModel:
+    """Record the prompt cache key each request declares."""
+
+    def __init__(self) -> None:
+        self.cache_keys: list[str | None] = []
+
+    async def stream(self, request: ModelRequest) -> AsyncIterator[ModelEvent]:
+        self.cache_keys.append(request.cache_key)
+        yield ModelEvent.completed(ModelResponse(AssistantMessage(content="Hi")))
+
+
 def decode_frame(frame: str) -> tuple[str, dict[str, object]]:
     """Decode the strict two-line JSON frame emitted by the dispatcher."""
     event_line, data_line = frame.strip().splitlines()
@@ -163,6 +174,18 @@ async def test_run_returns_answer_after_all_frames_are_sent():
     answer = await agent.client(ZettelkastenEventDispatcher(send)).run("Hello", model=StreamingModel())
     assert answer.content == "Hi"
     assert frames[-1] == AgentEventType.RUN_COMPLETED.value
+
+
+async def test_agent_declares_the_session_as_the_prompt_cache_key() -> None:
+    async def discard(frame: str) -> None:
+        del frame
+
+    model = PromptCacheModel()
+    agent = await initialized_agent(ZettelkastenAgentConfig("cache-key-session"))
+    answer = await agent.client(ZettelkastenEventDispatcher(discard)).run("Hello", model=model)
+
+    assert answer.content == "Hi"
+    assert model.cache_keys == ["cache-key-session"]
 
 
 async def test_send_failure_propagates_and_stops_the_agent_stream():
