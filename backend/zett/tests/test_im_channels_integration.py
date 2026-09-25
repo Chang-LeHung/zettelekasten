@@ -20,7 +20,7 @@ from zett.application.channels.agent import (
 )
 from zett.application.channels.service import ChannelService
 from zett.application.channels.store import ChannelDraft, ChannelStore
-from zett.infra.persistence.dao import provider_storage
+from zett.infra.persistence.dao import provider_storage, session_storage
 from zett.infra.plugins import PluginRegistry, ZettKVStorage
 from zett.main import app
 from zett.plugins import (
@@ -33,10 +33,13 @@ from zett.plugins import (
     PluginError,
 )
 from zett.schemas import (
+    SESSION_TYPE_TO_CODE,
     ChannelLogin,
     ChannelLoginStart,
     ProviderType,
     ProviderWrite,
+    SessionListOptions,
+    SessionType,
 )
 
 
@@ -214,6 +217,39 @@ async def test_zett_im_agent_client_streams_normalized_events(monkeypatch) -> No
     assert events[0].session_id
     assert events[-1].type is AgentEventKind.COMPLETED
     assert events[-1].content == "Agent reply"
+
+
+async def test_zett_im_agent_client_opens_a_channel_session(monkeypatch) -> None:
+    """An IM conversation is a channel session, not one of the user's own."""
+    provider_id = await _provider()
+
+    async def fake_run(**kwargs) -> str:
+        return "Agent reply"
+
+    monkeypatch.setattr(im_agent_module, "run_headless_prompt", fake_run)
+    events = [
+        event
+        async for event in ZettIMAgentClient().stream_turn(
+            AgentTurnRequest(
+                request_id="event-1",
+                provider_id=provider_id,
+                message="hello",
+                reasoning_effort="medium",
+                allow_coding=False,
+                metadata={"channel_name": "WeChat"},
+            )
+        )
+    ]
+
+    session_id = events[0].session_id
+    assert session_id is not None
+    session = await session_storage.get(session_id)
+    assert session is not None
+    assert session.session_type == SESSION_TYPE_TO_CODE[SessionType.CHANNEL]
+    # The conversation sidebar asks only for normal sessions, so a channel chat stays out of it.
+    assert await session_storage.list(SessionListOptions(session_types=(SessionType.NORMAL,))) == []
+    listed = await session_storage.list(SessionListOptions(session_types=(SessionType.CHANNEL,)))
+    assert [item.session_id for item in listed] == [session_id]
 
 
 async def test_channel_routes_use_the_plugin_mechanism(monkeypatch) -> None:

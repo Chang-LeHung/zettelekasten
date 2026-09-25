@@ -13,7 +13,6 @@ from zett_agent import (
     ModelEvent,
     ModelRequest,
     ModelResponse,
-    SessionTypeCode,
     UserMessage,
     new_uuid7,
 )
@@ -37,6 +36,7 @@ from zett.infra.scheduler import agent_prompt as scheduled_agent_module
 from zett.infra.scheduler.agent_prompt import scheduled_agent_executor
 from zett.main import app
 from zett.schemas import (
+    SESSION_TYPE_TO_CODE,
     CronSchedule,
     ProviderType,
     ProviderWrite,
@@ -48,6 +48,7 @@ from zett.schemas import (
     ScheduledTaskRunStatus,
     ScheduledTaskTrigger,
     ScheduledTaskWrite,
+    SessionType,
 )
 
 
@@ -516,7 +517,7 @@ async def test_agent_prompt_executor_creates_a_fresh_noninteractive_session(monk
     assert isinstance(session_id, str)
     session = await session_storage.get(session_id)
     assert session is not None and session.title == "Scheduled title"
-    assert session.session_type == int(SessionTypeCode.AUTOMATION)
+    assert session.session_type == SESSION_TYPE_TO_CODE[SessionType.SCHEDULED]
     records = await session_storage.list_raw_messages(session_id)
     dialogue = [record.message for record in records if isinstance(record.message, UserMessage | AssistantMessage)]
     assert [message.text if isinstance(message, UserMessage) else message.content for message in dialogue] == [

@@ -604,7 +604,7 @@ export interface AgentSession {
   assets: SessionAsset[]
 }
 
-export type SessionType = 'normal' | 'scheduled'
+export type SessionType = 'normal' | 'scheduled' | 'channel'
 
 export interface SessionModelPreference {
   provider_id: string
