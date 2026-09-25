@@ -75,6 +75,16 @@ or a shell command. They are not Session Assets: nothing is listed by
 `list_assets`, and deleting the session removes the whole session directory, so
 uploads no row points at cannot leak.
 
+`AssetExtension` exposes the session-scoped tools `create_asset`, `get_asset`,
+`update_asset`, `delete_asset`, and `list_assets`; importing a static asset into
+a conversation remains the user's action. Publishing a file to the global Static
+Assets library is an HTTP call rather than a tool argument:
+`StaticAssetExtension` adds one system message naming
+`POST /api/assets/upload?name=...`, so the model uploads bytes it already wrote
+with a shell command instead of moving a whole binary through the model context
+as Base64. The message names the endpoint and its contract only, and a wildcard
+bind address is reported as loopback, so a shell command can dial it.
+
 Artifact creation writes the supplied content directly to `content_json`
 because there is no existing user version to protect. Later model updates write
 only `draft_content_json`, and the tool list has no save operation. The
@@ -104,6 +114,13 @@ conversation UI, previews, search, and the draft-versus-published diff, and
 `ArtifactPruner` returns `published_content` and `draft_content` previews
 together so a querying model can compare what the user kept with what it
 proposes.
+
+The artifact body syntax lives in a built-in skill rather than in the tool
+docstrings: `zett/infra/skills/builtin.py` holds the fixed
+`zett-artifact-syntax` content, startup writes it into the user skill root when
+the file is missing and never rewrites an edited file, and the artifact
+guidelines tell the model to read that skill with `read_skill` before writing or
+changing a card, article, image, slide, or LaTeX PDF body.
 
 A `latex_pdf` artifact owns a project directory instead of an inline body, so
 the Agent owns that project's git history: it initializes the repository, writes
@@ -275,6 +292,7 @@ transactions. The Web process writes `logs/zett.log`, the scheduler writes
 ├── agent.db        sessions, immutable raw messages, context snapshots
 ├── assets/         `sessions/<session-id>/` binaries and `static/` uploads
 ├── artifacts/      one git-tracked directory per session and LaTeX artifact project
+├── skills/         user-level skills, including the built-in `zett-artifact-syntax` written at startup
 ├── provider.key    local key encrypting provider credentials
 ├── runtime.json    active server and supervised child process state
 └── logs/           rotating log files
@@ -355,3 +373,10 @@ afterwards; they never touch the data under `~/.zettelekasten`.
 Routes mount the compiled Vue application from `zett/static` at `/`. The UI
 reaches the backend only through typed clients in `frontend/src/api`, so a new
 or changed route belongs in the same change as its client.
+
+The conversation workspace lays out session assets, the chat, and the artifact
+panel as three columns. The assets column can be hidden with the eye button in
+its header, which stores the choice in `localStorage` under
+`zett.assets-pane-hidden` through `frontend/src/utils/paneVisibility.ts`; the
+chat header then offers a button that brings the column back. Panel visibility
+is client state and never a backend flag.
