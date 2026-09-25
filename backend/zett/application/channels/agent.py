@@ -74,7 +74,7 @@ class ZettIMAgentClient(AgentClient):
             session = await session_storage.create(
                 AgentSessionCreate(
                     title=f"{title}: {request.message.strip()[:60]}"[:200],
-                    session_type=SessionType.NORMAL,
+                    session_type=SessionType.CHANNEL,
                 )
             )
             session_id = session.session_id

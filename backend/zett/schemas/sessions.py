@@ -1,7 +1,6 @@
 """Write models for persisted Agent conversations."""
 
 from pydantic import BaseModel, Field
-from zett_agent import SessionTypeCode
 
 from .._compat import StrEnum
 from .common import NonBlankName200
@@ -12,23 +11,25 @@ class SessionType(StrEnum):
 
     NORMAL = "normal"
     SCHEDULED = "scheduled"
+    CHANNEL = "channel"
 
 
+#: Persisted integer codes for ``agent_sessions.session_type``. zett-agent stores
+#: the integer and owns neither the names nor their meaning, so the codes and
+#: their stories belong to the application.
 SESSION_TYPE_TO_CODE = {
-    SessionType.NORMAL: SessionTypeCode.STANDARD,
-    SessionType.SCHEDULED: SessionTypeCode.AUTOMATION,
+    SessionType.NORMAL: 0,
+    SessionType.SCHEDULED: 1,
+    SessionType.CHANNEL: 2,
 }
-CODE_TO_SESSION_TYPE = {
-    SessionTypeCode.STANDARD: SessionType.NORMAL,
-    SessionTypeCode.AUTOMATION: SessionType.SCHEDULED,
-}
+CODE_TO_SESSION_TYPE = {code: name for name, code in SESSION_TYPE_TO_CODE.items()}
 
 
 def session_type_from_code(value: int) -> SessionType:
     """Map one persisted integer code to its application-facing name."""
     try:
-        return CODE_TO_SESSION_TYPE[SessionTypeCode(value)]
-    except ValueError as error:
+        return CODE_TO_SESSION_TYPE[value]
+    except KeyError as error:
         raise ValueError(f"Unknown session_type code: {value}") from error
 
 

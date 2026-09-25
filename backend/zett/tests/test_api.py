@@ -912,10 +912,15 @@ async def test_session_type_is_exposed_and_filterable() -> None:
         scheduled = await session_storage.create(
             AgentSessionCreate(title="Scheduled run", session_type=SessionType.SCHEDULED)
         )
+        channel = await session_storage.create(
+            AgentSessionCreate(title="WeChat: hello", session_type=SessionType.CHANNEL)
+        )
 
         assert client.get(f"/api/agent/sessions/{normal_id}").json()["type"] == "normal"
         assert client.get(f"/api/agent/sessions/{scheduled.session_id}").json()["type"] == "scheduled"
+        assert client.get(f"/api/agent/sessions/{channel.session_id}").json()["type"] == "channel"
         assert {item["id"] for item in client.get("/api/agent/sessions?types=normal").json()} == {normal_id}
         assert {item["id"] for item in client.get("/api/agent/sessions?types=scheduled").json()} == {
             scheduled.session_id
         }
+        assert {item["id"] for item in client.get("/api/agent/sessions?types=channel").json()} == {channel.session_id}
