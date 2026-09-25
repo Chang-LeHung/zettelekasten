@@ -1,11 +1,11 @@
-"""Platform-specific process primitives for the scheduler and CLI.
+"""Platform-specific process primitives for the scheduler, CLI, and helpers.
 
 Everything that differs between POSIX and Windows lives here so the runtime
-state machine and the process launcher stay platform agnostic. The Windows
-branches follow the documented behaviour of ``os.kill``, which maps to
-``TerminateProcess`` for any signal other than ``CTRL_C_EVENT`` and
-``CTRL_BREAK_EVENT``. They are unit tested by forcing the platform flag because
-the project does not run its tests on Windows yet.
+state machine, the process launcher, and synchronous helpers such as ``git``
+stay platform agnostic. The Windows branches follow the documented behaviour of
+``os.kill``, which maps to ``TerminateProcess`` for any signal other than
+``CTRL_C_EVENT`` and ``CTRL_BREAK_EVENT``. They are unit tested by forcing the
+platform flag; CI also runs the full suite on Windows.
 """
 
 import os
@@ -19,6 +19,9 @@ WINDOWS = sys.platform == "win32"
 # Windows refuses the call instead of ignoring an unsupported flag, so the
 # constant is only read on the Windows branch.
 CREATE_NEW_PROCESS_GROUP = 0x00000200
+# A console-subsystem helper started by a parent that owns no console would
+# otherwise open its own console window.
+CREATE_NO_WINDOW = 0x08000000
 
 _STILL_ACTIVE = 259
 _PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
@@ -33,6 +36,18 @@ def spawn_kwargs() -> dict[str, Any]:
     if WINDOWS:
         return {"creationflags": CREATE_NEW_PROCESS_GROUP}
     return {"start_new_session": True}
+
+
+def helper_process_kwargs() -> dict[str, Any]:
+    """Return ``subprocess`` kwargs for one short-lived helper process.
+
+    Helpers such as ``git`` are started synchronously inside the console the
+    server already owns, so POSIX needs nothing. On Windows the child is started
+    windowless instead of opening a second console window.
+    """
+    if WINDOWS:
+        return {"creationflags": CREATE_NO_WINDOW}
+    return {}
 
 
 def is_process_running(pid: int) -> bool:
@@ -152,6 +167,7 @@ def _run_command(command: list[str], *, timeout: float = 2.0) -> str | None:
 __all__ = [
     "WINDOWS",
     "command_line",
+    "helper_process_kwargs",
     "is_process_running",
     "pids_listening_on",
     "restrict_file_mode",

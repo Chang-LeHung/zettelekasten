@@ -32,6 +32,18 @@ def test_spawn_kwargs_use_a_process_group_on_windows(monkeypatch: pytest.MonkeyP
     assert process_platform.spawn_kwargs() == {"creationflags": process_platform.CREATE_NEW_PROCESS_GROUP}
 
 
+def test_helper_process_kwargs_stay_plain_on_posix(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(process_platform, "WINDOWS", False)
+
+    assert process_platform.helper_process_kwargs() == {}
+
+
+def test_helper_process_kwargs_hide_the_console_on_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(process_platform, "WINDOWS", True)
+
+    assert process_platform.helper_process_kwargs() == {"creationflags": process_platform.CREATE_NO_WINDOW}
+
+
 def test_is_process_running_rejects_sentinel_pids() -> None:
     assert process_platform.is_process_running(0) is False
     assert process_platform.is_process_running(1) is False
