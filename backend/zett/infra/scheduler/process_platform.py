@@ -5,7 +5,7 @@ state machine, the process launcher, and synchronous helpers such as ``git``
 stay platform agnostic. The Windows branches follow the documented behaviour of
 ``os.kill``, which maps to ``TerminateProcess`` for any signal other than
 ``CTRL_C_EVENT`` and ``CTRL_BREAK_EVENT``. They are unit tested by forcing the
-platform flag; CI also runs the full suite on Windows.
+platform flag; CI also runs the full suite on Windows and macOS.
 """
 
 import os
