@@ -11,6 +11,7 @@ from .assets import AssetDetails, AssetExtension, AssetInput
 from .context_composition import CONTEXT_COMPOSITION_EVENT, ContextCompositionExtension, context_composition
 from .scheduled_tasks import ScheduledTaskDraft, ScheduledTaskExtension, ScheduledTaskPatch
 from .session_files import SessionFilesExtension
+from .static_assets import StaticAssetExtension
 from .tags import TagExtension
 
 __all__ = [
@@ -24,6 +25,7 @@ __all__ = [
     "ScheduledTaskExtension",
     "ScheduledTaskPatch",
     "SessionFilesExtension",
+    "StaticAssetExtension",
     "TagExtension",
     "context_composition",
 ]

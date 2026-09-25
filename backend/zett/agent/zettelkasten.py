@@ -42,6 +42,7 @@ from .extensions import (
     ContextCompositionExtension,
     ScheduledTaskExtension,
     SessionFilesExtension,
+    StaticAssetExtension,
     TagExtension,
 )
 from .plugins import SessionReferenceExtension
@@ -92,6 +93,7 @@ class ZettelkastenAgent(ZettelkastenContainer):
             ),
             ToolGuidelinesExtension(),
             SessionFilesExtension(),
+            StaticAssetExtension(),
             ContextCompositionExtension(config.context_composition_recorder),
             ModelRequestTraceExtension(),
         ]
