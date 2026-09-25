@@ -27,6 +27,8 @@ import { jsonSnapshot } from './utils/jsonSnapshot'
 import { buildMessageParts, rebaseImagePositions, type PositionedMessageImage } from './utils/messageParts'
 import { restorePersistedConversation } from './utils/persistedConversation'
 import { moveItemBeforeOrAfter } from './utils/reorder'
+import { readPaneHidden, writePaneHidden } from './utils/paneVisibility'
+import { versionedPreviewUrl } from './utils/artifactPreview'
 import { appendStreamedAssistantMessage, createStreamedAssistantMessage } from './utils/streamedAssistant'
 import { defaultProviderBaseUrl, providerBaseUrlHelp } from './utils/providerDefaults'
 import { todoFromTool } from './utils/toolPresentation'
@@ -217,6 +219,9 @@ const streamingStatus = ref('idle')
 const turnElapsedMs = ref(0)
 const activeStreamController = ref<AbortController | null>(null)
 const artifactPreview = ref(true)
+// Bumped on refresh so a recompiled PDF is fetched again instead of reusing cached bytes.
+const artifactPreviewNonce = ref(0)
+const artifactRefreshing = ref(false)
 /** Show the draft-versus-published diff instead of the editor or preview. */
 const artifactDiff = ref(false)
 const conversationId = ref<string | null>(null)
@@ -232,6 +237,8 @@ const assetUploading = ref(false)
 const assetQuery = ref('')
 const assetFilter = ref<AssetFilter>('all')
 const assetDragging = ref(false)
+const assetsPaneKey = 'zett.assets-pane-hidden'
+const assetsPaneHidden = ref(readPaneHidden(assetsPaneKey))
 const staticAssetImportOpen = ref(false)
 const staticAssets = ref<StaticAsset[]>([])
 const staticAssetsLoading = ref(false)
@@ -398,6 +405,15 @@ const conversationUsage = computed(() => {
   return summarizeAgentUsage(messages)
 })
 const selectedArtifact = computed(() => artifacts.value.find((artifact) => artifact.id === selectedArtifactId.value) || null)
+/**
+ * The artifact pane's preview source. The nonce makes every refresh a new URL,
+ * because recompiling replaces the PDF bytes without changing the artifact row.
+ */
+const artifactPreviewAsset = computed(() => {
+  const artifact = selectedArtifact.value
+  if (!artifact) return artifact
+  return { ...artifact, content_url: versionedPreviewUrl(artifact.content_url, artifactPreviewNonce.value) }
+})
 const selectedArtifactDiff = computed(() => diffArtifactContent(
   selectedArtifact.value?.content ?? null,
   selectedArtifact.value?.draft_content ?? null,
@@ -2147,6 +2163,24 @@ async function refreshArtifacts(preferLatest = false): Promise<void> {
   applyArtifacts(await aiClient.listAgentArtifacts(conversationId.value), preferLatest)
 }
 
+/**
+ * Re-read the conversation's artifacts and force the preview to load again, so a
+ * PDF compiled after the pane opened replaces the bytes shown in the pane.
+ */
+async function refreshSelectedArtifact(): Promise<void> {
+  const activeConversationId = conversationId.value
+  if (!activeConversationId || artifactRefreshing.value) return
+  artifactRefreshing.value = true
+  try {
+    applyArtifacts(await aiClient.listAgentArtifacts(activeConversationId))
+    artifactPreviewNonce.value += 1
+  } catch (error) {
+    showNotice(errorMessage(error), 'error')
+  } finally {
+    artifactRefreshing.value = false
+  }
+}
+
 async function refreshArtifactsAfterTurn(sessionId: string | null): Promise<void> {
   if (!sessionId) return
   await agentResourceRefresh.whenIdle()
@@ -2230,6 +2264,11 @@ function showAssetEditor(mode: Exclude<AssetEditorMode, 'closed'>): void {
   assetEditorMode.value = assetEditorMode.value === mode ? 'closed' : mode
   assetName.value = ''
   assetValue.value = ''
+}
+
+function toggleAssetsPane(hidden: boolean): void {
+  assetsPaneHidden.value = hidden
+  writePaneHidden(assetsPaneKey, hidden)
 }
 
 async function addInlineAsset(): Promise<void> {
@@ -3108,6 +3147,7 @@ onBeforeUnmount(() => {
       <symbol id="icon-conversation" viewBox="0 0 24 24"><path d="M5 5.5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H10l-5 3v-3H5a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2Z"/><path d="M8 10h8M8 13h5"/></symbol>
       <symbol id="icon-eye" viewBox="0 0 24 24"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/></symbol>
       <symbol id="icon-eye-off" viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 6.1A9.8 9.8 0 0 1 12 6c6 0 9.5 6 9.5 6a16.4 16.4 0 0 1-2.1 3M6.2 6.2C3.8 7.8 2.5 12 2.5 12s3.5 6 9.5 6c1.2 0 2.3-.3 3.3-.7M10.2 10.2a2.5 2.5 0 0 0 3.6 3.6"/></symbol>
+      <symbol id="icon-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></symbol>
     </svg>
 
     <aside class="sidebar">
@@ -3376,8 +3416,8 @@ onBeforeUnmount(() => {
               @update:selected-turn-id="updateTraceTurn"
             />
           </div>
-          <div v-else class="agent-workspace" :class="{ 'session-switching': switchingSessionId !== null }" @paste="pasteAssets">
-            <aside class="assets-pane" aria-label="Session assets" tabindex="0">
+          <div v-else class="agent-workspace" :class="{ 'session-switching': switchingSessionId !== null, 'assets-hidden': assetsPaneHidden }" @paste="pasteAssets">
+            <aside v-if="!assetsPaneHidden" class="assets-pane" aria-label="Session assets" tabindex="0">
               <header class="assets-header">
                 <div><strong>{{ $t('Assets') }}</strong><small>{{ $t('Session resources') }}</small></div>
                 <div class="assets-header-actions">
@@ -3387,6 +3427,9 @@ onBeforeUnmount(() => {
                   <button class="asset-import-action" type="button" :title="$t('Import static asset')" :aria-label="$t('Import static asset')" @click="openStaticAssetImport">
                     <svg><use href="#icon-library-import" /></svg>
                     <span>{{ $t('Import') }}</span>
+                  </button>
+                  <button class="asset-hide-action" type="button" :title="$t('Hide assets')" :aria-label="$t('Hide assets')" @click="toggleAssetsPane(true)">
+                    <svg><use href="#icon-eye-off" /></svg>
                   </button>
                 </div>
               </header>
@@ -3450,6 +3493,10 @@ onBeforeUnmount(() => {
             <section class="agent-chat" :class="{ 'session-switching': switchingSessionId !== null }" aria-label="Knowledge card conversation" :aria-busy="switchingSessionId !== null">
               <div class="agent-chat-header">
                 <div class="agent-identity"><img src="/logo.png" alt="" /><div><strong>{{ $t('Zettelkasten Agent') }}</strong><small>{{ $t('Turn a conversation into knowledge') }}</small></div></div>
+                <button v-if="assetsPaneHidden" class="asset-show-action" type="button" :title="$t('Show assets')" :aria-label="$t('Show assets')" @click="toggleAssetsPane(false)">
+                  <svg><use href="#icon-eye" /></svg>
+                  <span>{{ $t('Assets') }}</span>
+                </button>
                 <span class="streaming-status"><i />{{ $t('Zettelkasten Agent online') }}</span>
               </div>
 
@@ -3778,7 +3825,12 @@ onBeforeUnmount(() => {
             <aside class="artifact-pane artifact-workspace">
               <header class="artifact-collection-header">
                 <div><strong>{{ $t('Artifacts') }}</strong><small>{{ $t('{count} in this conversation', { count: artifacts.length }) }}</small></div>
-                <span v-if="loading" class="artifact-syncing"><i />{{ $t('Updating') }}</span>
+                <div class="artifact-collection-actions">
+                  <span v-if="loading" class="artifact-syncing"><i />{{ $t('Updating') }}</span>
+                  <button class="artifact-refresh" type="button" :title="$t('Refresh artifacts')" :aria-label="$t('Refresh artifacts')" :disabled="artifactRefreshing" @click="refreshSelectedArtifact">
+                    <svg :class="{ spinning: artifactRefreshing }"><use href="#icon-refresh" /></svg>
+                  </button>
+                </div>
               </header>
               <div v-if="artifacts.length" class="artifact-list" aria-label="Conversation artifacts">
                 <button v-for="artifact in artifacts" :key="artifact.id" :class="{ active: artifact.id === selectedArtifactId }" type="button" @click="selectArtifact(artifact)">
@@ -3814,7 +3866,7 @@ onBeforeUnmount(() => {
                       <label class="card-title-control"><span>{{ $t('PDF filename') }}</span><textarea v-model="artifactContent.pdf_name" rows="1" /></label>
                       <p>{{ $t('Source files stay in the project directory. Compile the PDF before saving this reference.') }}</p>
                     </template>
-                    <PdfPreview v-else-if="selectedArtifact" :asset="selectedArtifact" artifact />
+                    <PdfPreview v-else-if="artifactPreviewAsset" :asset="artifactPreviewAsset" artifact />
                   </template>
                   <template v-else-if="!artifactPreview">
                     <label class="card-title-control"><span>Title</span><textarea v-model="artifactContent.title" rows="2" /></label>
@@ -4193,6 +4245,7 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 
 .create-view { width: min(100%, 124rem); max-width: 124rem; padding-right: clamp(.55rem, 1vw, 1rem); padding-left: clamp(.55rem, 1vw, 1rem); }
 .agent-workspace { height: calc(100vh - 8.2rem); min-height: 39rem; display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 5fr) minmax(0, 3fr); gap: .72rem; }
+@media (min-width: 1181px) { .agent-workspace.assets-hidden { grid-template-columns: minmax(0, 5fr) minmax(0, 3fr); } }
 .trace-workspace { height: calc(100vh - 8.2rem); min-height: 39rem; }
 .assets-pane, .agent-chat, .artifact-pane { min-width: 0; min-height: 0; overflow: hidden; border: 1px solid rgba(29,29,31,.08); border-radius: 1.15rem; background: rgba(255,255,255,.97); box-shadow: var(--shadow); backdrop-filter: blur(18px); transition: opacity 180ms ease, transform 240ms cubic-bezier(.2,.8,.2,1); }
 .agent-workspace.session-switching .assets-pane, .agent-workspace.session-switching .artifact-pane { opacity: .48; transform: translateY(4px); pointer-events: none; }
@@ -4206,6 +4259,9 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .agent-chat-header .provider-picker { margin-left: auto; }
 .streaming-status { display: inline-flex; align-items: center; gap: .4rem; margin-left: auto; color: var(--tertiary); font-size: .6rem; }
 .streaming-status i { width: .4rem; height: .4rem; border-radius: 50%; background: #49a369; box-shadow: 0 0 0 3px rgba(73,163,105,.12); }
+.asset-show-action { display: inline-flex; align-items: center; gap: .35rem; padding: .3rem .55rem; border: 1px solid var(--line); border-radius: .55rem; color: #4a544e; background: #fff; font: inherit; font-size: .62rem; cursor: pointer; }
+.asset-show-action:hover { color: #345442; background: #eef2ef; }
+.asset-show-action svg { width: .8rem; height: .8rem; }
 .assets-pane { display: flex; flex-direction: column; background: rgba(249,250,249,.98); }
 .assets-pane:focus { outline: none; }
 .assets-pane:focus-visible { border-color: rgba(71,105,87,.4); box-shadow: 0 0 0 3px rgba(71,105,87,.1), var(--shadow); }
@@ -4401,6 +4457,13 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .artifact-collection-header strong, .artifact-collection-header small { display: block; }
 .artifact-collection-header strong { color: #303632; font-size: .78rem; }
 .artifact-collection-header small { margin-top: .1rem; color: var(--tertiary); font-size: .58rem; }
+.artifact-collection-actions { display: flex; align-items: center; gap: .45rem; }
+.artifact-refresh { display: grid; place-items: center; width: 1.7rem; height: 1.7rem; padding: 0; border: 1px solid #e0e5e1; border-radius: .5rem; color: #5b6560; background: #fff; cursor: pointer; }
+.artifact-refresh:hover:not(:disabled) { color: #345442; background: #eef2ef; }
+.artifact-refresh:disabled { opacity: .55; cursor: default; }
+.artifact-refresh svg { width: .85rem; height: .85rem; }
+.artifact-refresh svg.spinning { animation: artifact-refresh-spin 900ms linear infinite; }
+@keyframes artifact-refresh-spin { to { transform: rotate(360deg); } }
 .artifact-syncing { display: inline-flex; align-items: center; gap: .35rem; color: #758179; font-size: .58rem; }
 .artifact-syncing i { width: .36rem; height: .36rem; border-radius: 50%; background: #619071; animation: activity-pulse 1s ease-in-out infinite; }
 .artifact-list { flex: 0 0 auto; display: flex; gap: .45rem; padding: .65rem; overflow-x: auto; border-bottom: 1px solid #e5e9e6; background: #f7f9f7; scrollbar-width: thin; }
