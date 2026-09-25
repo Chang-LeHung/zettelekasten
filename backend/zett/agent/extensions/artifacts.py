@@ -63,6 +63,9 @@ class ArtifactExtension(AgentExtension):
                 - Creation allocates a project directory and returns content.project_path as an object key relative to ZETT_STORAGE_ROOT. Treat that returned key as authoritative: never guess it or reconstruct it from the session ID or PDF name.
                 - Filesystem/shell tools run from the repository directory, so resolve the returned key under `Path.home() / ".zettelekasten"` before writing project sources and compiling the returned pdf_name.
                 - Creation, metadata updates, and saving do not require an existing PDF and do not compile automatically. Preserve the returned project_path when updating. Preview becomes available after compilation; deleting the artifact record preserves the project files.
+                - A LaTeX project is your git repository: before writing any source file, confirm it with 'git -C <project_path> rev-parse --is-inside-work-tree' and run 'git -C <project_path> init' when that check fails, then write a '.gitignore' for the LaTeX build output such as '*.aux', '*.log', '*.toc', and '*.synctex.gz'.
+                - Commit from the project directory with the shell, using Conventional Commit messages: 'git -C <project_path> add -A && git -C <project_path> commit -m "docs(paper): add introduction"'. Commit right after creating the project and after each meaningful source change, because Zett refuses to save the artifact while the project has uncommitted changes.
+                - Keep commits yours alone: Zett never touches the project history, and it reports the pending paths when a save fails.
                 - Keep newly generated artifacts in draft state until the user asks to save them.
                 - A card contains one idea; use the fewest words that preserve its meaning.
                 - Keep card titles, summaries, and bodies simple, direct, and brief.
@@ -205,6 +208,7 @@ class ArtifactExtension(AgentExtension):
                 - HTML pages use raw tags and inline Grid/Flex styles after '<!-- slide:html -->', with their own HTML heading and spacing. They get no automatic heading or cover styling; fenced HTML remains visible source, not rendered layout.
                 - Ordinary pages retain Markdown headings and ordinary horizontal sections retain title-only openers followed by '--' and content. These rules do not add extra headings or openers to explicit HTML or cover pages.
                 - Slide separators must be exact unpadded lines; never use standalone '--' or '---' as decoration or code inside a deck.
+                - A latex_pdf patch only changes the artifact's reference: edit the project files directly and commit each meaningful change from the project directory with the shell and a Conventional Commit message such as 'docs(paper): fix the abstract', because saving the artifact is refused while the project has uncommitted changes.
             """
             current = await artifact_storage.get(artifact_id)
             if current is None:

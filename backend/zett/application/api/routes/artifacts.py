@@ -4,10 +4,19 @@ from fastapi import APIRouter, HTTPException, Query, status
 
 from ....infra.persistence.dao import artifact_storage, session_storage
 from ....schemas import AgentArtifactEntity, AgentArtifactWrite, ArtifactListOptions, ArtifactStatus, ArtifactType
+from ...artifacts.versioning import UncommittedLatexProjectError, artifact_versioning
 from ...tags.tagging import tag_service
 from ..schemas import ArtifactCreateIn, ArtifactUpdateIn, DeleteResponse
 
 router = APIRouter(tags=["artifacts"])
+
+
+async def _require_committed_project(artifact: AgentArtifactEntity) -> None:
+    """Refuse to publish a LaTeX project whose changes nobody committed yet."""
+    try:
+        await artifact_versioning.verify(artifact)
+    except UncommittedLatexProjectError as error:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
 
 
 @router.get("/artifacts", response_model=list[AgentArtifactEntity])
@@ -85,6 +94,7 @@ async def update_artifact(session_id: str, artifact_id: str, payload: ArtifactUp
     current = await artifact_storage.get_for_session(session_id, artifact_id)
     if current is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Artifact not found")
+    await _require_committed_project(current)
     entity = AgentArtifactWrite(
         session_id=session_id,
         content=payload.content,
@@ -143,6 +153,7 @@ async def save_artifact(session_id: str, artifact_id: str) -> AgentArtifactEntit
     published = current.draft_content or current.content
     if published is None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Artifact has no content to save")
+    await _require_committed_project(current)
     entity = AgentArtifactWrite(
         session_id=session_id,
         content=published,
