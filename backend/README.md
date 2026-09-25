@@ -328,7 +328,8 @@ Windows process group, liveness uses `kill(pid, 0)` or `GetExitCodeProcess`,
 termination uses `SIGTERM`/`SIGKILL` or `TerminateProcess`, and port lookup uses
 `lsof` or `netstat -ano`. Windows has no catchable termination signal, so
 `zett stop` ends a child immediately there, and command-line verification is not
-available.
+available. CI runs the whole suite on Linux, Windows, and macOS; the Windows
+branches are additionally unit tested by forcing the platform flag.
 
 The ZettCode TUI is POSIX-only: raw mode, `SIGWINCH`, and `add_reader` on stdin
 have no Windows equivalent in the implementation. Importing ZettCode on Windows
