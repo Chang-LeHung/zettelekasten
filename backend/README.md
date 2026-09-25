@@ -40,14 +40,17 @@ Domain rules currently live in `schemas.py`, storage contracts in
 `infra/dao/session.py` delegates to the package session store and does not
 create a second session table.
 
-`agent_sessions.session_type` stores an integer code (`0` standard, `1`
-automation). zett-agent owns that storage code; Zett maps it to the public
-`normal` and `scheduled` values. `POST /api/agent/start` creates `normal`
-sessions, while the scheduled Agent executor creates `scheduled` sessions. The
-conversation sidebar requests only `normal` sessions, while scheduled runs can
+`agent_sessions.session_type` stores an integer code that zett-agent keeps
+verbatim; the codes and their meaning belong to Zett, which maps them in
+`zett/schemas/sessions.py`: `0` is `normal`, `1` is `scheduled`, and `2` is
+`channel`. `POST /api/agent/start` creates `normal` sessions, the scheduled
+Agent executor creates `scheduled` sessions, and an IM conversation opened from a
+channel creates a `channel` session. The conversation sidebar requests only
+`normal` sessions, so channel chats stay out of it, while scheduled runs can
 still open their session by ID.
 Schema initialization adds the column to existing databases, but historical
-rows are not reclassified: they receive the default `0` code.
+rows are not reclassified: they receive the default `0` code, so channel
+conversations created before this change keep showing up as `normal`.
 
 Records reference each other by ID only: there are no foreign keys,
 `ondelete` rules, or cascades. Storage implementations clean relation rows and
