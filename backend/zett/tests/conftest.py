@@ -18,6 +18,17 @@ from zett.infra.persistence.tables import Base
 
 
 @pytest.fixture(autouse=True)
+def isolated_git_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep every git command deterministic across developer machines and CI."""
+    empty = tmp_path / "empty-gitconfig"
+    empty.write_text("", encoding="utf-8")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(empty))
+    monkeypatch.setenv("GIT_CONFIG_SYSTEM", str(empty))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    monkeypatch.setenv("GIT_TERMINAL_PROMPT", "0")
+
+
+@pytest.fixture(autouse=True)
 def isolated_provider_probe(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep provider lifecycle tests deterministic and offline."""
 

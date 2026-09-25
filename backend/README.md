@@ -105,6 +105,24 @@ conversation UI, previews, search, and the draft-versus-published diff, and
 together so a querying model can compare what the user kept with what it
 proposes.
 
+A `latex_pdf` artifact owns a project directory instead of an inline body, so
+the Agent owns that project's git history: it initializes the repository, writes
+a `.gitignore` for the regenerated LaTeX build files, and commits each meaningful
+change with its own Conventional Commit message through the shell. Zett prepares
+and commits nothing there; `zett/infra/artifacts/git_projects.py` only inspects
+the tree when the artifact is published. Publishing a PDF artifact (the save
+endpoint, or the library editor's `PUT`) therefore answers `409 Conflict` while
+the project is not a git repository or still has uncommitted changes, and
+publishes without touching history once the tree is clean; the failure names the
+pending paths and leaves the draft unpublished. Verification covers only the
+project subtree, so other work in an enclosing repository never blocks a save,
+and an artifact whose directory is gone has no working tree to verify. The
+inspector is platform neutral: it resolves `git` from `PATH`, reads output as
+UTF-8, closes stdin so git cannot block on a prompt, and starts the
+console-subsystem child windowless on Windows. A git that cannot be run is
+logged by artifact id and project key and never blocks a save; only what git
+confirms is enforced.
+
 ## HTTP surface
 
 Everything is mounted under `/api`.
@@ -256,7 +274,7 @@ transactions. The Web process writes `logs/zett.log`, the scheduler writes
 ├── zett.db         application records: artifacts, assets, tags, providers, settings
 ├── agent.db        sessions, immutable raw messages, context snapshots
 ├── assets/         `sessions/<session-id>/` binaries and `static/` uploads
-├── artifacts/      one directory per session and LaTeX artifact project
+├── artifacts/      one git-tracked directory per session and LaTeX artifact project
 ├── provider.key    local key encrypting provider credentials
 ├── runtime.json    active server and supervised child process state
 └── logs/           rotating log files

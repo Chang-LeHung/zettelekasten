@@ -1,6 +1,7 @@
 """LaTeX references use real temporary projects and an isolated SQLite database."""
 
 import json
+import subprocess
 
 import pytest
 from fastapi.testclient import TestClient
@@ -35,6 +36,16 @@ def project(session_id: str, name: str = "paper") -> dict[str, str]:
     return {"artifact_type": "latex_pdf", "project_path": key, "pdf_name": f"{name}.pdf"}
 
 
+def commit(session_id: str, name: str = "paper", message: str = "docs(paper): write the sources") -> None:
+    """Commit a project the way the Agent does before publishing it."""
+    directory = get_object_store().resolve(project_key(session_id, name))
+    git = ("git", "-c", "user.name=Agent", "-c", "user.email=agent@example.com")
+    subprocess.run((*git, "init", "-q", "-b", "main", "."), cwd=directory, check=True)
+    (directory / ".gitignore").write_text("*.aux\n*.log\n*.out\n*.toc\n", encoding="utf-8")
+    subprocess.run((*git, "add", "-A"), cwd=directory, check=True)
+    subprocess.run((*git, "commit", "-q", "-m", message), cwd=directory, check=True)
+
+
 async def test_latex_pdf_lifecycle_and_inline_content() -> None:
     session_id = (await session_storage.create(AgentSessionCreate())).session_id
     content = project(session_id)
@@ -57,7 +68,9 @@ async def test_latex_pdf_lifecycle_and_inline_content() -> None:
         assert pdf.content == b"%PDF-1.4\n%%EOF\n"
         assert pdf.headers["content-type"] == "application/pdf"
         assert pdf.headers["content-disposition"].startswith("inline;")
+        commit(session_id)
         replacement = project(session_id, "revised")
+        commit(session_id, "revised")
         updated = client.put(url, json={"content": replacement})
         assert updated.status_code == 200
         assert updated.json()["version"] == 2
@@ -116,6 +129,7 @@ async def test_missing_pdf_does_not_block_metadata_or_saving() -> None:
         url = f"{endpoint}/{artifact['id']}"
         assert client.get(artifact["content_url"]).status_code == 404
         assert client.get(url).status_code == 200
+        commit(session_id)
         assert client.put(url, json={"content": content}).status_code == 200
         assert client.post(f"{url}/save").status_code == 200
 
@@ -134,16 +148,19 @@ async def test_create_allocates_directory_before_agent_writes_files(tmp_path, mo
         assert artifact["content"]["project_path"] == project_key(session_id, "report")
         directory = get_object_store().resolve(artifact["content"]["project_path"])
         assert directory.is_dir()
+        # Creation only allocates the empty directory; the Agent owns the repository.
         assert list(directory.iterdir()) == []
         stored = await artifact_storage.get(artifact["id"])
         assert stored is not None and stored.content.project_path == artifact["content"]["project_path"]
         url = f"{endpoint}/{artifact['id']}"
         assert client.get(artifact["content_url"]).status_code == 404
+        commit(session_id, "report")
         assert client.put(url, json={"content": artifact["content"]}).status_code == 200
         assert client.post(f"{url}/save").status_code == 200
         (directory / "main.tex").write_text("Source created after the artifact")
         (directory / artifact["content"]["pdf_name"]).write_bytes(b"%PDF-1.4\n%%EOF\n")
         assert client.get(artifact["content_url"]).status_code == 200
+        commit(session_id, "report")
         assert client.post(f"{url}/save").status_code == 200
 
 
