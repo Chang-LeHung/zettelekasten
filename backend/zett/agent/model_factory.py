@@ -1,6 +1,7 @@
 """Build zett-agent provider adapters from encrypted application settings."""
 
 from zett_agent import (
+    AgentModel,
     AnthropicProvider,
     DeepSeekProvider,
     GoogleProvider,
@@ -14,6 +15,17 @@ from ..schemas import ProviderConnection, ProviderType
 ProviderAdapter = TypeAliasType(
     "ProviderAdapter", AnthropicProvider | DeepSeekProvider | GoogleProvider | OllamaProvider | OpenAIProvider
 )
+
+
+def uses_responses_api(model: AgentModel | None) -> bool:
+    """Return whether one adapter speaks the Responses API.
+
+    Only the OpenAI-style adapters implement that protocol, and only when they
+    were built with ``response=True``: the Anthropic, Google, and Ollama adapters
+    reject that flag at construction because their protocols cannot serve it. The
+    attribute therefore identifies the protocol without importing every adapter.
+    """
+    return bool(getattr(model, "response", False))
 
 
 def create_model(
