@@ -88,6 +88,18 @@ with a shell command instead of moving a whole binary through the model context
 as Base64. The message names the endpoint and its contract only, and a wildcard
 bind address is reported as loopback, so a shell command can dial it.
 
+The scheduled-task tools are declared `deferred` and are the only deferred set
+for now, so they leave a request until the model finds them through search.
+`DeferredToolExtension` owns which protocol sees what: a Responses API run
+registers zett-agent's `tool_search` and hides every deferred definition, while
+Chat Completions, Anthropic, Google, and Ollama receive all of them as ordinary
+functions with `deferred=False` and never receive the search tool, because those
+protocols reject client-side search. `uses_responses_api` in
+`zett/agent/model_factory.py` is the one place that decides which protocol the
+adapter speaks. The rewrite runs at priority 90, ahead of zett-agent's search
+extension at the default 100, because a filter that ran first would strip the
+definitions this protocol still offers.
+
 Artifact creation writes the supplied content directly to `content_json`
 because there is no existing user version to protect. Later model updates write
 only `draft_content_json`, and the tool list has no save operation. The
