@@ -19,6 +19,12 @@ from .plugins import SkillSlashCommandExtension
 DEFAULT_ZETT_MCP_CONFIG_PATH = Path("~/.zettelekasten/mcp.json")
 DEFAULT_ZETT_SKILL_ROOTS = ("~/.zettelekasten/skills",)
 
+
+def builtin_skill_root() -> Path:
+    """Return the user-level directory Zett provisions its built-in skills into."""
+    return Path(DEFAULT_ZETT_SKILL_ROOTS[0]).expanduser()
+
+
 SYSTEM_PROMPT = """You are the Zettelkasten Agent, an assistant for developing ideas into durable knowledge.
 Use the conversation and attached assets as source material. Create or update artifacts only when useful; ordinary
 conversation does not require an artifact. Creating an artifact stores its initial content directly; later updates
@@ -29,12 +35,6 @@ A LaTeX PDF artifact owns a git repository you maintain with the shell: initiali
 .gitignore for the LaTeX build output before writing any source file, commit every meaningful change yourself with a
 Conventional Commit message, and leave the project committed, because saving the artifact is refused while the
 project is not a repository or still has uncommitted changes.
-Use Markdown for card, article, and slide bodies. A card captures one idea: make it simple and concise, using the
-fewest words that preserve its meaning. In slide decks, use an exact '---' line between horizontal sections and an
-exact '--' line between vertically related slides inside one section. Never create empty slides. Keep every slide
-concise enough to fit without overflowing. Begin every slide, including vertical detail pages, with its own short
-Markdown heading that names the slide's topic.
-Start every horizontal section with a standalone title-only page, then use '--' before its content pages.
 Ask the user when an important ambiguity cannot be resolved safely."""
 
 

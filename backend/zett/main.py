@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
 from ._compat import UTC
+from .agent.config import builtin_skill_root
 from .application.api.router import api_router
 from .application.channels import channel_service
 from .application.health import ProcessSupervisor, process_heartbeat_registry
@@ -20,6 +21,7 @@ from .infra.log import configure_logging, get_logger, shutdown_logging
 from .infra.persistence.database import init_db
 from .infra.scheduler import process_platform
 from .infra.scheduler.runtime_state import RuntimeStateStore
+from .infra.skills.builtin import install_builtin_skills
 from .schemas import ServerRuntimeState
 
 logger = get_logger(__name__)
@@ -35,6 +37,9 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
     log_path = await run_in_threadpool(configure_logging)
     try:
         await init_db()
+        written_skills = await run_in_threadpool(install_builtin_skills, builtin_skill_root())
+        if written_skills:
+            logger.info("Wrote missing built-in skills; paths=%s", [str(path) for path in written_skills])
         get_agent_runtime_storage()
         await process_heartbeat_registry.clear()
         runtime_state_store = RuntimeStateStore()

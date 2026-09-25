@@ -8,6 +8,7 @@ from sqlalchemy.pool import NullPool
 from zett_agent import AssistantMessage, ModelEvent, ModelRequest, ModelResponse
 
 from zett import config
+from zett.agent import config as agent_config
 from zett.application.health import process_heartbeat_registry
 from zett.application.providers import provider_connections
 from zett.infra.artifacts.search import ensure_artifact_search
@@ -15,6 +16,12 @@ from zett.infra.files import object_store as object_store_module
 from zett.infra.files.object_store import LocalObjectStore
 from zett.infra.persistence import database
 from zett.infra.persistence.tables import Base
+
+
+@pytest.fixture(autouse=True)
+def isolated_skill_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Provision built-in skills into a temporary root instead of the real home."""
+    monkeypatch.setattr(agent_config, "DEFAULT_ZETT_SKILL_ROOTS", (str(tmp_path / "skills"),))
 
 
 @pytest.fixture(autouse=True)
