@@ -117,7 +117,7 @@ class ScheduledTaskExtension(AgentExtension):
     # through the tool call and result in the model's context.
 
     async def on_tool(self, context: AgentRunContext) -> None:
-        @tool
+        @tool(deferred=True)
         async def create_scheduled_task(task: ScheduledTaskDraft) -> ScheduledTaskEntity:
             """Create one durable Agent prompt schedule.
 
@@ -134,7 +134,7 @@ class ScheduledTaskExtension(AgentExtension):
             """
             return await scheduled_task_service.create(_create_from_draft(task))
 
-        @tool
+        @tool(deferred=True)
         async def list_scheduled_tasks(
             enabled: bool | None = None,
             limit: Annotated[int, Field(ge=1, le=500)] = 100,
@@ -158,7 +158,7 @@ class ScheduledTaskExtension(AgentExtension):
                 ScheduledTaskListOptions(enabled=enabled, limit=limit, offset=offset)
             )
 
-        @tool
+        @tool(deferred=True)
         async def get_scheduled_task(task_id: str) -> ScheduledTaskEntity:
             """Return one scheduled task by its stable ID.
 
@@ -174,7 +174,7 @@ class ScheduledTaskExtension(AgentExtension):
                 raise ValueError(f"Scheduled task not found: {task_id}")
             return task
 
-        @tool
+        @tool(deferred=True)
         async def update_scheduled_task(task_id: str, patch: ScheduledTaskPatch) -> ScheduledTaskEntity:
             """Update only the supplied fields of one scheduled task.
 
@@ -191,7 +191,7 @@ class ScheduledTaskExtension(AgentExtension):
                 raise ValueError(f"Scheduled task not found: {task_id}")
             return await scheduled_task_service.update(task_id, _merge_patch(current, patch))
 
-        @tool
+        @tool(deferred=True)
         async def disable_scheduled_task(task_id: str) -> ScheduledTaskEntity:
             """Disable a scheduled task without deleting its definition or history.
 
