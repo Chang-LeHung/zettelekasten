@@ -60,7 +60,7 @@ from .processes import (
     ProcessRoleHealth,
     ServerRuntimeState,
 )
-from .providers import ProviderConnection, ProviderEntity, ProviderType, ProviderWrite
+from .providers import ProviderChoice, ProviderConnection, ProviderEntity, ProviderType, ProviderWrite
 from .scheduled_actions import AGENT_PROMPT_ACTION_KIND, AgentPromptAction
 from .scheduled_tasks import (
     CronSchedule,
@@ -132,6 +132,7 @@ __all__ = [
     "ModelUsageActivitySeries",
     "ProviderConnection",
     "ProviderEntity",
+    "ProviderChoice",
     "ProviderListOptions",
     "ProviderType",
     "ProviderWrite",
