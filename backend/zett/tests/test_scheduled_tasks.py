@@ -417,6 +417,19 @@ def test_scheduled_task_http_control_plane() -> None:
         assert client.get("/api/scheduled-tasks").json()[0]["id"] == task["id"]
         assert client.get(f"/api/scheduled-tasks/{task['id']}").json()["name"] == "Daily note"
         assert client.delete(f"/api/ai/providers/{provider_id}").status_code == 409
+        # Disabling would leave the task failing at its next run, so it is refused too.
+        disabled_provider = client.put(
+            f"/api/ai/providers/{provider_id}",
+            json={
+                "name": "Scheduled provider",
+                "provider": "openai_compatible",
+                "model": "test-model",
+                "base_url": "https://example.invalid/v1",
+                "api_key": "secret",
+                "enabled": False,
+            },
+        )
+        assert disabled_provider.status_code == 409
 
         disabled = client.patch(
             f"/api/scheduled-tasks/{task['id']}/enabled",

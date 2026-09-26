@@ -126,6 +126,11 @@ async def update_provider(provider_id: str, payload: ProviderIn) -> ProviderResp
     try:
         entity = await _write(payload, existing_id=provider_id)
         await _verify_provider(entity, provider_id)
+        current = await provider_storage.get(provider_id)
+        if current is not None and current.enabled and not entity.enabled:
+            # Disabling is not deletion, but every reference would start failing
+            # at its next run, so refuse the same references the delete guard does.
+            await _require_unreferenced(provider_id)
         return _response(await provider_storage.update(provider_id, entity))
     except KeyError as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Provider not found") from error
@@ -134,6 +139,12 @@ async def update_provider(provider_id: str, payload: ProviderIn) -> ProviderResp
 @router.delete("/{provider_id}", response_model=DeleteResponse)
 async def delete_provider(provider_id: str) -> DeleteResponse:
     """Delete one local provider configuration."""
+    await _require_unreferenced(provider_id)
+    return DeleteResponse(ok=await provider_storage.delete(provider_id))
+
+
+async def _require_unreferenced(provider_id: str) -> None:
+    """Reject a provider that conversations, scheduled tasks, or channels still use."""
     if await session_model_preference_service.provider_referenced(provider_id):
         raise HTTPException(
             status.HTTP_409_CONFLICT,
@@ -149,4 +160,3 @@ async def delete_provider(provider_id: str) -> DeleteResponse:
             status.HTTP_409_CONFLICT,
             "Provider is still used by a channel",
         )
-    return DeleteResponse(ok=await provider_storage.delete(provider_id))
