@@ -15,6 +15,7 @@ from zett_agent import (
     ModelEvent,
     ModelRequest,
     ModelResponse,
+    ShellApprovalMode,
     ToolCall,
     ToolMessage,
     UserMessage,
@@ -23,6 +24,7 @@ from zett_agent import (
 
 from zett._compat import UTC
 from zett.application.scheduled_tasks import ScheduledTaskService
+from zett.infra.agent.shell_approval import shell_approval_storage
 from zett.infra.persistence.dao import provider_storage, scheduled_task_storage, session_storage
 from zett.infra.persistence.database import session_scope
 from zett.infra.persistence.tables import ScheduledTaskRow
@@ -655,6 +657,8 @@ async def test_agent_prompt_executor_creates_a_fresh_noninteractive_session(monk
     session = await session_storage.get(session_id)
     assert session is not None and session.title == "Scheduled title"
     assert session.session_type == SESSION_TYPE_TO_CODE[SessionType.SCHEDULED]
+    # A scheduled run has no surface that can answer a shell approval.
+    assert await shell_approval_storage.get_session_mode(session_id) is ShellApprovalMode.ALLOW_ALL
     records = await session_storage.list_raw_messages(session_id)
     dialogue = [record.message for record in records if isinstance(record.message, UserMessage | AssistantMessage)]
     assert [message.text if isinstance(message, UserMessage) else message.content for message in dialogue] == [

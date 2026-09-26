@@ -2,12 +2,20 @@
 
 from collections.abc import Mapping
 
-from zett_agent import AgentRunConfig, JsonValue, ReasoningEffort, UserContent, UserMessage
+from zett_agent import (
+    AgentRunConfig,
+    JsonValue,
+    ReasoningEffort,
+    ShellApprovalMode,
+    UserContent,
+    UserMessage,
+)
 
 from ...agent.config import ZettelkastenAgentConfig
 from ...agent.model_factory import create_model
 from ...agent.zettelkasten import ZettelkastenAgent
 from ...infra.agent.runtime import get_agent_runtime_storage
+from ...infra.agent.shell_approval import shell_approval_storage
 from ...infra.persistence.dao import model_usage_activity_storage, provider_storage
 from ..runtime.settings import runtime_settings_service
 from .session_context import session_context_composition_service
@@ -40,6 +48,11 @@ async def run_headless_prompt(
         raise ValueError("Enabled provider not found")
     runtime_settings = await runtime_settings_service.get()
     model = create_model(connection)
+    # No surface can answer a shell approval for a headless turn, and the runtime
+    # waits for one without a timeout, so these sessions run their commands
+    # without asking. The stored mode is what the browser shows if the session is
+    # ever opened there.
+    await shell_approval_storage.set_session_mode(session_id, ShellApprovalMode.ALLOW_ALL)
     try:
         agent = ZettelkastenAgent(
             ZettelkastenAgentConfig(
@@ -49,6 +62,7 @@ async def run_headless_prompt(
                 compaction_max_tokens=runtime_settings.compaction_max_tokens,
                 compaction_keep_recent_tokens=runtime_settings.compaction_keep_recent_tokens,
                 usage_activity_storage=model_usage_activity_storage,
+                shell_approval_storage=shell_approval_storage,
                 storage=get_agent_runtime_storage(),
                 context_composition_recorder=_remember_context_composition,
                 interactive=False,

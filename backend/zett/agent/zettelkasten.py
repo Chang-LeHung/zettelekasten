@@ -102,12 +102,11 @@ class ZettelkastenAgent(ZettelkastenContainer):
             TraceLogExtension(),
         ]
         if config.coding_enabled:
-            extensions.extend(
-                (
-                    ShellApprovalExtension(config.shell_approval_storage),
-                    CodingExtension(),
-                )
-            )
+            # A headless run marks its own session allow-all before it starts, so
+            # this middleware passes shell calls straight through there and keeps
+            # asking the browser in an interactive conversation.
+            extensions.append(ShellApprovalExtension(config.shell_approval_storage))
+            extensions.append(CodingExtension())
         if config.interactive:
             extensions.append(AskUserExtension())
         if config.usage_activity_storage is not None:

@@ -334,6 +334,15 @@ process` when a missing role is spawned, and `Stopped supervised process` (with
 reason line — `exited`, `never reported a heartbeat`, or `heartbeat is stale` —
 is written immediately before the stop it explains.
 
+A headless turn has no surface that can answer a shell approval, and the
+runtime's approval wait has no timeout, so `run_headless_prompt` and the
+scheduled executor mark their session `allow_all` before running: an IM
+conversation created by a channel with coding enabled, and every scheduled run,
+execute their commands without asking. Both headless configs must therefore also
+pass `shell_approval_storage`: without it the approval middleware cannot read the
+mode and waits for a browser event anyway, which freezes the turn and holds that
+chat's lock.
+
 The first executor, `agent_prompt`, always creates a new isolated Agent session
 and runs a headless turn. It disables interactive `ask_user` and coding tools so
 a background job never waits for browser approval. Scheduled runs never target
