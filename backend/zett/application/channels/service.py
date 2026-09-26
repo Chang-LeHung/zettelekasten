@@ -45,6 +45,12 @@ logger = get_logger(__name__)
 LOGIN_TTL = timedelta(minutes=5)
 RECEIVE_RETRY_SECONDS = 2.0
 
+#: Chat locks are cheap but a busy process talks to unbounded chats, so keep a bounded cache.
+LOCK_CACHE_LIMIT = 256
+
+#: One failed turn must not look like an ignored message to the person waiting.
+TURN_FAILURE_REPLY = "Sorry, something went wrong while handling that message. Please try again."
+
 
 def _qr_data_url(value: str) -> str:
     image = qrcode.make(value, image_factory=SvgPathImage)
@@ -114,7 +120,13 @@ class ChannelService:
         """Update channel policy and restart its receive loop."""
         if not channel_id.strip():
             raise KeyError("Channel id cannot be blank")
+        existing = await self._store.get_channel(channel_id)
         updated = await self._store.update_channel(channel_id, payload)
+        # Provider, reasoning, and coding policy are read per turn, so only the
+        # enabled flag needs a new plugin instance. Restarting for a policy edit
+        # would cancel the turn that is running right now and drop its reply.
+        if existing is not None and existing.enabled == updated.enabled:
+            return updated
         await self._stop_runner(channel_id)
         if updated.enabled:
             runtime = await self._store.get_runtime_channel(channel_id)
@@ -208,17 +220,11 @@ class ChannelService:
         }:
             return login
         if login.expires_at <= datetime.now(UTC):
-            return await self._finish_login(
-                login,
-                status=ChannelLoginStatus.EXPIRED,
-                message="QR code expired; request a new one.",
-            )
+            return await self._fail_login(login, ChannelLoginStatus.EXPIRED, "QR code expired; request a new one.")
         plugin = self._logins.get(login_id)
         if plugin is None:
-            return await self._finish_login(
-                login,
-                status=ChannelLoginStatus.EXPIRED,
-                message="Login session expired; request a new QR code.",
+            return await self._fail_login(
+                login, ChannelLoginStatus.EXPIRED, "Login session expired; request a new QR code."
             )
         if verify_code:
             await self._submit_login_code(plugin, verify_code, login_id)
@@ -226,20 +232,18 @@ class ChannelService:
             state = ChannelLoginState.model_validate(await plugin.is_login())
         except Exception as error:
             logger.exception("IM login poll failed; login_id=%s", login_id)
-            return await self._finish_login(login, status=ChannelLoginStatus.FAILED, message=str(error))
+            return await self._fail_login(login, ChannelLoginStatus.FAILED, str(error))
         if state.status is not ChannelLoginStatus.CONNECTED:
+            if state.status in {ChannelLoginStatus.FAILED, ChannelLoginStatus.EXPIRED}:
+                return await self._fail_login(login, state.status, state.message)
             return await self._finish_login(login, status=state.status, message=state.message)
         if state.credentials is None:
-            return await self._finish_login(
-                login,
-                status=ChannelLoginStatus.FAILED,
-                message="Login succeeded but the plugin returned no credentials.",
+            return await self._fail_login(
+                login, ChannelLoginStatus.FAILED, "Login succeeded but the plugin returned no credentials."
             )
         if not state.credentials.secrets:
-            return await self._finish_login(
-                login,
-                status=ChannelLoginStatus.FAILED,
-                message="Login succeeded but the plugin returned no secrets.",
+            return await self._fail_login(
+                login, ChannelLoginStatus.FAILED, "Login succeeded but the plugin returned no secrets."
             )
         channel = await self._store.create_channel(
             ChannelDraft(
@@ -256,8 +260,7 @@ class ChannelService:
             message=state.message,
             channel_id=channel.id,
         )
-        self._logins.pop(login_id, None)
-        await self._safe_stop(plugin, scope=f"login:{login_id}")
+        await self._discard_login(login_id)
         try:
             await self.reload()
         except Exception:
@@ -298,6 +301,22 @@ class ChannelService:
         )
         await self._store.save_login(updated, state={})
         return updated
+
+    async def _fail_login(self, login: ChannelLogin, status: ChannelLoginStatus, message: str) -> ChannelLogin:
+        """Finish one login that produced no channel and release its plugin."""
+        finished = await self._finish_login(login, status=status, message=message)
+        await self._discard_login(login.id)
+        return finished
+
+    async def _discard_login(self, login_id: str) -> None:
+        """Stop and forget the plugin of a login flow that will not poll again.
+
+        A plugin kept here owns an HTTP client, so leaving an expired or failed
+        login in the map leaks one client per abandoned QR flow.
+        """
+        plugin = self._logins.pop(login_id, None)
+        if plugin is not None:
+            await self._safe_stop(plugin, scope=f"login:{login_id}")
 
     async def _start_runner(self, runtime: ChannelRuntime) -> None:
         """Start one channel plugin, skipping the channel if the plugin fails.
@@ -365,7 +384,7 @@ class ChannelService:
                 raise
             except Exception:
                 logger.exception("IM turn failed; channel_id=%s event_id=%s", channel_id, message.event_id)
-                continue
+                reply = TURN_FAILURE_REPLY
             if reply is None or not reply.strip():
                 continue
             try:
@@ -384,9 +403,26 @@ class ChannelService:
             return None
         # The same external conversation may be active in multiple processes, so
         # serialize turns per channel+chat pair.
-        lock = self._locks.setdefault((channel_id, message.chat_id), asyncio.Lock())
+        lock = self._lock_for(channel_id, message.chat_id)
         async with lock:
             return await self._run_turn(runtime, message)
+
+    def _lock_for(self, channel_id: str, chat_id: str) -> asyncio.Lock:
+        """Return the chat's lock, keeping the cache bounded by dropping idle entries.
+
+        A held lock is never dropped, so an in-flight turn and anything queued
+        behind it keep serialization; only chats with no active turn are evicted.
+        """
+        key = (channel_id, chat_id)
+        lock = self._locks.get(key)
+        if lock is None:
+            if len(self._locks) >= LOCK_CACHE_LIMIT:
+                for existing_key, existing_lock in list(self._locks.items()):
+                    if existing_key != key and not existing_lock.locked():
+                        self._locks.pop(existing_key, None)
+            lock = asyncio.Lock()
+            self._locks[key] = lock
+        return lock
 
     async def _run_turn(self, runtime: ChannelRuntime, message: ChannelInboundMessage) -> str:
         """Run one serialized Agent turn for an external conversation."""
