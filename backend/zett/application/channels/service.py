@@ -567,7 +567,7 @@ class ChannelService:
                     channel_id,
                     message.event_id,
                     session_id,
-                    log_preview(event.content, limit=30),
+                    log_preview(event.content),
                     len(final_content),
                 )
             elif event.type is AgentEventKind.COMPLETED:

@@ -60,7 +60,7 @@ async def test_model_request_is_logged_before_and_after(captured_logs) -> None:
 async def test_model_response_preview_is_capped(captured_logs) -> None:
     async def long_stream(request: ModelRequest) -> AsyncIterator[ModelEvent]:
         del request
-        yield ModelEvent.text("z" * 400)
+        yield ModelEvent.text("z" * 1_200)
         yield ModelEvent.completed(None)
 
     async for _ in TraceLogExtension().on_model_request(
@@ -69,9 +69,9 @@ async def test_model_response_preview_is_capped(captured_logs) -> None:
         pass
 
     response = next(message for message in captured_logs if "Model response" in message)
-    assert "chars=400" in response
+    assert "chars=1200" in response
     text = response.split("text=", 1)[1]
-    assert text == f"'{'z' * 60}…'"
+    assert text == f"'{'z' * 1000}…'"
 
 
 async def test_model_request_previews_an_image_message_without_its_bytes(captured_logs) -> None:
@@ -106,23 +106,23 @@ async def test_model_request_failure_is_logged_and_reraised(captured_logs) -> No
 
 async def test_tool_call_is_logged_with_capped_arguments_and_result(captured_logs) -> None:
     async def call_next() -> str:
-        return "y" * 400
+        return "y" * 1_200
 
     result = await TraceLogExtension().on_tool_call(
         _context(),
-        ToolCall("call-1", "create_artifact", {"content": "x" * 400}),
+        ToolCall("call-1", "create_artifact", {"content": "x" * 1_200}),
         call_next,
     )
 
-    assert result == "y" * 400
+    assert result == "y" * 1_200
     started = next(message for message in captured_logs if "Tool call;" in message)
     assert "tool=create_artifact" in started
     arguments = started.split("args=", 1)[1]
-    assert arguments.endswith("…") and len(arguments) == 61
-    assert "x" * 61 not in started
+    assert arguments.endswith("…") and len(arguments) == 1001
+    assert "x" * 1001 not in started
     completed = next(message for message in captured_logs if "Tool call completed" in message)
-    assert f"result={'y' * 60}…" in completed
-    assert "y" * 61 not in completed
+    assert f"result={'y' * 1000}…" in completed
+    assert "y" * 1001 not in completed
 
 
 async def test_tool_call_failure_is_logged_and_reraised(captured_logs) -> None:

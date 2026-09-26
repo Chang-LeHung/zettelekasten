@@ -61,7 +61,7 @@ class ScheduledRunLogDispatcher(AgentEventDispatcher):
             "Scheduled run delta; task_id=%s run_id=%s delta=%r chars=%d",
             self._task_id,
             self._run_id,
-            log_preview(delta, limit=30),
+            log_preview(delta),
             self._chars,
         )
 
