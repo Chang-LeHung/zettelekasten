@@ -83,15 +83,17 @@ class SchedulerRunner:
                 next_run_at = self.next_occurrence(task.schedule, current)
                 run = self._scheduled_run(task, due_at)
 
-                # TODO: Replace the one-shot lease with an explicit periodic heartbeat.
-                # Current lease lifecycle:
+                # Lease lifecycle:
                 # 1. Scheduler claim_scheduled() writes lease_run_id/lease_expires_at
                 #    when it queues a pending run.
-                # 2. Worker claim_pending() renews the same lease for timeout_seconds
-                #    plus its startup grace, then marks the run running.
-                # 3. Worker finish_run() clears the lease on success, skip, timeout,
+                # 2. Worker claim_pending() takes the same lease over for
+                #    timeout_seconds plus its startup grace and marks the run running.
+                # 3. The executing worker renews that lease on a heartbeat, so an
+                #    expired lease means the worker stopped renewing (a crash or a
+                #    stalled process) rather than a run that is merely slow.
+                # 4. Worker finish_run() clears the lease on success, skip, timeout,
                 #    cancellation, or error.
-                # 4. recover_expired_leases() clears an abandoned lease and marks its
+                # 5. recover_expired_leases() clears an abandoned lease and marks its
                 #    pending/running run interrupted.
                 #
                 # lease_active only means both lease columns are populated. It does

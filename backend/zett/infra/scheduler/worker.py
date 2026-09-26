@@ -23,6 +23,14 @@ from .contracts import (
 
 logger = get_logger(__name__)
 
+#: A worker renews the lease of the run it executes this often, so an expired
+#: lease means the worker is gone instead of merely slow.
+LEASE_RENEW_SECONDS = 15.0
+
+#: Every renewal covers this much time. A worker that dies mid-run is therefore
+#: recovered within about one window instead of waiting out the whole timeout.
+LEASE_WINDOW_SECONDS = 120.0
+
 
 @dataclass(frozen=True, slots=True)
 class WorkerTickResult:
@@ -267,8 +275,16 @@ class WorkerRunner:
                 )
                 raise LookupError(f"No action executor registered for {task.action.kind!r}")
             payload = executor.validate_payload(task.action.payload)
-            async with timeout(task.timeout_seconds):
-                result: ActionResult = await executor.execute(context, payload)
+            renewer = asyncio.create_task(
+                self._renew_lease(task, run_id=run_id),
+                name=f"scheduled-lease:{task.id}:{run_id}",
+            )
+            try:
+                async with timeout(task.timeout_seconds):
+                    result: ActionResult = await executor.execute(context, payload)
+            finally:
+                renewer.cancel()
+                await asyncio.gather(renewer, return_exceptions=True)
             status = (
                 ScheduledTaskRunStatus.SUCCEEDED
                 if result.status is ActionExecutionStatus.SUCCEEDED
@@ -344,6 +360,39 @@ class WorkerRunner:
                 error_type=type(error).__name__,
                 error_message=str(error),
             )
+
+    async def _renew_lease(self, task: ScheduledTaskEntity, *, run_id: str) -> None:
+        """Keep this run's task lease alive while its executor is working.
+
+        The claim covers the first window; from then on a live worker renews it,
+        so recovery only fires for a worker that stopped renewing (a crash, a
+        stalled process, or a machine that went away) rather than for a run that
+        simply takes longer than one lease window.
+        """
+        interval = min(LEASE_RENEW_SECONDS, max(1.0, task.timeout_seconds / 3))
+        while True:
+            await asyncio.sleep(interval)
+            now = self._normalize(self.clock())
+            try:
+                renewed = await self.storage.renew_lease(
+                    task_id=task.id,
+                    run_id=run_id,
+                    lease_expires_at=now + timedelta(seconds=LEASE_WINDOW_SECONDS),
+                    now=now,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # A transient database failure must not silently stop the heartbeat.
+                logger.exception("Could not renew the scheduled task lease; task_id=%s run_id=%s", task.id, run_id)
+                continue
+            if not renewed:
+                logger.warning(
+                    "Scheduled run no longer owns its task lease; stopping renewal; task_id=%s run_id=%s",
+                    task.id,
+                    run_id,
+                )
+                return
 
     async def _finish_run(
         self,
