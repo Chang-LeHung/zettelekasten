@@ -4,14 +4,25 @@ from typing import Any
 
 import pytest
 from agim import (
+    InboundMedia,
     InboundMessage,
     LoginCredentials,
     LoginHandshake,
     LoginState,
     LoginStatus,
+    MediaKind,
+    MediaRejectionReason,
     ReceiveResult,
+    RejectedMedia,
 )
-from zett.plugins import ChannelLoginStatus, JsonValue, KVStorage, PluginContext
+from zett.plugins import (
+    ChannelLoginStatus,
+    ChannelMediaKind,
+    ChannelMediaRejectionReason,
+    JsonValue,
+    KVStorage,
+    PluginContext,
+)
 
 import zett_weixin.plugin as plugin_module
 from zett_weixin import WeChatPlugin
@@ -44,6 +55,9 @@ class FakeClient:
         self.closed = False
         self.sent: list[tuple[str, str, str | None]] = []
         self.cursors: list[str | None] = []
+        self.inbound_text = "hello"
+        self.inbound_media: list[InboundMedia] = []
+        self.inbound_rejections: list[RejectedMedia] = []
 
     async def login(self) -> LoginHandshake:
         return LoginHandshake(
@@ -71,7 +85,9 @@ class FakeClient:
                 event_id="event-1",
                 chat_id="user-1",
                 user_id="user-1",
-                text="hello",
+                text=self.inbound_text,
+                media=self.inbound_media,
+                rejected_media=self.inbound_rejections,
                 reply_token="context-1",
             ),
             cursor="cursor-2",
@@ -155,6 +171,52 @@ async def test_receive_persists_cursor_and_context_token(monkeypatch: pytest.Mon
     assert kv.data["receive:cursor"] == "cursor-2"
     assert kv.data["reply:context:user-1"] == "context-1"
     assert clients[-1].cursors == ["cursor-1"]
+    await plugin.stop()
+
+
+async def test_receive_carries_media_into_the_plugin_contract(monkeypatch: pytest.MonkeyPatch) -> None:
+    def factory(**kwargs: Any) -> FakeClient:
+        client = FakeClient(**kwargs)
+        client.inbound_text = ""
+        client.inbound_media = [
+            InboundMedia(kind=MediaKind.IMAGE, media_type="image/png", name="photo.png", data=b"png-bytes")
+        ]
+        return client
+
+    monkeypatch.setattr(plugin_module.agim, "WeChatClient", factory)
+    plugin = WeChatPlugin(_context(MemoryKV()))
+    await plugin.start()
+
+    message = await plugin.receive()
+
+    assert message.text == ""
+    assert len(message.media) == 1
+    assert message.media[0].kind is ChannelMediaKind.IMAGE
+    assert message.media[0].media_type == "image/png"
+    assert message.media[0].name == "photo.png"
+    assert message.media[0].data == b"png-bytes"
+    await plugin.stop()
+
+
+async def test_receive_carries_a_rejected_attachment_into_the_plugin_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def factory(**kwargs: Any) -> FakeClient:
+        client = FakeClient(**kwargs)
+        client.inbound_text = ""
+        client.inbound_rejections = [RejectedMedia(kind=MediaKind.VIDEO, reason=MediaRejectionReason.TOO_LARGE)]
+        return client
+
+    monkeypatch.setattr(plugin_module.agim, "WeChatClient", factory)
+    plugin = WeChatPlugin(_context(MemoryKV()))
+    await plugin.start()
+
+    message = await plugin.receive()
+
+    assert message.media == []
+    assert len(message.rejected_media) == 1
+    assert message.rejected_media[0].kind is ChannelMediaKind.VIDEO
+    assert message.rejected_media[0].reason is ChannelMediaRejectionReason.TOO_LARGE
     await plugin.stop()
 
 

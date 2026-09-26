@@ -7,6 +7,10 @@ from zett.plugins import (
     ChannelLoginChallenge,
     ChannelLoginState,
     ChannelLoginStatus,
+    ChannelMedia,
+    ChannelMediaKind,
+    ChannelMediaRejection,
+    ChannelMediaRejectionReason,
     ChannelPlugin,
     PluginContext,
 )
@@ -112,6 +116,22 @@ class WeChatPlugin(ChannelPlugin):
             chat_id=result.message.chat_id,
             user_id=result.message.user_id,
             text=result.message.text,
+            media=[
+                ChannelMedia(
+                    kind=ChannelMediaKind(item.kind.value),
+                    media_type=item.media_type,
+                    name=item.name,
+                    data=item.data,
+                )
+                for item in result.message.media
+            ],
+            rejected_media=[
+                ChannelMediaRejection(
+                    kind=ChannelMediaKind(item.kind.value),
+                    reason=ChannelMediaRejectionReason(item.reason.value),
+                )
+                for item in result.message.rejected_media
+            ],
             reply_token=result.message.reply_token,
         )
 
