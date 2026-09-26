@@ -167,7 +167,7 @@ async def test_list_providers_offers_only_enabled_choices_and_pages() -> None:
 
         async def stream(self, request: ModelRequest) -> AsyncIterator[ModelEvent]:
             if self.step == 0:
-                message = AssistantMessage(tool_calls=(ToolCall("providers", "list_providers", {"limit": 500}),))
+                message = AssistantMessage(tool_calls=(ToolCall("providers", "list_providers", {"limit": 50}),))
             elif self.step == 1:
                 found = _tool_items(request)
                 assert {item["name"] for item in found} == {"Live", "Second"}
