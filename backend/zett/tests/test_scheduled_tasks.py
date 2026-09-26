@@ -33,6 +33,7 @@ from zett.infra.scheduler import (
     next_run_after,
 )
 from zett.infra.scheduler import agent_prompt as scheduled_agent_module
+from zett.infra.scheduler import worker as scheduled_worker_module
 from zett.infra.scheduler.agent_prompt import scheduled_agent_executor
 from zett.main import app
 from zett.schemas import (
@@ -335,6 +336,125 @@ async def test_pending_run_can_only_be_claimed_by_one_worker() -> None:
     )
 
     assert sorted(claims) == [False, True]
+
+
+class LeaseObservingExecutor(ActionExecutor):
+    """Watch the live lease, then prove a stale lease scan must leave it alone."""
+
+    action_kind = "probe"
+
+    def __init__(
+        self,
+        *,
+        task_id: str,
+        claimed_expires_at: datetime,
+        recovery_now: datetime,
+        attempts: int = 500,
+    ) -> None:
+        self._task_id = task_id
+        self._claimed_expires_at = claimed_expires_at
+        self._recovery_now = recovery_now
+        self._attempts = attempts
+        self.renewed_expires_at: datetime | None = None
+        self.recovered_run_ids: list[str] = []
+        self.still_running = False
+
+    def validate_payload(self, payload: Mapping[str, object]) -> dict[str, object]:
+        return dict(payload)
+
+    async def execute(
+        self,
+        context: ExecutionContext,
+        payload: Mapping[str, object],
+    ) -> ActionResult:
+        for _ in range(self._attempts):
+            task = await scheduled_task_storage.get(self._task_id)
+            if task is not None and task.lease_expires_at != self._claimed_expires_at:
+                self.renewed_expires_at = task.lease_expires_at
+                break
+            await asyncio.sleep(0.01)
+        # A scan past the original claim deadline must not steal a run whose
+        # worker is still renewing its lease.
+        self.recovered_run_ids = [
+            run.id for run in await scheduled_task_storage.recover_expired_leases(self._recovery_now)
+        ]
+        run = await scheduled_task_storage.get_run(context.run_id)
+        self.still_running = run is not None and run.status is ScheduledTaskRunStatus.RUNNING
+        return ActionResult(status=ActionExecutionStatus.SUCCEEDED)
+
+
+async def test_worker_renews_the_task_lease_while_a_run_executes(monkeypatch) -> None:
+    monkeypatch.setattr(scheduled_worker_module, "LEASE_RENEW_SECONDS", 0.05)
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    task = await _due_task(now=now)
+    claimed_expires_at = now + timedelta(seconds=task.timeout_seconds + 60)
+    executor = LeaseObservingExecutor(
+        task_id=task.id,
+        claimed_expires_at=claimed_expires_at,
+        recovery_now=now + timedelta(seconds=task.timeout_seconds + 75),
+    )
+    scheduler = SchedulerRunner(next_occurrence=next_run_after, clock=lambda: now)
+    assert (await scheduler.run_once(now)).queued == 1
+
+    runner = WorkerRunner(executors=ActionExecutorRegistry((executor,)), clock=lambda: now)
+    assert (await runner.run_once(now)).started == 1
+    await runner.wait_idle()
+
+    # The heartbeat pushed the expiry out to its own window instead of leaving
+    # the claim's shorter deadline in place for a run that is still alive.
+    assert executor.renewed_expires_at == now + timedelta(seconds=scheduled_worker_module.LEASE_WINDOW_SECONDS)
+    assert executor.recovered_run_ids == []
+    assert executor.still_running
+    refreshed = await scheduled_task_storage.get(task.id)
+    assert refreshed is not None
+    assert refreshed.lease_run_id is None
+    assert refreshed.lease_expires_at is None
+
+
+async def test_renew_lease_requires_the_current_run_id() -> None:
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    task = await _due_task(now=now)
+    run = await scheduled_task_storage.create_run(
+        ScheduledTaskRunCreate(
+            id=new_uuid7(),
+            task_id=task.id,
+            scheduled_for=now,
+            trigger_kind=ScheduledTaskTrigger.MANUAL,
+            status=ScheduledTaskRunStatus.PENDING,
+            idempotency_key=f"manual:{new_uuid7()}",
+            action=task.action,
+        )
+    )
+    assert await scheduled_task_storage.claim_pending(
+        now=now,
+        run_id=run.id,
+        task_id=task.id,
+        lease_expires_at=now + timedelta(seconds=30),
+        started_at=now,
+    )
+    renewed_expires_at = now + timedelta(seconds=90)
+
+    assert await scheduled_task_storage.renew_lease(
+        task_id=task.id,
+        run_id=run.id,
+        lease_expires_at=renewed_expires_at,
+        now=now,
+    )
+    refreshed = await scheduled_task_storage.get(task.id)
+    assert refreshed is not None
+    assert refreshed.lease_expires_at == renewed_expires_at
+
+    # Another worker that took the lease over is not this run's to renew.
+    assert not await scheduled_task_storage.renew_lease(
+        task_id=task.id,
+        run_id=new_uuid7(),
+        lease_expires_at=now + timedelta(seconds=120),
+        now=now,
+    )
+    still_mine = await scheduled_task_storage.get(task.id)
+    assert still_mine is not None
+    assert still_mine.lease_expires_at == renewed_expires_at
+    assert still_mine.lease_run_id == run.id
 
 
 async def test_scheduler_run_forever_retries_after_a_scan_error(monkeypatch) -> None:

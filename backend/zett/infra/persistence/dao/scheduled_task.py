@@ -357,6 +357,30 @@ class ScheduledTaskStorage(AsyncStorage[ScheduledTaskWrite, ScheduledTaskEntity,
             await session.flush()
             return _run_out(model)
 
+    async def renew_lease(
+        self,
+        *,
+        task_id: str,
+        run_id: str,
+        lease_expires_at: datetime,
+        now: datetime,
+    ) -> bool:
+        """Extend the lease of one run this worker still owns.
+
+        Returns ``False`` when the task no longer belongs to this run, which means
+        another worker took the lease over after this one looked dead.
+        """
+        async with session_scope() as session:
+            result = await session.execute(
+                update(ScheduledTaskRow)
+                .where(
+                    ScheduledTaskRow.id == task_id,
+                    ScheduledTaskRow.lease_run_id == run_id,
+                )
+                .values(lease_expires_at=lease_expires_at, updated_at=now)
+            )
+            return result.rowcount == 1
+
     async def mark_run_skipped(
         self,
         *,
