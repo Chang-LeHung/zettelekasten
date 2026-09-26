@@ -48,6 +48,10 @@ const expandedScale = ref(1)
 const basePageWidth = ref(612)
 const basePageHeight = ref(792)
 const outline = ref<OutlineEntry[]>([])
+//: The inline auto-fit has produced a scale for the current stage width.
+const stageFitted = ref(false)
+//: Stage width the current inline scale was fitted to.
+let fittedWidth = 0
 const expanded = ref(false)
 const presenting = ref(false)
 const presentationRoot = ref<HTMLElement | null>(null)
@@ -64,6 +68,7 @@ let presentationPreviousFocus: HTMLElement | null = null
 let presentationPreviousOverflow = ''
 let presentationWheelTimer: number | null = null
 let inlineAutoFit = true
+let fitFrame: number | null = null
 let stageResizeObserver: ResizeObserver | null = null
 const scale = computed({
   get: () => expanded.value ? expandedScale.value : inlineScale.value,
@@ -72,6 +77,8 @@ const scale = computed({
     else inlineScale.value = value
   },
 })
+//: Expanded and presentation modes scale themselves, so only inline pages wait for a fit.
+const pagesVisible = computed(() => expanded.value || presenting.value || stageFitted.value)
 const inlineOutlineOpen = ref(false)
 const expandedOutlineOpen = ref(false)
 const outlineOpen = computed({
@@ -175,7 +182,85 @@ function fitScaleForStage(): number {
 
 function applyInlineAutoFit(): void {
   if (!inlineAutoFit || expanded.value || presenting.value) return
+  applyInlineFit()
+  stageFitted.value = true
+}
+
+/** Fit the current stage width and report the width that produced the scale. */
+function applyInlineFit(): number {
+  if (!inlineAutoFit || expanded.value || presenting.value) return fittedWidth
+  const width = stage.value?.clientWidth ?? 0
   inlineScale.value = fitScaleForStage()
+  fittedWidth = width
+  return width
+}
+
+/**
+ * Hide the fitted pages until the stage width is measured again.
+ *
+ * ResizeObserver runs after layout and before paint, so clearing the fit here
+ * keeps the wrong-scale frame off the screen: without it the pane paints the
+ * page at the previous width and snaps back once the next measurement lands.
+ */
+function invalidateInlineFit(): void {
+  const width = stage.value?.clientWidth ?? 0
+  if (!inlineAutoFit || width === fittedWidth) return
+  stageFitted.value = false
+}
+
+/**
+ * Re-fit across the next few frames.
+ *
+ * A layout change (hiding the assets column, switching workspace views, mounting
+ * the pane) reaches the stage size one frame at a time, so a single measurement
+ * would paint the page at the previous width and snap back afterwards.
+ */
+function scheduleInlineFit(frames = 6): void {
+  if (fitFrame !== null) cancelAnimationFrame(fitFrame)
+  if (typeof requestAnimationFrame !== 'function' || !inlineAutoFit) return
+  let remaining = frames
+  let previousWidth = -1
+  const step = (): void => {
+    // Re-fit every frame: a stale scale is worse than another measurement, because
+    // the pages must never be painted wider than the pane that shows them.
+    const width = stage.value?.clientWidth ?? 0
+    inlineScale.value = fitScaleForStage()
+    // Keep the pages visible when nothing moved, and reveal them once two frames
+    // agree, so a settling layout never decides the fitted size.
+    if (width > 0 && (width === previousWidth || width === fittedWidth)) {
+      fittedWidth = width
+      stageFitted.value = true
+      fitFrame = null
+      return
+    }
+    stageFitted.value = false
+    previousWidth = width
+    remaining -= 1
+    if (remaining > 0) {
+      fitFrame = requestAnimationFrame(step)
+      return
+    }
+    // The pane is still moving after the whole window; show the current fit.
+    stageFitted.value = true
+    fitFrame = null
+  }
+  fitFrame = requestAnimationFrame(step)
+}
+
+/** Wait for the pane's layout to settle before trusting a width measurement. */
+async function fitAfterLayout(frames = 2): Promise<void> {
+  if (typeof requestAnimationFrame !== 'function') return
+  for (let remaining = frames; remaining > 0; remaining -= 1) {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  }
+  applyInlineAutoFit()
+}
+
+/** Re-fit the visible pages now, for a caller that already changed the pane's width. */
+function refitInlinePages(): void {
+  if (!inlineAutoFit || expanded.value || presenting.value) return
+  applyInlineFit()
+  scheduleInlineFit(3)
 }
 
 function handleFullscreenChange(): void {
@@ -311,8 +396,11 @@ async function loadDocument(): Promise<void> {
     basePageWidth.value = viewport.width
     basePageHeight.value = viewport.height
     outline.value = flattenOutline((documentOutline || []) as OutlineItem[])
+    // A new document has its own page width, so its fit is unknown until measured.
+    stageFitted.value = false
     await nextTick()
-    applyInlineAutoFit()
+    await fitAfterLayout()
+    scheduleInlineFit()
     updateCurrentPage()
     if (props.initialMode === 'presentation') await startPresentation()
   } catch (error) {
@@ -432,13 +520,18 @@ onMounted(() => {
   if (props.initialMode !== 'inline') void toggleExpanded()
   if (typeof ResizeObserver !== 'undefined' && stage.value) {
     stageResizeObserver = new ResizeObserver(() => {
-      applyInlineAutoFit()
+      invalidateInlineFit()
+      scheduleInlineFit()
       if (presenting.value) updatePresentationViewport()
     })
     stageResizeObserver.observe(stage.value)
   }
+  invalidateInlineFit()
+  scheduleInlineFit()
 })
 onBeforeUnmount(() => {
+  if (fitFrame !== null) cancelAnimationFrame(fitFrame)
+  fitFrame = null
   stopPresentation()
   window.removeEventListener('resize', updatePresentationViewport)
   window.removeEventListener('keydown', handlePresentationKey, true)
@@ -451,6 +544,9 @@ onBeforeUnmount(() => {
   if (zoomFrame !== null) window.cancelAnimationFrame(zoomFrame)
   void disposeDocument().catch(() => undefined)
 })
+
+//: The pane tells every preview when it changed a width this frame.
+defineExpose({ refit: refitInlinePages })
 </script>
 
 <template>
@@ -499,7 +595,11 @@ onBeforeUnmount(() => {
     <div v-if="outlineOpen" class="pdf-outline-resizer" role="separator" tabindex="0" aria-label="Resize document outline" aria-orientation="vertical" :aria-valuenow="Math.round(outlineWidth)" @pointerdown="startOutlineResize" @pointermove="resizeOutline" @pointerup="stopOutlineResize" @pointercancel="stopOutlineResize" @lostpointercapture="stopOutlineResize" @keydown="resizeOutlineWithKeyboard" />
 
     <div ref="stage" class="pdf-pages" @scroll.passive="handleScroll" @wheel="handleWheel">
-      <div v-if="documentProxy && !errorMessage" class="pdf-page-stack">
+      <div
+        v-if="documentProxy && !errorMessage"
+        class="pdf-page-stack"
+        :class="{ 'fit-pending': !pagesVisible }"
+      >
         <PdfPage
           v-for="page in pageCount"
           :key="page"
@@ -574,6 +674,7 @@ onBeforeUnmount(() => {
 .pdf-outline p { margin: 1rem; color: #8a928d; font-size: .65rem; line-height: 1.5; }
 .pdf-pages { position: relative; min-width: 0; min-height: 0; overflow: auto; overflow-anchor: none; scrollbar-gutter: stable; padding: 1.5rem; background: #e7eae8; }
 .pdf-page-stack { display: grid; justify-items: center; gap: 1rem; width: max-content; min-width: 100%; }
+.pdf-page-stack.fit-pending { visibility: hidden; }
 .pdf-presentation { position: fixed; inset: 0; z-index: 1900; display: grid; place-items: center; overflow: hidden; color: #eef3ef; background: #1c211e; outline: none; }
 .presentation-page { display: grid; place-items: center; width: 100%; height: 100%; }
 .presentation-page :deep(.pdf-page) { box-shadow: 0 20px 80px rgba(0,0,0,.36); }
