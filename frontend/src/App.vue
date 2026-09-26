@@ -4159,7 +4159,7 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .status-dot.online { background: #49a369; box-shadow: 0 0 0 3px rgba(73,163,105,.12); }
 
 .workspace { min-width: 0; min-height: 100vh; grid-column: 2; }
-.topbar { position: sticky; top: 0; z-index: 8; min-height: 5rem; display: flex; align-items: center; gap: 1rem; padding: 1rem clamp(1.5rem, 4vw, 4rem); background: rgba(245,245,247,.72); backdrop-filter: blur(22px) saturate(160%); -webkit-backdrop-filter: blur(22px) saturate(160%); }
+.topbar { position: sticky; top: 0; z-index: 8; min-height: 5rem; display: flex; align-items: center; gap: 1rem; padding: 1rem clamp(1.5rem, 4vw, 4rem); background: rgba(245,245,247,.97); backdrop-filter: blur(22px) saturate(160%); -webkit-backdrop-filter: blur(22px) saturate(160%); }
 .topbar::after { content: ""; position: absolute; left: 0; right: 0; bottom: -0.8rem; height: .8rem; background: linear-gradient(rgba(245,245,247,.55), transparent); pointer-events: none; }
 .topbar.compact { justify-content: space-between; }
 .topbar.compact h1 { margin: .1rem 0 0; font-size: 1.45rem; }
@@ -4247,6 +4247,12 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .agent-workspace { height: calc(100vh - 8.2rem); min-height: 39rem; display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 5fr) minmax(0, 3fr); gap: .72rem; }
 @media (min-width: 1181px) { .agent-workspace.assets-hidden { grid-template-columns: minmax(0, 5fr) minmax(0, 3fr); } }
 .trace-workspace { height: calc(100vh - 8.2rem); min-height: 39rem; }
+@media (min-width: 1181px) {
+  /* The workspace owns its scrolling on a wide screen: it fills the viewport below the
+     bar, so the page itself never scrolls and no pane slides under the sticky topbar. */
+  .create-view { height: calc(100vh - 4.5rem); min-height: 0; display: flex; flex-direction: column; overflow: hidden; padding-top: .9rem; padding-bottom: 1rem; }
+  .create-view > .agent-workspace, .create-view > .trace-workspace { flex: 1 1 auto; height: auto; min-height: 0; }
+}
 .assets-pane, .agent-chat, .artifact-pane { min-width: 0; min-height: 0; overflow: hidden; border: 1px solid rgba(29,29,31,.08); border-radius: 1.15rem; background: rgba(255,255,255,.97); box-shadow: var(--shadow); backdrop-filter: blur(18px); transition: opacity 180ms ease, transform 240ms cubic-bezier(.2,.8,.2,1); }
 .agent-workspace.session-switching .assets-pane, .agent-workspace.session-switching .artifact-pane { opacity: .48; transform: translateY(4px); pointer-events: none; }
 .agent-chat { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
