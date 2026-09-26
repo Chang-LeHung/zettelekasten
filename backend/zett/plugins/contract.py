@@ -16,6 +16,7 @@ class PluginKind(StrEnum):
     """Category of plugin; each kind discovers through its own entry-point group."""
 
     CHANNEL = "channel"
+    AGENT = "agent"
 
 
 class PluginError(RuntimeError):

@@ -26,6 +26,7 @@ from zett_agent import (
 
 from .._compat import Self
 from ..infra.agent.runtime import get_agent_runtime_storage
+from ..infra.plugins import agent_plugin_service
 from .at_command import (
     AtCommandDefinition,
     AtCommandHandler,
@@ -37,6 +38,7 @@ from .at_command import (
 from .config import SYSTEM_PROMPT, ZettelkastenAgentConfig
 from .container import ZettelkastenContainer, ZettelkastenExt
 from .extensions import (
+    AgentPluginExtension,
     ArtifactExtension,
     AssetExtension,
     ContextCompositionExtension,
@@ -111,6 +113,13 @@ class ZettelkastenAgent(ZettelkastenContainer):
             extensions.append(AskUserExtension())
         if config.usage_activity_storage is not None:
             extensions.append(UsageActivityExtension(config.usage_activity_storage))
+        # One adapter, appended last: plugins run inside every built-in
+        # extension, so a plugin can never wrap the persistence, safety, or
+        # logging boundaries Zett owns. The adapter namespaces plugin tools and
+        # attributes any plugin failure to its plugin id.
+        plugins = config.agent_plugins if config.agent_plugins is not None else agent_plugin_service.plugins()
+        if plugins:
+            extensions.append(AgentPluginExtension(plugins))
         self.agent = Agent(
             None,
             system_prompt=SYSTEM_PROMPT,

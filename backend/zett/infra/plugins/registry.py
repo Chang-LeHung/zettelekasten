@@ -10,6 +10,7 @@ from importlib.metadata import entry_points
 
 from ...infra.log import get_logger
 from ...plugins import (
+    AGENT_PLUGIN_ENTRY_POINT_GROUP,
     JsonValue,
     KVStorage,
     NamespacedKV,
@@ -26,7 +27,10 @@ PluginFactory = Callable[[PluginContext], Plugin]
 
 # Each plugin kind discovers through its own entry-point group, so adding a new
 # kind needs a new group rather than a rewrite of the registry.
-ENTRY_POINT_GROUPS: dict[PluginKind, str] = {PluginKind.CHANNEL: "zett.channels"}
+ENTRY_POINT_GROUPS: dict[PluginKind, str] = {
+    PluginKind.CHANNEL: "zett.channels",
+    PluginKind.AGENT: AGENT_PLUGIN_ENTRY_POINT_GROUP,
+}
 
 
 class PluginRegistry:

@@ -13,6 +13,7 @@ from zett_agent import (
 )
 
 from ..config import settings
+from ..plugins import AgentPlugin
 from .container import ZettelkastenExt
 from .plugins import SkillSlashCommandExtension
 
@@ -66,6 +67,11 @@ class ZettelkastenAgentConfig:
     interactive: bool = True
     coding_enabled: bool = True
     allow_direct_artifact_edits: bool = False
+    #: Agent plugins to load, or None to use the installed ones.
+    #:
+    #: Callers inject this in tests; production resolves it through the plugin
+    #: service, which discovers ``zett.agent`` entry points once per process.
+    agent_plugins: tuple[AgentPlugin, ...] | None = None
 
     def __post_init__(self) -> None:
         if not self.session_id.strip():

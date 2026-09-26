@@ -20,6 +20,7 @@ from .config import settings
 from .infra.agent.runtime import close_agent_runtime_storage, get_agent_runtime_storage
 from .infra.log import configure_logging, get_logger, shutdown_logging
 from .infra.persistence.database import init_db
+from .infra.plugins import agent_plugin_service
 from .infra.scheduler import process_platform
 from .infra.scheduler.runtime_state import RuntimeStateStore
 from .infra.skills.builtin import install_builtin_skills
@@ -65,6 +66,7 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
         supervisor: ProcessSupervisor | None = None
         try:
             await channel_service.initialize()
+            await agent_plugin_service.start()
             supervisor = ProcessSupervisor(runtime_state_store=runtime_state_store)
             await supervisor.start()
             logger.info("Zett service started; log_file=%s", log_path)
@@ -73,6 +75,7 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
             await channel_service.shutdown()
             if supervisor is not None:
                 await supervisor.stop()
+            await agent_plugin_service.stop()
             await runtime_state_store.remove()
     finally:
         logger.info("Zett service stopped")
