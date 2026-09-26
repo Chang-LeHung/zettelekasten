@@ -27,6 +27,7 @@ from zett_agent import (
 from .._compat import Self
 from ..infra.agent.runtime import get_agent_runtime_storage
 from ..infra.plugins import agent_plugin_service
+from ..plugins import PluginError
 from .at_command import (
     AtCommandDefinition,
     AtCommandHandler,
@@ -49,7 +50,7 @@ from .extensions import (
     TagExtension,
     TraceLogExtension,
 )
-from .plugins import SessionReferenceExtension
+from .plugins import PluginCommandRegistry, SessionReferenceExtension
 from .slash import (
     SlashCommandDefinition,
     SlashCommandHandler,
@@ -118,6 +119,7 @@ class ZettelkastenAgent(ZettelkastenContainer):
         # logging boundaries Zett owns. The adapter namespaces plugin tools and
         # attributes any plugin failure to its plugin id.
         plugins = config.agent_plugins if config.agent_plugins is not None else agent_plugin_service.plugins()
+        self._agent_plugins = tuple(plugins)
         if plugins:
             extensions.append(AgentPluginExtension(plugins))
         self.agent = Agent(
@@ -139,6 +141,13 @@ class ZettelkastenAgent(ZettelkastenContainer):
             return
         for extension in self.extensions:
             await extension.register(self)
+        for plugin in self._agent_plugins:
+            try:
+                await plugin.register(PluginCommandRegistry(self, plugin.plugin_id))
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:
+                raise PluginError(f"Agent plugin {plugin.plugin_id!r} failed in register: {error}") from error
         self._extensions_loaded = True
 
     def register_slash_command(

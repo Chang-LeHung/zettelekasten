@@ -8,6 +8,7 @@ pulling in Zett application or infrastructure modules so plugins (for example
 from .agent import (
     AGENT_PLUGIN_API_VERSION,
     AGENT_PLUGIN_ENTRY_POINT_GROUP,
+    AgentCommandRegistry,
     AgentPlugin,
 )
 from .channels import (
@@ -41,6 +42,7 @@ __all__ = [
     "AGENT_PLUGIN_API_VERSION",
     "AGENT_PLUGIN_ENTRY_POINT_GROUP",
     "AgentPlugin",
+    "AgentCommandRegistry",
     "ChannelCredentials",
     "ChannelInboundMessage",
     "ChannelLoginChallenge",

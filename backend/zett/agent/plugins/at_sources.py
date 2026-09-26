@@ -7,9 +7,7 @@ turn carries kinds and IDs, and the ``get_asset`` and ``get_artifact`` tools sta
 responsible for reading content.
 """
 
-from collections.abc import AsyncIterator, Sequence
-
-from zett_agent import AgentEvent
+from collections.abc import Sequence
 
 from ...infra.persistence.dao import artifact_storage, session_asset_storage
 from ...schemas import (
@@ -20,11 +18,9 @@ from ...schemas import (
     SessionAssetType,
 )
 from ..at_command import (
-    AtCommandHandler,
-    AtCommandInvocation,
     AtCommandItem,
     AtCommandSource,
-    at_command_message,
+    reference_handler,
 )
 from ..container import ZettelkastenContainer, ZettelkastenExt
 
@@ -118,24 +114,8 @@ class SessionReferenceExtension(ZettelkastenExt):
                 owner=source.owner,
                 kind=source.kind,
                 source=source,
-                handler=_reference_handler(),
+                handler=reference_handler(),
             )
-
-
-def _reference_handler() -> AtCommandHandler:
-    """Build the handler that names one referenced resource for the Agent.
-
-    The content stays behind ``get_asset`` and ``get_artifact``: the turn only
-    learns the kind and ID of what the user pointed at, and the Raw Log records
-    the browser message so the conversation UI can show what the user typed.
-    """
-
-    async def handler(invocation: AtCommandInvocation) -> AsyncIterator[AgentEvent]:
-        message = at_command_message(invocation.message, (invocation.item,))
-        async for event in invocation.prompt(message=message):
-            yield event
-
-    return handler
 
 
 __all__ = [

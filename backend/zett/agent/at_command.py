@@ -208,6 +208,24 @@ def at_command_message(message: UserMessage, items: Sequence[AtCommandItem]) -> 
     return UserMessage(content=parts, attributes=attributes)
 
 
+def reference_handler() -> AtCommandHandler:
+    """Build the default handler for one registered ``@`` kind.
+
+    Most kinds only need the model to learn what the user pointed at, so this
+    handler names each reference and runs the turn: the content stays behind the
+    tool that owns it (``get_asset``, ``get_artifact``, or a plugin's own tool),
+    and the Raw Log records the browser message so the conversation UI shows what
+    the user typed instead of the expanded prompt.
+    """
+
+    async def handler(invocation: AtCommandInvocation) -> AsyncIterator[AgentEvent]:
+        message = at_command_message(invocation.message, (invocation.item,))
+        async for event in invocation.prompt(message=message):
+            yield event
+
+    return handler
+
+
 def at_command_description(value: str) -> str:
     """Normalize one user-visible menu description."""
     collapsed = " ".join(value.split())
@@ -228,5 +246,6 @@ __all__ = [
     "at_command_message",
     "at_command_token_name",
     "named_at_commands",
+    "reference_handler",
     "stable_at_command_id",
 ]
