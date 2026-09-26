@@ -1,4 +1,4 @@
-"""Persist the images submitted with one conversation turn.
+"""Persist the files that arrived with one conversation turn.
 
 The browser submits pasted images as base64 data URLs inside the user message,
 so the model receives pixels but no file it can hand to ``view_image``, LaTeX, or
@@ -7,10 +7,13 @@ directory when the message is submitted, which is the location the session-files
 system message names for the model.
 
 The user message itself is unchanged: the immutable raw message keeps carrying
-the data URL, and these files are the model-facing handle for the same bytes.
+the data URL. Channel attachments are the same idea for inbound IM media: the
+plugin already holds the bytes, and these files are the model-facing handle on
+them.
 """
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from mimetypes import guess_extension
@@ -18,8 +21,11 @@ from pathlib import Path
 
 from ..._compat import UTC
 from ...infra.files.object_store import get_object_store
+from ...infra.log import get_logger
 from ...messages import FrontUserMessage, MessagePartCodec
 from ..files.object_store import session_directory_key, session_upload_key
+
+logger = get_logger(__name__)
 
 _CODEC = MessagePartCodec()
 _UNSAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
@@ -28,12 +34,21 @@ _MAX_NAME_LENGTH = 64
 
 
 @dataclass(frozen=True, slots=True)
-class StoredMessageImage:
-    """One submitted image that now exists as a file below the session directory."""
+class SessionFileWrite:
+    """One file to persist below a session directory."""
 
-    #: Name the browser submitted with the image part.
     name: str
-    #: MIME type carried by the source data URL.
+    mime_type: str
+    data: bytes
+
+
+@dataclass(frozen=True, slots=True)
+class StoredSessionFile:
+    """One written file below the session directory."""
+
+    #: Filename the sender or browser submitted.
+    name: str
+    #: MIME type the payload was submitted with.
     mime_type: str
     #: Relative ObjectKey that resolves below ``settings.storage_root``.
     object_key: str
@@ -70,7 +85,40 @@ def _upload_name(moment: datetime, position: int, name: str, mime_type: str) -> 
     return f"{stamp}-{position}-{stem}{suffix}" if stem else f"{stamp}-{position}{suffix}"
 
 
-async def store_message_images(session_id: str, message: FrontUserMessage) -> list[StoredMessageImage]:
+async def store_session_files(
+    session_id: str,
+    files: Sequence[SessionFileWrite],
+) -> list[StoredSessionFile | None]:
+    """Write each file below its session directory, keeping the input order.
+
+    One unwritable file is ``None`` at its own position: media that arrives over
+    a channel is already part of the conversation, so a storage failure must
+    degrade that attachment instead of dropping the whole turn.
+    """
+    object_store = get_object_store()
+    moment = datetime.now(UTC)
+    stored: list[StoredSessionFile | None] = []
+    for position, item in enumerate(files, start=1):
+        key = session_upload_key(session_id, _upload_name(moment, position, item.name, item.mime_type))
+        try:
+            written = await object_store.write(key, item.data)
+        except Exception:
+            logger.exception("Could not store a session file; session_id=%s name=%r", session_id, item.name)
+            stored.append(None)
+            continue
+        stored.append(
+            StoredSessionFile(
+                name=item.name,
+                mime_type=item.mime_type,
+                object_key=str(written.key),
+                size_bytes=written.size_bytes,
+                sha256=written.sha256,
+            )
+        )
+    return stored
+
+
+async def store_message_images(session_id: str, message: FrontUserMessage) -> list[StoredSessionFile | None]:
     """Write every base64 image of one submitted turn below its session directory.
 
     Images submitted as remote http(s) URLs are skipped: nothing local exists to
@@ -82,22 +130,10 @@ async def store_message_images(session_id: str, message: FrontUserMessage) -> li
         ``assets/sessions/session-1/uploads/20260920T144512123456Z-1-clipboard.png``.
     """
     images = _CODEC.decode_images(message)
-    object_store = get_object_store()
-    moment = datetime.now(UTC)
-    stored: list[StoredMessageImage] = []
-    for position, image in enumerate(images, start=1):
-        key = session_upload_key(session_id, _upload_name(moment, position, image.name, image.mime_type))
-        written = await object_store.write(key, image.data)
-        stored.append(
-            StoredMessageImage(
-                name=image.name,
-                mime_type=image.mime_type,
-                object_key=str(written.key),
-                size_bytes=written.size_bytes,
-                sha256=written.sha256,
-            )
-        )
-    return stored
+    return await store_session_files(
+        session_id,
+        [SessionFileWrite(name=image.name, mime_type=image.mime_type, data=image.data) for image in images],
+    )
 
 
 async def delete_session_files(session_id: str) -> int:
@@ -110,4 +146,10 @@ async def delete_session_files(session_id: str) -> int:
     return await get_object_store().delete_tree(session_directory_key(session_id))
 
 
-__all__ = ["StoredMessageImage", "delete_session_files", "store_message_images"]
+__all__ = [
+    "SessionFileWrite",
+    "StoredSessionFile",
+    "delete_session_files",
+    "store_message_images",
+    "store_session_files",
+]

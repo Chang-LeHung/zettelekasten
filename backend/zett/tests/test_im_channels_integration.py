@@ -8,8 +8,18 @@ from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
+from zett_agent import (
+    AssistantMessage,
+    ImageBytesSource,
+    ImageContent,
+    ModelEvent,
+    ModelRequest,
+    ModelResponse,
+    TextContent,
+)
 
 from zett._compat import UTC
+from zett.application.agent import headless as headless_module
 from zett.application.channels import agent as im_agent_module
 from zett.application.channels import channel_service
 from zett.application.channels import service as channel_service_module
@@ -26,11 +36,15 @@ from zett.infra.persistence.dao import provider_storage, session_storage
 from zett.infra.plugins import PluginRegistry, ZettKVStorage
 from zett.main import app
 from zett.plugins import (
+    MAX_CHANNEL_MEDIA_BYTES,
+    MAX_CHANNEL_MEDIA_ITEMS,
     ChannelCredentials,
     ChannelInboundMessage,
     ChannelLoginChallenge,
     ChannelLoginState,
     ChannelLoginStatus,
+    ChannelMedia,
+    ChannelMediaKind,
     PluginContext,
     PluginError,
 )
@@ -194,6 +208,55 @@ class OutOfContractPlugin(FailingStartPlugin):
         return None  # type: ignore[return-value]
 
 
+class GreedyMediaPlugin(FailingStartPlugin):
+    """Channel plugin that hands Zett an unvalidated, oversized media message."""
+
+    instances: list[GreedyMediaPlugin] = []
+    #: Set by a test to make the plugin announce one attachment over the limit.
+    oversized = False
+
+    def __init__(self, context: PluginContext) -> None:
+        super().__init__(context)
+        self.calls = 0
+        self.sent: list[tuple[str, str]] = []
+        self.__class__.instances.append(self)
+
+    async def start(self) -> None:
+        return None
+
+    async def receive(self) -> ChannelInboundMessage:
+        self.calls += 1
+        if self.calls > 1:
+            await asyncio.sleep(3600)
+        small = [
+            ChannelMedia.model_construct(kind=ChannelMediaKind.IMAGE, media_type="image/png", name=None, data=b"png")
+            for _ in range(MAX_CHANNEL_MEDIA_ITEMS + 5)
+        ]
+        if self.oversized:
+            small.insert(
+                0,
+                ChannelMedia.model_construct(
+                    kind=ChannelMediaKind.IMAGE,
+                    media_type="image/png",
+                    name=None,
+                    data=b"x" * (MAX_CHANNEL_MEDIA_BYTES + 1),
+                ),
+            )
+        media = small
+        message = ChannelInboundMessage.model_construct(
+            event_id="event-greedy",
+            chat_id="user-1",
+            user_id="user-1",
+            text="hello",
+            media=media,
+            reply_token=None,
+        )
+        return message
+
+    async def send(self, chat_id: str, text: str) -> None:
+        self.sent.append((chat_id, text))
+
+
 async def test_zett_im_agent_client_streams_normalized_events(monkeypatch) -> None:
     provider_id = await _provider()
 
@@ -221,6 +284,220 @@ async def test_zett_im_agent_client_streams_normalized_events(monkeypatch) -> No
     assert events[0].session_id
     assert events[-1].type is AgentEventKind.COMPLETED
     assert events[-1].content == "Agent reply"
+
+
+async def test_zett_im_agent_client_sends_media_as_content_and_a_session_file(monkeypatch, tmp_path) -> None:
+    provider_id = await _provider()
+    captured: dict[str, object] = {}
+    image_bytes = b"\x89PNG\r\n\x1a\n" + b"pixels"
+
+    async def fake_run(**kwargs) -> str:
+        captured.update(kwargs)
+        return "Agent reply"
+
+    monkeypatch.setattr(im_agent_module, "run_headless_prompt", fake_run)
+    events = [
+        event
+        async for event in ZettIMAgentClient().stream_turn(
+            AgentTurnRequest(
+                request_id="event-media",
+                provider_id=provider_id,
+                message="look at this",
+                media=[
+                    ChannelMedia(
+                        kind=ChannelMediaKind.IMAGE,
+                        media_type="image/png",
+                        name="photo.png",
+                        data=image_bytes,
+                    )
+                ],
+                reasoning_effort="medium",
+                allow_coding=False,
+                metadata={"channel_name": "WeChat"},
+            )
+        )
+    ]
+
+    session_id = events[0].session_id
+    assert session_id is not None
+    content = captured["content"]
+    assert isinstance(content, list)
+    assert isinstance(content[0], TextContent) and content[0].text == "look at this"
+    assert isinstance(content[1], ImageContent)
+    assert isinstance(content[1].source, ImageBytesSource)
+    assert content[1].source.data == image_bytes
+    assert content[1].source.media_type == "image/png"
+    uploads = sorted((tmp_path / "assets" / "sessions" / session_id / "uploads").glob("*"))
+    assert len(uploads) == 1
+    assert uploads[0].read_bytes() == image_bytes
+    assert uploads[0].name.endswith("1-photo.png")
+
+
+async def test_zett_im_agent_client_references_media_it_cannot_send_as_content(monkeypatch) -> None:
+    provider_id = await _provider()
+    captured: dict[str, object] = {}
+
+    async def fake_run(**kwargs) -> str:
+        captured.update(kwargs)
+        return "Agent reply"
+
+    monkeypatch.setattr(im_agent_module, "run_headless_prompt", fake_run)
+    events = [
+        event
+        async for event in ZettIMAgentClient().stream_turn(
+            AgentTurnRequest(
+                request_id="event-voice",
+                provider_id=provider_id,
+                media=[ChannelMedia(kind=ChannelMediaKind.VOICE, media_type="audio/silk", data=b"silk-bytes")],
+                reasoning_effort="medium",
+                allow_coding=False,
+                metadata={"channel_name": "WeChat"},
+            )
+        )
+    ]
+
+    session_id = events[0].session_id
+    assert session_id is not None
+    content = captured["content"]
+    assert isinstance(content, list)
+    assert len(content) == 1
+    assert isinstance(content[0], TextContent)
+    reference = content[0].text
+    assert reference.startswith("[voice attachment saved to assets/sessions/")
+    assert reference.endswith("(audio/silk)]")
+    assert f"assets/sessions/{session_id}/uploads/" in reference
+    session = await session_storage.get(session_id)
+    assert session is not None
+    assert session.title == "WeChat: [voice]"
+
+
+async def test_zett_im_agent_client_references_media_that_cannot_be_image_content(monkeypatch) -> None:
+    """A mislabeled or empty image must degrade to a reference, not fail the turn."""
+    provider_id = await _provider()
+    captured: dict[str, object] = {}
+
+    async def fake_run(**kwargs) -> str:
+        captured.update(kwargs)
+        return "Agent reply"
+
+    monkeypatch.setattr(im_agent_module, "run_headless_prompt", fake_run)
+    events = [
+        event
+        async for event in ZettIMAgentClient().stream_turn(
+            AgentTurnRequest(
+                request_id="event-bad-image",
+                provider_id=provider_id,
+                message="hello",
+                media=[
+                    ChannelMedia.model_construct(
+                        kind=ChannelMediaKind.IMAGE,
+                        media_type="application/pdf",
+                        name="not-an-image.pdf",
+                        data=b"%PDF",
+                    ),
+                    ChannelMedia.model_construct(
+                        kind=ChannelMediaKind.IMAGE, media_type="image/png", name=None, data=b""
+                    ),
+                ],
+                reasoning_effort="medium",
+                allow_coding=False,
+                metadata={"channel_name": "WeChat"},
+            )
+        )
+    ]
+
+    assert events[-1].type is AgentEventKind.COMPLETED
+    content = captured["content"]
+    assert isinstance(content, list)
+    assert [type(part) for part in content] == [TextContent, TextContent, TextContent]
+    assert content[1].text.endswith("(application/pdf)]")
+
+
+async def test_zett_im_agent_client_caps_the_total_inline_image_bytes(monkeypatch) -> None:
+    provider_id = await _provider()
+    captured: dict[str, object] = {}
+
+    async def fake_run(**kwargs) -> str:
+        captured.update(kwargs)
+        return "Agent reply"
+
+    monkeypatch.setattr(im_agent_module, "MAX_INLINE_IMAGE_BYTES", 8)
+    monkeypatch.setattr(im_agent_module, "MAX_INLINE_IMAGE_TOTAL_BYTES", 10)
+    monkeypatch.setattr(im_agent_module, "run_headless_prompt", fake_run)
+    image = {"kind": ChannelMediaKind.IMAGE, "media_type": "image/png", "name": None, "data": b"\x89PNG" + b"x" * 2}
+    events = [
+        event
+        async for event in ZettIMAgentClient().stream_turn(
+            AgentTurnRequest(
+                request_id="event-two-images",
+                provider_id=provider_id,
+                media=[ChannelMedia(**image), ChannelMedia(**image)],
+                reasoning_effort="medium",
+                allow_coding=False,
+                metadata={"channel_name": "WeChat"},
+            )
+        )
+    ]
+
+    assert events[-1].type is AgentEventKind.COMPLETED
+    content = captured["content"]
+    assert isinstance(content, list)
+    assert isinstance(content[0], ImageContent)
+    assert isinstance(content[1], TextContent)
+    assert content[1].text.startswith("[image attachment saved to ")
+
+
+class CapturingModel:
+    """Record the model request an IM turn builds and answer it once."""
+
+    def __init__(self) -> None:
+        self.requests: list[ModelRequest] = []
+
+    async def stream(self, request: ModelRequest) -> AsyncIterator[ModelEvent]:
+        self.requests.append(request)
+        yield ModelEvent.completed(ModelResponse(AssistantMessage(content="Agent reply")))
+
+    async def aclose(self) -> None:
+        return None
+
+
+async def test_inbound_media_reaches_the_model_request_as_image_content(monkeypatch) -> None:
+    """The image bytes a plugin delivered end up in the real Agent model request."""
+    provider_id = await _provider()
+    model = CapturingModel()
+    image_bytes = b"\x89PNG\r\n\x1a\n" + b"pixels"
+    monkeypatch.setattr(headless_module, "create_model", lambda _connection: model)
+
+    events = [
+        event
+        async for event in ZettIMAgentClient().stream_turn(
+            AgentTurnRequest(
+                request_id="event-media",
+                provider_id=provider_id,
+                message="what is this?",
+                media=[
+                    ChannelMedia(
+                        kind=ChannelMediaKind.IMAGE,
+                        media_type="image/png",
+                        name="photo.png",
+                        data=image_bytes,
+                    )
+                ],
+                reasoning_effort="medium",
+                allow_coding=False,
+                metadata={"channel_name": "WeChat"},
+            )
+        )
+    ]
+
+    assert events[-1].content == "Agent reply"
+    assert len(model.requests) == 1
+    content = model.requests[0].messages[-1].content
+    assert isinstance(content, list)
+    assert isinstance(content[0], TextContent) and content[0].text == "what is this?"
+    assert isinstance(content[1], ImageContent)
+    assert isinstance(content[1].source, ImageBytesSource)
+    assert content[1].source.data == image_bytes
 
 
 async def test_zett_im_agent_client_opens_a_channel_session(monkeypatch) -> None:
@@ -722,3 +999,139 @@ async def test_channel_service_turns_inbound_messages_into_agent_replies() -> No
         )
         is None
     )
+
+
+async def test_channel_service_forwards_media_only_messages() -> None:
+    provider_id = await _provider()
+    agent = FakeAgent()
+    store = ChannelStore(ZettKVStorage())
+    channel = await store.create_channel(
+        ChannelDraft(
+            name="WeChat",
+            channel_type="wechat",
+            provider_id=provider_id,
+            config={"base_url": "https://ilink.example.invalid"},
+            secrets={"bot_token": "token-1"},
+        )
+    )
+    service = ChannelService(registry=_registry(), kv=ZettKVStorage(), agent=agent)
+
+    reply = await service._handle_message(
+        channel.id,
+        ChannelInboundMessage(
+            event_id="event-media",
+            chat_id="user-1",
+            user_id="user-1",
+            media=[
+                ChannelMedia(kind=ChannelMediaKind.IMAGE, media_type="image/png", data=b"png-bytes"),
+            ],
+        ),
+    )
+
+    assert reply == "Agent reply"
+    request = agent.requests[0]
+    assert request.message == ""
+    assert [item.kind for item in request.media] == [ChannelMediaKind.IMAGE]
+    assert request.media[0].data == b"png-bytes"
+
+
+def _unvalidated_media(**overrides: object) -> ChannelMedia:
+    """Build one attachment the way a plugin could, skipping field validation."""
+    values: dict[str, object] = {
+        "kind": ChannelMediaKind.FILE,
+        "media_type": "application/pdf",
+        "name": None,
+        "data": b"pdf",
+    }
+    values.update(overrides)
+    return ChannelMedia.model_construct(**values)
+
+
+def test_channel_service_rebounds_media_a_plugin_constructed_without_validation(monkeypatch) -> None:
+    """A plugin owns its objects, so Zett re-applies every media limit itself."""
+    monkeypatch.setattr(channel_service_module, "MAX_CHANNEL_MEDIA_ITEMS", 3)
+    monkeypatch.setattr(channel_service_module, "MAX_CHANNEL_MEDIA_BYTES", 4)
+    monkeypatch.setattr(channel_service_module, "MAX_CHANNEL_MEDIA_TOTAL_BYTES", 6)
+
+    bounded = channel_service_module._bounded_media(
+        [
+            *(_unvalidated_media() for _ in range(8)),
+            _unvalidated_media(data=b"x" * (MAX_CHANNEL_MEDIA_BYTES + 1)),
+            _unvalidated_media(data="not-bytes"),
+        ],
+        channel_id="channel-1",
+    )
+
+    assert [item.data for item in bounded.kept] == [b"pdf", b"pdf"]
+    assert bounded.too_large is True
+
+
+async def test_receive_loop_bounds_media_before_the_turn(monkeypatch) -> None:
+    """A plugin cannot push unbounded media through the receive loop."""
+    provider_id = await _provider()
+    agent = FakeAgent()
+    store = ChannelStore(ZettKVStorage())
+    channel = await store.create_channel(
+        ChannelDraft(
+            name="WeChat",
+            channel_type="wechat",
+            provider_id=provider_id,
+            config={"base_url": "https://ilink.example.invalid"},
+            secrets={"bot_token": "token-1"},
+        )
+    )
+    monkeypatch.setattr(channel_service_module, "RECEIVE_RETRY_SECONDS", 0.01)
+    service = ChannelService(registry=_registry_for(GreedyMediaPlugin), kv=ZettKVStorage(), agent=agent)
+    plugin = GreedyMediaPlugin(
+        PluginContext(plugin_id="wechat", scope_id=channel.id, kv=ZettKVStorage(), config={}, secrets={})
+    )
+
+    task = asyncio.create_task(service._consume(channel.id, plugin))
+    for _ in range(200):
+        if plugin.sent:
+            break
+        await asyncio.sleep(0.01)
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+
+    request = agent.requests[0]
+    assert len(request.media) == MAX_CHANNEL_MEDIA_ITEMS
+    assert all(item.data == b"png" for item in request.media)
+    assert plugin.sent == [("user-1", "Agent reply")]
+
+
+async def test_receive_loop_answers_an_oversized_attachment_directly(monkeypatch) -> None:
+    """An attachment nobody can carry reaches the sender, and no turn runs."""
+    provider_id = await _provider()
+    agent = FakeAgent()
+    store = ChannelStore(ZettKVStorage())
+    channel = await store.create_channel(
+        ChannelDraft(
+            name="WeChat",
+            channel_type="wechat",
+            provider_id=provider_id,
+            config={"base_url": "https://ilink.example.invalid"},
+            secrets={"bot_token": "token-1"},
+        )
+    )
+    monkeypatch.setattr(channel_service_module, "RECEIVE_RETRY_SECONDS", 0.01)
+    monkeypatch.setattr(channel_service_module, "MAX_CHANNEL_MEDIA_BYTES", 8)
+    GreedyMediaPlugin.oversized = True
+    service = ChannelService(registry=_registry_for(GreedyMediaPlugin), kv=ZettKVStorage(), agent=agent)
+    plugin = GreedyMediaPlugin(
+        PluginContext(plugin_id="wechat", scope_id=channel.id, kv=ZettKVStorage(), config={}, secrets={})
+    )
+
+    try:
+        task = asyncio.create_task(service._consume(channel.id, plugin))
+        for _ in range(200):
+            if plugin.sent:
+                break
+            await asyncio.sleep(0.01)
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+    finally:
+        GreedyMediaPlugin.oversized = False
+
+    assert plugin.sent == [("user-1", channel_service_module.MEDIA_TOO_LARGE_REPLY)]
+    assert agent.requests == []

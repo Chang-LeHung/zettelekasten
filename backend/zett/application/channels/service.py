@@ -20,9 +20,13 @@ from ..._compat import UTC
 from ...infra.log import get_logger
 from ...infra.plugins import PluginRegistry, ZettKVStorage, build_registry
 from ...plugins import (
+    MAX_CHANNEL_MEDIA_BYTES,
+    MAX_CHANNEL_MEDIA_ITEMS,
+    MAX_CHANNEL_MEDIA_TOTAL_BYTES,
     ChannelInboundMessage,
     ChannelLoginChallenge,
     ChannelLoginState,
+    ChannelMedia,
     ChannelPlugin,
     KVStorage,
     PluginError,
@@ -51,6 +55,9 @@ LOCK_CACHE_LIMIT = 256
 #: One failed turn must not look like an ignored message to the person waiting.
 TURN_FAILURE_REPLY = "Sorry, something went wrong while handling that message. Please try again."
 
+#: An attachment nobody can carry must reach the sender as a plain answer.
+MEDIA_TOO_LARGE_REPLY = "That file is too large to process. Please send a smaller one."
+
 
 def _qr_data_url(value: str) -> str:
     image = qrcode.make(value, image_factory=SvgPathImage)
@@ -58,6 +65,60 @@ def _qr_data_url(value: str) -> str:
     image.save(buffer)
     encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
     return f"data:image/svg+xml;base64,{encoded}"
+
+
+@dataclass(frozen=True, slots=True)
+class _BoundedMedia:
+    """The attachments one inbound message may contribute to a turn."""
+
+    kept: list[ChannelMedia]
+    #: Whether anything was left out because it was too large to carry.
+    too_large: bool
+
+
+def _bounded_media(media: list[ChannelMedia], *, channel_id: str) -> _BoundedMedia:
+    """Keep only the attachments Zett accepts from an untrusted plugin.
+
+    A plugin owns the objects it returns, so it can bypass the contract model's
+    field validation by constructing them unvalidated. The count, per-item, and
+    total limits are therefore enforced again on this side of the boundary.
+    An attachment dropped for size is reported so the sender hears why.
+    """
+    kept: list[ChannelMedia] = []
+    total = 0
+    too_large = False
+    for item in media:
+        size = len(item.data) if isinstance(item.data, bytes) else 0
+        if not size:
+            logger.warning("Inbound attachment carries no payload; channel_id=%s kind=%s", channel_id, item.kind)
+            continue
+        if len(kept) >= MAX_CHANNEL_MEDIA_ITEMS:
+            logger.warning(
+                "Inbound message carries more than %d attachments; dropping the rest; channel_id=%s",
+                MAX_CHANNEL_MEDIA_ITEMS,
+                channel_id,
+            )
+            break
+        if size > MAX_CHANNEL_MEDIA_BYTES:
+            logger.warning(
+                "Inbound attachment is over the per-item limit; channel_id=%s kind=%s bytes=%d",
+                channel_id,
+                item.kind,
+                size,
+            )
+            too_large = True
+            continue
+        if total + size > MAX_CHANNEL_MEDIA_TOTAL_BYTES:
+            logger.warning(
+                "Inbound message exceeds the media budget; dropping attachments; channel_id=%s bytes=%d",
+                channel_id,
+                size,
+            )
+            too_large = True
+            continue
+        kept.append(item)
+        total += size
+    return _BoundedMedia(kept=kept, too_large=too_large)
 
 
 @dataclass(slots=True)
@@ -376,7 +437,7 @@ class ChannelService:
                 logger.exception("IM receive failed; channel_id=%s", channel_id)
                 await asyncio.sleep(RECEIVE_RETRY_SECONDS)
                 continue
-            if not message.text.strip():
+            if not message.text.strip() and not message.media and not message.rejected_media:
                 continue
             try:
                 reply = await self._handle_message(channel_id, message)
@@ -401,11 +462,16 @@ class ChannelService:
             raise KeyError(f"Enabled channel not found: {channel_id}")
         if not await self._store.claim_event(channel_id, message.event_id):
             return None
+        bounded = _bounded_media(message.media, channel_id=channel_id)
+        if message.rejected_media or bounded.too_large:
+            # An oversized attachment is answered directly: the model never sees
+            # a turn whose media was dropped, and the sender is told why.
+            return MEDIA_TOO_LARGE_REPLY
         # The same external conversation may be active in multiple processes, so
         # serialize turns per channel+chat pair.
         lock = self._lock_for(channel_id, message.chat_id)
         async with lock:
-            return await self._run_turn(runtime, message)
+            return await self._run_turn(runtime, message, media=bounded.kept)
 
     def _lock_for(self, channel_id: str, chat_id: str) -> asyncio.Lock:
         """Return the chat's lock, keeping the cache bounded by dropping idle entries.
@@ -424,7 +490,13 @@ class ChannelService:
             self._locks[key] = lock
         return lock
 
-    async def _run_turn(self, runtime: ChannelRuntime, message: ChannelInboundMessage) -> str:
+    async def _run_turn(
+        self,
+        runtime: ChannelRuntime,
+        message: ChannelInboundMessage,
+        *,
+        media: list[ChannelMedia],
+    ) -> str:
         """Run one serialized Agent turn for an external conversation."""
         channel_id = runtime.channel.id
         agent_session_id = await self._store.agent_session_for(channel_id, message.chat_id)
@@ -433,6 +505,7 @@ class ChannelService:
             provider_id=runtime.channel.provider_id,
             agent_session_id=agent_session_id,
             message=message.text,
+            media=media,
             reasoning_effort=runtime.channel.reasoning_effort,
             allow_coding=runtime.channel.allow_coding,
             metadata={
