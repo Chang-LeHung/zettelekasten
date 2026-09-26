@@ -940,9 +940,9 @@ def test_asset_upload_uses_runtime_size_limit():
         assert accepted.status_code == 201
 
 
-def test_asset_upload_logs_the_file_and_caps_the_name(tmp_path):
-    """An upload leaves one short log line per request, whatever the file name."""
-    long_name = f"{'a' * 120}.png"
+def test_asset_upload_logs_the_file_and_rejection(tmp_path):
+    """An upload leaves one log line per request, and a rejection says why."""
+    long_name = f"{'a' * 496}.png"
     with TestClient(app) as client:
         session_id = client.post("/api/agent/start").json()["conversation_id"]
         uploaded = client.post(
@@ -965,9 +965,8 @@ def test_asset_upload_logs_the_file_and_caps_the_name(tmp_path):
     success = next(message for message in records if "Session asset uploaded" in message)
     assert f"session_id={session_id}" in success
     assert "type=image" in success and "mime_type=image/png" in success and "bytes=11" in success
-    # The name is capped, so one upload stays one short line.
-    assert f"{'a' * 60}…" in success
-    assert "a" * 61 not in success
+    # The name fits inside one preview, so the line names the uploaded file.
+    assert f"name='{long_name}'" in success
     assert any("Session asset upload rejected" in message and "limit_bytes=3" in message for message in records)
 
 

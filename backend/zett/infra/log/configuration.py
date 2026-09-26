@@ -16,7 +16,9 @@ LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(filename)s:%(lineno)d %(messa
 LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 #: Longest text fragment a log record carries when it previews message content.
-LOG_PREVIEW_CHARS = 60
+#: Roughly one KiB: enough to read what the model or tool actually handled, and
+#: small enough that one previewed value cannot dominate a record.
+LOG_PREVIEW_CHARS = 1_000
 
 _configuration_lock = Lock()
 _configured_signature: tuple[Path, int, int, str] | None = None

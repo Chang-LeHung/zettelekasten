@@ -353,7 +353,8 @@ line when the message arrives, one short line per streamed delta, one for the
 finished turn, and one for the reply the platform accepted; a scheduled run
 writes the same shape for its prompt, deltas, tool calls, and answer. Every line
 carries the channel/task and event/run ids it belongs to, and text is capped by
-`zett.infra.log.log_preview` so one record stays one short line.
+`zett.infra.log.log_preview` (`LOG_PREVIEW_CHARS`, about one KiB) so one record
+stays one line without naming bytes it never kept.
 
 Uploads log the metadata that identifies them, never the payload: the session
 asset upload records the session, asset id, type, media type, byte count, and a

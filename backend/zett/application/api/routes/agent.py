@@ -198,7 +198,7 @@ async def _store_message_images(session_id: str, payload: UserMessageIn) -> None
         session_id,
         len(stored),
         sum(item.size_bytes for item in stored if item is not None),
-        ", ".join(log_preview(item.name, limit=24) for item in stored if item is not None),
+        log_preview(", ".join(item.name for item in stored if item is not None)),
     )
 
 

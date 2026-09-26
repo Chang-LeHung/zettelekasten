@@ -28,13 +28,13 @@ from zett_agent import (
 )
 from zett_agent.tools import ToolResult
 
-from ...infra.log import get_logger, log_preview
+from ...infra.log import LOG_PREVIEW_CHARS, get_logger, log_preview
 
 logger = get_logger(__name__)
 
 #: One character more than a preview keeps: enough for ``log_preview`` to know
 #: the text continues and to add its ellipsis.
-_SAMPLE_CHARS = 60 + 1
+_SAMPLE_CHARS = LOG_PREVIEW_CHARS + 1
 
 
 class TraceLogExtension(AgentExtension):

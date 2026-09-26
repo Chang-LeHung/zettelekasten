@@ -726,7 +726,7 @@ async def test_scheduled_run_dispatcher_previews_tool_results(captured_logs) -> 
     """A background tool call must log what it returned, capped to one short line."""
     dispatcher = scheduled_agent_module.ScheduledRunLogDispatcher(task_id="task-tool", run_id="run-tool")
     call = ToolCall("call-1", "read_skill", {"name": "zett-artifact-syntax"})
-    long_result = "x" * 400
+    long_result = "x" * 1_200
 
     await dispatcher.on_tool_completed_event(
         AgentEvent(
@@ -748,7 +748,7 @@ async def test_scheduled_run_dispatcher_previews_tool_results(captured_logs) -> 
 
     completed = next(message for message in captured_logs if "Scheduled run tool completed" in message)
     assert "task_id=task-tool" in completed and "tools=read_skill" in completed
-    assert f"result='{'x' * 60}…'" in completed
-    assert "x" * 61 not in completed
+    assert f"result='{'x' * 1000}…'" in completed
+    assert "x" * 1001 not in completed
     failed = next(message for message in captured_logs if "Scheduled run tool failed" in message)
     assert "error='tool exploded'" in failed and "result='boom'" in failed
