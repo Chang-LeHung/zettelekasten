@@ -13,9 +13,11 @@ Plugins are third-party code: Zett enforces the boundaries it owns and reports
 what a plugin did, but it never hides a plugin failure.
 """
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from zett_agent import (
     AgentRunContext,
@@ -29,6 +31,10 @@ from zett_agent import (
 
 from .contract import Plugin, PluginKind
 
+if TYPE_CHECKING:  # annotations only: importing these here would close an import cycle
+    from ..agent.at_command import AtCommandDefinition, AtCommandHandler, AtCommandSource
+    from ..agent.slash import SlashCommandDefinition, SlashCommandHandler
+
 #: Version of the agent-plugin contract Zett implements.
 #:
 #: A plugin declaring another version is skipped at load time, so an
@@ -37,6 +43,40 @@ AGENT_PLUGIN_API_VERSION = 1
 
 #: Entry-point group agent plugins are discovered through.
 AGENT_PLUGIN_ENTRY_POINT_GROUP = "zett.agent"
+
+
+class AgentCommandRegistry(ABC):
+    """The container a plugin registers browser-facing capabilities against.
+
+    Every capability is pinned to the plugin's own id, so a plugin cannot
+    register under another owner's namespace.
+    """
+
+    @abstractmethod
+    def register_slash_command(
+        self,
+        *,
+        name: str,
+        description: str,
+        command_type: str,
+        handler: SlashCommandHandler,
+    ) -> SlashCommandDefinition:
+        """Register one slash command the browser can run in this conversation."""
+
+    @abstractmethod
+    def register_at_command(
+        self,
+        *,
+        kind: str,
+        source: AtCommandSource,
+        handler: AtCommandHandler,
+    ) -> AtCommandDefinition:
+        """Register one kind of ``@`` referenceable conversation resource.
+
+        `zett.agent.at_command.reference_handler()` is the default handler: it
+        names the referenced item and runs the turn, leaving the content to the
+        tool that owns it.
+        """
 
 
 class AgentPlugin(Plugin, ABC):
@@ -102,6 +142,16 @@ class AgentPlugin(Plugin, ABC):
     ) -> None:
         """Inspect one tool outcome, including a failed one."""
 
+    async def register(self, registry: AgentCommandRegistry) -> None:
+        """Register slash commands and ``@`` kinds; the default registers none.
+
+        Capabilities registered here reach the browser through the same
+        endpoints the built-in ones use, so a plugin adds a command by
+        implementing a handler rather than by touching Zett's HTTP layer. A
+        plugin that only needs the model to learn what the user pointed at can
+        pass `zett.agent.at_command.reference_handler()` as its ``@`` handler.
+        """
+
     async def start(self) -> None:
         """Prepare process-wide resources; the default owns nothing."""
 
@@ -112,5 +162,6 @@ class AgentPlugin(Plugin, ABC):
 __all__ = [
     "AGENT_PLUGIN_API_VERSION",
     "AGENT_PLUGIN_ENTRY_POINT_GROUP",
+    "AgentCommandRegistry",
     "AgentPlugin",
 ]

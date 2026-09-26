@@ -278,6 +278,18 @@ is skipped with a log line while the rest still load. Plugins receive a
 `config` and `secrets` mappings stay empty until Zett has a settings surface for
 them. `AgentPluginService` starts them with the app and stops them on shutdown.
 
+A plugin may also register browser-facing capabilities from its optional
+`register(registry)` hook: slash commands and `@` reference kinds, written
+against the container's own `SlashCommandInvocation` / `AtCommandSource` /
+`AtCommandItem` types. Every capability is pinned to the plugin's id as owner,
+so it appears in `GET /api/agent/{id}/slash-commands` and `.../at-commands` next
+to the built-in ones without the plugin touching Zett's HTTP layer, and a plugin
+can never register under another owner's namespace. A plugin that only needs the
+model to learn what the user pointed at passes
+`zett.agent.at_command.reference_handler()` as its `@` handler — the same default
+the built-in asset and artifact sources use. A failure while registering is
+reported as `PluginError` naming the plugin.
+
 ## Streaming
 
 `ZettelkastenEventDispatcher` encodes every `AgentEvent` as one SSE frame named

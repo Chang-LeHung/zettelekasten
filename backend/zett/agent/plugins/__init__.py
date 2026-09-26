@@ -12,6 +12,7 @@ from .at_sources import (
     SessionAssetAtCommandSource,
     SessionReferenceExtension,
 )
+from .plugin_commands import PluginCommandRegistry
 from .slash_skills import SkillSlashCommandExtension
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "SessionAssetAtCommandSource",
     "SessionReferenceExtension",
     "SkillSlashCommandExtension",
+    "PluginCommandRegistry",
 ]

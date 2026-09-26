@@ -20,8 +20,10 @@ from zett_agent import (
     tool,
 )
 
+from zett.agent.at_command import AtCommandItem, AtCommandSource, reference_handler
 from zett.agent.config import ZettelkastenAgentConfig
 from zett.agent.extensions import AgentPluginExtension
+from zett.agent.slash import SlashCommandInvocation
 from zett.agent.zettelkasten import ZettelkastenAgent
 from zett.infra.plugins import AgentPluginService, LoadedAgentPlugin, ZettKVStorage, load_agent_plugins
 from zett.plugins import AGENT_PLUGIN_API_VERSION, AgentPlugin, PluginError
@@ -292,3 +294,93 @@ async def test_the_agent_loads_plugins_inside_its_own_extensions() -> None:
         "TraceLogExtension",
     ):
         assert names.index("AgentPluginExtension") > names.index(builtin)
+
+
+class MemoryAtCommandSource(AtCommandSource):
+    """List one remembered note as an ``@`` referenceable resource."""
+
+    def __init__(self, owner: str) -> None:
+        self.owner = owner
+        self.kind = "memory"
+
+    async def items(self, session_id: str) -> Sequence[AtCommandItem]:
+        return (
+            self.item(
+                target_id="note-1",
+                label="Zett stores raw messages",
+                description="A remembered note",
+            ),
+        )
+
+    async def verify(self, session_id: str, item: AtCommandItem) -> bool:
+        return item.target_id == "note-1"
+
+
+class CommandPlugin(MemoryPlugin):
+    """A plugin that also registers browser-facing capabilities."""
+
+    def __init__(self, context: Any = None, *, fail_register: bool = False) -> None:
+        super().__init__(context)
+        self.fail_register = fail_register
+        self.registered: list[str] = []
+
+    async def register(self, registry: Any) -> None:
+        if self.fail_register:
+            raise RuntimeError("command registration failed")
+        registry.register_slash_command(
+            name="memory-stats",
+            description="Show what the memory index holds.",
+            command_type="plugin",
+            handler=self._command,
+        )
+        registry.register_at_command(
+            kind="memory",
+            source=MemoryAtCommandSource(owner=self.plugin_id),
+            # The exported default is what a plugin uses when it only needs the
+            # model to learn which resource the user pointed at.
+            handler=reference_handler(),
+        )
+        self.registered.extend(["memory-stats", "memory"])
+
+    async def _command(self, invocation: SlashCommandInvocation) -> Any:
+        yield  # pragma: no cover - the container only stores this handler
+
+
+async def test_a_plugin_registers_slash_commands_and_at_kinds() -> None:
+    plugin = CommandPlugin()
+    agent = await ZettelkastenAgent(
+        ZettelkastenAgentConfig(
+            "session-commands",
+            agent_plugins=(plugin,),
+            skill_roots=(),
+            mcp_config_path=None,
+        )
+    ).initialize()
+
+    commands = agent.slash_commands()
+    assert [(command.name, command.owner, command.type) for command in commands] == [
+        ("memory-stats", "memory", "plugin")
+    ]
+    kinds = agent.at_command_definitions()
+    # The built-in session sources are registered too; ours is the plugin's own.
+    memory = next(kind for kind in kinds if kind.kind == "memory")
+    assert memory.owner == "memory"
+    assert callable(memory.handler)
+    assert plugin.registered == ["memory-stats", "memory"]
+
+
+async def test_a_plugin_that_fails_to_register_names_itself(captured_logs) -> None:
+    agent = ZettelkastenAgent(
+        ZettelkastenAgentConfig(
+            "session-commands",
+            agent_plugins=(CommandPlugin(fail_register=True),),
+            skill_roots=(),
+            mcp_config_path=None,
+        )
+    )
+
+    with pytest.raises(PluginError) as failure:
+        await agent.initialize()
+
+    assert "'memory'" in str(failure.value)
+    assert "register" in str(failure.value)
