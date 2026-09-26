@@ -8,6 +8,7 @@ from zett_agent import (
     AgentEventDispatcher,
     AgentRunConfig,
     ReasoningEffort,
+    ShellApprovalMode,
     ToolMessage,
     UserMessage,
 )
@@ -18,6 +19,7 @@ from ...agent.zettelkasten import ZettelkastenAgent
 from ...application.agent.session_context import session_context_composition_service
 from ...application.runtime.settings import runtime_settings_service
 from ...infra.agent.runtime import get_agent_runtime_storage
+from ...infra.agent.shell_approval import shell_approval_storage
 from ...infra.log import get_logger, log_preview
 from ...infra.persistence.dao import (
     model_usage_activity_storage,
@@ -142,6 +144,9 @@ class AgentPromptExecutor(ActionExecutor):
         runtime_settings = await runtime_settings_service.get()
         model = create_model(connection)
         dispatcher = ScheduledRunLogDispatcher(task_id=context.task_id, run_id=context.run_id)
+        # A scheduled run has no surface that can answer a shell approval, so its
+        # session is marked allow-all; nothing in the worker may ever wait.
+        await shell_approval_storage.set_session_mode(session.session_id, ShellApprovalMode.ALLOW_ALL)
         try:
             agent = ZettelkastenAgent(
                 ZettelkastenAgentConfig(
@@ -151,6 +156,7 @@ class AgentPromptExecutor(ActionExecutor):
                     compaction_max_tokens=runtime_settings.compaction_max_tokens,
                     compaction_keep_recent_tokens=runtime_settings.compaction_keep_recent_tokens,
                     usage_activity_storage=model_usage_activity_storage,
+                    shell_approval_storage=shell_approval_storage,
                     storage=get_agent_runtime_storage(),
                     context_composition_recorder=_remember_context_composition,
                     interactive=False,

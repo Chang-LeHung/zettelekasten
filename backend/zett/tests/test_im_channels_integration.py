@@ -15,7 +15,9 @@ from zett_agent import (
     ModelEvent,
     ModelRequest,
     ModelResponse,
+    ShellApprovalMode,
     TextContent,
+    ToolCall,
 )
 
 from zett._compat import UTC
@@ -32,6 +34,7 @@ from zett.application.channels.agent import (
 )
 from zett.application.channels.service import ChannelService
 from zett.application.channels.store import ChannelDraft, ChannelStore
+from zett.infra.agent.shell_approval import shell_approval_storage
 from zett.infra.persistence.dao import provider_storage, session_storage
 from zett.infra.plugins import PluginRegistry, ZettKVStorage
 from zett.main import app
@@ -342,6 +345,78 @@ async def test_zett_im_agent_client_sends_media_as_content_and_a_session_file(mo
     assert len(uploads) == 1
     assert uploads[0].read_bytes() == image_bytes
     assert uploads[0].name.endswith("1-photo.png")
+
+
+async def test_headless_turn_marks_its_session_allow_all_for_shell(monkeypatch) -> None:
+    """An IM turn must never wait for a shell approval nobody can answer."""
+    provider_id = await _provider()
+    model = CapturingModel()
+    monkeypatch.setattr(headless_module, "create_model", lambda _connection: model)
+
+    events = [
+        event
+        async for event in ZettIMAgentClient().stream_turn(
+            AgentTurnRequest(
+                request_id="event-shell",
+                provider_id=provider_id,
+                message="list the files",
+                reasoning_effort="medium",
+                allow_coding=True,
+                metadata={"channel_name": "WeChat"},
+            )
+        )
+    ]
+
+    session_id = events[0].session_id
+    assert session_id is not None
+    assert await shell_approval_storage.get_session_mode(session_id) is ShellApprovalMode.ALLOW_ALL
+
+
+class ShellCallingModel:
+    """Ask for one shell command, then answer once it has run."""
+
+    def __init__(self) -> None:
+        self.requests: list[ModelRequest] = []
+
+    async def stream(self, request: ModelRequest) -> AsyncIterator[ModelEvent]:
+        self.requests.append(request)
+        message = (
+            AssistantMessage(tool_calls=(ToolCall("shell-1", "run_shell", {"command": "printf approved"}),))
+            if len(self.requests) == 1
+            else AssistantMessage(content="shell complete")
+        )
+        yield ModelEvent.completed(ModelResponse(message))
+
+    async def aclose(self) -> None:
+        return None
+
+
+async def test_headless_turn_runs_a_shell_command_without_asking(monkeypatch) -> None:
+    """The IM turn must execute the command rather than wait for an approval."""
+    provider_id = await _provider()
+    model = ShellCallingModel()
+    monkeypatch.setattr(headless_module, "create_model", lambda _connection: model)
+
+    async def collect() -> list[AgentEvent]:
+        return [
+            event
+            async for event in ZettIMAgentClient().stream_turn(
+                AgentTurnRequest(
+                    request_id="event-shell-run",
+                    provider_id=provider_id,
+                    message="run printf approved",
+                    reasoning_effort="off",
+                    allow_coding=True,
+                    metadata={"channel_name": "WeChat"},
+                )
+            )
+        ]
+
+    # A re-introduced approval wait would hang here instead of failing.
+    events = await asyncio.wait_for(collect(), timeout=60)
+
+    assert events[-1].type is AgentEventKind.COMPLETED
+    assert events[-1].content == "shell complete"
 
 
 async def test_zett_im_agent_client_references_media_it_cannot_send_as_content(monkeypatch) -> None:
