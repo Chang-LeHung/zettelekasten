@@ -6,7 +6,7 @@ of dedicated SQLAlchemy tables. All keys use the ``im:`` namespace.
 """
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -21,6 +21,9 @@ CHANNEL_PREFIX = "im:channel:"
 LOGIN_PREFIX = "im:login:"
 EVENT_PREFIX = "im:event:"
 SESSION_PREFIX = "im:session:"
+
+#: A dedup marker only matters while the platform may redeliver that event.
+EVENT_RETENTION = timedelta(days=7)
 
 
 class ChannelDraft(BaseModel):
@@ -170,8 +173,23 @@ class ChannelStore:
         key = f"{EVENT_PREFIX}{channel_id}:{event_id}"
         if await self._kv.get(key) is not None:
             return False
-        await self._kv.set(key, datetime.now(UTC).isoformat())
+        now = datetime.now(UTC)
+        await self._kv.set(key, now.isoformat())
+        await self._prune_events(channel_id, now)
         return True
+
+    async def _prune_events(self, channel_id: str, now: datetime) -> None:
+        """Drop dedup markers past the retention window so the store stays bounded."""
+        cutoff = now - EVENT_RETENTION
+        for key, value in await self._kv.iter_prefix(f"{EVENT_PREFIX}{channel_id}:"):
+            if not isinstance(value, str):
+                continue
+            try:
+                seen = datetime.fromisoformat(value)
+            except ValueError:
+                continue
+            if (seen.replace(tzinfo=UTC) if seen.tzinfo is None else seen) < cutoff:
+                await self._kv.delete(key)
 
     async def agent_session_for(self, channel_id: str, chat_id: str) -> str | None:
         """Return the Agent session bound to one external conversation."""

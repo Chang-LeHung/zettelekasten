@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
 
+from zett._compat import UTC
 from zett.application.channels import agent as im_agent_module
 from zett.application.channels import channel_service
 from zett.application.channels import service as channel_service_module
@@ -37,6 +39,7 @@ from zett.schemas import (
     AgentSessionCreate,
     ChannelLogin,
     ChannelLoginStart,
+    ChannelUpdate,
     ProviderType,
     ProviderWrite,
     SessionListOptions,
@@ -366,6 +369,36 @@ async def test_start_login_rejects_an_unknown_channel_type() -> None:
         await service.start_login(ChannelLoginStart(provider_id=provider_id, channel_type="unknown"))
 
 
+class ExpiringLoginPlugin(FakeWeChatPlugin):
+    """Plugin whose QR flow ends without producing a channel."""
+
+    instances: list[ExpiringLoginPlugin] = []
+
+    async def is_login(self) -> ChannelLoginState:
+        return ChannelLoginState(status=ChannelLoginStatus.EXPIRED, message="QR code expired")
+
+
+async def test_abandoned_login_releases_its_plugin(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An expired QR flow must not keep a plugin (and its HTTP client) alive."""
+    provider_id = await _provider()
+    ExpiringLoginPlugin.instances.clear()
+    service = ChannelService(registry=_registry_for(ExpiringLoginPlugin), kv=ZettKVStorage(), agent=FakeAgent())
+
+    login = await service.start_login(ChannelLoginStart(provider_id=provider_id, name="WeChat"))
+    finished = await service.poll_login(login.id)
+
+    assert finished is not None and finished.status is ChannelLoginStatus.EXPIRED
+    assert ExpiringLoginPlugin.instances[0].stopped is True
+    assert await service.poll_login(login.id) is not None
+
+    # The same holds when the QR code times out before anyone polls it with a plugin.
+    monkeypatch.setattr(channel_service_module, "LOGIN_TTL", timedelta(seconds=-1))
+    timed_out = await service.start_login(ChannelLoginStart(provider_id=provider_id, name="WeChat"))
+    expired = await service.poll_login(timed_out.id)
+    assert expired is not None and expired.status is ChannelLoginStatus.EXPIRED
+    assert ExpiringLoginPlugin.instances[-1].stopped is True
+
+
 async def test_channel_service_login_starts_and_sends_through_a_plugin() -> None:
     provider_id = await _provider()
     FakeWeChatPlugin.instances.clear()
@@ -501,6 +534,135 @@ async def test_channel_deletion_survives_a_plugin_that_fails_to_stop() -> None:
     assert await service.delete_channel(channel.id) is True
     assert await service.list_channels() == []
     await service.shutdown()
+
+
+async def test_dedup_markers_are_pruned_after_the_retention_window() -> None:
+    """Dedup markers must not grow with every message a chat ever receives."""
+    kv = ZettKVStorage()
+    store = ChannelStore(kv)
+    channel = await store.create_channel(
+        ChannelDraft(
+            name="WeChat",
+            channel_type="wechat",
+            provider_id="provider-1",
+            config={"base_url": "https://ilink.example.invalid"},
+            secrets={"bot_token": "token-1"},
+        )
+    )
+    stale_key = f"im:event:{channel.id}:event-old"
+    await kv.set(stale_key, (datetime.now(UTC) - timedelta(days=30)).isoformat())
+
+    assert await store.claim_event(channel.id, "event-new") is True
+
+    assert await kv.get(stale_key) is None
+    assert await kv.get(f"im:event:{channel.id}:event-new") is not None
+    # A redelivery inside the window is still dropped.
+    assert await store.claim_event(channel.id, "event-new") is False
+
+
+async def test_chat_locks_stay_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A long-lived process talks to unbounded chats, so idle locks are evicted."""
+    provider_id = await _provider()
+    store = ChannelStore(ZettKVStorage())
+    channel = await store.create_channel(
+        ChannelDraft(
+            name="WeChat",
+            channel_type="wechat",
+            provider_id=provider_id,
+            config={"base_url": "https://ilink.example.invalid"},
+            secrets={"bot_token": "token-1"},
+        )
+    )
+    service = ChannelService(registry=_registry(), kv=ZettKVStorage(), agent=FakeAgent())
+    monkeypatch.setattr(channel_service_module, "LOCK_CACHE_LIMIT", 2)
+
+    for index in range(4):
+        chat_id = f"user-{index}"
+        reply = await service._handle_message(
+            channel.id,
+            ChannelInboundMessage(event_id=f"event-{index}", chat_id=chat_id, user_id=chat_id, text="hello"),
+        )
+        assert reply == "Agent reply"
+
+    assert len(service._locks) <= 2
+
+
+class FailingAgent(AgentClient):
+    """Agent client whose turn fails before it produces a reply."""
+
+    async def stream_turn(self, request: AgentTurnRequest) -> AsyncIterator[AgentEvent]:
+        raise RuntimeError("agent turn failed")
+        yield AgentEvent(type=AgentEventKind.FAILED)
+
+
+class OneMessagePlugin(FakeWeChatPlugin):
+    """Plugin that delivers one queued message and then waits for cancellation."""
+
+    instances: list[OneMessagePlugin] = []
+
+    def __init__(self, context: PluginContext) -> None:
+        super().__init__(context)
+        self.pending: list[ChannelInboundMessage] = []
+
+    async def receive(self) -> ChannelInboundMessage:
+        if self.pending:
+            return self.pending.pop(0)
+        await asyncio.sleep(3600)
+        raise AssertionError("fake plugin should be cancelled before receiving again")
+
+
+async def test_a_failed_turn_answers_instead_of_staying_silent() -> None:
+    """Someone waiting in the IM chat must learn that the turn failed."""
+    provider_id = await _provider()
+    store = ChannelStore(ZettKVStorage())
+    channel = await store.create_channel(
+        ChannelDraft(
+            name="WeChat",
+            channel_type="wechat",
+            provider_id=provider_id,
+            config={"base_url": "https://ilink.example.invalid"},
+            secrets={"bot_token": "token-1"},
+        )
+    )
+    service = ChannelService(registry=_registry(), kv=ZettKVStorage(), agent=FailingAgent())
+    plugin = OneMessagePlugin(
+        PluginContext(plugin_id="wechat", scope_id=channel.id, kv=ZettKVStorage(), config={}, secrets={})
+    )
+    plugin.pending.append(ChannelInboundMessage(event_id="event-1", chat_id="user-1", user_id="user-1", text="hello"))
+
+    task = asyncio.create_task(service._consume(channel.id, plugin))
+    await asyncio.sleep(0.05)
+    assert task.done() is False
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+
+    assert plugin.sent == [("user-1", channel_service_module.TURN_FAILURE_REPLY)]
+
+
+async def test_policy_update_keeps_the_channel_and_disabling_stops_it() -> None:
+    """A policy edit must not cancel the turn that is running right now."""
+    provider_id = await _provider()
+    FakeWeChatPlugin.instances.clear()
+    service = ChannelService(registry=_registry(), kv=ZettKVStorage(), agent=FakeAgent())
+    await service.initialize()
+    login = await service.start_login(ChannelLoginStart(provider_id=provider_id, name="WeChat"))
+    connected = await service.poll_login(login.id)
+    assert connected is not None and connected.channel_id is not None
+    channel_id = connected.channel_id
+    plugin = FakeWeChatPlugin.instances[-1]
+    runner = service._runners[channel_id]
+
+    edited = await service.update_channel(channel_id, ChannelUpdate(allow_coding=False))
+
+    assert edited.allow_coding is False
+    assert plugin.stopped is False
+    assert service._runners.get(channel_id) is runner
+
+    disabled = await service.update_channel(channel_id, ChannelUpdate(enabled=False))
+
+    assert disabled.enabled is False
+    assert plugin.stopped is True
+    assert channel_id not in service._runners
 
 
 async def test_channel_store_persists_records_and_dedup_markers() -> None:
