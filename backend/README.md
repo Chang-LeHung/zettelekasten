@@ -243,6 +243,41 @@ it, exactly like deleting one.
 `ActiveRequestRegistry`: at most one request per session may run, and the
 other two return 409 when no request is active.
 
+### Agent plugins
+
+Beyond channel plugins, an installed package can extend what happens inside a
+conversation by registering in the `zett.agent` entry-point group. Zett owns
+only the plugin class: a plugin subclasses `AgentPlugin`
+instead of the runtime's `AgentExtension`, declares its tools in `tools()`, and
+may implement any of the runtime's lifecycle hooks — `before_run`, `after_run`,
+`on_success`, `on_error`, `before_turn`, `after_turn`, `before_model`,
+`after_model`, `before_tool`, and `after_tool` — which receive the runtime's own
+objects (`AgentRunContext`, `ModelRequest`, `ModelResponse`, `ToolCall`,
+`ToolMessage`, `AssistantMessage`, `Exception`). Zett's single
+`AgentPluginExtension` is the only runtime extension involved, so naming and
+error reporting live in Zett while plugin authors read one set of types.
+
+Two boundaries are deliberately not exposed yet, because each needs its own
+Zett contract rather than a passthrough: replacing the incoming user message or
+injecting into the leading system prefix (`on_state`/`on_message`, which would
+rebuild the provider's cached prefix every turn), and the two middlewares
+(`on_model_request`/`on_tool_call`, which change what the provider receives and
+could bypass the shell approval boundary).
+
+Two rules the adapter enforces: every plugin tool is registered as
+`<plugin_id>__<tool>`, so a plugin can never shadow a built-in tool, and the
+adapter is appended after every built-in extension, so a plugin cannot wrap
+persistence, safety, or logging. A plugin that fails is reported as
+`PluginError` naming the plugin and the hook — the run fails visibly instead of
+continuing with a plugin that silently stopped working.
+
+Discovery follows the channel rules: a broken entry point, a factory that
+raises, a contract version mismatch, or an object that is not an `AgentPlugin`
+is skipped with a log line while the rest still load. Plugins receive a
+`PluginContext` whose KV store is namespaced (`agent:<plugin_id>:`), and their
+`config` and `secrets` mappings stay empty until Zett has a settings surface for
+them. `AgentPluginService` starts them with the app and stops them on shutdown.
+
 ## Streaming
 
 `ZettelkastenEventDispatcher` encodes every `AgentEvent` as one SSE frame named
