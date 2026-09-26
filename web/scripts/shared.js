@@ -52,9 +52,12 @@ let indexPromise = null;
 let items = [];
 let cursor = -1;
 
+/** The site base, so a GitHub Pages project site under a sub-path still works. */
+const siteBase = document.querySelector('meta[name="zett-base"]')?.content ?? '/';
+
 function loadIndex() {
   if (!indexPromise) {
-    indexPromise = fetch('/docs/search.json')
+    indexPromise = fetch(`${siteBase}docs/search.json`)
       .then((response) => (response.ok ? response.json() : []))
       .catch(() => []);
   }

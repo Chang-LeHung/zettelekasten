@@ -15,6 +15,7 @@ page copy.
 
 from __future__ import annotations
 
+import argparse
 import html
 import json
 import posixpath
@@ -29,9 +30,15 @@ from pygments.lexers import ClassNotFound, get_lexer_by_name
 
 REPO = Path(__file__).resolve().parents[2]
 DOCS_DIR = REPO / "docs"
+WEB_DIR = REPO / "web"
 SITE_DIR = REPO / "site"
 OUT_DIR = SITE_DIR / "docs"
 STYLES_DIR = SITE_DIR / "styles"
+
+#: Prefix every in-site URL with this, normalised to start and end with "/".
+#: GitHub Pages serves this repository as a project page, so the deployed site
+#: lives under /zettelekasten/ and a root-absolute URL would escape it.
+BASE = "/"
 
 #: Source of truth for the site navigation: (section, [(label, source file)]).
 NAV: list[tuple[str, list[tuple[str, str]]]] = [
@@ -65,19 +72,19 @@ NAV: list[tuple[str, list[tuple[str, str]]]] = [
     ),
 ]
 
-URL_SCHEME = re.compile(r"^(?:[a-z]+:|#|/)", re.I)
+URL_SCHEME = re.compile(r"^(?:[a-z]+:|#|/)", re.IGNORECASE)
 FENCE = re.compile(r"^(`{3,}|~{3,})(.*)$")
 TAG = re.compile(r"<[^>]+>")
 
 
 def page_url(source: str) -> str:
     """Return the site URL of one Markdown source, with Material's shape."""
-    stem = source[: -len(".md")] if source.endswith(".md") else source
+    stem = source.removesuffix(".md")
     if stem in ("index", ""):
-        return "/docs/"
+        return f"{BASE}docs/"
     if stem.endswith("/index"):
-        return f"/docs/{stem[: -len('index')]}"
-    return f"/docs/{stem}/"
+        return f"{BASE}docs/{stem[: -len('index')]}"
+    return f"{BASE}docs/{stem}/"
 
 
 def render_code_block(code: str, language: str, title: str) -> str:
@@ -160,7 +167,7 @@ def rewrite_links(markup: str, source: str) -> str:
         if target.endswith(".md"):
             url = page_url(target)
         else:
-            url = f"/docs/{target}"
+            url = f"{BASE}docs/{target}"
         if separator:
             url = f"{url}#{fragment}"
         return f'{attribute}="{url}"'
@@ -183,8 +190,8 @@ def render_page(
 ) -> tuple[str, dict]:
     """Render one documentation page and build its search entry."""
     # Headings carry a permalink anchor; it must not leak into titles or search.
-    prose = re.sub(r'<a class="headerlink"[^>]*>.*?</a>', "", markup, flags=re.S)
-    title_match = re.search(r"<h1[^>]*>(.*?)</h1>", prose, re.S)
+    prose = re.sub(r'<a class="headerlink"[^>]*>.*?</a>', "", markup, flags=re.DOTALL)
+    title_match = re.search(r"<h1[^>]*>(.*?)</h1>", prose, re.DOTALL)
     title = strip_tags(title_match.group(1)) if title_match else label
 
     nav_html: list[str] = []
@@ -235,6 +242,7 @@ def render_page(
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="zett-base" content="{BASE}" />
     <title>{html.escape(title)} · Zett</title>
     <meta name="description" content="{html.escape(strip_tags(markup)[:180])}" />
     <meta property="og:type" content="article" />
@@ -245,11 +253,11 @@ def render_page(
     <meta property="og:image" content="https://chang-lehung.github.io/zettelekasten/assets/og.png" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content="https://chang-lehung.github.io/zettelekasten/assets/og.png" />
-    <link rel="icon" href="/assets/favicon.ico" />
-    <link rel="stylesheet" href="/styles/tokens.css" />
-    <link rel="stylesheet" href="/styles/base.css" />
-    <link rel="stylesheet" href="/styles/docs.css" />
-    <link rel="stylesheet" href="/styles/pygments.css" />
+    <link rel="icon" href="{BASE}assets/favicon.ico" />
+    <link rel="stylesheet" href="{BASE}styles/tokens.css" />
+    <link rel="stylesheet" href="{BASE}styles/base.css" />
+    <link rel="stylesheet" href="{BASE}styles/docs.css" />
+    <link rel="stylesheet" href="{BASE}styles/pygments.css" />
   </head>
   <body>
     <a class="skip-link" href="#content">Skip to content</a>
@@ -257,11 +265,11 @@ def render_page(
       <button class="icon-button docs__nav-toggle" type="button" data-docs-nav-toggle aria-label="Toggle navigation" aria-expanded="false">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M4 12h16M4 17h16" stroke-linecap="round" /></svg>
       </button>
-      <a class="nav__brand" href="/"><img src="/assets/logo.png" width="26" height="26" alt="" /><span>Zett</span></a>
+      <a class="nav__brand" href="{BASE}"><img src="{BASE}assets/logo.png" width="26" height="26" alt="" /><span>Zett</span></a>
       <nav class="nav__links" aria-label="Primary">
-        <a href="/docs/guide/conversations/">Guide</a>
-        <a href="/docs/plugins/">Plugins</a>
-        <a href="/docs/">Docs</a>
+        <a href="{BASE}docs/guide/conversations/">Guide</a>
+        <a href="{BASE}docs/plugins/">Plugins</a>
+        <a href="{BASE}docs/">Docs</a>
         <a href="{repo_url}">GitHub</a>
       </nav>
       <div class="nav__actions nav__actions--end">
@@ -291,10 +299,10 @@ def render_page(
     </div>
 
     <footer class="footer">
-      <div class="footer__brand"><img src="/assets/logo.png" width="22" height="22" alt="" /><span>Zett</span></div>
+      <div class="footer__brand"><img src="{BASE}assets/logo.png" width="22" height="22" alt="" /><span>Zett</span></div>
       <nav class="footer__links" aria-label="Footer">
-        <a href="/docs/">Documentation</a>
-        <a href="/docs/plugins/">Plugins</a>
+        <a href="{BASE}docs/">Documentation</a>
+        <a href="{BASE}docs/plugins/">Plugins</a>
         <a href="{repo_url}">GitHub</a>
         <a href="{repo_url}/blob/main/LICENSE">MIT License</a>
       </nav>
@@ -311,8 +319,8 @@ def render_page(
       </div>
     </div>
 
-    <script type="module" src="/scripts/shared.js"></script>
-    <script type="module" src="/scripts/docs.js"></script>
+    <script type="module" src="{BASE}scripts/shared.js"></script>
+    <script type="module" src="{BASE}scripts/docs.js"></script>
   </body>
 </html>
 """
@@ -367,7 +375,40 @@ def write_pygments_css() -> None:
     )
 
 
+def copy_shared_assets() -> None:
+    """Copy the styles, scripts, and assets the pages link to into the site root."""
+    for name in ("styles", "scripts", "assets"):
+        shutil.copytree(WEB_DIR / name, SITE_DIR / name, dirs_exist_ok=True)
+
+
+def write_landing() -> None:
+    """Write the landing page with its in-site URLs carrying the site base."""
+    page = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    page = page.replace('href="/', f'href="{BASE}').replace('src="/', f'src="{BASE}')
+    page = page.replace(
+        '<meta charset="utf-8" />',
+        f'<meta charset="utf-8" />\n    <meta name="zett-base" content="{BASE}" />',
+        1,
+    )
+    SITE_DIR.mkdir(parents=True, exist_ok=True)
+    (SITE_DIR / "index.html").write_text(page, encoding="utf-8")
+
+
 def main() -> None:
+    global BASE
+
+    parser = argparse.ArgumentParser(
+        description="Render the documentation into the site's own pages."
+    )
+    parser.add_argument(
+        "--base",
+        default="/",
+        help="URL prefix for every in-site link, e.g. /zettelekasten/ for a GitHub Pages project site",
+    )
+    arguments = parser.parse_args()
+    stripped = arguments.base.strip("/")
+    BASE = f"/{stripped}/" if stripped else "/"
+
     markdown_engine = markdown.Markdown(
         extensions=[
             "extra",
@@ -420,7 +461,9 @@ def main() -> None:
                 toc=toc,
                 repo_url=repo_url,
             )
-            target = OUT_DIR / page_url(source).removeprefix("/docs/") / "index.html"
+            target = (
+                OUT_DIR / page_url(source).removeprefix(f"{BASE}docs/") / "index.html"
+            )
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(page, encoding="utf-8")
             index.append(entry)
@@ -434,6 +477,10 @@ def main() -> None:
         json.dumps(index, ensure_ascii=False, indent=1), encoding="utf-8"
     )
     print(f"built {OUT_DIR.relative_to(REPO)}/search.json ({len(index)} pages)")
+
+    copy_shared_assets()
+    write_landing()
+    print(f"built {SITE_DIR.relative_to(REPO)}/index.html with base {BASE}")
 
 
 if __name__ == "__main__":
