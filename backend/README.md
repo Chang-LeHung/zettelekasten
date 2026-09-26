@@ -204,6 +204,12 @@ artifacts, and model policy. The current platform client and plugin implement
 the personal WeChat iLink/ClawBot bot protocol; the WeChat account must have
 Tencent's "微信机器人" feature enabled.
 
+One external conversation (channel plus chat id) maps to one Agent session,
+bound as `im:session:<channel_id>:<chat_id>`, and turns for the same pair run
+serialized. That binding can outlive its session when the conversation was
+deleted, so a turn that finds its bound session missing starts a fresh session
+and rebinds instead of leaving the chat mute, logging the stale id.
+
 `/messages`, `/events`, and `/steer` consult the same in-process
 `ActiveRequestRegistry`: at most one request per session may run, and the
 other two return 409 when no request is active.

@@ -382,6 +382,8 @@ class ChannelService:
             raise KeyError(f"Enabled channel not found: {channel_id}")
         if not await self._store.claim_event(channel_id, message.event_id):
             return None
+        # The same external conversation may be active in multiple processes, so
+        # serialize turns per channel+chat pair.
         lock = self._locks.setdefault((channel_id, message.chat_id), asyncio.Lock())
         async with lock:
             return await self._run_turn(runtime, message)
