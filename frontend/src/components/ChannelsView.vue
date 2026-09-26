@@ -233,6 +233,10 @@ onBeforeUnmount(() => {
             <h2>{{ channel.name }}</h2>
             <p>{{ providerName(channel.provider_id) }}</p>
           </div>
+          <!-- TODO(channel-health): this badge mirrors `enabled`, so a channel
+               whose receive loop is failing still reads "Connected". Render the
+               live status from the API instead (see the TODO in
+               ChannelService._consume): Connected / Reconnecting… / Login expired. -->
           <span class="channel-status" :class="{ disabled: !channel.enabled }">
             {{ channel.enabled ? t('channels.state.connected') : t('channels.state.disabled') }}
           </span>
