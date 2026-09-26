@@ -427,7 +427,18 @@ class ChannelService:
             logger.exception("Channel plugin rejected the login code; login_id=%s", login_id)
 
     async def _consume(self, channel_id: str, plugin: ChannelPlugin) -> None:
-        """Pull inbound messages forever and answer them through the Agent."""
+        """Pull inbound messages forever and answer them through the Agent.
+
+        TODO(channel-health): this loop is the only thing that knows whether a
+        channel still works, and today it keeps that to itself, so the channel
+        card reports `enabled` and a dead connection still reads "Connected".
+        Record the outcome here — `im:health:<channel_id>` with
+        `consecutive_failures`, `last_error`, and the timestamp, cleared on a
+        successful receive — and probe `plugin.is_login()` on a slow timer so an
+        expired platform session is reported as needing a new login instead of
+        retried forever. Surface it through `GET /api/channels` and render
+        Connected / Reconnecting / Login expired in the channel card.
+        """
         while True:
             try:
                 message = ChannelInboundMessage.model_validate(await plugin.receive())
