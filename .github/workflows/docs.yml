@@ -36,14 +36,11 @@ jobs:
         # The landing page owns the site root and the documentation lives under
         # /docs/. Both come from web/: the pages are rendered from the Markdown
         # sources by our own builder, so the published site cannot drift from
-        # the READMEs and nothing generated is committed.
+        # the READMEs and nothing generated is committed. --base is required
+        # because Pages serves this repository as a project site.
         run: |
           uv sync --directory backend --locked --group dev
-          uv run --project backend --no-sync python web/tools/build_docs.py
-          cp -R web/styles/. site/styles/
-          cp -R web/scripts/. site/scripts/
-          cp -R web/assets/. site/assets/
-          cp web/index.html site/index.html
+          uv run --project backend --no-sync python web/tools/build_docs.py --base /zettelekasten/
 
       - uses: actions/configure-pages@v6
 

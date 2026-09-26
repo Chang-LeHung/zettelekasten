@@ -66,9 +66,10 @@ check:
 	$(MAKE) typecheck
 	npm --prefix frontend run build
 
+# The local build serves the site from the repository root, so every in-site
+# URL is root-absolute; the Docs workflow passes --base /zettelekasten/ because
+# GitHub Pages serves this repository as a project site.
 docs-build:
-	# --project selects the backend environment without changing the working
-	# directory, so the script path stays relative to the repository root.
 	uv run --project backend python web/tools/build_docs.py
 
 docs-serve: site
@@ -81,10 +82,6 @@ docs-serve: site
 site:
 	rm -rf site
 	$(MAKE) docs-build
-	cp -R web/styles/. site/styles/
-	cp -R web/scripts/. site/scripts/
-	cp -R web/assets/. site/assets/
-	cp web/index.html site/index.html
 	@echo "Preview with: python3 -m http.server -d site 8000"
 
 # The wheel embeds the compiled interface under zett/static, so the frontend
