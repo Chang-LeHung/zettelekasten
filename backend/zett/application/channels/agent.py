@@ -69,6 +69,11 @@ class ZettIMAgentClient(AgentClient):
             yield AgentEvent(type=AgentEventKind.FAILED, error="Enabled provider not found")
             return
         session_id = request.agent_session_id
+        if session_id is not None and await session_storage.get(session_id) is None:
+            # A stored binding outlives its session when the conversation was
+            # deleted, and refusing the turn would leave that chat mute forever.
+            logger.warning("Bound Agent session is missing; opening a new one; session_id=%s", session_id)
+            session_id = None
         if session_id is None:
             title = str(request.metadata.get("channel_name") or "IM conversation")
             session = await session_storage.create(
@@ -78,9 +83,6 @@ class ZettIMAgentClient(AgentClient):
                 )
             )
             session_id = session.session_id
-        elif await session_storage.get(session_id) is None:
-            yield AgentEvent(type=AgentEventKind.FAILED, error="Agent session not found")
-            return
         yield AgentEvent(type=AgentEventKind.STARTED, session_id=session_id)
         try:
             content = await run_headless_prompt(

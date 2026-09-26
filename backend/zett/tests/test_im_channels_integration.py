@@ -34,6 +34,7 @@ from zett.plugins import (
 )
 from zett.schemas import (
     SESSION_TYPE_TO_CODE,
+    AgentSessionCreate,
     ChannelLogin,
     ChannelLoginStart,
     ProviderType,
@@ -250,6 +251,41 @@ async def test_zett_im_agent_client_opens_a_channel_session(monkeypatch) -> None
     assert await session_storage.list(SessionListOptions(session_types=(SessionType.NORMAL,))) == []
     listed = await session_storage.list(SessionListOptions(session_types=(SessionType.CHANNEL,)))
     assert [item.session_id for item in listed] == [session_id]
+
+
+async def test_zett_im_agent_client_replaces_a_bound_session_that_is_gone(monkeypatch) -> None:
+    """A binding can outlive its session, and the chat must not stay mute."""
+    provider_id = await _provider()
+    deleted = await session_storage.create(
+        AgentSessionCreate(title="WeChat: old chat", session_type=SessionType.CHANNEL)
+    )
+    assert await session_storage.delete(deleted.session_id)
+
+    async def fake_run(**kwargs) -> str:
+        return "Agent reply"
+
+    monkeypatch.setattr(im_agent_module, "run_headless_prompt", fake_run)
+    events = [
+        event
+        async for event in ZettIMAgentClient().stream_turn(
+            AgentTurnRequest(
+                request_id="event-2",
+                provider_id=provider_id,
+                agent_session_id=deleted.session_id,
+                message="hello again",
+                reasoning_effort="medium",
+                allow_coding=False,
+                metadata={"channel_name": "WeChat"},
+            )
+        )
+    ]
+
+    assert [event.type for event in events] == [AgentEventKind.STARTED, AgentEventKind.COMPLETED]
+    replacement = events[0].session_id
+    assert replacement is not None and replacement != deleted.session_id
+    session = await session_storage.get(replacement)
+    assert session is not None
+    assert session.session_type == SESSION_TYPE_TO_CODE[SessionType.CHANNEL]
 
 
 async def test_channel_routes_use_the_plugin_mechanism(monkeypatch) -> None:
