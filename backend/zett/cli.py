@@ -57,7 +57,16 @@ def start(
     display_host = "127.0.0.1" if host in {"0.0.0.0", "::"} else host
     logger.info("Starting Zett service; host=%s port=%d reload=%s", host, port, reload)
     typer.echo(f"http://{display_host}:{port}")
-    uvicorn.run("zett.main:app", host=host, port=port, reload=reload, log_config=uvicorn_log_config())
+    # RequestLogMiddleware owns access logging so the sampling rules apply; a
+    # second, unsampled uvicorn access line would undo them.
+    uvicorn.run(
+        "zett.main:app",
+        host=host,
+        port=port,
+        reload=reload,
+        access_log=False,
+        log_config=uvicorn_log_config(),
+    )
 
 
 @app.command()

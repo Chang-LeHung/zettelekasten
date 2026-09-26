@@ -1,5 +1,6 @@
 import logging
 import sys
+from datetime import datetime
 from logging.handlers import RotatingFileHandler
 
 import pytest
@@ -44,6 +45,34 @@ def test_logging_configuration_is_idempotent(tmp_path) -> None:
     configure_logging(tmp_path, max_bytes=1024, backup_count=1)
 
     assert len(logging.getLogger("zett").handlers) == handler_count
+
+
+def test_log_timestamps_use_local_time_with_an_explicit_offset(tmp_path) -> None:
+    """A log line names the operator's local time and its zone, not a bare UTC clock."""
+    log_path = configure_logging(tmp_path, max_bytes=1024, backup_count=1, level="INFO")
+    logger = get_logger("zett.tests.localtimt")
+
+    logger.info("record=1")
+    for handler in logging.getLogger("zett").handlers:
+        handler.flush()
+
+    line = log_path.read_text(encoding="utf-8").splitlines()[0]
+    stamp = " ".join(line.split(" ")[:2])
+    parsed = datetime.fromisoformat(stamp)
+    local_now = datetime.now().astimezone()
+    # Human-readable shape: a space between date and time, and no ISO ``T``.
+    assert "T" not in stamp
+    assert parsed.utcoffset() == local_now.utcoffset()
+    assert abs((parsed.replace(tzinfo=None) - local_now.replace(tzinfo=None)).total_seconds()) < 60
+
+
+def test_the_previous_formatter_name_still_resolves() -> None:
+    """A reload child configured before the rename must still resolve its formatter."""
+    import importlib
+
+    module = importlib.import_module("zett.infra.log")
+
+    assert module.UTCFormatter is module.LocalTimeFormatter
 
 
 def test_logging_configuration_can_target_a_process_specific_file(tmp_path) -> None:

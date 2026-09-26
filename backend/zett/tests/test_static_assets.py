@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from zett.config import settings
 from zett.infra.files.object_store import get_object_store
+from zett.infra.log import LOG_FILE_NAME
 from zett.infra.persistence.dao import static_asset_storage
 from zett.main import app
 from zett.schemas import StaticAssetCreate, StaticAssetListOptions
@@ -76,6 +77,25 @@ def test_static_asset_http_lifecycle_uses_runtime_upload_limit():
 
         assert client.delete(f"/api/assets/{asset['id']}").json() == {"ok": True}
         assert client.get("/api/assets").json() == []
+
+
+def test_static_asset_upload_logs_the_file(tmp_path):
+    """The library upload leaves one short log line, and no file content."""
+    with TestClient(app) as client:
+        uploaded = client.post(
+            "/api/assets/upload?name=report.pdf",
+            content=b"%PDF-1.7\nsecret",
+            headers={"content-type": "application/pdf"},
+        )
+        assert uploaded.status_code == 201
+
+    records = (tmp_path / "logs" / LOG_FILE_NAME).read_text(encoding="utf-8").splitlines()
+    success = next(message for message in records if "Static asset uploaded" in message)
+    assert f"asset_id={uploaded.json()['id']}" in success
+    assert "name='report.pdf'" in success
+    assert "mime_type=application/pdf" in success
+    assert "bytes=15" in success
+    assert "secret" not in success
 
 
 def test_importing_static_asset_into_session_keeps_object_reference_without_copying_file():

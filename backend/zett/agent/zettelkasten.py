@@ -45,6 +45,7 @@ from .extensions import (
     SessionFilesExtension,
     StaticAssetExtension,
     TagExtension,
+    TraceLogExtension,
 )
 from .plugins import SessionReferenceExtension
 from .slash import (
@@ -98,6 +99,7 @@ class ZettelkastenAgent(ZettelkastenContainer):
             StaticAssetExtension(),
             ContextCompositionExtension(config.context_composition_recorder),
             ModelRequestTraceExtension(),
+            TraceLogExtension(),
         ]
         if config.coding_enabled:
             extensions.extend(

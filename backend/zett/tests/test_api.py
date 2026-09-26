@@ -32,6 +32,7 @@ from zett.application.agent.session_preferences import SESSION_MODEL_KEY_PREFIX
 from zett.application.api.routes import agent as agent_routes
 from zett.application.api.routes import providers as provider_routes
 from zett.application.providers.provider_connections import ProviderConnectionTestError
+from zett.infra.log import LOG_FILE_NAME
 from zett.infra.persistence.dao import artifact_storage, provider_storage, session_storage
 from zett.infra.persistence.database import session_scope
 from zett.infra.persistence.tables import KeyValueRow
@@ -646,6 +647,39 @@ def test_agent_shell_allow_all_skips_approval_events(monkeypatch):
     assert approval.json() == {"mode": "allow_all"}
 
 
+def test_agent_turn_logs_each_model_request_and_tool_call(monkeypatch, tmp_path):
+    """A real turn leaves the trace lines the extension is responsible for."""
+    model = ShellFakeModel()
+    monkeypatch.setattr(agent_routes, "create_model", lambda _connection: model)
+    with TestClient(app) as client:
+        session_id = client.post("/api/agent/start").json()["conversation_id"]
+        provider_id = client.post("/api/ai/providers", json=_provider_payload()).json()["id"]
+        response = client.post(
+            f"/api/agent/{session_id}/messages",
+            json={
+                "raw_content": "run a command",
+                "provider_id": provider_id,
+                "reasoning_effort": "off",
+                "shell_approval_mode": "allow_all",
+                "messages": [],
+            },
+        )
+        assert response.status_code == 200
+
+    records = (tmp_path / "logs" / LOG_FILE_NAME).read_text(encoding="utf-8").splitlines()
+    requests = [message for message in records if "Model request;" in message]
+    responses = [message for message in records if "Model response;" in message]
+    # Two provider steps: the one that asks for the tool and the one that answers.
+    assert len(requests) == 2 and len(responses) == 2
+    assert all(f"session_id={session_id}" in message for message in requests)
+    calls = [message for message in records if "Tool call;" in message]
+    assert any("tool=run_shell" in message for message in calls)
+    assert any(
+        "Tool call completed" in message and "tool=run_shell" in message and "result=approved" in message
+        for message in records
+    )
+
+
 def test_session_shell_approval_settings_round_trip():
     with TestClient(app) as client:
         session_id = client.post("/api/agent/start").json()["conversation_id"]
@@ -904,6 +938,52 @@ def test_asset_upload_uses_runtime_size_limit():
 
         accepted = client.post(endpoint, content=b"123", headers={"content-type": "application/octet-stream"})
         assert accepted.status_code == 201
+
+
+def test_asset_upload_logs_the_file_and_caps_the_name(tmp_path):
+    """An upload leaves one short log line per request, whatever the file name."""
+    long_name = f"{'a' * 120}.png"
+    with TestClient(app) as client:
+        session_id = client.post("/api/agent/start").json()["conversation_id"]
+        uploaded = client.post(
+            f"/api/agent/{session_id}/assets/upload?name={long_name}",
+            content=b"png-content",
+            headers={"content-type": "image/png"},
+        )
+        assert uploaded.status_code == 201
+        assert client.put("/api/settings", json={"max_asset_size_bytes": 3}).status_code == 200
+        rejected = client.post(
+            f"/api/agent/{session_id}/assets/upload?name=large.bin",
+            content=b"1234",
+            headers={"content-type": "application/octet-stream"},
+        )
+        assert rejected.status_code == 413
+
+    # The Web process replaces the namespace handlers at startup, so read the
+    # file it configures instead of a handler this test could attach.
+    records = (tmp_path / "logs" / LOG_FILE_NAME).read_text(encoding="utf-8").splitlines()
+    success = next(message for message in records if "Session asset uploaded" in message)
+    assert f"session_id={session_id}" in success
+    assert "type=image" in success and "mime_type=image/png" in success and "bytes=11" in success
+    # The name is capped, so one upload stays one short line.
+    assert f"{'a' * 60}…" in success
+    assert "a" * 61 not in success
+    assert any("Session asset upload rejected" in message and "limit_bytes=3" in message for message in records)
+
+
+def test_every_http_request_is_logged_without_query_values(tmp_path):
+    """The access log names each request, its status, and never a query value."""
+    with TestClient(app) as client:
+        assert client.get("/api/health?verify_code=SECRET-CODE").status_code == 200
+        assert client.get("/api/does-not-exist").status_code == 404
+
+    records = (tmp_path / "logs" / LOG_FILE_NAME).read_text(encoding="utf-8").splitlines()
+    health = next(message for message in records if "target=/api/health" in message)
+    assert "method=GET" in health and "status=200" in health
+    # The parameter name still says what the request did; its value stays out.
+    assert "?verify_code" in health
+    assert "SECRET-CODE" not in health
+    assert any("target=/api/does-not-exist" in message and "status=404" in message for message in records)
 
 
 async def test_session_type_is_exposed_and_filterable() -> None:

@@ -12,6 +12,7 @@ from starlette.concurrency import run_in_threadpool
 
 from ._compat import UTC
 from .agent.config import builtin_skill_root
+from .application.api.access_log import RequestLogMiddleware
 from .application.api.router import api_router
 from .application.channels import channel_service
 from .application.health import ProcessSupervisor, process_heartbeat_registry
@@ -82,6 +83,7 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
 
 
 app = FastAPI(title="Zett API", version="0.1.0", lifespan=lifespan)
+app.add_middleware(RequestLogMiddleware)
 
 
 @app.get("/api/health")

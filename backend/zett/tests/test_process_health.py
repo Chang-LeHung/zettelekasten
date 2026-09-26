@@ -142,6 +142,21 @@ class FakeManagedProcess:
         return self.process.poll() is None
 
 
+class StubbornWait:
+    """A ``wait`` that times out once, so the supervisor escalates to kill."""
+
+    def __init__(self, process: FakeProcess) -> None:
+        self._process = process
+        self.calls = 0
+
+    def __call__(self, timeout: float | None = None) -> int:
+        del timeout
+        self.calls += 1
+        if self.calls == 1:
+            raise TimeoutError("still running")
+        return self._process.returncode or 0
+
+
 class FakeLauncher(ProcessLauncher):
     """Record process launches without starting real child processes."""
 
@@ -199,6 +214,64 @@ async def test_supervisor_does_not_duplicate_fresh_processes(monkeypatch: pytest
     await supervisor.stop()
 
     assert launcher.started == []
+
+
+async def test_supervisor_logs_every_start_and_stop(monkeypatch: pytest.MonkeyPatch, captured_logs) -> None:
+    """Starting and stopping a child must be visible in the Web process log."""
+    monkeypatch.setattr(settings, "process_supervisor_enabled", True)
+    launcher = FakeLauncher()
+    supervisor = ProcessSupervisor(
+        launcher=launcher,
+        registry=ProcessHeartbeatRegistry(),
+        required_workers=1,
+        heartbeat_timeout_seconds=20,
+    )
+
+    await supervisor.run_once(datetime(2026, 1, 1, tzinfo=UTC))
+    started = [message for message in captured_logs if "Started supervised process" in message]
+    assert len(started) == 2
+    assert "role=scheduler" in started[0] and "role=worker" in started[1]
+
+    await supervisor.stop()
+
+    stopped = [message for message in captured_logs if "Stopped supervised process" in message]
+    assert len(stopped) == 2
+    assert all("killed=False" in message for message in stopped)
+    assert {message.split("role=")[1].split(" ")[0] for message in stopped} == {"scheduler", "worker"}
+
+
+async def test_supervisor_logs_a_stale_child_with_its_reason(monkeypatch: pytest.MonkeyPatch, captured_logs) -> None:
+    """A stopped child is logged once, next to the reason it was stopped."""
+    monkeypatch.setattr(settings, "process_supervisor_enabled", True)
+    registry = ProcessHeartbeatRegistry()
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    await registry.record(
+        ProcessHeartbeatIn(
+            role=ProcessRole.WORKER,
+            instance_id="worker-1",
+            pid=201,
+            status=ProcessHeartbeatStatus.RUNNING,
+        ),
+        now=now - timedelta(minutes=5),
+    )
+    supervisor = ProcessSupervisor(
+        launcher=FakeLauncher(),
+        registry=registry,
+        required_workers=1,
+        heartbeat_timeout_seconds=1,
+    )
+    managed = FakeManagedProcess(ProcessRole.WORKER, "worker-1", 201)
+    managed.process.wait = StubbornWait(managed.process)
+    supervisor._managed[ProcessRole.WORKER]["worker-1"] = managed
+
+    await supervisor.run_once(now)
+
+    assert any("heartbeat is stale; terminating" in message for message in captured_logs)
+    assert any("did not stop after terminate; killing" in message for message in captured_logs)
+    assert any(
+        "Stopped supervised process" in message and "pid=201" in message and "killed=True" in message
+        for message in captured_logs
+    )
 
 
 async def test_supervisor_persists_managed_child_pids(

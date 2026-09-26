@@ -2,11 +2,14 @@
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
+from ....infra.log import get_logger, log_preview
 from ....schemas import StaticAssetEntity, StaticAssetListOptions
 from ...assets.static_assets import static_asset_service
 from ..schemas import DeleteResponse
 
 router = APIRouter(prefix="/assets", tags=["assets"])
+
+logger = get_logger(__name__)
 
 
 @router.get("", response_model=list[StaticAssetEntity])
@@ -32,14 +35,28 @@ async def upload_asset(
     async for chunk in request.stream():
         content.extend(chunk)
         if len(content) > max_size:
+            logger.warning(
+                "Static asset upload rejected; name=%r bytes=%d limit_bytes=%d",
+                log_preview(name),
+                len(content),
+                max_size,
+            )
             raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "Asset exceeds the configured size limit")
     mime_type = request.headers.get("content-type", "application/octet-stream").split(";", 1)[0]
     if len(mime_type) > 255:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "MIME type is too long")
     try:
-        return await static_asset_service.upload(name=name, mime_type=mime_type, content=bytes(content))
+        stored = await static_asset_service.upload(name=name, mime_type=mime_type, content=bytes(content))
     except ValueError as error:
         raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, str(error)) from error
+    logger.info(
+        "Static asset uploaded; asset_id=%s name=%r mime_type=%s bytes=%d",
+        stored.id,
+        log_preview(stored.name),
+        stored.mime_type,
+        stored.size_bytes,
+    )
+    return stored
 
 
 @router.get("/{asset_id}", response_model=StaticAssetEntity)

@@ -59,12 +59,6 @@ class SubprocessLauncher:
             close_fds=True,
             **process_platform.spawn_kwargs(),
         )
-        logger.info(
-            "Started supervised process; role=%s instance_id=%s pid=%d",
-            role.value,
-            instance_id,
-            process.pid,
-        )
         return ManagedProcess(role=role, instance_id=instance_id, process=process)
 
 

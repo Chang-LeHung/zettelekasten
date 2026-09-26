@@ -32,7 +32,7 @@ from ....agent import (
 from ....agent.model_factory import ProviderAdapter, create_model
 from ....infra.agent.runtime import get_agent_runtime_storage
 from ....infra.agent.shell_approval import shell_approval_storage
-from ....infra.log import get_logger
+from ....infra.log import get_logger, log_preview
 from ....infra.persistence.dao import model_usage_activity_storage, provider_storage, session_storage
 from ....messages import MessageImageSizeExceeded, MessagePartCodec, MessagePartError
 from ....schemas import ProviderConnection
@@ -187,9 +187,19 @@ async def _store_message_images(session_id: str, payload: UserMessageIn) -> None
     stays empty for that turn.
     """
     try:
-        await store_message_images(session_id, payload)
+        stored = await store_message_images(session_id, payload)
     except Exception:
         logger.exception("Could not store submitted message images; session_id=%s", session_id)
+        return
+    if not stored:
+        return
+    logger.info(
+        "Message images stored; session_id=%s files=%d bytes=%d names=%s",
+        session_id,
+        len(stored),
+        sum(item.size_bytes for item in stored if item is not None),
+        ", ".join(log_preview(item.name, limit=24) for item in stored if item is not None),
+    )
 
 
 async def _prepare_agent_request(session_id: str, payload: AnalyzeRequest) -> _PreparedAgentRequest:
