@@ -209,6 +209,25 @@ bound as `im:session:<channel_id>:<chat_id>`, and turns for the same pair run
 serialized. That binding can outlive its session when the conversation was
 deleted, so a turn that finds its bound session missing starts a fresh session
 and rebinds instead of leaving the chat mute, logging the stale id.
+
+Inbound attachments arrive on `ChannelInboundMessage.media` as
+`ChannelMedia` items holding the bytes the plugin already downloaded and
+decrypted; the WeChat plugin gets them from the iLink CDN through agim, so an
+image, voice note, file, or video needs no extra round trip here. Zett writes
+every attachment below `assets/sessions/<session>/uploads/` and builds ordered
+multimodal content for the turn: images within `MAX_INLINE_IMAGE_BYTES` travel
+as image content for a vision model, and voice, files, video, and oversized
+images travel as a text reference naming the stored `ObjectKey`. Whether the
+configured model can use a given attachment is the model's decision, and a
+media-only message is a valid turn with no text at all. A plugin owns the
+objects it returns and can build them without field validation, so the receive
+loop re-applies every limit itself — `MAX_CHANNEL_MEDIA_ITEMS`,
+`MAX_CHANNEL_MEDIA_BYTES`, and `MAX_CHANNEL_MEDIA_TOTAL_BYTES` — and drops what
+exceeds them, while `MAX_INLINE_IMAGE_TOTAL_BYTES` bounds what one turn hands
+the model inline. An attachment over the limit is never silently lost: agim
+reports it as a rejection, and the channel answers the sender with
+`MEDIA_TOO_LARGE_REPLY` instead of running a turn over bytes nobody received.
+
 Dedup markers are pruned once they are older than the redelivery window, a
 login flow releases its plugin whenever it ends without a channel, and chat
 locks live in a bounded cache, so the `im:` state cannot grow with the traffic a
