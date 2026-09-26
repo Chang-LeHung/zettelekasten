@@ -53,7 +53,7 @@ const ScheduledTasksView = defineAsyncComponent(() => import('./components/Sched
 const ChannelsView = defineAsyncComponent(() => import('./components/ChannelsView.vue'))
 
 type View = 'library' | 'search' | 'new' | 'assets' | 'scheduledTasks' | 'channels' | 'settings'
-type SessionScope = Extract<SessionType, 'normal' | 'scheduled'>
+type SessionScope = Extract<SessionType, 'normal' | 'scheduled' | 'channel'>
 type NoticeKind = 'success' | 'error'
 type AssetEditorMode = 'closed' | 'text' | 'link'
 type AssetFilter = 'all' | 'documents' | 'images' | 'links' | 'notes' | 'code'
@@ -247,13 +247,16 @@ const staticAssetsLoading = ref(false)
 const staticAssetImportingId = ref<string | null>(null)
 const sessions = ref<AgentSession[]>([])
 const scheduledSessions = ref<AgentSession[]>([])
+const channelSessions = ref<AgentSession[]>([])
 const sessionScope = ref<SessionScope>('normal')
 const sessionsLoading = ref(false)
 const scheduledSessionsLoading = ref(false)
+const channelSessionsLoading = ref(false)
 const switchingSessionId = ref<string | null>(null)
 const sessionDetailRequests = new Map<string, Promise<AgentSession>>()
 const sessionsHaveMore = ref(true)
 const scheduledSessionsHaveMore = ref(true)
+const channelSessionsHaveMore = ref(true)
 const sessionPageSize = 20
 const selectedArtifactId = ref<string | null>(null)
 const loading = ref(false)
@@ -443,13 +446,19 @@ function libraryExcerpt(item: LibraryItem): string {
   return libraryExcerptText(source) || 'Open to explore this item.'
 }
 const activeSessions = computed(() => (
-  sessionScope.value === 'scheduled' ? scheduledSessions.value : sessions.value
+  sessionScope.value === 'scheduled' ? scheduledSessions.value
+  : sessionScope.value === 'channel' ? channelSessions.value
+  : sessions.value
 ))
 const activeSessionsLoading = computed(() => (
-  sessionScope.value === 'scheduled' ? scheduledSessionsLoading.value : sessionsLoading.value
+  sessionScope.value === 'scheduled' ? scheduledSessionsLoading.value
+  : sessionScope.value === 'channel' ? channelSessionsLoading.value
+  : sessionsLoading.value
 ))
 const activeSessionsHaveMore = computed(() => (
-  sessionScope.value === 'scheduled' ? scheduledSessionsHaveMore.value : sessionsHaveMore.value
+  sessionScope.value === 'scheduled' ? scheduledSessionsHaveMore.value
+  : sessionScope.value === 'channel' ? channelSessionsHaveMore.value
+  : sessionsHaveMore.value
 ))
 const visibleSessions = computed(() => activeSessions.value.filter((session) => (
   session.message_count > 0
@@ -1324,6 +1333,11 @@ function navigate(nextView: View): void {
   } else if (nextView === 'scheduledTasks') {
     sessionScope.value = 'scheduled'
     void loadScheduledSessions(true)
+  } else if (nextView === 'channels') {
+    // Channel chats stay out of the user's own conversation list, so this view
+    // is the only place they can be reopened.
+    sessionScope.value = 'channel'
+    void loadChannelSessions(true)
   }
   if (nextView === 'library') {
     activeQuery.value = ''
@@ -2021,7 +2035,11 @@ async function openSession(sessionId: string): Promise<void> {
     const session = await loadSessionDetail(sessionId)
     if (generation !== sessionSwitchGeneration) return
     applySession(session)
-    const targetSessions = sessionScope.value === 'scheduled' ? scheduledSessions : sessions
+    const targetSessions = (
+      sessionScope.value === 'scheduled' ? scheduledSessions
+      : sessionScope.value === 'channel' ? channelSessions
+      : sessions
+    )
     if (!targetSessions.value.some((item) => item.id === session.id)) {
       targetSessions.value = [session, ...targetSessions.value]
     }
@@ -2036,6 +2054,11 @@ async function openSession(sessionId: string): Promise<void> {
 
 async function openScheduledSession(sessionId: string): Promise<void> {
   sessionScope.value = 'scheduled'
+  await openSession(sessionId)
+}
+
+async function openChannelSession(sessionId: string): Promise<void> {
+  sessionScope.value = 'channel'
   await openSession(sessionId)
 }
 
@@ -2088,10 +2111,12 @@ async function deleteSession(session: AgentSession): Promise<void> {
     await aiClient.deleteAgentSession(session.id)
     sessions.value = sessions.value.filter((item) => item.id !== session.id)
     scheduledSessions.value = scheduledSessions.value.filter((item) => item.id !== session.id)
+    channelSessions.value = channelSessions.value.filter((item) => item.id !== session.id)
     if (editingSessionId.value === session.id) cancelSessionTitleEdit()
     if (conversationId.value === session.id) {
       clearWorkspaceState()
       if (sessionScope.value === 'scheduled') await loadScheduledSessions(true)
+      else if (sessionScope.value === 'channel') await loadChannelSessions(true)
       else await loadSessions(true)
     }
     showNotice('Conversation deleted')
@@ -2130,8 +2155,24 @@ async function loadScheduledSessions(reset = false): Promise<void> {
   }
 }
 
+async function loadChannelSessions(reset = false): Promise<void> {
+  if (channelSessionsLoading.value) return
+  channelSessionsLoading.value = true
+  try {
+    const offset = reset ? 0 : channelSessions.value.length
+    const nextSessions = await aiClient.listAgentSessions(sessionPageSize, offset, ['channel'])
+    channelSessions.value = reset ? nextSessions : [...channelSessions.value, ...nextSessions]
+    channelSessionsHaveMore.value = nextSessions.length === sessionPageSize
+  } catch (error) {
+    showNotice(errorMessage(error), 'error')
+  } finally {
+    channelSessionsLoading.value = false
+  }
+}
+
 function loadMoreSessions(): void {
   if (sessionScope.value === 'scheduled') void loadScheduledSessions()
+  else if (sessionScope.value === 'channel') void loadChannelSessions()
   else void loadSessions()
 }
 
@@ -3195,8 +3236,8 @@ onBeforeUnmount(() => {
         </button>
       </nav>
 
-      <div v-if="view === 'new' || view === 'scheduledTasks'" class="sidebar-section session-section">
-        <div class="sidebar-heading"><span>{{ $t('nav.conversations') }}</span><button v-if="sessionScope === 'normal'" type="button" :aria-label="$t('nav.newConversation')" @click="resetWorkspace"><svg><use href="#icon-add" /></svg></button></div>
+      <div v-if="view === 'new' || view === 'scheduledTasks' || view === 'channels'" class="sidebar-section session-section">
+        <div class="sidebar-heading"><span>{{ sessionScope === 'channel' ? $t('nav.channelConversations') : $t('nav.conversations') }}</span><button v-if="sessionScope === 'normal'" type="button" :aria-label="$t('nav.newConversation')" @click="resetWorkspace"><svg><use href="#icon-add" /></svg></button></div>
         <div class="session-history-list">
           <div
             v-for="session in visibleSessions"
@@ -3271,7 +3312,7 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="sidebar-footer">
-        <button class="channels-nav-button" :class="{ active: view === 'channels' }" type="button" @click="navigate('channels')">
+        <button class="channels-nav-button" :class="{ active: view === 'channels' || (view === 'new' && sessionScope === 'channel') }" type="button" @click="navigate('channels')">
           <svg><use href="#icon-channels" /></svg><span>{{ $t('nav.channels') }}</span>
         </button>
         <label class="locale-control">
@@ -3421,7 +3462,7 @@ onBeforeUnmount(() => {
 
       <template v-else-if="view === 'new'">
         <header class="topbar compact chat-topbar">
-          <div class="chat-topbar-title"><span class="status-dot online" /><span>{{ sessionScope === 'scheduled' ? $t('nav.scheduledConversation') : $t('nav.workspace') }}</span></div>
+          <div class="chat-topbar-title"><span class="status-dot online" /><span>{{ sessionScope === 'scheduled' ? $t('nav.scheduledConversation') : sessionScope === 'channel' ? $t('nav.channelConversation') : $t('nav.workspace') }}</span></div>
           <div class="workspace-view-switch" role="group" aria-label="AI workspace view">
             <button :class="{ active: workspaceView === 'workspace' }" type="button" @click="setWorkspaceView('workspace')">{{ $t('Workspace') }}</button>
             <button :class="{ active: workspaceView === 'trace' }" type="button" @click="setWorkspaceView('trace')">{{ $t('Trace') }}</button>
