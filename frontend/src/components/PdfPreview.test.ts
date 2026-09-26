@@ -208,8 +208,9 @@ it('loads an artifact and enters presentation mode directly', async () => {
   await nextTick()
   await nextTick()
 
+  // The pages wait for a settled pane width, so presentation mode also starts a frame later.
+  await vi.waitFor(() => expect(document.body.querySelector('.pdf-presentation')).not.toBeNull())
   const presentation = document.body.querySelector<HTMLElement>('.pdf-presentation')!
-  expect(presentation).not.toBeNull()
   presentation.querySelector<HTMLButtonElement>('[aria-label="Exit PDF presentation"]')!.click()
   await nextTick()
   expect(closed).toHaveBeenCalledOnce()
@@ -285,9 +286,10 @@ it('presents one fitted page and navigates without changing the regular preview 
   await nextTick()
   await nextTick()
   const regularProgress = () => root.querySelector('.pdf-toolbar > div span')!.textContent
-  expect(regularProgress()).toContain('1 / 3')
   const start = root.querySelector<HTMLButtonElement>('[aria-label="Start PDF presentation"]')!
-  expect(start.disabled).toBe(false)
+  // Loading ends after the pages have a settled pane width to fit.
+  await vi.waitFor(() => expect(start.disabled).toBe(false))
+  expect(regularProgress()).toContain('1 / 3')
   start.click()
   await nextTick()
   await nextTick()

@@ -284,6 +284,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'Hide assets': '隐藏资源栏',
     'Show assets': '显示资源栏',
     'Refresh artifacts': '刷新产物',
+    'Restoring conversation': '正在恢复会话',
+    'Artifacts appear once this conversation has loaded.': '会话加载完成后会显示产物。',
     'Search assets': '搜索资源',
     'Search files': '搜索文件',
     'Library': '产物',

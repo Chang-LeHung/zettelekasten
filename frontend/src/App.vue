@@ -239,6 +239,8 @@ const assetFilter = ref<AssetFilter>('all')
 const assetDragging = ref(false)
 const assetsPaneKey = 'zett.assets-pane-hidden'
 const assetsPaneHidden = ref(readPaneHidden(assetsPaneKey))
+//: The artifact pane's preview, which refits its pages when this pane changes width.
+const pdfPreviewRef = ref<{ refit: () => void } | null>(null)
 const staticAssetImportOpen = ref(false)
 const staticAssets = ref<StaticAsset[]>([])
 const staticAssetsLoading = ref(false)
@@ -255,6 +257,8 @@ const scheduledSessionsHaveMore = ref(true)
 const sessionPageSize = 20
 const selectedArtifactId = ref<string | null>(null)
 const loading = ref(false)
+//: True until the persisted conversation, including its artifacts, has loaded.
+const workspaceRestoring = ref(true)
 const saving = ref(false)
 const notice = ref('')
 const noticeKind = ref<NoticeKind>('success')
@@ -2269,6 +2273,9 @@ function showAssetEditor(mode: Exclude<AssetEditorMode, 'closed'>): void {
 function toggleAssetsPane(hidden: boolean): void {
   assetsPaneHidden.value = hidden
   writePaneHidden(assetsPaneKey, hidden)
+  // The preview must refit before this frame paints: a resize observer reports the new
+  // stage width only after the wrong-scale frame is already on screen.
+  void nextTick().then(() => pdfPreviewRef.value?.refit())
 }
 
 async function addInlineAsset(): Promise<void> {
@@ -3089,16 +3096,23 @@ function parseUtcTimestamp(value: string): Date {
 }
 
 async function initializeWorkspace(): Promise<void> {
-  await loadInitialData()
   const persistedId = window.localStorage.getItem(activeSessionKey)
-  if (persistedId) {
-    try {
-      const session = await aiClient.getAgentSession(persistedId)
-      applySession(session)
-      await restoreSessionRuntime(session.id)
-    } catch {
-      window.localStorage.removeItem(activeSessionKey)
+  workspaceRestoring.value = Boolean(persistedId)
+  try {
+    await loadInitialData()
+    if (persistedId) {
+      try {
+        const session = await aiClient.getAgentSession(persistedId)
+        applySession(session)
+        await restoreSessionRuntime(session.id)
+      } catch {
+        window.localStorage.removeItem(activeSessionKey)
+      }
     }
+  } finally {
+    // Without this hold the panes render their empty state first and flip to real
+    // content once the conversation arrives, which reads as a flash on reload.
+    workspaceRestoring.value = false
   }
   await loadSessions(true)
 }
@@ -3502,9 +3516,9 @@ onBeforeUnmount(() => {
 
               <div ref="agentThread" class="agent-thread" :class="{ empty: !conversationStarted && switchingSessionId === null }" aria-live="polite" @scroll.passive="handleAgentThreadScroll" @wheel.passive="handleAgentThreadWheel">
                 <Transition name="session-content" mode="out-in">
-                  <div v-if="switchingSessionId" key="switching" class="session-switch-state" aria-live="polite">
+                  <div v-if="switchingSessionId || workspaceRestoring" key="switching" class="session-switch-state" aria-live="polite">
                     <span class="session-switch-spinner" aria-hidden="true" />
-                    <strong>Switching conversation</strong>
+                    <strong>{{ workspaceRestoring ? 'Restoring conversation' : 'Switching conversation' }}</strong>
                     <small>Loading messages and workspace…</small>
                   </div>
                   <div v-else-if="!conversationStarted" key="welcome" class="agent-welcome">
@@ -3838,7 +3852,12 @@ onBeforeUnmount(() => {
                   <span><strong>{{ artifactTitle(artifactEditableContent(artifact)) }}</strong><small>{{ artifact.artifact_type }} · v{{ artifact.version }} · {{ artifact.status }}{{ hasPendingDraft(artifact) ? ' · unsaved draft' : '' }}</small></span>
                 </button>
               </div>
-              <div v-if="!artifactContent" class="artifact-placeholder">
+              <div v-if="workspaceRestoring" class="artifact-placeholder">
+                <span><svg><use href="#icon-cards" /></svg></span>
+                <h2>{{ $t('Restoring conversation') }}</h2>
+                <p>{{ $t('Artifacts appear once this conversation has loaded.') }}</p>
+              </div>
+              <div v-else-if="!artifactContent" class="artifact-placeholder">
                 <span><svg><use href="#icon-cards" /></svg></span>
                 <h2>{{ $t('No artifacts yet') }}</h2>
                 <p>{{ $t('Keep talking with Zett Agent. Cards, articles, slides, and images will appear here when the conversation produces them.') }}</p>
@@ -3866,7 +3885,7 @@ onBeforeUnmount(() => {
                       <label class="card-title-control"><span>{{ $t('PDF filename') }}</span><textarea v-model="artifactContent.pdf_name" rows="1" /></label>
                       <p>{{ $t('Source files stay in the project directory. Compile the PDF before saving this reference.') }}</p>
                     </template>
-                    <PdfPreview v-else-if="artifactPreviewAsset" :asset="artifactPreviewAsset" artifact />
+                    <PdfPreview v-else-if="artifactPreviewAsset" ref="pdfPreviewRef" :asset="artifactPreviewAsset" artifact />
                   </template>
                   <template v-else-if="!artifactPreview">
                     <label class="card-title-control"><span>Title</span><textarea v-model="artifactContent.title" rows="2" /></label>
