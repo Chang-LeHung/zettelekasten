@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Zett social card</title>
+    <!--
+      Rendered to web/assets/og.png by web/tools/render-og.mjs. Styles are inline
+      so the card renders identically from a file:// URL.
+    -->
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        width: 1200px;
+        height: 630px;
+        display: grid;
+        grid-template-columns: 1.15fr 0.85fr;
+        align-items: center;
+        gap: 3rem;
+        padding: 4.5rem 4rem;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+        color: #1d1d1f;
+        background: linear-gradient(180deg, #ffffff 0%, #f6f8f7 100%);
+      }
+      .brand { display: flex; align-items: center; gap: 0.85rem; margin-bottom: 2.2rem; }
+      .brand img { width: 56px; height: 56px; border-radius: 12px; }
+      .brand span { font-size: 1.5rem; font-weight: 600; letter-spacing: -0.01em; }
+      h1 {
+        margin: 0 0 1.2rem;
+        font-size: 4.1rem;
+        line-height: 1.03;
+        letter-spacing: -0.035em;
+        font-weight: 600;
+      }
+      p {
+        margin: 0;
+        max-width: 27rem;
+        font-size: 1.35rem;
+        line-height: 1.45;
+        color: #6e6e73;
+      }
+      .meta {
+        margin-top: 2.4rem;
+        display: flex;
+        gap: 0.6rem;
+        font-size: 0.95rem;
+        color: #476957;
+      }
+      .meta span {
+        padding: 0.28rem 0.7rem;
+        border-radius: 980px;
+        background: #e5eee9;
+        font-weight: 550;
+      }
+      .mock {
+        border: 1px solid #e4e8e5;
+        border-radius: 20px;
+        background: #fff;
+        box-shadow: 0 24px 60px rgba(23, 35, 29, 0.14);
+        overflow: hidden;
+      }
+      .mock__bar {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid #e4e8e5;
+        background: #f6f8f7;
+        font-size: 0.85rem;
+        color: #6e6e73;
+      }
+      .mock__bar i { width: 9px; height: 9px; border-radius: 50%; background: #e4e8e5; border: 1px solid #d6ddd8; }
+      .mock__body { padding: 1.1rem; display: grid; gap: 0.8rem; }
+      .bubble {
+        justify-self: end;
+        max-width: 85%;
+        padding: 0.6rem 0.85rem;
+        border-radius: 14px 14px 4px 14px;
+        background: #345243;
+        color: #fff;
+        font-size: 0.9rem;
+      }
+      .reply { font-size: 0.9rem; color: #4b4b50; }
+      .card {
+        padding: 0.8rem 0.9rem;
+        border: 1px solid #e4e8e5;
+        border-radius: 12px;
+        background: #fff;
+      }
+      .card strong { display: block; font-size: 0.82rem; color: #345243; }
+      .card h2 { margin: 0.35rem 0 0.3rem; font-size: 1.05rem; font-weight: 600; letter-spacing: -0.01em; }
+      .card p { font-size: 0.85rem; max-width: none; color: #6e6e73; }
+      .tags { display: flex; gap: 0.3rem; margin-top: 0.6rem; }
+      .tags span {
+        padding: 0.15rem 0.5rem;
+        border-radius: 980px;
+        background: #f1f6f3;
+        color: #476957;
+        font-size: 0.78rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div>
+      <div class="brand">
+        <img src="../assets/logo.png" alt="" />
+        <span>Zett</span>
+      </div>
+      <h1>Catch the thought before it is gone.</h1>
+      <p>A local-first workspace that turns one line into a card you keep.</p>
+      <div class="meta">
+        <span>No account</span>
+        <span>No telemetry</span>
+        <span>Python 3.10–3.14</span>
+      </div>
+    </div>
+
+    <div class="mock">
+      <div class="mock__bar"><i></i><i></i><i></i><span style="margin-left: 0.5rem">AI workspace</span></div>
+      <div class="mock__body">
+        <div class="bubble">Create a card from this idea: local-first beats sync.</div>
+        <div class="reply">Saved as a draft card.</div>
+        <div class="card">
+          <strong>Card · idea</strong>
+          <h2>Local-first beats sync for personal notes</h2>
+          <p>A file on disk survives the company that made the app.</p>
+          <div class="tags"><span>local-first</span><span>ownership</span></div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

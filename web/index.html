@@ -1,0 +1,718 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Zett — turn a passing thought into something you keep</title>
+    <meta
+      name="description"
+      content="Zett is a local-first, AI-assisted workspace where a one-line idea becomes a card, an article, a slide deck, or a paper. No account, no cloud workspace, no telemetry."
+    />
+    <link rel="icon" href="/assets/favicon.ico" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Zett" />
+    <meta property="og:title" content="Zett — catch the thought before it is gone" />
+    <meta
+      property="og:description"
+      content="A local-first, AI-assisted workspace where one line becomes a card, an article, a slide deck, or a paper. No account, no telemetry."
+    />
+    <meta property="og:url" content="https://chang-lehung.github.io/zettelekasten/" />
+    <meta property="og:image" content="https://chang-lehung.github.io/zettelekasten/assets/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="https://chang-lehung.github.io/zettelekasten/assets/og.png" />
+    <link rel="stylesheet" href="/styles/tokens.css" />
+    <link rel="stylesheet" href="/styles/base.css" />
+    <link rel="stylesheet" href="/styles/site.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="nav" data-enter="nav">
+      <a class="nav__brand" href="/">
+        <img src="/assets/logo.png" width="28" height="28" alt="" />
+        <span>Zett</span>
+      </a>
+      <nav class="nav__links" aria-label="Primary">
+        <a href="/docs/guide/conversations/">Guide</a>
+        <a href="/docs/plugins/">Plugins</a>
+        <a href="/docs/">Docs</a>
+      </nav>
+      <div class="nav__actions nav__actions--end">
+        <button class="icon-button" type="button" data-search-open aria-label="Search the documentation">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="6" /><path d="m20 20-3.6-3.6" stroke-linecap="round" /></svg>
+        </button>
+        <button class="icon-button" type="button" data-theme-toggle aria-label="Switch to dark mode">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M20 12.5A8 8 0 1 1 11.5 4a6.5 6.5 0 0 0 8.5 8.5Z" stroke-linejoin="round" /></svg>
+        </button>
+        <a class="nav__cta" href="#install">Install</a>
+      </div>
+    </header>
+
+    <main id="main">
+      <!-- Hero: the claim, then the product itself, live. -->
+      <section class="hero">
+        <div class="hero__copy">
+          <h1 data-enter="claim">Catch the thought<br />before it is gone.</h1>
+          <p class="hero__sub" data-enter="claim">
+            Zett is a private workspace where one line you jot down becomes a card, an
+            article, a slide deck, or a paper — shaped with an assistant that keeps
+            everything on your machine.
+          </p>
+          <div class="hero__actions" data-enter="action">
+            <a class="button button--primary" href="#install">Install Zett</a>
+            <a class="button" href="/docs/">Read the docs</a>
+          </div>
+          <p class="hero__meta" data-enter="action">
+            Python 3.10–3.14 · macOS, Linux, Windows · no account, no telemetry
+          </p>
+        </div>
+
+        <div class="stage" data-enter="product" id="stage">
+          <div class="app" role="img" aria-label="The Zett workspace: a composer with a typed request, the assistant's reply, and the card it produced">
+            <div class="app__bar">
+              <span class="app__dots"><i></i><i></i><i></i></span>
+              <span class="app__title">AI workspace</span>
+              <span class="app__chips">
+                <span class="chip">DeepSeek</span>
+                <span class="chip chip--quiet">Medium</span>
+              </span>
+            </div>
+
+            <div class="app__body">
+              <div class="app__stream" data-state="composer">
+                <p class="bubble bubble--user" data-role="prompt"></p>
+                <div class="reply" data-role="reply">
+                  <span class="thinking" data-role="thinking" aria-hidden="true"><i></i><i></i><i></i></span>
+                  <p class="reply__line" data-role="reply-line-1"></p>
+                  <p class="reply__line" data-role="reply-line-2"></p>
+                </div>
+                <article class="card" data-role="artifact">
+                  <header>
+                    <span class="card__type">Card · idea</span>
+                    <span class="card__status">unsaved draft</span>
+                  </header>
+                  <h3 data-role="artifact-title">Local-first beats sync for personal notes</h3>
+                  <p data-role="artifact-body">
+                    A file on disk survives the company that made the app. Sync is a
+                    feature you can add later; ownership is not.
+                  </p>
+                  <footer>
+                    <span class="tag">local-first</span>
+                    <span class="tag">ownership</span>
+                  </footer>
+                </article>
+              </div>
+
+              <form class="composer" data-role="composer">
+                <div class="composer__input">
+                  <span class="composer__text" data-role="typed"></span><span class="caret" data-role="caret"></span>
+                </div>
+                <div class="composer__controls">
+                  <span class="chip chip--quiet">Shell · Review</span>
+                  <span class="composer__send" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                      <path d="M5 12h13m-5-6 6 6-6 6" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                  </span>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Story: one idea per screen, the product pinned while the claim changes. -->
+      <!-- Product tour: the whole window, animated through three moments. -->
+      <section class="story" aria-labelledby="story-title">
+        <h2 class="section-title" id="story-title" data-reveal>One line in. Something kept, out.</h2>
+        <div class="story__grid">
+          <div class="story__stage" data-step-stage data-phase="1" data-view="workspace">
+            <div class="app app--full">
+              <div class="app__bar">
+                <span class="app__dots"><i></i><i></i><i></i></span>
+                <span class="app__title" data-frame-title>AI workspace</span>
+                <span class="app__chips">
+                  <span class="chip">DeepSeek</span>
+                  <span class="chip chip--quiet">Medium</span>
+                </span>
+              </div>
+
+              <div class="app__layout">
+                <aside class="pane pane--conversations">
+                  <p class="pane__title">Conversations</p>
+                  <ul class="convos">
+                    <li class="is-active">Local-first notes</li>
+                    <li>Reading list</li>
+                    <li>Deck for Thursday</li>
+                    <li>Paper on CRDTs</li>
+                  </ul>
+                  <p class="pane__title">Collections</p>
+                  <ul class="collections">
+                    <li>Ideas <span>12</span></li>
+                    <li>Technology <span>31</span></li>
+                    <li class="is-nested">Python <span>9</span></li>
+                  </ul>
+                </aside>
+
+                <div class="pane pane--chat">
+                  <div class="chat">
+                    <p class="chat__empty" data-story-empty>
+                      What should we remember?
+                      <span>Type a rough thought, or drop in a file.</span>
+                    </p>
+                    <p class="bubble bubble--user" data-story-prompt></p>
+                    <p class="chat__tools" data-story-tools>
+                      <span class="chip">create_artifact</span>
+                      <span class="chip chip--quiet">draft</span>
+                    </p>
+                    <p class="chat__reply" data-story-reply></p>
+                    <article class="card card--inline" data-story-card>
+                      <header>
+                        <span class="card__type">Card · idea</span>
+                        <span class="card__status">unsaved draft</span>
+                      </header>
+                      <h3>Local-first beats sync for personal notes</h3>
+                      <p>A file on disk survives the company that made the app.</p>
+                      <footer><span class="tag">local-first</span><span class="tag">ownership</span></footer>
+                    </article>
+                  </div>
+                  <div class="composer composer--inline">
+                    <span class="composer__text" data-story-input></span><span class="caret" data-story-caret></span>
+                  </div>
+                </div>
+
+                <aside class="pane pane--artifacts">
+                  <p class="pane__title">Artifacts</p>
+                  <article class="mini-card is-active">
+                    <span>Card · idea</span>
+                    <strong>Local-first beats sync for personal notes</strong>
+                  </article>
+                  <article class="mini-card">
+                    <span>Article</span>
+                    <strong>How Zett keeps a long conversation cheap</strong>
+                  </article>
+                  <article class="mini-card">
+                    <span>Slides</span>
+                    <strong>Ten minutes on local-first notes</strong>
+                  </article>
+                </aside>
+              </div>
+
+              <div class="app__view app__view--library">
+                <aside class="pane pane--conversations">
+                  <p class="pane__title">Collections</p>
+                  <ul class="collections">
+                    <li>Ideas <span>12</span></li>
+                    <li>Technology <span>31</span></li>
+                    <li class="is-nested">Python <span>9</span></li>
+                    <li>Writing <span>7</span></li>
+                  </ul>
+                </aside>
+                <div class="pane pane--library">
+                  <div class="lib-filters">
+                    <span class="chip chip--quiet">All</span>
+                    <span class="chip">Cards</span>
+                    <span class="chip chip--quiet">Articles</span>
+                    <span class="chip chip--quiet">Slides</span>
+                    <span class="chip chip--quiet">PDFs</span>
+                  </div>
+                  <div class="lib-grid">
+                    <article class="mini-card is-new">
+                      <span>Card · idea</span>
+                      <strong>Local-first beats sync for personal notes</strong>
+                      <em>local-first · ownership</em>
+                    </article>
+                    <article class="mini-card">
+                      <span>Article</span>
+                      <strong>How Zett keeps a long conversation cheap</strong>
+                      <em>compaction</em>
+                    </article>
+                    <article class="mini-card">
+                      <span>Slides</span>
+                      <strong>Ten minutes on local-first notes</strong>
+                      <em>talk</em>
+                    </article>
+                    <article class="mini-card">
+                      <span>Paper</span>
+                      <strong>CRDT-based note sync</strong>
+                      <em>sources kept</em>
+                    </article>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <ol class="story__steps">
+            <li data-step="1">
+              <h3>Write one line.</h3>
+              <p>
+                A passing idea, a rough note, a question you cannot answer yet. Type it
+                the moment it arrives; the workspace is already open.
+              </p>
+            </li>
+            <li data-step="2">
+              <h3>Ask for the shape.</h3>
+              <p>
+                “Turn this into a card.” “Draft a deck.” The assistant reads what you
+                attached and writes a first version, in the open, so you can argue with it.
+              </p>
+            </li>
+            <li data-step="3">
+              <h3>Keep it, on purpose.</h3>
+              <p>
+                Nothing is published until you say so. Review the diff, tag it, save it —
+                and it joins a library that stays on your disk.
+              </p>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <!-- Library: scroll progress moves the strip, one artifact at a time. -->
+      <!-- Library: all four artifact kinds, revealed in order as the section arrives. -->
+      <section class="library" id="library" aria-labelledby="library-title">
+        <div class="library__intro">
+          <h2 class="section-title" id="library-title" data-reveal>Everything you keep, in one library.</h2>
+          <p class="section-sub" data-reveal>
+            Ask for a card, an article, a deck, or a paper. Nothing is published until you
+            save it, and everything you save is searchable, tagged, and still editable.
+          </p>
+        </div>
+
+        <div class="library__grid" data-reveal-stagger>
+          <article class="artifact">
+            <header>
+              <span class="artifact__type">Card · idea</span>
+              <span class="artifact__status is-draft">draft</span>
+            </header>
+            <h3>Local-first beats sync for personal notes</h3>
+            <p>
+              A file on disk survives the company that made the app. Sync is a feature you
+              can add later; ownership is not.
+            </p>
+            <footer><span class="tag">local-first</span><span class="tag">ownership</span></footer>
+          </article>
+
+          <article class="artifact">
+            <header>
+              <span class="artifact__type">Article</span>
+              <span class="artifact__status">saved · v2</span>
+            </header>
+            <h3>How Zett keeps a long conversation cheap</h3>
+            <p>
+              Compaction replaces old turns with a checkpoint while the raw log stays on
+              disk, so a long thread never costs a fortune to continue.
+            </p>
+            <footer><span class="tag">compaction</span><span class="tag">context</span></footer>
+          </article>
+
+          <article class="artifact">
+            <header>
+              <span class="artifact__type">Slides</span>
+              <span class="artifact__status">saved · 8 slides</span>
+            </header>
+            <h3>Ten minutes on local-first notes</h3>
+            <p>
+              A deck built from the same conversation, presented full screen and exported
+              to PDF when the room asks for one.
+            </p>
+            <footer><span class="tag">talk</span><span class="tag">team</span></footer>
+          </article>
+
+          <article class="artifact">
+            <header>
+              <span class="artifact__type">Paper</span>
+              <span class="artifact__status">saved · 12 pages</span>
+            </header>
+            <h3>CRDT-based note sync</h3>
+            <p>
+              Ask for a paper and it compiles one, keeping the sources beside it so you can
+              edit, rebuild, and export it whenever you like.
+            </p>
+            <footer><span class="tag">sources kept</span><span class="tag">pdf</span></footer>
+          </article>
+        </div>
+      </section>
+
+      <!-- Privacy: the quiet band, with the one directory that holds everything. -->
+      <section class="privacy" id="privacy" aria-labelledby="privacy-title">
+        <h2 class="section-title" id="privacy-title" data-reveal>Your notes never leave your machine.</h2>
+        <ul class="privacy__facts" data-reveal>
+          <li>
+            <strong>No account</strong>
+            <span>Nothing to sign up for, nothing to sign back in to.</span>
+          </li>
+          <li>
+            <strong>No cloud workspace</strong>
+            <span>Nothing to sync and no server to trust — your notes are yours to keep.</span>
+          </li>
+          <li>
+            <strong>No telemetry</strong>
+            <span>The only network calls are the model provider you configure — and a chat platform only if you connect one.</span>
+          </li>
+        </ul>
+        <div class="folder" data-reveal role="img" aria-label="A single folder holds everything Zett knows">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+            <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l1.8 2h7.2A1.5 1.5 0 0 1 19 9.5v7A1.5 1.5 0 0 1 17.5 18h-13A1.5 1.5 0 0 1 3 16.5Z" stroke-linejoin="round" />
+          </svg>
+          <div>
+            <strong>Zett</strong>
+            <span>One folder on your Mac · back it up or move it like any other file</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Reach: the same agent from a phone, and running on a schedule. -->
+      <section class="extras" aria-labelledby="extras-title">
+        <h2 class="section-title" id="extras-title" data-reveal>Reachable, and patient.</h2>
+        <p class="section-sub" data-reveal>
+          Send it a photo from your phone, or hand it a schedule and read the transcript
+          later. Both write to the same library, on the same machine.
+        </p>
+
+        <div class="extras__grid">
+          <div class="extras__item">
+            <h3>Ask from your phone</h3>
+            <p>
+              Connect a chat platform and every conversation keeps its own thread. A photo,
+              a voice note, or a file arrives as a file, and the assistant writes to the
+              library while you are away from the desk.
+            </p>
+            <div class="bridge" data-phone>
+              <div class="bridge__side">
+                <span class="avatar avatar--person" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="9" r="3.2" /><path d="M5 19.5a7 7 0 0 1 14 0" stroke-linecap="round" /></svg>
+                </span>
+                <span class="bridge__label">You</span>
+                <div class="mini-phone">
+                  <span class="mini-phone__notch" aria-hidden="true"></span>
+                  <div class="mini-phone__screen">
+                    <div class="mini-phone__thread" data-phone-thread></div>
+                    <div class="mini-phone__status" data-phone-status></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="bridge__link" data-phone-link aria-hidden="true">
+                <svg viewBox="0 0 160 40" preserveAspectRatio="none">
+                  <defs>
+                    <linearGradient id="bridge-line" x1="0" y1="0" x2="1" y2="0">
+                      <stop offset="0" style="stop-color: var(--accent); stop-opacity: 0" />
+                      <stop offset="50%" style="stop-color: var(--green-500); stop-opacity: 0.42" />
+                      <stop offset="100%" style="stop-color: var(--accent); stop-opacity: 0" />
+                    </linearGradient>
+                  </defs>
+                  <path class="bridge__halo" d="M2 22 Q80 6 158 22" />
+                  <path class="bridge__curve" d="M2 22 Q80 6 158 22" />
+                </svg>
+                <span class="bridge__ring bridge__ring--from"></span>
+                <span class="bridge__ring bridge__ring--to"></span>
+                <span class="bridge__comet" data-phone-comet><i></i></span>
+                <span class="bridge__tag bridge__tag--out" data-phone-tag-out>photo + text</span>
+                <span class="bridge__tag bridge__tag--in" data-phone-tag-in>card + tags</span>
+              </div>
+
+              <div class="bridge__side">
+                <span class="avatar avatar--agent" aria-hidden="true">
+                  <img src="/assets/logo.png" width="22" height="22" alt="" />
+                </span>
+                <span class="bridge__label">Zett</span>
+                <div class="mini-agent" data-phone-agent>
+                  <div class="mini-agent__head">
+                    <span class="mini-agent__dot"></span>AI workspace
+                  </div>
+                  <div class="mini-agent__working" data-phone-working><i></i><i></i><i></i></div>
+                  <div class="mini-agent__tools" data-phone-tools></div>
+                  <div class="mini-agent__saved" data-phone-saved>
+                    <strong data-phone-result-title></strong>
+                    <span data-phone-result-meta></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="extras__item">
+            <h3>Or let it run without you</h3>
+            <p>
+              Put a prompt on a schedule and read the transcript afterwards. Each run gets
+              a fresh session, so an unattended task never lands in your conversation list.
+            </p>
+            <div class="task" data-task>
+              <header>
+                <strong>Weekly reading digest</strong>
+                <span class="task__schedule">Mon 09:00 · Asia/Shanghai</span>
+              </header>
+              <p class="task__prompt">Summarize what I saved this week into one card.</p>
+              <div class="task__actions">
+                <span class="switch"><i></i>Enabled</span>
+                <span class="task__run" data-task-run>Run now</span>
+              </div>
+              <ul class="task__log">
+                <li data-task-step="1"><span class="task__log-dot"></span>New session started<span class="task__log-time">00:00:02</span></li>
+                <li data-task-step="2">
+                  <span class="task__log-dot"></span><span class="chip">list_assets</span><span class="chip">create_artifact</span><span class="task__log-time">00:00:19</span>
+                </li>
+                <li data-task-step="3"><span class="task__log-dot"></span>Card saved · 6 sources<span class="task__log-time">00:00:42</span></li>
+              </ul>
+              <div class="task__result" data-task-result>
+                <strong>Weekly reading digest</strong>
+                <span>Card · saved to the library · next run in 7 days</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Scriptable: Claude Code and Codex write into Zett through its own API. -->
+      <section class="tools" id="tools" aria-labelledby="tools-title">
+        <h2 class="section-title" id="tools-title" data-reveal>Let your coding agent file the result.</h2>
+        <p class="section-sub" data-reveal>
+          Zett's artifacts and assets are plain HTTP, and exposed over MCP. Point Claude
+          Code or Codex at the API and what it just finished lands in your library — a card,
+          an article, or an uploaded file.
+        </p>
+
+        <div class="relay" data-relay>
+          <div class="relay__agents">
+            <span class="agent" data-relay-agent="claude">
+              <span class="agent__logo">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z" /></svg>
+              </span>
+              <span class="agent__text">
+                <strong>Claude Code</strong>
+                <span data-relay-state="claude">idle</span>
+              </span>
+            </span>
+
+            <span class="agent" data-relay-agent="codex">
+              <span class="agent__logo">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z" /></svg>
+              </span>
+              <span class="agent__text">
+                <strong>Codex</strong>
+                <span data-relay-state="codex">idle</span>
+              </span>
+            </span>
+          </div>
+
+          <div class="relay__links" aria-hidden="true">
+            <span class="bridge__link relay__link" data-relay-link="claude">
+              <svg viewBox="0 0 160 40" preserveAspectRatio="none">
+                <path class="bridge__halo" d="M2 22 Q80 6 158 22" />
+                <path class="bridge__curve" d="M2 22 Q80 6 158 22" />
+              </svg>
+              <span class="bridge__ring bridge__ring--from"></span>
+              <span class="bridge__ring bridge__ring--to"></span>
+              <span class="bridge__comet" data-relay-comet><i></i></span>
+              <span class="bridge__tag bridge__tag--out" data-relay-tag>branch summary</span>
+            </span>
+
+            <span class="bridge__link relay__link" data-relay-link="codex">
+              <svg viewBox="0 0 160 40" preserveAspectRatio="none">
+                <path class="bridge__halo" d="M2 22 Q80 6 158 22" />
+                <path class="bridge__curve" d="M2 22 Q80 6 158 22" />
+              </svg>
+              <span class="bridge__ring bridge__ring--from"></span>
+              <span class="bridge__ring bridge__ring--to"></span>
+              <span class="bridge__comet" data-relay-comet><i></i></span>
+              <span class="bridge__tag bridge__tag--out" data-relay-tag>paper.pdf</span>
+            </span>
+          </div>
+
+          <div class="relay__zett">
+            <span class="avatar avatar--agent" aria-hidden="true">
+              <img src="/assets/logo.png" width="22" height="22" alt="" />
+            </span>
+            <span class="bridge__label">Zett</span>
+            <div class="mini-agent">
+              <div class="mini-agent__head">
+                <span class="mini-agent__dot"></span>
+                <span class="relay__actor" data-relay-actor>AI workspace</span>
+              </div>
+              <ul class="relay__log" data-relay-log></ul>
+            </div>
+          </div>
+        </div>
+
+        <p class="relay__foot" data-reveal>
+          The same endpoints are exposed over MCP, so an agent that already speaks it needs
+          no new code.
+        </p>
+      </section>
+
+      <section class="install" id="install" aria-labelledby="install-title">
+        <div class="install__inner" data-reveal-stagger>
+          <h2 class="section-title" id="install-title">Install it like a tool, not a service.</h2>
+          <p class="install__sub">
+            One command, and it runs on your machine with everything it knows in one
+            folder. Nothing to sign in to, nothing to keep running in the cloud.
+          </p>
+          <pre class="install__code"><code><span class="line"><span class="dim">$</span> uv tool install zett</span><span class="line"><span class="dim">$</span> zett start        <span class="dim"># open http://127.0.0.1:6280</span></span></code></pre>
+          <div class="install__actions">
+            <a class="button button--primary" href="https://github.com/Chang-LeHung/zettelekasten#install">Read the install steps</a>
+            <a class="button" href="/docs/">Browse the docs</a>
+          </div>
+        </div>
+      </section>
+      <!-- First run: install, then connect a model, with the settings window playing the steps. -->
+      <section class="setup" id="setup" aria-labelledby="setup-title">
+        <div class="setup__intro">
+          <h2 class="section-title" id="setup-title" data-reveal>Then connect a model.</h2>
+          <p class="section-sub" data-reveal>
+            Zett brings no model of its own. Add a provider once — the key is encrypted and
+            stays on your machine — and every conversation has something to think with.
+          </p>
+        </div>
+
+        <div class="setup__stage" data-setup data-phase="1">
+          <div class="app app--setup">
+            <div class="app__bar">
+              <span class="app__dots"><i></i><i></i><i></i></span>
+              <span class="app__title" data-setup-title>Settings</span>
+              <span class="app__chips"><span class="chip" data-setup-chip>No model yet</span></span>
+            </div>
+            <span class="cursor" data-setup-cursor aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="20" height="20"><path d="M5 3l14 8.6-6.3 1.1L9.5 19z" fill="#1d1d1f" stroke="#fff" stroke-width="1.3" stroke-linejoin="round" /></svg>
+              <span class="cursor__burst">
+                <i class="cursor__ring cursor__ring--inner"></i>
+                <i class="cursor__ring cursor__ring--outer"></i>
+                <i class="cursor__spark"></i>
+                <i class="cursor__spark"></i>
+                <i class="cursor__spark"></i>
+                <i class="cursor__spark"></i>
+                <i class="cursor__spark"></i>
+                <i class="cursor__spark"></i>
+              </span>
+            </span>
+            <div class="app__layout app__layout--setup">
+              <aside class="pane pane--settings">
+                <ul class="settings-nav">
+                  <li>Preferences</li>
+                  <li class="is-active">AI providers</li>
+                  <li>Limits</li>
+                  <li>Usage</li>
+                </ul>
+              </aside>
+
+              <div class="pane pane--providers">
+                <p class="provider-empty" data-setup-empty>
+                  No provider configured yet.
+                  <span>Zett cannot answer anything until you add one.</span>
+                </p>
+
+                <form class="provider-form" data-setup-form onsubmit="return false">
+                  <div class="field-grid">
+                    <label class="field">
+                      <span class="field__label">Connection name</span>
+                      <span class="field__value" data-setup-type="DeepSeek" data-setup-hint="e.g. Fast OpenAI"></span>
+                      <span class="field__help">Shown in the conversation provider picker.</span>
+                    </label>
+                    <label class="field">
+                      <span class="field__label">Provider</span>
+                      <span class="field__value field__value--select">
+                        DeepSeek
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m7 10 5 5 5-5" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                      </span>
+                      <span class="field__help">The API format used for model requests.</span>
+                    </label>
+                  </div>
+
+                  <label class="field">
+                    <span class="field__label">Model</span>
+                    <span class="field__value" data-setup-type="deepseek-chat" data-setup-hint="e.g. gpt-4.1-mini"></span>
+                    <span class="field__help">Use the exact model identifier from your provider.</span>
+                  </label>
+
+                  <label class="field">
+                    <span class="field__label">Base URL <em class="field__badge">Custom</em></span>
+                    <span class="field__value" data-setup-type="https://api.deepseek.com/v1" data-setup-hint="https://api.example.com/v1"></span>
+                    <span class="field__help">Enter the Chat Completions endpoint exposed by your compatible service.</span>
+                  </label>
+
+                  <label class="field">
+                    <span class="field__label">API key <em class="field__badge">New</em></span>
+                    <span class="field__value field__value--key" data-setup-type="••••••••••••" data-setup-hint="Leave blank to keep the saved key">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 12s3-5 8-5 8 5 8 5-3 5-8 5-8-5-8-5Z" stroke-linejoin="round" /><circle cx="12" cy="12" r="2" /></svg>
+                    </span>
+                    <span class="field__help">Stored encrypted locally. Saving a blank value keeps the existing key.</span>
+                  </label>
+
+                  <div class="field-grid">
+                    <div class="field">
+                      <span class="field__label">Temperature <em class="field__number" data-setup-temp>0.2</em></span>
+                      <span class="slider" data-setup-slider><i></i></span>
+                    </div>
+                    <div class="field">
+                      <span class="field__label">API mode</span>
+                      <span class="segmented">
+                        <span class="is-active">Chat Completions</span>
+                        <span>Responses API</span>
+                      </span>
+                      <span class="field__help">Responses mode enables provider-hosted tools such as web search.</span>
+                    </div>
+                  </div>
+
+                  <div class="form-foot">
+                    <span class="form-foot__note">Credentials are encrypted in your local database.</span>
+                    <span class="switch"><i></i>Enabled</span>
+                    <span class="form-foot__submit" data-setup-save>Add provider</span>
+                  </div>
+                </form>
+
+                <div class="provider-list" data-setup-row>
+                  <p class="pane__title">Configured providers</p>
+                  <div class="provider-row">
+                    <span class="provider-row__dot" aria-hidden="true"></span>
+                    <div>
+                      <strong>DeepSeek · deepseek-chat</strong>
+                      <span>key stored on this machine · enabled</span>
+                    </div>
+                  </div>
+                  <span class="provider-add">+ New provider</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <ol class="setup__steps">
+            <li data-setup-step="1"><strong>Start it once.</strong><span><code>zett start</code> opens the workspace.</span></li>
+            <li data-setup-step="2"><strong>Add a provider.</strong><span>Name it, pick a model, paste a key.</span></li>
+            <li data-setup-step="3"><strong>Then just talk.</strong><span>The provider is ready for every conversation.</span></li>
+          </ol>
+        </div>
+      </section>
+
+    </main>
+
+    <footer class="footer">
+      <div class="footer__brand">
+        <img src="/assets/logo.png" width="22" height="22" alt="" />
+        <span>Zett</span>
+      </div>
+      <nav class="footer__links" aria-label="Footer">
+        <a href="/docs/">Documentation</a>
+        <a href="/docs/plugins/">Plugins</a>
+        <a href="https://github.com/Chang-LeHung/zettelekasten">GitHub</a>
+        <a href="https://github.com/Chang-LeHung/zettelekasten/blob/main/LICENSE">MIT License</a>
+      </nav>
+    </footer>
+
+    <div class="search-dialog" data-search-dialog role="dialog" aria-label="Search the documentation">
+      <div class="search-dialog__panel">
+        <div class="search-dialog__field">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="6" /><path d="m20 20-3.6-3.6" stroke-linecap="round" /></svg>
+          <input type="search" placeholder="Search the documentation…" aria-label="Search the documentation" />
+        </div>
+        <p class="search-dialog__empty" data-search-empty hidden>Type to search the documentation.</p>
+        <ul class="search-dialog__results" data-search-results></ul>
+      </div>
+    </div>
+
+    <script type="module" src="/scripts/shared.js"></script>
+    <script type="module" src="/scripts/site.js"></script>
+  </body>
+</html>
