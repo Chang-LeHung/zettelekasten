@@ -209,6 +209,16 @@ bound as `im:session:<channel_id>:<chat_id>`, and turns for the same pair run
 serialized. That binding can outlive its session when the conversation was
 deleted, so a turn that finds its bound session missing starts a fresh session
 and rebinds instead of leaving the chat mute, logging the stale id.
+Dedup markers are pruned once they are older than the redelivery window, a
+login flow releases its plugin whenever it ends without a channel, and chat
+locks live in a bounded cache, so the `im:` state cannot grow with the traffic a
+long-running process sees.
+A turn that fails answers the chat with one fixed English notice instead of
+staying silent, and editing a channel's policy (provider, reasoning effort,
+coding access) never restarts the running plugin, because those values are read
+per turn; only the enabled flag starts or stops it. Disabling a provider is
+refused while a conversation preference, scheduled task, or channel still uses
+it, exactly like deleting one.
 
 `/messages`, `/events`, and `/steer` consult the same in-process
 `ActiveRequestRegistry`: at most one request per session may run, and the
