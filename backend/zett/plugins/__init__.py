@@ -6,11 +6,18 @@ pulling in Zett application or infrastructure modules so plugins (for example
 """
 
 from .channels import (
+    MAX_CHANNEL_MEDIA_BYTES,
+    MAX_CHANNEL_MEDIA_ITEMS,
+    MAX_CHANNEL_MEDIA_TOTAL_BYTES,
     ChannelCredentials,
     ChannelInboundMessage,
     ChannelLoginChallenge,
     ChannelLoginState,
     ChannelLoginStatus,
+    ChannelMedia,
+    ChannelMediaKind,
+    ChannelMediaRejection,
+    ChannelMediaRejectionReason,
     ChannelPlugin,
 )
 from .contract import (
@@ -31,6 +38,10 @@ __all__ = [
     "ChannelLoginChallenge",
     "ChannelLoginState",
     "ChannelLoginStatus",
+    "ChannelMedia",
+    "ChannelMediaKind",
+    "ChannelMediaRejection",
+    "ChannelMediaRejectionReason",
     "ChannelPlugin",
     "JsonValue",
     "KVStorage",
@@ -41,4 +52,7 @@ __all__ = [
     "PluginError",
     "PluginKind",
     "PluginLoadError",
+    "MAX_CHANNEL_MEDIA_BYTES",
+    "MAX_CHANNEL_MEDIA_ITEMS",
+    "MAX_CHANNEL_MEDIA_TOTAL_BYTES",
 ]

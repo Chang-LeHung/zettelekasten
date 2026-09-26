@@ -2,7 +2,7 @@
 
 from collections.abc import Mapping
 
-from zett_agent import AgentRunConfig, JsonValue, ReasoningEffort, UserMessage
+from zett_agent import AgentRunConfig, JsonValue, ReasoningEffort, UserContent, UserMessage
 
 from ...agent.config import ZettelkastenAgentConfig
 from ...agent.model_factory import create_model
@@ -24,12 +24,17 @@ async def run_headless_prompt(
     provider_id: str,
     request_id: str,
     message: str,
+    content: UserContent | None = None,
     reasoning_effort: ReasoningEffort,
     allow_coding: bool = False,
     metadata: Mapping[str, JsonValue] | None = None,
     tags: Mapping[str, JsonValue] | None = None,
 ) -> str:
-    """Run one complete Agent prompt and return its final text response."""
+    """Run one complete Agent prompt and return its final text response.
+
+    ``content`` replaces ``message`` when a caller already built ordered
+    multimodal content, which is how inbound IM media reaches the model.
+    """
     connection = await provider_storage.resolve_connection(provider_id)
     if connection is None:
         raise ValueError("Enabled provider not found")
@@ -52,7 +57,7 @@ async def run_headless_prompt(
         )
         await agent.initialize()
         result = await agent.client(None).run(  # type: ignore[arg-type]
-            UserMessage(content=message),
+            UserMessage(content=message if content is None else content),
             config=AgentRunConfig(session_id=session_id, request_id=request_id),
             model=model,
             reasoning_effort=reasoning_effort,

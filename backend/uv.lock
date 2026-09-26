@@ -13,6 +13,7 @@ name = "agim"
 version = "0.1.0"
 source = { editable = "agim" }
 dependencies = [
+    { name = "cryptography" },
     { name = "httpx" },
     { name = "pydantic" },
     { name = "typing-extensions", marker = "python_full_version < '3.12'" },
@@ -20,6 +21,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cryptography", specifier = ">=43,<45" },
     { name = "httpx", specifier = ">=0.27,<1" },
     { name = "pydantic", specifier = ">=2.12,<2.13" },
     { name = "typing-extensions", marker = "python_full_version < '3.12'", specifier = ">=4.12,<5" },
