@@ -908,7 +908,10 @@ async def test_a_failed_turn_answers_instead_of_staying_silent() -> None:
     plugin.pending.append(ChannelInboundMessage(event_id="event-1", chat_id="user-1", user_id="user-1", text="hello"))
 
     task = asyncio.create_task(service._consume(channel.id, plugin))
-    await asyncio.sleep(0.05)
+    for _ in range(200):
+        if plugin.sent:
+            break
+        await asyncio.sleep(0.01)
     assert task.done() is False
     task.cancel()
     await asyncio.gather(task, return_exceptions=True)
