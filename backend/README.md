@@ -287,8 +287,10 @@ result in `scheduled_task_runs`.
 
 The scheduler never loads action executors and never runs model work. A slow or
 crashed worker therefore cannot block new scheduling decisions. The task lease
-keeps at most one run active per task, and expired leases are recovered as
-`interrupted`.
+keeps at most one run active per task: the executing worker renews it on a
+heartbeat, so an expired lease means the worker stopped renewing (a crash or a
+stalled process) instead of a run that is merely slow, and that run is recovered
+as `interrupted`.
 
 The Web lifespan writes the server PID, port, scheduler PIDs, and worker PIDs
 to `runtime.json` below `storage_root`. `zett stop` reads that file, stops the
