@@ -3,7 +3,7 @@ import type { AgentPersistedMessage } from '../api/types'
 import {
   buildInteractionTrace,
   interactionTraceModelRequest,
-  splitInteractionTraceMessages,
+  interactionTraceTurnAnchor,
 } from './interactionTrace'
 
 function record(
@@ -104,19 +104,22 @@ describe('buildInteractionTrace', () => {
     expect(trace[1]?.models).toEqual([{ model: 'model-c', provider: 'provider-c' }])
   })
 
-  it('splits prior trace context from the selected turn', () => {
+  it('anchors a turn on its user message', () => {
     const messages = [
-      record(1, 'user', { content: 'Old request' }),
-      record(2, 'assistant', { content: 'Old answer' }),
-      record(3, 'user', { request_id: 'request-2', content: 'Current request' }),
-      record(4, 'assistant', { request_id: 'request-2', content: 'Current answer' }),
+      record(1, 'system', { request_id: 'request-2', content: 'System instruction' }),
+      record(2, 'user', { request_id: 'request-2', content: 'Current request' }),
+      record(3, 'assistant', { request_id: 'request-2', content: 'Current answer' }),
     ]
-    const current = buildInteractionTrace(messages)[1]!
+    const turn = buildInteractionTrace(messages)[0]!
 
-    const sections = splitInteractionTraceMessages(messages, current)
+    // The transcript shows every message, so the rail jumps to the user message.
+    expect(interactionTraceTurnAnchor(turn)?.sequence).toBe(2)
+  })
 
-    expect(sections.previous.map((message) => message.sequence)).toEqual([1, 2])
-    expect(sections.current.map((message) => message.sequence)).toEqual([3, 4])
+  it('falls back to the first message when a turn has no user message', () => {
+    const turn = buildInteractionTrace([record(1, 'assistant', { content: 'Answer only' })])[0]!
+
+    expect(interactionTraceTurnAnchor(turn)?.sequence).toBe(1)
   })
 
   it('reads the request tool definitions attached to an assistant message', () => {

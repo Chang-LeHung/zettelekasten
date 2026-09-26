@@ -1,11 +1,20 @@
 // @vitest-environment jsdom
 import { createApp, nextTick } from 'vue'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, beforeEach, expect, it } from 'vitest'
 import type { AgentPersistedMessage } from '../api/types'
 import InteractionTrace from './InteractionTrace.vue'
 
 const cleanups: (() => void)[] = []
 afterEach(() => cleanups.splice(0).forEach(cleanup => cleanup()))
+
+const scrolled: Element[] = []
+beforeEach(() => {
+  scrolled.splice(0)
+  // jsdom has no layout, so the trace's smooth scroll needs an explicit stub.
+  Element.prototype.scrollIntoView = function scrollIntoView(this: Element) {
+    scrolled.push(this)
+  }
+})
 
 function record(sequence: number, changes: Partial<AgentPersistedMessage> = {}): AgentPersistedMessage {
   return {
@@ -42,11 +51,12 @@ function record(sequence: number, changes: Partial<AgentPersistedMessage> = {}):
   }
 }
 
-it('shows one button per turn and renders the selected turn', async () => {
+it('renders every turn in one transcript and scrolls a rail click to its user message', async () => {
   const host = document.createElement('div')
   document.body.append(host)
   const app = createApp(InteractionTrace, {
     messages: [
+      record(0, { role: 'system', content: '# Tool snippets\n- create_asset: ...' }),
       record(1, { role: 'user', content: 'Inspect README' }),
       record(2, {
         content: 'Reading it',
@@ -67,7 +77,8 @@ it('shows one button per turn and renders the selected turn', async () => {
         tool_success: true,
       }),
       record(4, { request_id: 'request-2', role: 'user', content: 'Follow up' }),
-      record(5, { request_id: 'request-2', role: 'assistant', content: 'Second answer' }),
+      record(5, { request_id: 'request-2', role: 'system', content: '# Tool snippets\n- create_asset: ...' }),
+      record(6, { request_id: 'request-2', role: 'assistant', content: 'Second answer' }),
     ],
     loading: false,
     error: '',
@@ -78,14 +89,18 @@ it('shows one button per turn and renders the selected turn', async () => {
 
   const buttons = host.querySelectorAll<HTMLButtonElement>('.trace-turn-list button')
   expect(buttons).toHaveLength(2)
+  // Refresh is an icon button now, so it keeps its label for assistive tooling.
+  const refresh = host.querySelector('.trace-header .trace-refresh')!
+  expect(refresh.getAttribute('aria-label')).toBe('Refresh')
+  expect(refresh.getAttribute('title')).toBe('Refresh')
+  expect(refresh.querySelector('use')?.getAttribute('href')).toBe('#icon-refresh')
   expect(buttons[0]!.textContent).toContain('Cache 75%')
   expect(buttons[0]!.querySelector('.trace-turn-cache')?.classList.contains('high')).toBe(true)
-  expect(host.querySelector('.trace-detail')?.textContent).toContain('Second answer')
-
-  buttons[0]!.click()
-  await nextTick()
-
+  // One continuous transcript: both turns are on the page at once.
   const detail = host.querySelector('.trace-detail')!
+  expect(detail.textContent).toContain('Second answer')
+  expect(detail.querySelectorAll('.trace-turn-divider')).toHaveLength(2)
+  expect(detail.textContent).toContain('Turn 2')
   expect(detail.textContent).toContain('Turn 1')
   expect(detail.textContent).toContain('gpt-test')
   expect(detail.textContent).toContain('User message')
@@ -100,5 +115,20 @@ it('shows one button per turn and renders the selected turn', async () => {
   ).toBe(true)
   expect(detail.querySelector('.trace-cache-rate')?.textContent).toContain('Cache hit 75%')
   expect(detail.querySelector('.trace-cache-rate')?.classList.contains('high')).toBe(true)
-  expect(detail.textContent).not.toContain('Second answer')
+  // The leading system instruction renders once; the next request folds its copy.
+  expect(detail.querySelectorAll('.trace-message-content')[0]?.textContent).toContain('Tool snippets')
+  const repeats = detail.querySelectorAll<HTMLDetailsElement>('.trace-system-repeat')
+  expect(repeats).toHaveLength(1)
+  expect(repeats[0]!.hasAttribute('open')).toBe(false)
+  expect(repeats[0]!.querySelector('summary')?.textContent).toContain('same as #0')
+  expect(repeats[0]!.textContent).toContain('create_asset')
+
+  buttons[0]!.click()
+  await nextTick()
+  await nextTick()
+
+  // Turn 1 starts at its user message, so that message is what the rail scrolls to.
+  expect(scrolled).toHaveLength(1)
+  expect(scrolled[0]?.getAttribute('data-message-id')).toBe('message-1')
+  expect(buttons[0]!.classList.contains('active')).toBe(true)
 })

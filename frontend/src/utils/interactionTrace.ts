@@ -21,11 +21,6 @@ export interface InteractionTraceTurn {
 
 export type InteractionTraceEventKind = 'user' | 'system' | 'agent' | 'model' | 'tool'
 
-export interface InteractionTraceSections {
-  previous: AgentPersistedMessage[]
-  current: AgentPersistedMessage[]
-}
-
 function messageUsage(message: AgentPersistedMessage): AgentModelUsage | null {
   if (message.input_tokens === null || message.output_tokens === null) return null
   return {
@@ -72,19 +67,14 @@ export function interactionTraceModelRequest(message: AgentPersistedMessage): Ag
 }
 
 /** Split the raw log into prior context and the selected request. */
-export function splitInteractionTraceMessages(
-  allMessages: readonly AgentPersistedMessage[],
-  turn: InteractionTraceTurn,
-): InteractionTraceSections {
-  const ordered = [...allMessages].sort((left, right) => left.sequence - right.sequence)
-  const firstCurrent = turn.messages[0]
-  if (!firstCurrent) return { previous: [], current: [] }
-  const currentStart = ordered.findIndex((message) => message.id === firstCurrent.id)
-  if (currentStart <= 0) return { previous: [], current: [...turn.messages] }
-  return {
-    previous: ordered.slice(0, currentStart),
-    current: [...turn.messages],
-  }
+/**
+ * Return the message a turn is anchored on: the user message that started it.
+ *
+ * The trace renders one continuous transcript, so a turn in the rail is a
+ * location rather than a filter and scrolls to that request's user message.
+ */
+export function interactionTraceTurnAnchor(turn: InteractionTraceTurn): AgentPersistedMessage | null {
+  return turn.messages.find((message) => message.role === 'user') || turn.messages[0] || null
 }
 
 /** Group immutable Raw Log messages into LLM turns without using snapshots. */

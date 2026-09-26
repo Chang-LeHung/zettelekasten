@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import type { AgentPersistedMessage } from '../api/types'
 import { calculateCacheHitRate, formatTokenCount } from '../utils/agentUsage'
 import CacheHitRate from './CacheHitRate.vue'
@@ -9,8 +9,8 @@ import {
   interactionTraceEventKind,
   interactionTraceEventLabel,
   interactionTraceModelRequest,
+  interactionTraceTurnAnchor,
   interactionTraceUsage,
-  splitInteractionTraceMessages,
   type InteractionTraceTurn,
 } from '../utils/interactionTrace'
 
@@ -28,30 +28,46 @@ const emit = defineEmits<{
 
 const turns = computed(() => buildInteractionTrace(props.messages))
 const selectedTurnId = ref<string | null>(props.selectedTurnId || null)
-const showPrevious = ref(false)
+//: A turn named by the caller at mount, such as a trace link, is a location to open at.
+const mountedTurnId = props.selectedTurnId || null
 const traceDetail = ref<HTMLElement | null>(null)
 const selectedTurn = computed(
   () => turns.value.find((turn) => turn.id === selectedTurnId.value) || turns.value.at(-1) || null,
 )
-const traceSections = computed(() => (
-  selectedTurn.value
-    ? splitInteractionTraceMessages(props.messages, selectedTurn.value)
-    : { previous: [], current: [] }
-))
-const displayedMessages = computed(() => (
-  showPrevious.value
-    ? [...traceSections.value.previous, ...traceSections.value.current]
-    : traceSections.value.current
-))
-const currentMessageStart = computed(() => (showPrevious.value ? traceSections.value.previous.length : 0))
-const hasPreviousMessages = computed(() => traceSections.value.previous.length > 0)
-
-watch(() => props.selectedTurnId, (turnId) => {
-  if (turnId) selectedTurnId.value = turnId
+//: Every stored message, oldest first: the trace is one transcript, not a filter.
+const transcript = computed(() => [...props.messages].sort((left, right) => left.sequence - right.sequence))
+//: The message that begins each turn, so the transcript can label the boundary.
+const turnStarts = computed(() => {
+  const starts = new Map<string, InteractionTraceTurn>()
+  for (const turn of turns.value) {
+    const first = turn.messages[0]
+    if (first) starts.set(first.id, turn)
+  }
+  return starts
+})
+//: Every request re-appends the same system instructions, so later copies fold
+//: into a collapsed step that still shows the text on demand.
+const systemRepeats = computed(() => {
+  const firstByText = new Map<string, AgentPersistedMessage>()
+  const repeats = new Map<string, AgentPersistedMessage>()
+  for (const message of transcript.value) {
+    if (message.role !== 'system' || !message.content) continue
+    const first = firstByText.get(message.content)
+    if (first) repeats.set(message.id, first)
+    else firstByText.set(message.content, message)
+  }
+  return repeats
 })
 
-watch(selectedTurnId, () => {
-  showPrevious.value = false
+watch(() => props.selectedTurnId, (turnId) => {
+  if (!turnId) return
+  selectedTurnId.value = turnId
+  // A turn selected from outside the rail, such as a trace link, is a location too.
+  void scrollToTurn(turnId)
+})
+
+onMounted(() => {
+  if (mountedTurnId) void scrollToTurn(mountedTurnId)
 })
 
 watch(turns, (nextTurns) => {
@@ -64,15 +80,17 @@ watch(turns, (nextTurns) => {
 function selectTurn(turnId: string): void {
   selectedTurnId.value = turnId
   emit('update:selectedTurnId', turnId)
+  void scrollToTurn(turnId)
 }
 
-async function jumpToCurrentMessage(): Promise<void> {
-  showPrevious.value = false
+/** Scroll the transcript to the user message that started one turn. */
+async function scrollToTurn(turnId: string): Promise<void> {
+  const turn = turns.value.find((candidate) => candidate.id === turnId)
+  const anchor = turn && interactionTraceTurnAnchor(turn)
   await nextTick()
-  traceDetail.value?.querySelector<HTMLElement>('.trace-current-divider')?.scrollIntoView({
-    behavior: 'smooth',
-    block: 'start',
-  })
+  if (!anchor) return
+  const element = traceDetail.value?.querySelector<HTMLElement>(`[data-message-id="${anchor.id}"]`)
+  element?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 function turnTitle(turn: InteractionTraceTurn): string {
@@ -83,6 +101,11 @@ function turnTitle(turn: InteractionTraceTurn): string {
 
 function turnModelLabel(turn: InteractionTraceTurn): string {
   return turn.models.map((identity) => identity.model || 'Unknown model').join(' → ') || 'Model call'
+}
+
+/** Return the first identical system instruction, when this one repeats it. */
+function repeatedSystemMessage(message: AgentPersistedMessage): AgentPersistedMessage | null {
+  return systemRepeats.value.get(message.id) || null
 }
 
 function turnProviderLabel(turn: InteractionTraceTurn): string {
@@ -138,8 +161,15 @@ function cacheHitRate(message: AgentPersistedMessage): number | null {
         <h1>LLM interaction trace</h1>
         <span>{{ turns.length }} {{ turns.length === 1 ? 'turn' : 'turns' }}</span>
       </div>
-      <button type="button" :disabled="loading" @click="emit('refresh')">
-        {{ loading ? 'Refreshing…' : 'Refresh' }}
+      <button
+        class="trace-refresh"
+        type="button"
+        :disabled="loading"
+        :title="loading ? 'Refreshing…' : 'Refresh'"
+        :aria-label="loading ? 'Refreshing…' : 'Refresh'"
+        @click="emit('refresh')"
+      >
+        <svg :class="{ spinning: loading }" aria-hidden="true"><use href="#icon-refresh" /></svg>
       </button>
     </header>
 
@@ -177,42 +207,22 @@ function cacheHitRate(message: AgentPersistedMessage): number | null {
         </button>
       </aside>
 
-      <div v-if="selectedTurn" ref="traceDetail" class="trace-detail">
-        <article class="trace-turn">
-        <header class="trace-turn-header">
-          <div>
-            <span class="trace-turn-index">Turn {{ selectedTurn.index }}</span>
-            <strong>{{ turnModelLabel(selectedTurn) }}</strong>
-            <small v-if="turnProviderLabel(selectedTurn)">{{ turnProviderLabel(selectedTurn) }}</small>
-          </div>
-          <div class="trace-turn-summary">
-            <span>{{ selectedTurn.messages.length }} events</span>
-            <span>{{ formatDuration(selectedTurn.duration_ms) }}</span>
-            <span v-if="selectedTurn.usage">Input {{ formatTokenCount(selectedTurn.usage.input_tokens) }}</span>
-            <span v-if="selectedTurn.usage">Output {{ formatTokenCount(selectedTurn.usage.output_tokens) }}</span>
-            <span v-if="selectedTurn.usage?.reasoning_tokens">Reasoning {{ formatTokenCount(selectedTurn.usage.reasoning_tokens) }}</span>
-          </div>
-        </header>
-
-        <div v-if="hasPreviousMessages" class="trace-history-toolbar">
-          <button type="button" @click="showPrevious = !showPrevious">
-            {{ showPrevious ? 'Hide old message' : 'Old message' }}
-          </button>
-          <button type="button" @click="jumpToCurrentMessage">Jump to current</button>
-        </div>
-
+      <div ref="traceDetail" class="trace-detail">
         <ol class="trace-events">
-          <template v-for="(message, messageIndex) in displayedMessages" :key="message.id">
+          <template v-for="message in transcript" :key="message.id">
           <li
-            v-if="messageIndex === currentMessageStart && hasPreviousMessages"
-            class="trace-current-divider"
+            v-if="turnStarts.get(message.id)"
+            class="trace-turn-divider"
           >
-            <span>Current message</span>
-            <em>New</em>
+            <span class="trace-turn-index">Turn {{ turnStarts.get(message.id)?.index }}</span>
+            <strong>{{ turnModelLabel(turnStarts.get(message.id)!) }}</strong>
+            <small v-if="turnProviderLabel(turnStarts.get(message.id)!)">{{ turnProviderLabel(turnStarts.get(message.id)!) }}</small>
+            <em>{{ turnStarts.get(message.id)?.messages.length }} events · {{ formatDuration(turnStarts.get(message.id)?.duration_ms || 0) }}</em>
           </li>
           <li
             class="trace-event"
             :class="interactionTraceEventKind(message)"
+            :data-message-id="message.id"
           >
             <div class="trace-event-rail" aria-hidden="true"><i /></div>
             <div class="trace-event-content">
@@ -241,6 +251,16 @@ function cacheHitRate(message: AgentPersistedMessage): number | null {
                   </button>
                 </template>
               </div>
+              <details
+                v-else-if="message.content && repeatedSystemMessage(message)"
+                class="trace-payload trace-system-repeat"
+              >
+                <summary>
+                  System instruction
+                  <small>{{ message.content.length.toLocaleString() }} chars · same as #{{ repeatedSystemMessage(message)?.sequence }}</small>
+                </summary>
+                <TraceCopyBlock :content="formatTraceText(message, message.content)" />
+              </details>
               <TraceCopyBlock
                 v-else-if="message.content"
                 class="trace-message-content"
@@ -308,7 +328,6 @@ function cacheHitRate(message: AgentPersistedMessage): number | null {
           </li>
           </template>
         </ol>
-        </article>
       </div>
     </div>
   </section>
@@ -322,6 +341,11 @@ function cacheHitRate(message: AgentPersistedMessage): number | null {
 .trace-header span { display: block; margin-top: .18rem; color: var(--tertiary); font-size: .62rem; }
 .trace-header button, .trace-state button { min-height: 2rem; padding: 0 .7rem; border: 1px solid #cfd8d2; border-radius: .52rem; color: #355442; background: #f7f9f8; cursor: pointer; font-size: .64rem; font-weight: 650; }
 .trace-header button:disabled { opacity: .5; cursor: wait; }
+.trace-header button.trace-refresh { width: 2rem; min-height: 2rem; display: grid; place-items: center; padding: 0; color: #4f5c55; }
+.trace-header button.trace-refresh:hover:not(:disabled) { color: #31523f; background: #edf3ef; }
+.trace-header button.trace-refresh svg { width: .95rem; height: .95rem; }
+.trace-header button.trace-refresh svg.spinning { animation: trace-refresh-spin 900ms linear infinite; }
+@keyframes trace-refresh-spin { to { transform: rotate(360deg); } }
 .trace-layout { min-height: 0; display: grid; grid-template-columns: minmax(11rem, 14rem) minmax(0, 1fr); }
 .trace-turn-list { min-height: 0; display: grid; align-content: start; gap: .42rem; padding: .65rem; overflow-y: auto; border-right: 1px solid #e4e9e6; background: #f6f8f6; scrollbar-width: thin; }
 .trace-turn-list button { width: 100%; display: grid; gap: .3rem; padding: .68rem .72rem .66rem; border: 1px solid rgba(68,88,76,.08); border-radius: .58rem; color: #66716a; background: rgba(255,255,255,.55); cursor: pointer; text-align: left; transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease; }
@@ -334,22 +358,14 @@ function cacheHitRate(message: AgentPersistedMessage): number | null {
 .trace-turn-list button small { overflow: hidden; color: #9aa19d; font-size: .5rem; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
 .trace-turn-cache { flex: 0 0 auto; opacity: .72; font-size: .48rem; }
 .trace-detail { min-height: 0; padding: 1rem; overflow-y: auto; scrollbar-width: thin; }
-.trace-turn { overflow: hidden; border: 1px solid rgba(56,74,64,.1); border-radius: .72rem; background: #fff; }
-.trace-turn-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding: .8rem .9rem; border-bottom: 1px solid #e8ece9; background: #f7f9f7; }
-.trace-turn-header strong, .trace-turn-header small { display: block; }
-.trace-turn-header strong { margin-top: .18rem; color: #354039; font-size: .76rem; }
-.trace-turn-header small { margin-top: .12rem; color: #848c87; font-size: .58rem; }
 .trace-turn-index { color: #54705f; font-size: .56rem; font-weight: 720; letter-spacing: .06em; text-transform: uppercase; }
-.trace-turn-summary { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .3rem; }
-.trace-turn-summary span, .trace-event-meta span, .trace-event-usage span { padding: .22rem .42rem; border-radius: 1rem; color: #627068; background: #e9efeb; font-size: .56rem; font-variant-numeric: tabular-nums; }
-.trace-history-toolbar { display: flex; align-items: center; gap: .4rem; padding: .65rem .8rem 0; }
-.trace-history-toolbar button { min-height: 1.8rem; padding: 0 .58rem; border: 1px solid #d7e0da; border-radius: .45rem; color: #52675a; background: #f7f9f7; cursor: pointer; font-size: .58rem; font-weight: 650; }
-.trace-history-toolbar button:hover, .trace-history-toolbar button:focus-visible { color: #31523f; background: #e9f0eb; outline: none; }
+.trace-turn-divider { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; gap: .42rem; margin: .35rem 0 .05rem; padding: .55rem .62rem; border: 1px solid rgba(56,74,64,.12); border-radius: .6rem; background: rgba(247,249,247,.96); backdrop-filter: blur(10px); scroll-margin-top: .8rem; }
+.trace-turn-divider strong { color: #354039; font-size: .72rem; }
+.trace-turn-divider small { color: #848c87; font-size: .56rem; }
+.trace-turn-divider em { margin-left: auto; color: #7b847f; font-size: .56rem; font-style: normal; font-variant-numeric: tabular-nums; }
+.trace-event-meta span, .trace-event-usage span { padding: .22rem .42rem; border-radius: 1rem; color: #627068; background: #e9efeb; font-size: .56rem; font-variant-numeric: tabular-nums; }
 .trace-events { display: grid; gap: .52rem; margin: 0; padding: .65rem .8rem .8rem; list-style: none; }
-.trace-current-divider { display: flex; align-items: center; gap: .42rem; margin: .2rem 0 .45rem 1.7rem; padding-top: .62rem; border-top: 1px solid #e3e8e5; scroll-margin-top: .8rem; }
-.trace-current-divider span { color: #54705f; font-size: .56rem; font-weight: 720; letter-spacing: .06em; text-transform: uppercase; }
-.trace-current-divider em { padding: .12rem .32rem; border-radius: .3rem; color: #355b44; background: #e4eee8; font-size: .49rem; font-style: normal; font-weight: 720; text-transform: uppercase; }
-.trace-event { position: relative; display: grid; grid-template-columns: 1.15rem minmax(0, 1fr); gap: .55rem; }
+.trace-event { position: relative; display: grid; grid-template-columns: 1.15rem minmax(0, 1fr); gap: .55rem; scroll-margin-top: 3.2rem; }
 .trace-event-rail { position: relative; display: flex; justify-content: center; }
 .trace-event-rail::after { content: ""; position: absolute; top: 1.1rem; bottom: -.68rem; width: 1px; background: #dfe5e1; }
 .trace-event:last-child .trace-event-rail::after { display: none; }
