@@ -2,7 +2,7 @@ HOST ?= 127.0.0.1
 PORT ?= 6280
 
 .PHONY: help install backend-install frontend-install frontend-build start scheduler worker dev check \
-	agim-check zett-weixin-check ruff-check typecheck pre-commit-install docs-build docs-serve site
+	agim-check zett-weixin-check ruff-check typecheck pre-commit-install docs-build docs-serve site package
 
 help:
 	@echo "Available targets:"
@@ -12,6 +12,7 @@ help:
 	@echo "  make worker    Start an execution worker"
 	@echo "  make dev       Build and start the application from source"
 	@echo "  make check     Run backend lint, tests, and frontend checks"
+	@echo "  make package   Build the frontend and the distributable wheel and sdist"
 	@echo "  make docs-serve Build and serve the whole site at http://127.0.0.1:8000"
 	@echo "  make site      Build the landing page and the docs into site/ for preview"
 	@echo "  make pre-commit-install  Install the Ruff and TypeScript Git hooks"
@@ -85,6 +86,12 @@ site:
 	cp -R web/assets/. site/assets/
 	cp web/index.html site/index.html
 	@echo "Preview with: python3 -m http.server -d site 8000"
+
+# The wheel embeds the compiled interface under zett/static, so the frontend
+# build has to run first; backend/hatch_build.py adds the README as the long
+# description that the PyPI page renders.
+package: frontend-build
+	uv build --directory backend --out-dir ../dist
 
 agim-check:
 	uv run --directory backend/agim ruff format --check src tests

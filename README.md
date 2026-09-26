@@ -1,203 +1,138 @@
-> **Backend redesign in progress:** Zett currently retains Session, Asset,
-> Artifact, and Provider storage. Cards and articles are artifact variants. The frontend
-> is preserved, but former business APIs are removed. A minimal Agent/SSE facade
-> is available for the new application design.
-> See [the current backend scope](backend/README.md). Feature descriptions below
-> describe the previous application, not the currently available backend.
-
 <p align="center">
-  <img src="frontend/public/logo.png" width="144" height="144" alt="Zett logo">
+  <img src="https://raw.githubusercontent.com/Chang-LeHung/zettelekasten/main/frontend/public/logo.png" width="144" height="144" alt="Zett logo">
 </p>
 
 <h1 align="center">Zett</h1>
 
 <p align="center">
-  A local-first, AI-assisted workspace for turning conversations, rough notes, links, and assets into reusable knowledge.
+  A local-first, AI-assisted workspace for turning fleeting thoughts, conversations, links, and assets into reusable knowledge.
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-476957.svg"></a>
+  <a href="https://github.com/Chang-LeHung/zettelekasten/blob/main/LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-476957.svg"></a>
   <img alt="Python 3.10-3.14" src="https://img.shields.io/badge/Python-3.10%20to%203.14-3776AB.svg?logo=python&logoColor=white">
-  <img alt="Vue 3" src="https://img.shields.io/badge/Vue-3-42B883.svg?logo=vuedotjs&logoColor=white">
-  <img alt="Local-first" src="https://img.shields.io/badge/storage-local--first-6B7F72.svg">
+  <img alt="Local-first" src="https://img.shields.io/badge/storage-local--first-476957.svg">
 </p>
 
 ---
 
-Zett combines a streamed AI conversation, durable session context, flexible artifacts, and a unified card-and-article library in one private local application.
+Zett is a private workspace where you think out loud with an AI assistant and
+keep what matters. Catch a fleeting thought in one line before it slips away,
+bring in the sources around it, and work it into something durable — a card, an
+article, a slide deck, or a paper — organized, searchable, and stored on your own
+machine.
 
-## Highlights
+No account, no cloud workspace, no telemetry. Zett runs as a single local
+application that listens on `127.0.0.1` and keeps every database and file under
+one directory. It talks to the model provider you configure, and to a chat
+platform only when you connect one.
 
-- Chat with Zett Agent through a streamed conversation interface.
-- Stream assistant text, reasoning, tool calls, arguments, and results in timeline order.
-- Create multiple card, article, and image artifacts in one conversation.
-- Publish cards and articles into a unified searchable library.
-- Edit Markdown in a full-screen split editor with linked scrolling and live preview.
-- Render syntax-highlighted code, copyable code blocks, and mathematical formulas.
-- Organize knowledge with recursively nested tags.
-- Attach text, links, images, and files to isolated session workspaces.
-- Persist sessions, immutable message logs, context snapshots, artifacts, usage metrics, and assets locally.
-- Configure multiple AI providers and select a model and reasoning effort per conversation.
+## What you can do
 
-## Technology
+- **Think in a conversation.** Ask, refine, and iterate; the answer streams with
+  its reasoning and the tools it used, so you can see how it got there.
+- **Catch a fleeting thought.** Jot down the idea, a rough note, or a question
+  the moment it arrives, and develop it into something durable whenever you come
+  back to it.
+- **Keep the good parts.** Cards, articles, images, slide decks, and LaTeX PDFs
+  are built from the conversation and saved only when you say so.
+- **Build a library.** Everything published is searchable and tagged with a
+  nested tag tree, and every item links back to the conversation it came from.
+- **Bring your sources.** Attach notes, links, images, and files to a
+  conversation, or keep a global library of material you reuse everywhere.
+- **Choose your models.** Configure several providers and pick the model and the
+  reasoning effort for each conversation.
+- **Work hands-free.** Set a prompt to run on a schedule and read the transcript
+  of what it produced while you were away.
+- **Talk to it from your phone.** Connect a chat platform and keep a separate
+  conversation per chat, images and voice notes included.
 
-- Python 3.10 to 3.14 (development and tests default to 3.14)
-- FastAPI and Typer
-- SQLAlchemy and SQLite
-- Zett Agent with native provider SDK adapters
-- Vue 3 and TypeScript
-- Vite
-- `uv` for Python dependency management
-- Ruff for Python formatting and linting
+## Install
 
-## Installation
-
-Install the frontend dependencies, build the Vue application, and install the Python package from the repository root:
+Zett ships as one Python package — the application, the `zett` command, and the
+compiled interface — so this is the whole install:
 
 ```bash
-make install
-```
-
-The packaged `zett` command serves both the API and the compiled frontend:
-
-```bash
+uv tool install zett      # or: pipx install zett  /  pip install zett
 zett start
 ```
 
-The default application address is:
-
-```text
-http://127.0.0.1:6280
-```
-
-Use a different port when necessary:
+The package is not on PyPI yet: its `agim` and `zett-weixin` dependencies have
+to be published first. Until then, install the same package from a checkout:
 
 ```bash
-zett start --port 9000
+git clone https://github.com/Chang-LeHung/zettelekasten
+cd zettelekasten
+make install             # builds the interface and installs the `zett` command
+zett start
 ```
 
-Interactive API documentation is available at `/docs` while the service is running.
+Either way, open <http://127.0.0.1:6280>, add a model provider in **Settings**,
+and start a conversation. `zett stop` shuts the application down.
 
-## Local Data
+## First steps
 
-Zett keeps personal data under the current user's home directory by default:
+1. **Connect a model.** `Settings` → `AI providers` → `New provider`. Give it a
+   name, pick the provider, set the model, and paste an API key. Keys are
+   encrypted with a local key file before they are stored.
+2. **Start a conversation.** Ask a question, drop in a note or a screenshot, and
+   keep going. You can queue your next message while it is still answering, or
+   steer the running answer with a correction.
+3. **Save what is worth keeping.** Ask for a card, an article, a deck, or a
+   paper. The Assistant writes a draft; you review the diff and publish it.
+4. **Optional.** Connect a channel under `Channels`, or create a recurring
+   prompt under `Scheduled tasks`.
 
-```text
-~/.zett/
-├── cards.db
-├── agent.db
-├── assets/
-│   └── <session-id>/
-└── logs/
-    ├── zett.log
-    └── zett.log.1
-```
+## Where your data lives
 
-The rotating logger keeps two files with a maximum size of 64 MiB each. Session binaries are isolated in canonical UUID directories and filesystem paths are never exposed through the API.
+Everything is under `~/.zettelekasten/` — the databases, attachments, artifact
+projects, user skills, and rotating logs. Set `ZETT_STORAGE_ROOT` to move it.
+Deleting a conversation removes its messages, files, and artifacts with it.
 
-## Configuration
+## Documentation
 
-Runtime configuration uses the `ZETT_` environment variable prefix:
+The project site is published at **<https://chang-lehung.github.io/zettelekasten/>**,
+with the full documentation under **<https://chang-lehung.github.io/zettelekasten/docs/>**:
 
-| Variable | Purpose |
-| --- | --- |
-| `ZETT_HOST` | HTTP bind address |
-| `ZETT_PORT` | HTTP port |
-| `ZETT_DATABASE_PATH` | Zett domain and observability SQLite database path |
-| `ZETT_AGENT_DATABASE_PATH` | Zett Agent raw-message and snapshot SQLite database path |
-| `ZETT_ASSET_DIR` | Session asset directory |
-| `ZETT_MAX_ASSET_SIZE_BYTES` | Maximum binary asset size |
-| `ZETT_LOG_DIR` | Rotating log directory |
-| `ZETT_LOG_LEVEL` | Application log level |
-| `ZETT_CORS_ORIGINS` | Allowed CORS origins |
-| `ZETT_SECRET_KEY` | Local provider-secret encryption key |
-| `ZETT_AGENT_CONTEXT_MAX_TOKENS` | Token threshold that triggers agent context compaction |
-| `ZETT_AGENT_KEEP_RECENT_TOKENS` | Minimum recent token budget retained after compaction |
-
-The frontend calls the same-origin `/api` path. During separate frontend development, point Vite at another backend without changing source code:
-
-```bash
-VITE_API_URL=http://127.0.0.1:9000/api npm run dev
-```
+- [Conversations](https://chang-lehung.github.io/zettelekasten/docs/guide/conversations/), [artifacts and the library](https://chang-lehung.github.io/zettelekasten/docs/guide/artifacts/), [assets](https://chang-lehung.github.io/zettelekasten/docs/guide/assets/), [scheduled tasks](https://chang-lehung.github.io/zettelekasten/docs/guide/scheduled-tasks/), [channels](https://chang-lehung.github.io/zettelekasten/docs/guide/channels/), [settings and local data](https://chang-lehung.github.io/zettelekasten/docs/guide/settings/)
+- [Writing a plugin](https://chang-lehung.github.io/zettelekasten/docs/plugins/) — add tools, hooks, or a new chat platform
+- [Backend reference](https://chang-lehung.github.io/zettelekasten/docs/backend/) — layers, storage boundaries, and the HTTP surface
 
 ## Development
 
-Start the backend directly:
-
 ```bash
-cd backend
-uv sync
-uv run zett start
+git clone https://github.com/Chang-LeHung/zettelekasten
+cd zettelekasten
+
+make install     # build the frontend and install the `zett` command
+make dev         # run from source with reload on 127.0.0.1:6280
+make check       # Ruff, backend/agim/channel tests, frontend tests, typecheck, build
 ```
 
-Start the Vue development server:
+The repository holds the FastAPI application and the Vue interface that Zett
+serves. `backend/README.md` documents how the backend is put together, and
+`AGENTS.md` records the rules a change has to follow.
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
+The repository also carries two packages that are released on their own:
+[`agim`](https://chang-lehung.github.io/zettelekasten/docs/agim/), the stateless chat
+SDK, and `zett-weixin`, the WeChat channel plugin built on it. The agent runtime
+Zett runs on lives in its own repository,
+[`zett-agent`](https://github.com/Chang-LeHung/zett-agent).
 
-Run the complete verification suite from the repository root:
+### Plugins
 
-```bash
-make check
-```
+Zett discovers installed packages through entry points, so an extension is a
+normal distribution rather than a patch:
 
-This runs Python formatting checks, linting, backend tests, frontend tests, TypeScript type checking, and the production frontend build.
+- `zett.agent` — tools, lifecycle hooks, slash commands, and `@` references
+  inside a conversation.
+- `zett.channels` — a chat platform, from QR login to inbound media.
 
-Install the repository's commit checks once after cloning:
-
-```bash
-make pre-commit-install
-```
-
-Every commit then requires Ruff formatting and lint checks for both Python projects and the Vue TypeScript type check to pass.
-
-## CLI Examples
-
-```bash
-zett tag add Technology
-zett tag add Python --parent-id 1
-zett add --type idea --tag-id 2 "Capture an idea"
-zett search idea
-zett tag tree
-```
-
-## Architecture
-
-The backend follows domain-driven design:
-
-```text
-backend/zett/
-├── domain/       # Framework-independent domain rules and service boundaries
-├── application/  # Use-case orchestration and process services
-├── infra/        # SQLAlchemy storage, SQLite, logging, and provider adapters
-├── agent/        # Zett Agent, context compaction, and typed tools
-├── main.py       # FastAPI interface
-└── cli.py        # Typer interface
-```
-
-HTTP and CLI interfaces call application services rather than storage implementations directly. Persistence uses typed SQLAlchemy ORM expressions. Database references are stored as IDs without foreign keys, `ondelete`, or cascade behavior; storage implementations perform cleanup explicitly.
-
-The Vue frontend keeps all backend calls in typed clients under `frontend/src/api`. Components do not hard-code backend URLs.
-
-The standalone [`zett-agent`](https://github.com/Chang-LeHung/zett-agent) package powers Zett conversations, tool execution, and streaming. It lives in its own repository and is installed from PyPI (`zett-agent==0.1.0`), not from a checkout inside this repository. It uses direct message fields and a small model/tool loop: Zett passes prepared history from its context snapshot and raw-log tail, excluding the current input. Tools are supplied directly to the agent, with optional guidelines appended to system instructions. Title generation and compaction use schema-bound tool responses validated by Pydantic.
-
-The terminal coding agent, [`zettcode`](https://github.com/Chang-LeHung/zettcode), also lives in its own repository and is published as the `zettcode` package. It composes the same agent runtime with an internally implemented differential-rendering TUI and keeps its own configuration and session database under `~/.zettcode`; it is no longer part of this repository.
-
-## Agent Sessions and Context
-
-Each conversation can own zero or many typed artifacts. Artifacts have stable IDs, lifecycle states, versions, type-specific content, and optional links to permanent library resources. Saving a card or article publishes it to the unified library only when explicitly requested.
-
-Zett Agent uses the standalone package's bounded model-and-tool loop. Its typed tools can create and update artifacts and operate inside the current session workspace. Filesystem tools include directory listing, file reading, writing, editing, globbing, searching, and restricted command execution. Commands run without a shell interpreter, use allowlists, reject traversal and shell operators, and enforce output and execution limits.
-
-Conversation history is stored as immutable raw log messages plus versioned context snapshots. Context reconstruction loads the newest snapshot and replays only messages after its boundary. Once the configured token threshold is reached, the compaction middleware summarizes older messages while preserving a recent verbatim tail. Raw logs and previous snapshot versions remain available for auditing and rebuilding context.
-
-## API Models
-
-Pydantic request and response models in `backend/zett/schemas.py` contain typed constraints and English field descriptions. Run the service and open `/docs` to inspect the generated OpenAPI schema.
+Install one into the same environment as Zett and restart; the
+[plugin guide](https://chang-lehung.github.io/zettelekasten/docs/plugins/) walks
+through a complete example, including what the host guarantees and which
+boundaries stay closed.
 
 ## License
 
-This project is available under the [MIT License](LICENSE).
+This project is available under the [MIT License](https://github.com/Chang-LeHung/zettelekasten/blob/main/LICENSE).
