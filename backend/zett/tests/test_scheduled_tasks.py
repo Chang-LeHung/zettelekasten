@@ -9,10 +9,14 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import update
 from zett_agent import (
+    AgentEvent,
+    AgentEventType,
     AssistantMessage,
     ModelEvent,
     ModelRequest,
     ModelResponse,
+    ToolCall,
+    ToolMessage,
     UserMessage,
     new_uuid7,
 )
@@ -657,3 +661,90 @@ async def test_agent_prompt_executor_creates_a_fresh_noninteractive_session(monk
         "Run the scheduled prompt.",
         "scheduled result",
     ]
+
+
+async def test_agent_prompt_executor_logs_prompt_deltas_and_answer(monkeypatch, captured_logs) -> None:
+    """A scheduled run must be traceable from the worker log alone."""
+
+    class StreamingModel:
+        async def stream(self, request: ModelRequest) -> AsyncIterator[ModelEvent]:
+            del request
+            yield ModelEvent.text("scheduled ")
+            yield ModelEvent.text("result")
+            yield ModelEvent.completed(ModelResponse(AssistantMessage(content="scheduled result")))
+
+        async def aclose(self) -> None:
+            return None
+
+    original_config = scheduled_agent_module.ZettelkastenAgentConfig
+    monkeypatch.setattr(scheduled_agent_module, "create_model", lambda _connection: StreamingModel())
+    monkeypatch.setattr(
+        scheduled_agent_module,
+        "ZettelkastenAgentConfig",
+        lambda **options: original_config(**options, skill_roots=(), mcp_config_path=None),
+    )
+    provider = await provider_storage.create(
+        ProviderWrite(
+            name="Scheduled provider",
+            provider=ProviderType.OPENAI_COMPATIBLE,
+            model="probe-model",
+            base_url="https://example.invalid/v1",
+            api_key="secret",
+        )
+    )
+
+    result = await scheduled_agent_executor.execute(
+        ExecutionContext(
+            task_id="task-log",
+            task_name="Logged task",
+            run_id=new_uuid7(),
+            scheduled_for=datetime(2026, 1, 1, tzinfo=UTC),
+            trigger_kind=ScheduledTaskTrigger.MANUAL,
+        ),
+        {"provider_id": provider.id, "message": "Run the scheduled prompt."},
+    )
+
+    assert result.status is ActionExecutionStatus.SUCCEEDED
+    assert any(
+        "Scheduled agent prompt received" in message
+        and "prompt='Run the scheduled prompt.'" in message
+        and "task_id=task-log" in message
+        for message in captured_logs
+    )
+    deltas = [message for message in captured_logs if "Scheduled run delta" in message]
+    assert len(deltas) == 2
+    assert "delta='scheduled'" in deltas[0] and "chars=10" in deltas[0]
+    assert "delta='result'" in deltas[1] and "chars=16" in deltas[1]
+    assert any("Scheduled agent prompt answered" in message and "chars=16" in message for message in captured_logs)
+
+
+async def test_scheduled_run_dispatcher_previews_tool_results(captured_logs) -> None:
+    """A background tool call must log what it returned, capped to one short line."""
+    dispatcher = scheduled_agent_module.ScheduledRunLogDispatcher(task_id="task-tool", run_id="run-tool")
+    call = ToolCall("call-1", "read_skill", {"name": "zett-artifact-syntax"})
+    long_result = "x" * 400
+
+    await dispatcher.on_tool_completed_event(
+        AgentEvent(
+            type=AgentEventType.TOOL_COMPLETED,
+            session_id="session-1",
+            tool_calls=[call],
+            message=ToolMessage(tool_call_id="call-1", name="read_skill", content=long_result),
+        )
+    )
+    await dispatcher.on_tool_failed_event(
+        AgentEvent(
+            type=AgentEventType.TOOL_FAILED,
+            session_id="session-1",
+            tool_calls=[call],
+            message=ToolMessage(tool_call_id="call-1", name="read_skill", content="boom", success=False),
+            error=RuntimeError("tool exploded"),
+        )
+    )
+
+    completed = next(message for message in captured_logs if "Scheduled run tool completed" in message)
+    assert "task_id=task-tool" in completed and "tools=read_skill" in completed
+    assert f"result='{'x' * 60}…'" in completed
+    assert "x" * 61 not in completed
+    failed = next(message for message in captured_logs if "Scheduled run tool failed" in message)
+    assert "error='tool exploded'" in failed and "result='boom'" in failed

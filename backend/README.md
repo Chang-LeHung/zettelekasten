@@ -328,14 +328,59 @@ keeps the latest values in an in-memory registry. The supervisor keeps local
 uses `Popen.poll()` as the authoritative local liveness check. It does not
 execute scheduler or worker loops inside FastAPI.
 
+Every child lifecycle transition reaches the Web log: `Started supervised
+process` when a missing role is spawned, and `Stopped supervised process` (with
+`killed=true|false`) for a shutdown, a dead child, or a stale heartbeat. The
+reason line — `exited`, `never reported a heartbeat`, or `heartbeat is stale` —
+is written immediately before the stop it explains.
+
 The first executor, `agent_prompt`, always creates a new isolated Agent session
 and runs a headless turn. It disables interactive `ask_user` and coding tools so
 a background job never waits for browser approval. Scheduled runs never target
 a user's existing session.
 
+Both headless paths are traceable from their log alone. An IM turn writes one
+line when the message arrives, one short line per streamed delta, one for the
+finished turn, and one for the reply the platform accepted; a scheduled run
+writes the same shape for its prompt, deltas, tool calls, and answer. Every line
+carries the channel/task and event/run ids it belongs to, and text is capped by
+`zett.infra.log.log_preview` so one record stays one short line.
+
+Uploads log the metadata that identifies them, never the payload: the session
+asset upload records the session, asset id, type, media type, byte count, and a
+capped name, the static asset upload records the asset id, media type, and byte
+count, and the images a turn carries are summarized as file count and bytes.
+A rejected upload logs the declared size and the limit that refused it.
+
+Two layers cover what the browser cannot show. `RequestLogMiddleware` writes one
+line per HTTP request (`Request; method=GET target=/api/agent/sessions?types,limit
+status=200 bytes=812 duration_ms=13 client=127.0.0.1:64077`) without copying the
+body, so streamed turns stay streamed, and it logs query parameter names rather
+than values because the channel login poll carries a pairing code. Inside a
+turn, `TraceLogExtension` writes `Model request`/`Model response` around each
+provider step and `Tool call`/`Tool call completed` around each local tool call,
+with the session id, request id, duration, and capped previews: the newest
+request message (`last=user:'…'`), the answer's first characters, the tool
+arguments, and the tool result. Image payloads are summarized as `<image>` or
+`<image result>` instead of their bytes.
+
+Requests that repeat on a timer would drown the access log, so
+`settings.access_log_sample_rates` maps a path prefix to "log one line per this
+many requests" (`ZETT_ACCESS_LOG_SAMPLE_RATES`, default `/api/health=100` for the
+heartbeats every supervised process posts). A sampled path logs its first
+request and every Nth one after that, and the line says how many requests it
+stands for (`sampled=100`); a request that fails is always logged whatever its
+rate. Everything unmatched — every user-facing endpoint — logs every request.
+uvicorn's own access log is disabled in `zett start` so this sampling is the only
+access log, and the counter lives in the process, so the first request after a
+restart is always visible.
+
 All process types configure SQLite with WAL, a bounded busy timeout, and short
 transactions. The Web process writes `logs/zett.log`, the scheduler writes
-`logs/scheduler.log`, and workers write `logs/worker.log`.
+`logs/scheduler.log`, and workers write `logs/worker.log`. Every record starts
+with the host's local wall-clock time and its explicit `±HH:MM` offset
+(`2026-09-26 17:51:03+08:00`), so a log read next to local events needs no
+conversion and a log copied between machines still names its zone.
 
 ## Local data
 

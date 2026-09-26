@@ -3,6 +3,31 @@ from pathlib import Path
 
 USER_DATA_DIR = Path.home() / ".zettelekasten"
 
+#: Access-log sampling: one line per this many matching requests, defaulting to
+#: the liveness endpoints a supervised process polls every few seconds.
+DEFAULT_ACCESS_LOG_SAMPLE_RATES = "/api/health=100"
+
+
+def parse_access_log_sample_rates(value: str) -> dict[str, int]:
+    """Parse ``prefix=count`` pairs into access-log sampling rules.
+
+    The first prefix a request path starts with wins, so the most specific rules
+    must come first. Missing, unparsable, or non-positive entries are ignored
+    rather than failing startup over a log preference.
+    """
+    rates: dict[str, int] = {}
+    for entry in value.split(","):
+        prefix, separator, raw_count = entry.partition("=")
+        if not separator:
+            continue
+        try:
+            count = int(raw_count)
+        except ValueError:
+            continue
+        if prefix.strip() and count > 0:
+            rates[prefix.strip()] = count
+    return rates
+
 
 class Settings:
     # Every persisted object path is relative to this one root.
@@ -34,6 +59,11 @@ class Settings:
     process_watchdog_interval_seconds: float = float(os.getenv("ZETT_PROCESS_WATCHDOG_INTERVAL_SECONDS", "5"))
     process_watchdog_failure_threshold: int = int(os.getenv("ZETT_PROCESS_WATCHDOG_FAILURE_THRESHOLD", "3"))
     worker_processes: int = int(os.getenv("ZETT_WORKER_PROCESSES", "1"))
+    #: Path prefix to "log one line per this many requests"; unmatched paths log
+    #: every request. Example: "/api/health=100,/api/files=20".
+    access_log_sample_rates: dict[str, int] = parse_access_log_sample_rates(
+        os.getenv("ZETT_ACCESS_LOG_SAMPLE_RATES", DEFAULT_ACCESS_LOG_SAMPLE_RATES)
+    )
 
 
 settings = Settings()

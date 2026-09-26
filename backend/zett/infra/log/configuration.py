@@ -1,8 +1,8 @@
 import logging
+from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from threading import Lock
-from time import gmtime
 
 from ...config import settings
 
@@ -10,16 +10,46 @@ LOGGER_NAMESPACE = "zett"
 LOG_FILE_NAME = "zett.log"
 MAX_LOG_FILE_BYTES = 64 * 1024 * 1024
 LOG_BACKUP_COUNT = 1
-LOG_FORMAT = "%(asctime)sZ %(levelname)s %(name)s %(filename)s:%(lineno)d %(message)s"
+LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(filename)s:%(lineno)d %(message)s"
+
+#: Human-readable wall-clock time; the offset is appended by the formatter.
+LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+#: Longest text fragment a log record carries when it previews message content.
+LOG_PREVIEW_CHARS = 60
 
 _configuration_lock = Lock()
 _configured_signature: tuple[Path, int, int, str] | None = None
 
 
-class UTCFormatter(logging.Formatter):
-    """Format timestamps in UTC so records remain comparable across environments."""
+class LocalTimeFormatter(logging.Formatter):
+    """Format timestamps in the host's local time with an explicit UTC offset.
 
-    converter = gmtime
+    Records are read next to local wall-clock events, so the timestamp is local
+    time rather than a UTC instant the reader has to convert. The ``±HH:MM``
+    suffix keeps that choice unambiguous, so a log copied from another machine
+    still says which zone produced it.
+    """
+
+    def formatTime(self, record: logging.LogRecord, datefmt: str | None = None) -> str:
+        moment = datetime.fromtimestamp(record.created).astimezone()
+        stamp = moment.strftime(datefmt or LOG_DATE_FORMAT)
+        return f"{stamp}{_offset_suffix(moment)}"
+
+
+#: Name this module's formatter had before it moved from UTC to local time.
+#: uvicorn builds its log config in the parent process and resolves that config
+#: by name in every reload or worker child, so a server started before the
+#: rename keeps asking for this name until it restarts; without the alias that
+#: child dies while configuring logging.
+UTCFormatter = LocalTimeFormatter
+
+
+def _offset_suffix(moment: datetime) -> str:
+    """Render one datetime's UTC offset as ``+HH:MM`` or ``-HH:MM``."""
+    total_minutes = int((moment.utcoffset() or timedelta(0)).total_seconds() // 60)
+    hours, minutes = divmod(abs(total_minutes), 60)
+    return f"{'-' if total_minutes < 0 else '+'}{hours:02d}:{minutes:02d}"
 
 
 def _level_number(level: str) -> int:
@@ -67,9 +97,9 @@ def configure_logging(
         logger.setLevel(_level_number(resolved_level))
         logger.propagate = False
 
-        formatter = UTCFormatter(
+        formatter = LocalTimeFormatter(
             fmt=LOG_FORMAT,
-            datefmt="%Y-%m-%dT%H:%M:%S",
+            datefmt=LOG_DATE_FORMAT,
         )
         file_handler = RotatingFileHandler(
             log_path,
@@ -97,9 +127,9 @@ def uvicorn_log_config(level: str | None = None) -> dict[str, object]:
         "disable_existing_loggers": False,
         "formatters": {
             "zett": {
-                "()": "zett.infra.log.UTCFormatter",
+                "()": "zett.infra.log.LocalTimeFormatter",
                 "fmt": LOG_FORMAT,
-                "datefmt": "%Y-%m-%dT%H:%M:%S",
+                "datefmt": LOG_DATE_FORMAT,
             }
         },
         "handlers": {
@@ -132,3 +162,14 @@ def get_logger(module_name: str) -> logging.Logger:
     """
     normalized_name = module_name.removeprefix("zett.").strip(".")
     return logging.getLogger(f"{LOGGER_NAMESPACE}.{normalized_name}" if normalized_name else LOGGER_NAMESPACE)
+
+
+def log_preview(value: str, *, limit: int = LOG_PREVIEW_CHARS) -> str:
+    """Return one single-line, length-capped rendering of text for a log record.
+
+    Runs of whitespace collapse so a preview never breaks the one-record-per-line
+    log format, and the result is truncated so a long prompt or answer stays a
+    short, scannable hint instead of flooding the file.
+    """
+    flattened = " ".join(value.split())
+    return flattened if len(flattened) <= limit else f"{flattened[:limit]}…"

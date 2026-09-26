@@ -17,7 +17,7 @@ from qrcode.image.svg import SvgPathImage
 from zett_agent import new_uuid7
 
 from ..._compat import UTC
-from ...infra.log import get_logger
+from ...infra.log import get_logger, log_preview
 from ...infra.plugins import PluginRegistry, ZettKVStorage, build_registry
 from ...plugins import (
     MAX_CHANNEL_MEDIA_BYTES,
@@ -439,6 +439,16 @@ class ChannelService:
                 continue
             if not message.text.strip() and not message.media and not message.rejected_media:
                 continue
+            logger.info(
+                "IM message received; channel_id=%s event_id=%s chat_id=%s chars=%d media=%d rejected=%d text=%r",
+                channel_id,
+                message.event_id,
+                message.chat_id,
+                len(message.text),
+                len(message.media),
+                len(message.rejected_media),
+                log_preview(message.text),
+            )
             try:
                 reply = await self._handle_message(channel_id, message)
             except asyncio.CancelledError:
@@ -450,6 +460,14 @@ class ChannelService:
                 continue
             try:
                 await plugin.send(message.chat_id, reply)
+                logger.info(
+                    "IM reply sent; channel_id=%s event_id=%s chat_id=%s chars=%d text=%r",
+                    channel_id,
+                    message.event_id,
+                    message.chat_id,
+                    len(reply),
+                    log_preview(reply),
+                )
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -519,12 +537,28 @@ class ChannelService:
         )
         final_content: str | None = None
         session_id: str | None = None
+        logger.info(
+            "IM turn started; channel_id=%s event_id=%s chat_id=%s session_id=%s provider_id=%s",
+            channel_id,
+            message.event_id,
+            message.chat_id,
+            agent_session_id,
+            runtime.channel.provider_id,
+        )
         async for event in self._agent.stream_turn(request):
             if event.session_id:
                 session_id = event.session_id
                 await self._store.bind_agent_session(channel_id, message.chat_id, event.session_id)
             if event.type is AgentEventKind.DELTA and event.content:
                 final_content = f"{final_content or ''}{event.content}"
+                logger.info(
+                    "IM turn delta; channel_id=%s event_id=%s session_id=%s delta=%r chars=%d",
+                    channel_id,
+                    message.event_id,
+                    session_id,
+                    log_preview(event.content, limit=30),
+                    len(final_content),
+                )
             elif event.type is AgentEventKind.COMPLETED:
                 final_content = event.content or final_content
             elif event.type is AgentEventKind.FAILED:
@@ -533,6 +567,13 @@ class ChannelService:
             raise RuntimeError("Agent turn ended without a response")
         if session_id is None:
             raise RuntimeError("Agent turn ended without a session ID")
+        logger.info(
+            "IM turn completed; channel_id=%s event_id=%s session_id=%s chars=%d",
+            channel_id,
+            message.event_id,
+            session_id,
+            len(final_content),
+        )
         return final_content
 
 

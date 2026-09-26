@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
+from ....infra.log import get_logger, log_preview
 from ....infra.persistence.dao import session_asset_storage, session_storage
 from ....schemas import SessionAssetCreate, SessionAssetEntity, SessionAssetListOptions, SessionAssetType
 from ...assets.asset_names import AssetRenameIn, rename_asset
@@ -10,6 +11,8 @@ from ...runtime.settings import runtime_settings_service
 from ..schemas import DeleteResponse, LinkAssetIn, TextAssetIn
 
 router = APIRouter(prefix="/agent/{session_id}/assets", tags=["assets"])
+
+logger = get_logger(__name__)
 
 
 async def _require_session(session_id: str) -> None:
@@ -121,6 +124,13 @@ async def upload_asset(
     async for chunk in request.stream():
         content.extend(chunk)
         if len(content) > runtime_settings.max_asset_size_bytes:
+            logger.warning(
+                "Session asset upload rejected; session_id=%s name=%r bytes=%d limit_bytes=%d",
+                session_id,
+                log_preview(name),
+                len(content),
+                runtime_settings.max_asset_size_bytes,
+            )
             raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "Asset exceeds the configured size limit")
     mime_type = request.headers.get("content-type", "application/octet-stream").split(";", 1)[0]
     asset_type = SessionAssetType.IMAGE if mime_type.startswith("image/") else SessionAssetType.FILE
@@ -132,9 +142,19 @@ async def upload_asset(
         content=bytes(content),
     )
     try:
-        return await session_asset_storage.create(entity)
+        stored = await session_asset_storage.create(entity)
     except ValueError as error:
         raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, str(error)) from error
+    logger.info(
+        "Session asset uploaded; session_id=%s asset_id=%s type=%s name=%r mime_type=%s bytes=%d",
+        session_id,
+        stored.id,
+        stored.asset_type.value,
+        log_preview(stored.name),
+        stored.mime_type,
+        stored.size_bytes,
+    )
+    return stored
 
 
 @router.delete("/{asset_id}", response_model=DeleteResponse)

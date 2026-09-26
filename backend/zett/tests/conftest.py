@@ -1,4 +1,5 @@
-from collections.abc import AsyncIterator
+import logging
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,36 @@ from zett.infra.files import object_store as object_store_module
 from zett.infra.files.object_store import LocalObjectStore
 from zett.infra.persistence import database
 from zett.infra.persistence.tables import Base
+
+
+@pytest.fixture
+def captured_logs() -> Iterator[list[str]]:
+    """Collect Zett log messages straight from the namespace logger.
+
+    ``configure_logging`` turns propagation off for the ``zett`` logger, so a
+    root-level capture misses these records and a test would pass or fail purely
+    by file order. Attaching a handler to the namespace logger avoids that.
+
+    Tests that start the app through ``TestClient`` must read the configured log
+    file instead: app startup calls ``configure_logging``, which replaces every
+    handler on the namespace logger, including the one added here.
+    """
+    messages: list[str] = []
+
+    class Capture(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            messages.append(record.getMessage())
+
+    logger = logging.getLogger("zett")
+    handler = Capture()
+    previous_level = logger.level
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    try:
+        yield messages
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(previous_level)
 
 
 @pytest.fixture(autouse=True)

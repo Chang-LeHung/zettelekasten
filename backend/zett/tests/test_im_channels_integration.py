@@ -86,6 +86,17 @@ class FakeAgent(AgentClient):
         yield AgentEvent(type=AgentEventKind.COMPLETED, session_id="session-1", content="Agent reply")
 
 
+class StreamingAgent(AgentClient):
+    """Answer in deltas, the way a real provider streams one."""
+
+    async def stream_turn(self, request: AgentTurnRequest) -> AsyncIterator[AgentEvent]:
+        del request
+        yield AgentEvent(type=AgentEventKind.STARTED, session_id="session-1")
+        yield AgentEvent(type=AgentEventKind.DELTA, content="Hello ")
+        yield AgentEvent(type=AgentEventKind.DELTA, content="there")
+        yield AgentEvent(type=AgentEventKind.COMPLETED, session_id="session-1", content="Hello there")
+
+
 class FakeWeChatPlugin:
     """Stand-in channel plugin that reports a completed login on first poll."""
 
@@ -917,6 +928,44 @@ async def test_a_failed_turn_answers_instead_of_staying_silent() -> None:
     await asyncio.gather(task, return_exceptions=True)
 
     assert plugin.sent == [("user-1", channel_service_module.TURN_FAILURE_REPLY)]
+
+
+async def test_channel_turn_logs_the_message_each_delta_and_the_reply(captured_logs) -> None:
+    """One IM turn must be traceable from the log alone."""
+    provider_id = await _provider()
+    store = ChannelStore(ZettKVStorage())
+    channel = await store.create_channel(
+        ChannelDraft(
+            name="WeChat",
+            channel_type="wechat",
+            provider_id=provider_id,
+            config={"base_url": "https://ilink.example.invalid"},
+            secrets={"bot_token": "token-1"},
+        )
+    )
+    service = ChannelService(registry=_registry(), kv=ZettKVStorage(), agent=StreamingAgent())
+    plugin = OneMessagePlugin(
+        PluginContext(plugin_id="wechat", scope_id=channel.id, kv=ZettKVStorage(), config={}, secrets={})
+    )
+    plugin.pending.append(
+        ChannelInboundMessage(event_id="event-log", chat_id="user-1", user_id="user-1", text="hello there")
+    )
+
+    task = asyncio.create_task(service._consume(channel.id, plugin))
+    for _ in range(200):
+        if plugin.sent:
+            break
+        await asyncio.sleep(0.01)
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+
+    assert any("IM message received" in message and "text='hello there'" in message for message in captured_logs)
+    deltas = [message for message in captured_logs if "IM turn delta" in message]
+    assert len(deltas) == 2
+    assert "delta='Hello'" in deltas[0] and "chars=6" in deltas[0]
+    assert "delta='there'" in deltas[1] and "chars=11" in deltas[1]
+    assert any("IM turn completed" in message and "chars=11" in message for message in captured_logs)
+    assert any("IM reply sent" in message and "text='Hello there'" in message for message in captured_logs)
 
 
 async def test_policy_update_keeps_the_channel_and_disabling_stops_it() -> None:

@@ -14,6 +14,7 @@ from .scheduled_tasks import ScheduledTaskDraft, ScheduledTaskExtension, Schedul
 from .session_files import SessionFilesExtension
 from .static_assets import StaticAssetExtension
 from .tags import TagExtension
+from .trace_log import TraceLogExtension
 
 __all__ = [
     "ArtifactExtension",
@@ -29,5 +30,6 @@ __all__ = [
     "SessionFilesExtension",
     "StaticAssetExtension",
     "TagExtension",
+    "TraceLogExtension",
     "context_composition",
 ]

@@ -175,6 +175,12 @@ class ProcessSupervisor:
                 )
                 continue
             self._managed[role][instance_id] = managed
+            logger.info(
+                "Started supervised process; role=%s instance_id=%s pid=%d",
+                role.value,
+                instance_id,
+                managed.pid,
+            )
 
     async def _persist_child_state(self) -> None:
         if self.runtime_state_store is None:
@@ -204,6 +210,7 @@ class ProcessSupervisor:
         if not managed.is_running():
             return
         managed.process.terminate()
+        killed = False
         try:
             await asyncio.to_thread(managed.process.wait, timeout=5)
         except Exception:
@@ -215,3 +222,11 @@ class ProcessSupervisor:
             )
             managed.process.kill()
             await asyncio.to_thread(managed.process.wait)
+            killed = True
+        logger.info(
+            "Stopped supervised process; role=%s instance_id=%s pid=%d killed=%s",
+            managed.role.value,
+            managed.instance_id,
+            managed.pid,
+            killed,
+        )
