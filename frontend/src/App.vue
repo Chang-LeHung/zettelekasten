@@ -248,10 +248,14 @@ const staticAssetImportingId = ref<string | null>(null)
 const sessions = ref<AgentSession[]>([])
 const scheduledSessions = ref<AgentSession[]>([])
 const channelSessions = ref<AgentSession[]>([])
+const sessionListRef = ref<HTMLElement | null>(null)
 const sessionScope = ref<SessionScope>('normal')
 const sessionsLoading = ref(false)
 const scheduledSessionsLoading = ref(false)
 const channelSessionsLoading = ref(false)
+//: Scopes whose first list request has settled; until then the sidebar is loading,
+//: not empty, so a startup or scope switch never flashes the empty state.
+const loadedSessionScopes = ref<Set<SessionScope>>(new Set())
 const switchingSessionId = ref<string | null>(null)
 const sessionDetailRequests = new Map<string, Promise<AgentSession>>()
 const sessionsHaveMore = ref(true)
@@ -459,6 +463,9 @@ const activeSessionsHaveMore = computed(() => (
   sessionScope.value === 'scheduled' ? scheduledSessionsHaveMore.value
   : sessionScope.value === 'channel' ? channelSessionsHaveMore.value
   : sessionsHaveMore.value
+))
+const activeSessionsPending = computed(() => (
+  activeSessionsLoading.value || !loadedSessionScopes.value.has(sessionScope.value)
 ))
 const visibleSessions = computed(() => activeSessions.value.filter((session) => (
   session.message_count > 0
@@ -2137,6 +2144,8 @@ async function loadSessions(reset = false): Promise<void> {
     showNotice(errorMessage(error), 'error')
   } finally {
     sessionsLoading.value = false
+    markSessionScopeLoaded('normal')
+    if (sessionScope.value === 'normal') void fillSessionList()
   }
 }
 
@@ -2152,6 +2161,8 @@ async function loadScheduledSessions(reset = false): Promise<void> {
     showNotice(errorMessage(error), 'error')
   } finally {
     scheduledSessionsLoading.value = false
+    markSessionScopeLoaded('scheduled')
+    if (sessionScope.value === 'scheduled') void fillSessionList()
   }
 }
 
@@ -2167,13 +2178,40 @@ async function loadChannelSessions(reset = false): Promise<void> {
     showNotice(errorMessage(error), 'error')
   } finally {
     channelSessionsLoading.value = false
+    markSessionScopeLoaded('channel')
+    if (sessionScope.value === 'channel') void fillSessionList()
   }
+}
+
+function markSessionScopeLoaded(scope: SessionScope): void {
+  if (loadedSessionScopes.value.has(scope)) return
+  const next = new Set(loadedSessionScopes.value)
+  next.add(scope)
+  loadedSessionScopes.value = next
 }
 
 function loadMoreSessions(): void {
   if (sessionScope.value === 'scheduled') void loadScheduledSessions()
   else if (sessionScope.value === 'channel') void loadChannelSessions()
   else void loadSessions()
+}
+
+/** How close to the list's end a scroll must come before the next page loads. */
+const SESSION_LIST_LOAD_REMAINING_PX = 96
+
+function handleSessionListScroll(): void {
+  const element = sessionListRef.value
+  if (!element || !activeSessionsHaveMore.value || activeSessionsLoading.value) return
+  const remaining = element.scrollHeight - element.scrollTop - element.clientHeight
+  if (remaining <= SESSION_LIST_LOAD_REMAINING_PX) loadMoreSessions()
+}
+
+/** Fill a list that is too short to scroll, where scrolling cannot reach another page. */
+async function fillSessionList(): Promise<void> {
+  await nextTick()
+  const element = sessionListRef.value
+  if (!element || !activeSessionsHaveMore.value || activeSessionsLoading.value) return
+  if (element.scrollHeight <= element.clientHeight) loadMoreSessions()
 }
 
 function selectArtifact(artifact: AgentArtifact): void {
@@ -3238,7 +3276,7 @@ onBeforeUnmount(() => {
 
       <div v-if="view === 'new' || view === 'scheduledTasks' || view === 'channels'" class="sidebar-section session-section">
         <div class="sidebar-heading"><span>{{ sessionScope === 'channel' ? $t('nav.channelConversations') : $t('nav.conversations') }}</span><button v-if="sessionScope === 'normal'" type="button" :aria-label="$t('nav.newConversation')" @click="resetWorkspace"><svg><use href="#icon-add" /></svg></button></div>
-        <div class="session-history-list">
+        <div ref="sessionListRef" class="session-history-list" @scroll.passive="handleSessionListScroll">
           <div
             v-for="session in visibleSessions"
             :key="session.id"
@@ -3257,8 +3295,14 @@ onBeforeUnmount(() => {
             </button>
             <button v-if="editingSessionId !== session.id" class="session-delete-button" type="button" :aria-label="`Delete ${session.title || 'conversation'}`" title="Delete conversation" @click.stop="deleteSession(session)"><svg><use href="#icon-trash" /></svg></button>
           </div>
-          <p v-if="!visibleSessions.length && !activeSessionsLoading" class="sidebar-empty">{{ $t('nav.noConversations') }}</p>
-          <button v-if="activeSessionsHaveMore" class="load-more-sessions" :disabled="activeSessionsLoading" type="button" @click="loadMoreSessions">{{ activeSessionsLoading ? $t('nav.loading') : $t('nav.loadMore') }}</button>
+          <template v-if="!visibleSessions.length && activeSessionsPending">
+            <div v-for="index in 3" :key="`session-skeleton-${index}`" class="session-history-skeleton" aria-hidden="true" />
+          </template>
+          <p v-else-if="!visibleSessions.length" class="sidebar-empty">{{ $t('nav.noConversations') }}</p>
+          <div v-if="visibleSessions.length && activeSessionsLoading" class="session-list-loading" role="status" aria-live="polite">
+            <span class="session-switch-spinner" aria-hidden="true" />
+            <small>{{ $t('nav.loading') }}</small>
+          </div>
         </div>
       </div>
 
@@ -4198,7 +4242,8 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .tag-delete:disabled { cursor: default; opacity: .35; }
 .session-section { overflow: hidden; }
 .session-history-list { min-height: 0; display: grid; flex: 1; align-content: start; gap: .18rem; overflow-y: auto; padding-bottom: .7rem; scrollbar-width: thin; }
-.session-history-item { position: relative; min-width: 0; border-radius: .58rem; transition: background 180ms ease, box-shadow 180ms ease, opacity 180ms ease; }
+.session-history-item { position: relative; min-width: 0; border-radius: .58rem; transition: background 180ms ease, box-shadow 180ms ease, opacity 180ms ease; animation: session-item-in 200ms cubic-bezier(.2,.8,.2,1) both; }
+@keyframes session-item-in { from { opacity: 0; transform: translateY(4px); } }
 .session-history-item:hover { background: rgba(255,255,255,.5); }
 .session-history-item.active { background: rgba(255,255,255,.86); box-shadow: 0 1px 5px rgba(0,0,0,.05); }
 .session-history-item.switching { background: rgba(255,255,255,.72); }
@@ -4218,8 +4263,9 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .session-delete-button svg { width: .72rem; height: .72rem; }
 .session-history-item:hover .session-delete-button, .session-delete-button:focus-visible { opacity: 1; }
 .session-delete-button:hover { color: #a63f3f; background: #f8eaea; }
-.load-more-sessions { min-height: 2rem; margin: .25rem .45rem 0; border: 1px solid var(--line); border-radius: .55rem; color: var(--accent-dark); background: rgba(255,255,255,.5); cursor: pointer; font-size: .65rem; font-weight: 620; }
-.load-more-sessions:disabled { opacity: .55; cursor: wait; }
+.session-history-skeleton { height: 2.3rem; margin: .05rem .45rem .25rem; border: 0; border-radius: .6rem; background: linear-gradient(100deg, rgba(255,255,255,.32) 28%, rgba(255,255,255,.95) 44%, rgba(255,255,255,.32) 60%); background-size: 220% 100%; box-shadow: inset 0 0 0 1px rgba(29,29,31,.05); animation: shimmer 1.35s linear infinite; }
+.session-list-loading { display: flex; align-items: center; justify-content: center; gap: .45rem; padding: .6rem 0 .35rem; color: var(--tertiary); }
+.session-list-loading .session-switch-spinner { width: 1rem; height: 1rem; border-width: 1.5px; }
 .sidebar-empty { padding: .55rem; color: var(--tertiary); font-size: .72rem; }
 .sidebar-footer { padding: .65rem 0 .15rem; border-top: 1px solid rgba(29,29,31,.07); }
 .sidebar-footer .channels-nav-button { margin-bottom: .65rem; }
