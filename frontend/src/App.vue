@@ -2009,7 +2009,11 @@ async function openSession(sessionId: string): Promise<void> {
     scrollAgentThread(true)
     return
   }
-  if (loading.value) return
+  if (loading.value) {
+    // Silently ignoring the click looks like a broken conversation list.
+    showNotice('Stop the running turn before switching conversations', 'error')
+    return
+  }
   const generation = ++sessionSwitchGeneration
   switchingSessionId.value = sessionId
   view.value = 'new'
@@ -2163,8 +2167,12 @@ function applyArtifacts(nextArtifacts: AgentArtifact[], preferLatest = true): vo
 }
 
 async function refreshArtifacts(preferLatest = false): Promise<void> {
-  if (!conversationId.value) return
-  applyArtifacts(await aiClient.listAgentArtifacts(conversationId.value), preferLatest)
+  const activeConversationId = conversationId.value
+  if (!activeConversationId) return
+  const listed = await aiClient.listAgentArtifacts(activeConversationId)
+  // A conversation switch while this request was open must not move another session's artifacts into view.
+  if (conversationId.value !== activeConversationId) return
+  applyArtifacts(listed, preferLatest)
 }
 
 /**
@@ -2176,7 +2184,9 @@ async function refreshSelectedArtifact(): Promise<void> {
   if (!activeConversationId || artifactRefreshing.value) return
   artifactRefreshing.value = true
   try {
-    applyArtifacts(await aiClient.listAgentArtifacts(activeConversationId))
+    const listed = await aiClient.listAgentArtifacts(activeConversationId)
+    if (conversationId.value !== activeConversationId) return
+    applyArtifacts(listed)
     artifactPreviewNonce.value += 1
   } catch (error) {
     showNotice(errorMessage(error), 'error')
