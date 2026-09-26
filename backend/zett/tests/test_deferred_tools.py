@@ -13,6 +13,7 @@ from zett_agent import (
     ModelRequest,
     ModelResponse,
     OpenAIProvider,
+    SystemMessage,
     ToolSearchExtension,
     tool,
 )
@@ -60,6 +61,11 @@ def _provider_payload() -> dict[str, object]:
 
 def _offered_tools(monkeypatch: pytest.MonkeyPatch, *, response: bool) -> dict[str, bool]:
     """Run one API turn and return the offered tool names with their deferred flag."""
+    return _turn(monkeypatch, response=response)[0]
+
+
+def _turn(monkeypatch: pytest.MonkeyPatch, *, response: bool) -> tuple[dict[str, bool], list[str]]:
+    """Run one API turn and return its offered tools plus its system instructions."""
     model = ProtocolModel(response=response)
     monkeypatch.setattr(agent_routes, "create_model", lambda _connection: model)
     # The background title task builds its own model, so it needs the same stub.
@@ -76,7 +82,9 @@ def _offered_tools(monkeypatch: pytest.MonkeyPatch, *, response: bool) -> dict[s
         )
         assert response_payload.status_code == 200
     assert len(model.requests) == 1
-    return {tool.name: tool.deferred for tool in model.requests[0].tools}
+    request = model.requests[0]
+    instructions = [message.content for message in request.messages if isinstance(message, SystemMessage)]
+    return {tool.name: tool.deferred for tool in request.tools}, instructions
 
 
 def test_responses_api_hides_deferred_tools_behind_the_search_tool(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -97,6 +105,19 @@ def test_other_protocols_receive_every_tool_as_an_ordinary_function(monkeypatch:
     assert offered[DEFERRED_TOOL] is False
     assert offered[SECOND_DEFERRED_TOOL] is False
     assert set(offered.values()) == {False}
+
+
+def test_only_the_responses_api_tells_the_model_how_to_search(monkeypatch: pytest.MonkeyPatch) -> None:
+    _, searchable = _turn(monkeypatch, response=True)
+    _, plain = _turn(monkeypatch, response=False)
+
+    hints = [instruction for instruction in searchable if instruction.startswith("# Tool search")]
+    assert len(hints) == 1
+    # The model cannot search for what it does not know exists.
+    assert "tool_search" in hints[0]
+    assert "scheduled tasks" in hints[0]
+    # A protocol without the search tool must not advertise one.
+    assert not [instruction for instruction in plain if instruction.startswith("# Tool search")]
 
 
 def test_only_responses_adapters_report_the_protocol() -> None:

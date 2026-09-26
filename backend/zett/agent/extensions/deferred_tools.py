@@ -12,6 +12,7 @@ from zett_agent import (
     ModelEvent,
     ModelRequest,
     ModelRequestNext,
+    SystemMessage,
     ToolDefinition,
     ToolSearchExtension,
 )
@@ -46,6 +47,14 @@ class DeferredToolExtension(AgentExtension):
         if uses_responses_api(context.model):
             await self._search.on_tool(context)
 
+    async def on_state(self, context: AgentRunContext) -> None:
+        """Name the searchable capabilities, but only where search exists."""
+        if not uses_responses_api(context.model):
+            return
+        message = SystemMessage(content=_SEARCH_INSTRUCTIONS)
+        instructions = [item for item in context.state.messages if isinstance(item, SystemMessage)]
+        context.add_message(message, index=len(instructions))
+
     async def on_model_request(
         self,
         context: AgentRunContext,
@@ -79,3 +88,12 @@ class DeferredToolExtension(AgentExtension):
 
 
 __all__ = ["DeferredToolExtension"]
+
+#: Fixed text, so it extends the prompt-cache prefix instead of rebuilding it.
+_SEARCH_INSTRUCTIONS = (
+    "# Tool search\n"
+    "Tools that a conversation rarely needs are not listed with your tool definitions; load them on demand.\n"
+    "Call tool_search with short keyword queries when a task needs one of them.\n"
+    "The deferred set currently covers scheduled tasks (create, list, read, update, disable) and the "
+    "provider list a scheduled task must reference."
+)

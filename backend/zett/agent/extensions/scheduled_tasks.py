@@ -7,10 +7,13 @@ from zett_agent import AgentExtension, AgentRunContext, ReasoningEffort, tool
 
 from ..._compat import Self
 from ...application.scheduled_tasks import scheduled_task_service
+from ...infra.persistence.dao import provider_storage
 from ...schemas import (
     AGENT_PROMPT_ACTION_KIND,
     AgentPromptAction,
     CronSchedule,
+    ProviderChoice,
+    ProviderListOptions,
     ScheduledTaskAction,
     ScheduledTaskCreate,
     ScheduledTaskEntity,
@@ -135,6 +138,32 @@ class ScheduledTaskExtension(AgentExtension):
             return await scheduled_task_service.create(_create_from_draft(task))
 
         @tool(deferred=True)
+        async def list_providers(
+            limit: Annotated[int, Field(ge=1, le=50)] = 10,
+            offset: Annotated[int, Field(ge=0)] = 0,
+        ) -> list[ProviderChoice]:
+            """List the enabled providers a scheduled task may run with.
+
+            Args:
+                limit: Maximum number of providers returned.
+                offset: Number of providers skipped.
+
+            Snippet:
+                list_providers(limit=10, offset=0)
+
+            Guidelines:
+                - Call it before create_scheduled_task or update_scheduled_task, because provider_id is required.
+                - Use an exact returned id; never invent one or reuse a provider this tool did not return.
+                - A disabled provider is missing on purpose: the task would never run with it.
+                - Ask again with a larger limit or the next offset when the list looks truncated.
+            """
+            providers = await provider_storage.list(ProviderListOptions(enabled=True, limit=limit, offset=offset))
+            return [
+                ProviderChoice(id=provider.id, name=provider.name, provider=provider.provider, model=provider.model)
+                for provider in providers
+            ]
+
+        @tool(deferred=True)
         async def list_scheduled_tasks(
             enabled: bool | None = None,
             limit: Annotated[int, Field(ge=1, le=500)] = 100,
@@ -210,6 +239,7 @@ class ScheduledTaskExtension(AgentExtension):
 
         for registered in (
             create_scheduled_task,
+            list_providers,
             list_scheduled_tasks,
             get_scheduled_task,
             update_scheduled_task,

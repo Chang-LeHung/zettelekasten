@@ -52,6 +52,19 @@ class ProviderEntity(BaseModel):
     updated_at: datetime
 
 
+class ProviderChoice(BaseModel):
+    """One enabled provider a model-facing tool may reference by ID.
+
+    Tools return this projection instead of the whole entity so a prompt never
+    carries provider configuration that scheduling does not need.
+    """
+
+    id: str = Field(description="Stable provider configuration UUID")
+    name: str = Field(description="User-facing configuration name")
+    provider: ProviderType = Field(description="Provider protocol used by the model adapter")
+    model: str = Field(description="Provider model identifier")
+
+
 class ProviderConnection(BaseModel):
     """Decrypted configuration consumed transiently by a model adapter."""
 
