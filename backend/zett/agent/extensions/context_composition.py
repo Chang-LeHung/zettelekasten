@@ -3,7 +3,6 @@
 import json
 from collections.abc import Awaitable, Callable, Sequence
 
-import tiktoken
 from zett_agent.agent import (
     AgentRunContext,
 )
@@ -31,7 +30,10 @@ from zett_agent.model import (
 from ..._compat import TypeAliasType
 
 CONTEXT_COMPOSITION_EVENT = "context_composition"
-_ENCODING = tiktoken.get_encoding("o200k_base")
+#: The o200k BPE table costs about a tenth of a second to load, and a process
+#: pays it only when a turn records a composition, so it is built on first use
+#: instead of at import time.
+_ENCODING: object | None = None
 _CATEGORIES = ("system_prompt", "tool_prompt", "tool_output", "user", "assistant")
 _IMAGE_TOKEN_ESTIMATE = 1_100
 ContextCompositionRecorder = TypeAliasType(
@@ -62,7 +64,17 @@ def _token_count(value: object) -> int:
         text = value
     else:
         text = json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=repr)
-    return len(_ENCODING.encode_ordinary(text))
+    return len(_encoding().encode_ordinary(text))
+
+
+def _encoding() -> object:
+    """Return the shared o200k encoding, loading ``tiktoken`` on first use."""
+    global _ENCODING
+    if _ENCODING is None:
+        import tiktoken
+
+        _ENCODING = tiktoken.get_encoding("o200k_base")
+    return _ENCODING
 
 
 def _tool_payload(request: ModelRequest) -> dict[str, object]:

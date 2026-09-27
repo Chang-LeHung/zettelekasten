@@ -1,24 +1,21 @@
 """Launch the storage foundation and unchanged frontend."""
 
+from __future__ import annotations
+
 import argparse
 import asyncio
 import os
 import sys
 from collections.abc import Callable, Sequence
-from datetime import datetime
+from typing import TYPE_CHECKING
 
-import uvicorn
-from zett_agent.ids import new_uuid7
-
-from ._compat import UTC
-from .application.runtime import RuntimeService
 from .config import settings
-from .infra.log import configure_logging, get_logger, uvicorn_log_config
-from .infra.persistence.database import init_db
-from .infra.scheduler import ActionExecutorRegistry, SchedulerRunner, WorkerRunner, process_platform
-from .infra.scheduler.processes import ProcessHeartbeatPublisher
-from .infra.scheduler.runtime_state import RuntimeProcessController, RuntimeStateStore, RuntimeWatchdog
-from .schemas import ProcessRole, RuntimeStatus, ServerRuntimeState
+from .infra.log import configure_logging, get_logger
+
+if TYPE_CHECKING:
+    from .infra.scheduler.scheduler import SchedulerRunner
+    from .infra.scheduler.worker import WorkerRunner
+    from .schemas import ProcessRole, RuntimeStatus
 
 PROGRAM_NAME = "zett"
 #: One-line introduction, identical to the README tagline and the project's
@@ -197,6 +194,8 @@ def _start(args: argparse.Namespace) -> int:
     """Serve in the background, or in the foreground with ``--foreground``."""
     if not args.background:
         return _run_server(host=args.host, port=args.port, reload=args.reload)
+    from .application.runtime import RuntimeService
+
     try:
         result = asyncio.run(RuntimeService().start_in_background(host=args.host, port=args.port, reload=args.reload))
     except RuntimeError as error:
@@ -210,6 +209,17 @@ def _start(args: argparse.Namespace) -> int:
 
 def _run_server(*, host: str, port: int, reload: bool) -> int:
     """Serve in the foreground until the process is stopped."""
+    from datetime import datetime
+
+    import uvicorn
+
+    from ._compat import UTC
+    from .infra.log import uvicorn_log_config
+    from .infra.persistence.database import init_db
+    from .infra.scheduler import process_platform
+    from .infra.scheduler.runtime_state import RuntimeProcessController, RuntimeStateStore
+    from .schemas import ServerRuntimeState
+
     settings.host = host
     settings.port = port
     # Every child process — the reload worker and the supervised scheduler and
@@ -255,6 +265,8 @@ def _run_server(*, host: str, port: int, reload: bool) -> int:
 
 def _status(_: argparse.Namespace) -> int:
     """Report whether the server and its supervised workers are running."""
+    from .application.runtime import RuntimeService
+
     report = asyncio.run(RuntimeService().status())
     print(_format_status(report))
     return 0 if report.running else 1
@@ -280,8 +292,8 @@ def _format_status(report: RuntimeStatus) -> str:
 def _format_children(report: RuntimeStatus) -> list[str]:
     """Render each supervised role from its recorded PID and liveness."""
     lines = []
-    for role in (ProcessRole.SCHEDULER, ProcessRole.WORKER):
-        recorded = [child for child in report.children if child.role is role]
+    for role in ("scheduler", "worker"):
+        recorded = [child for child in report.children if child.role.value == role]
         if not recorded:
             lines.append(f"{_role_label(role)} not recorded")
             continue
@@ -290,13 +302,15 @@ def _format_children(report: RuntimeStatus) -> list[str]:
     return lines
 
 
-def _role_label(role: ProcessRole) -> str:
+def _role_label(role: str) -> str:
     """Return the aligned column prefix for one process role."""
-    return f"  {role.value + ':':<10}"
+    return f"  {role + ':':<10}"
 
 
 def _stop(args: argparse.Namespace) -> int:
     """Stop the recorded FastAPI, scheduler, and worker processes."""
+    from .infra.scheduler.runtime_state import RuntimeProcessController
+
     state = asyncio.run(RuntimeProcessController().stop(timeout=args.timeout))
     if state is None:
         print("Zett is not running")
@@ -310,6 +324,12 @@ def _stop(args: argparse.Namespace) -> int:
 
 def _scheduler(args: argparse.Namespace) -> int:
     """Queue due background tasks without executing their actions."""
+    from zett_agent.ids import new_uuid7
+
+    from .infra.persistence.database import init_db
+    from .infra.scheduler import SchedulerRunner
+    from .schemas import ProcessRole
+
     log_path = configure_logging(file_name=SCHEDULER_LOG_FILE_NAME)
     asyncio.run(init_db())
     runner = SchedulerRunner(poll_interval=args.poll_interval)
@@ -330,7 +350,12 @@ def _scheduler(args: argparse.Namespace) -> int:
 
 def _worker(args: argparse.Namespace) -> int:
     """Claim queued background tasks and execute their registered actions."""
+    from zett_agent.ids import new_uuid7
+
+    from .infra.persistence.database import init_db
+    from .infra.scheduler import ActionExecutorRegistry, WorkerRunner
     from .infra.scheduler.agent_prompt import scheduled_agent_executor
+    from .schemas import ProcessRole
 
     log_path = configure_logging(file_name=WORKER_LOG_FILE_NAME)
     asyncio.run(init_db())
@@ -351,6 +376,10 @@ def _worker(args: argparse.Namespace) -> int:
 
 async def _run_with_heartbeat(runner: SchedulerRunner | WorkerRunner, role: ProcessRole, instance_id: str) -> None:
     """Run one scheduler or worker alongside its independent heartbeat task."""
+    from .infra.scheduler.processes import ProcessHeartbeatPublisher
+    from .infra.scheduler.runtime_state import RuntimeWatchdog
+    from .infra.scheduler.worker import WorkerRunner
+
     heartbeat = ProcessHeartbeatPublisher(role=role, instance_id=instance_id)
 
     async def stop_orphaned(reason: str) -> None:

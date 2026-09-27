@@ -1,6 +1,7 @@
 """Background ``zett start`` and ``zett status`` behavior."""
 
 import asyncio
+import importlib
 import os
 import re
 import socket
@@ -331,7 +332,8 @@ def test_run_server_exports_the_bind_address_its_children_re_read(
     monkeypatch.delenv("ZETT_HOST", raising=False)
     monkeypatch.delenv("ZETT_PORT", raising=False)
     served: list[dict[str, object]] = []
-    monkeypatch.setattr(cli.uvicorn, "run", lambda *args, **kwargs: served.append(kwargs))
+    # ``_run_server`` imports uvicorn where it serves, so patch the module itself.
+    monkeypatch.setattr(importlib.import_module("uvicorn"), "run", lambda *args, **kwargs: served.append(kwargs))
 
     cli._run_server(host="127.0.0.1", port=port, reload=True)
 

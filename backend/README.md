@@ -503,6 +503,11 @@ uv run --directory backend zett worker
 Short forms: `-b`/`-f` for the background switch, `-p` for `--port`, and `-r`
 for `--reload`. `--host` stays long-only, because `-h` reads as help.
 
+Each command imports only what it uses: `zett --help`, `zett status`, and
+`zett stop` never load FastAPI, uvicorn, SQLAlchemy, or the agent runtime, so
+they answer in tens of milliseconds, and a model provider's SDK is imported by
+the turn that calls it rather than by the process that starts.
+
 Serving also exports the effective `--host`/`--port` as `ZETT_HOST`/`ZETT_PORT`,
 because the reload worker and the supervised scheduler and workers re-read the
 configuration from the environment: without it they heartbeat — and the reload
