@@ -88,9 +88,18 @@ def terminate_process(pid: int, *, force: bool) -> None:
 
     Windows has no catchable termination signal, so the graceful and forced
     phases are the same call there and callers should expect an immediate stop.
+    It also reports a PID that no longer exists as a bare ``OSError``
+    (``WinError 87``) instead of ``ProcessLookupError``, so a process that is
+    already gone is normalized to the error every caller handles; a live
+    process keeps its original error, which usually means access was denied.
     """
     if WINDOWS:
-        os.kill(pid, signal.SIGTERM)
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError as error:
+            if is_process_running(pid):
+                raise
+            raise ProcessLookupError(error.errno, str(error), pid) from error
         return
     os.kill(pid, signal.SIGKILL if force else signal.SIGTERM)
 
