@@ -6,6 +6,7 @@ import { useI18n } from '../i18n'
 import PdfThumbnail from './PdfThumbnail.vue'
 
 const { t } = useI18n()
+const emit = defineEmits<{ 'drag-start': [asset: StaticAsset]; 'drag-end': [] }>()
 const assets = ref<StaticAsset[]>([])
 const loading = ref(false)
 const uploading = ref(false)
@@ -117,6 +118,32 @@ function formatDate(value: string): string {
   return new Intl.DateTimeFormat('en-US', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(value))
 }
 
+/**
+ * Hand the card to the sidebar's tag rows.
+ *
+ * The payload also travels in the drag data so a drop target outside this
+ * component can see the id, and the event tells the parent which asset is in
+ * flight: a `dragover` handler may inspect the drag's data types but never its
+ * data, so the id alone is not enough while the pointer is still moving.
+ */
+function startCardDrag(asset: StaticAsset, event: DragEvent): void {
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'copy'
+    event.dataTransfer.setData('application/x-zett-asset-id', asset.id)
+    event.dataTransfer.setData('text/plain', asset.id)
+  }
+  emit('drag-start', asset)
+}
+
+function endCardDrag(): void {
+  emit('drag-end')
+}
+
+/** Highlight the drop area for files only: an internal card is not an upload. */
+function handleDragEnter(event: DragEvent): void {
+  if (event.dataTransfer?.types.includes('Files')) dragging.value = true
+}
+
 onMounted(() => {
   window.addEventListener('paste', pasteFiles)
   void loadAssets()
@@ -125,6 +152,8 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('paste', pasteFiles)
 })
+
+defineExpose({ reload: loadAssets })
 </script>
 
 <template>
@@ -141,8 +170,8 @@ onBeforeUnmount(() => {
   <section
     class="content static-assets-view"
     :class="{ dragging }"
-    @dragenter.prevent="dragging = true"
-    @dragover.prevent="dragging = true"
+    @dragenter.prevent="handleDragEnter"
+    @dragover.prevent="handleDragEnter"
     @dragleave.prevent="dragging = false"
     @drop.prevent="dropFiles"
   >
@@ -160,7 +189,15 @@ onBeforeUnmount(() => {
       <div v-for="index in 8" :key="index" class="static-asset-card skeleton" />
     </div>
     <div v-else-if="visibleAssets.length" class="static-asset-grid">
-      <article v-for="asset in visibleAssets" :key="asset.id" class="static-asset-card">
+      <article
+        v-for="asset in visibleAssets"
+        :key="asset.id"
+        class="static-asset-card"
+        draggable="true"
+        :title="t('Drag onto a tag to classify this file')"
+        @dragstart="startCardDrag(asset, $event)"
+        @dragend="endCardDrag"
+      >
         <button class="static-asset-preview" type="button" :aria-label="t('Open {name}', { name: asset.name })" @click="openAsset(asset)">
           <img v-if="isImage(asset)" :src="asset.content_url" :alt="asset.name" />
           <PdfThumbnail v-else-if="isPdf(asset)" :asset="asset" />
@@ -172,6 +209,9 @@ onBeforeUnmount(() => {
         <div class="static-asset-copy">
           <strong :title="asset.name">{{ asset.name }}</strong>
           <span>{{ formatBytes(asset.size_bytes) }} · {{ formatDate(asset.created_at) }}</span>
+          <div v-if="asset.tags.length" class="static-asset-tags">
+            <span v-for="tag in asset.tags.slice(0, 2)" :key="tag.id" :title="tag.path">{{ tag.path }}</span>
+          </div>
         </div>
         <div class="static-asset-actions">
           <button type="button" :aria-label="t('Download')" :title="t('Download')" @click="downloadAsset(asset)">
@@ -223,6 +263,10 @@ onBeforeUnmount(() => {
 .static-asset-copy { min-width: 0; display: grid; gap: .18rem; padding: .7rem .75rem .55rem; }
 .static-asset-copy strong { overflow: hidden; color: #303632; font-size: .74rem; text-overflow: ellipsis; white-space: nowrap; }
 .static-asset-copy span { color: #87908a; font-size: .62rem; }
+.static-asset-card[draggable="true"] { cursor: grab; }
+.static-asset-card[draggable="true"]:active { cursor: grabbing; }
+.static-asset-copy .static-asset-tags { display: flex; flex-wrap: wrap; gap: .22rem; margin-top: .1rem; }
+.static-asset-copy .static-asset-tags span { max-width: 100%; overflow: hidden; padding: .14rem .4rem; border-radius: .35rem; color: #3f604c; background: #e7f0ea; font-size: .58rem; text-overflow: ellipsis; white-space: nowrap; }
 .static-asset-actions { display: flex; justify-content: flex-end; gap: .2rem; padding: 0 .55rem .55rem; }
 .static-asset-actions button { display: grid; width: 1.8rem; height: 1.8rem; place-items: center; padding: 0; border: 0; border-radius: .45rem; color: #748078; background: transparent; cursor: pointer; }
 .static-asset-actions button:hover { color: #315541; background: #e8efea; }

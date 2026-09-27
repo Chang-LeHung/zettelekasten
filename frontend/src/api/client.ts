@@ -277,6 +277,30 @@ export const tagClient = {
     )
   },
 
+  /** Attach one tag to a static asset, keeping the tags it already carries. */
+  assignAssetTag(tagId: string, assetId: string): Promise<StaticAsset> {
+    return request<StaticAsset>(
+      `/library/tags/${encodeURIComponent(tagId)}/assets/${encodeURIComponent(assetId)}`,
+      { method: 'PUT' },
+    )
+  },
+
+  /** Detach one tag from a static asset, keeping its other assignments. */
+  detachAssetTag(tagId: string, assetId: string): Promise<StaticAsset> {
+    return request<StaticAsset>(
+      `/library/tags/${encodeURIComponent(tagId)}/assets/${encodeURIComponent(assetId)}`,
+      { method: 'DELETE' },
+    )
+  },
+
+  /** Replace the complete tag set of one static asset. */
+  replaceAssetTags(assetId: string, paths: string[]): Promise<StaticAsset> {
+    return request<StaticAsset>(`/library/tags/assets/${encodeURIComponent(assetId)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ paths }),
+    })
+  },
+
   delete(tagId: string): Promise<{ ok: boolean }> {
     const params = new URLSearchParams({ recursive: 'true', force: 'true' })
     return request<{ ok: boolean }>(`/library/tags/${encodeURIComponent(tagId)}?${params}`, {

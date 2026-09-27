@@ -21,10 +21,10 @@ from zett.schemas import (
     AgentArtifactEntity,
     AgentSessionCreate,
     ArtifactStatus,
-    ArtifactTagEntity,
     CardArtifactContent,
     ImageArtifactContent,
     LatexPdfArtifactContent,
+    TagRefEntity,
 )
 
 RECEIPT_FIELDS = {
@@ -79,7 +79,7 @@ def test_receipt_carries_identity_state_and_server_assigned_locations() -> None:
     receipt = artifact_receipt(
         _entity(
             content,
-            tags=[ArtifactTagEntity(id="tag-1", path="Engineering/Python", name="Python")],
+            tags=[TagRefEntity(id="tag-1", path="Engineering/Python", name="Python")],
             raw_content="RAW SOURCE MUST NOT ENTER CONTEXT",
         )
     )

@@ -328,6 +328,8 @@ export interface StaticAsset {
   /** Derived `/api/files/...` URL; clients should not construct it themselves. */
   content_url: string
   metadata: Record<string, unknown>
+  /** Confirmed library tags; the same taxonomy artifacts carry. */
+  tags: Array<{ id: string; path: string; name: string }>
   created_at: string
   updated_at: string
 }

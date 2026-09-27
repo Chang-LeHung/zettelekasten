@@ -116,7 +116,6 @@ async def test_missing_asset_payload_does_not_mutate_storage(kind):
 
 def test_schema_and_http_surface_contain_no_retired_business_logic(isolated_database):
     expected_tables = {
-        "artifact_tags",
         "key_values",
         "model_usage_activity",
         "providers",
@@ -125,10 +124,13 @@ def test_schema_and_http_surface_contain_no_retired_business_logic(isolated_data
         "session_artifacts",
         "session_assets",
         "static_assets",
+        "tag_links",
         "tags",
     }
     expected_indexes = {
-        "ix_artifact_tags_tag_artifact",
+        "ix_tag_links_tag_id",
+        "ix_tag_links_target_id",
+        "ix_tag_links_target_type",
     }
     assert set(Base.metadata.tables) == expected_tables
     with sqlite3.connect(isolated_database) as connection:

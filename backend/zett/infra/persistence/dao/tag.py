@@ -1,4 +1,11 @@
-"""SQLAlchemy persistence for stable library tags and artifact assignments."""
+"""SQLAlchemy persistence for the library taxonomy and the resources it classifies.
+
+One ``tag_links`` table carries every assignment, and ``target_type`` says
+whether the row classifies an artifact or a static asset. Storage here never
+checks that the target exists: the service above is what knows which resource a
+caller meant, and it refuses a link to something that is not there before this
+layer writes one.
+"""
 
 from __future__ import annotations
 
@@ -10,10 +17,10 @@ from sqlalchemy.exc import IntegrityError
 from zett_agent.ids import new_uuid7
 
 from ...._compat import UTC
-from ....schemas import ArtifactTagEntity, TagEntity, TagListOptions, TagWrite
+from ....schemas import TagEntity, TagListOptions, TagRefEntity, TagTargetType, TagWrite
 from ..database import session_scope
 from ..storage import AsyncStorage
-from ..tables import ArtifactTagRow, TagRow
+from ..tables import TARGET_TO_CODE, TagLinkRow, TagRow
 
 
 def _tag_out(model: TagRow) -> TagEntity:
@@ -78,7 +85,7 @@ class TagStorage(AsyncStorage[TagWrite, TagEntity, str, TagListOptions]):
             model = await session.get(TagRow, entity_id)
             if model is None:
                 return False
-            await session.execute(sql_delete(ArtifactTagRow).where(ArtifactTagRow.tag_id == entity_id))
+            await session.execute(sql_delete(TagLinkRow).where(TagLinkRow.tag_id == entity_id))
             await session.delete(model)
             return True
 
@@ -93,39 +100,68 @@ class TagStorage(AsyncStorage[TagWrite, TagEntity, str, TagListOptions]):
             statement = statement.order_by(TagRow.normalized_path).limit(options.limit).offset(options.offset)
             return [_tag_out(model) for model in await session.scalars(statement)]
 
-    async def replace_artifact_tags(self, artifact_id: str, tag_ids: tuple[str, ...]) -> None:
-        """Atomically replace every confirmed tag assignment for one artifact."""
+    async def replace_tags(self, target_type: TagTargetType, target_id: str, tag_ids: tuple[str, ...]) -> None:
+        """Atomically replace every assignment one resource carries.
+
+        The delete and the inserts commit together, so a failure while resolving
+        a tag leaves the resource with the assignments it already had.
+        """
+        code = int(TARGET_TO_CODE[target_type])
         async with session_scope() as session:
-            await session.execute(sql_delete(ArtifactTagRow).where(ArtifactTagRow.artifact_id == artifact_id))
+            await session.execute(
+                sql_delete(TagLinkRow).where(
+                    TagLinkRow.target_type == code,
+                    TagLinkRow.target_id == target_id,
+                )
+            )
             now = datetime.now(UTC)
             for tag_id in dict.fromkeys(tag_ids):
                 if await session.get(TagRow, tag_id) is None:
                     raise KeyError(f"Tag not found: {tag_id}")
-                session.add(ArtifactTagRow(id=new_uuid7(), artifact_id=artifact_id, tag_id=tag_id, created_at=now))
+                session.add(
+                    TagLinkRow(
+                        id=new_uuid7(),
+                        target_type=code,
+                        target_id=target_id,
+                        tag_id=tag_id,
+                        created_at=now,
+                    )
+                )
 
-    async def tags_for_artifacts(self, artifact_ids: tuple[str, ...]) -> dict[str, list[ArtifactTagEntity]]:
-        if not artifact_ids:
+    async def tags_for(
+        self,
+        target_type: TagTargetType,
+        target_ids: tuple[str, ...],
+    ) -> dict[str, list[TagRefEntity]]:
+        """Return the tags each of these resources carries, keyed by resource id."""
+        if not target_ids:
             return {}
+        code = int(TARGET_TO_CODE[target_type])
         async with session_scope() as session:
             result = await session.execute(
-                select(ArtifactTagRow.artifact_id, TagRow.id, TagRow.path, TagRow.name)
-                .join(TagRow, TagRow.id == ArtifactTagRow.tag_id)
-                .where(ArtifactTagRow.artifact_id.in_(artifact_ids))
+                select(TagLinkRow.target_id, TagRow.id, TagRow.path, TagRow.name)
+                .join(TagRow, TagRow.id == TagLinkRow.tag_id)
+                .where(TagLinkRow.target_type == code, TagLinkRow.target_id.in_(target_ids))
                 .order_by(TagRow.normalized_path)
             )
             rows = result.all()
-        grouped: dict[str, list[ArtifactTagEntity]] = {}
-        for artifact_id, tag_id, path, name in rows:
-            grouped.setdefault(artifact_id, []).append(ArtifactTagEntity(id=tag_id, path=path, name=name))
+        grouped: dict[str, list[TagRefEntity]] = {}
+        for target_id, tag_id, path, name in rows:
+            grouped.setdefault(target_id, []).append(TagRefEntity(id=tag_id, path=path, name=name))
         return grouped
 
     async def assignments(self) -> dict[str, set[str]]:
-        """Return directly assigned artifact UUIDs keyed by tag UUID."""
+        """Return the directly assigned resource UUIDs keyed by tag UUID.
+
+        Artifacts and static assets share the key space because the tree counts
+        everything one tag classifies; a target id is a UUID either way, so the
+        two kinds cannot collide.
+        """
         async with session_scope() as session:
-            rows = (await session.execute(select(ArtifactTagRow.tag_id, ArtifactTagRow.artifact_id))).all()
+            rows = (await session.execute(select(TagLinkRow.tag_id, TagLinkRow.target_id))).all()
         result: dict[str, set[str]] = {}
-        for tag_id, artifact_id in rows:
-            result.setdefault(tag_id, set()).add(artifact_id)
+        for tag_id, target_id in rows:
+            result.setdefault(tag_id, set()).add(target_id)
         return result
 
     async def child_count(self, tag_id: str) -> int:
@@ -136,23 +172,33 @@ class TagStorage(AsyncStorage[TagWrite, TagEntity, str, TagListOptions]):
     async def assignment_count(self, tag_id: str) -> int:
         async with session_scope() as session:
             return (
-                await session.scalar(
-                    select(func.count()).select_from(ArtifactTagRow).where(ArtifactTagRow.tag_id == tag_id)
-                )
+                await session.scalar(select(func.count()).select_from(TagLinkRow).where(TagLinkRow.tag_id == tag_id))
                 or 0
             )
 
-    async def delete_artifact(self, artifact_id: str) -> int:
-        async with session_scope() as session:
-            result = await session.execute(sql_delete(ArtifactTagRow).where(ArtifactTagRow.artifact_id == artifact_id))
-            return result.rowcount
-
-    async def delete_artifacts(self, artifact_ids: tuple[str, ...]) -> int:
-        if not artifact_ids:
-            return 0
+    async def delete_links(self, target_type: TagTargetType, target_id: str) -> int:
+        """Remove every assignment one resource carried, for its own delete."""
+        code = int(TARGET_TO_CODE[target_type])
         async with session_scope() as session:
             result = await session.execute(
-                sql_delete(ArtifactTagRow).where(ArtifactTagRow.artifact_id.in_(artifact_ids))
+                sql_delete(TagLinkRow).where(
+                    TagLinkRow.target_type == code,
+                    TagLinkRow.target_id == target_id,
+                )
+            )
+            return result.rowcount
+
+    async def delete_target_links(self, target_type: TagTargetType, target_ids: tuple[str, ...]) -> int:
+        """Remove the assignments of several resources of one kind at once."""
+        if not target_ids:
+            return 0
+        code = int(TARGET_TO_CODE[target_type])
+        async with session_scope() as session:
+            result = await session.execute(
+                sql_delete(TagLinkRow).where(
+                    TagLinkRow.target_type == code,
+                    TagLinkRow.target_id.in_(target_ids),
+                )
             )
             return result.rowcount
 

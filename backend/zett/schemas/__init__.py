@@ -114,9 +114,10 @@ if TYPE_CHECKING:
         session_type_from_code,
     )
     from .tags import (
-        ArtifactTagEntity,
         SuggestedTag,
         TagEntity,
+        TagRefEntity,
+        TagTargetType,
         TagTreeEntity,
         TagWrite,
     )
@@ -145,7 +146,8 @@ _EXPORTS = {
     "ArtifactCreateContent": ".artifacts",
     "ArtifactListOptions": ".options",
     "ArtifactStatus": ".artifacts",
-    "ArtifactTagEntity": ".tags",
+    "TagRefEntity": ".tags",
+    "TagTargetType": ".tags",
     "ArtifactTextEdit": ".artifacts",
     "ArtifactType": ".artifacts",
     "CODE_TO_SESSION_TYPE": ".sessions",
@@ -241,7 +243,8 @@ __all__ = [
     "ArtifactCreateContent",
     "ArtifactListOptions",
     "ArtifactStatus",
-    "ArtifactTagEntity",
+    "TagRefEntity",
+    "TagTargetType",
     "ArtifactTextEdit",
     "ArtifactType",
     "CODE_TO_SESSION_TYPE",

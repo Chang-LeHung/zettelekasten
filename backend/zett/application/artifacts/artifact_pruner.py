@@ -33,7 +33,6 @@ from ...schemas import (
     ArticleArtifactContent,
     ArtifactContent,
     ArtifactStatus,
-    ArtifactTagEntity,
     ArtifactType,
     CardArtifactContent,
     CardType,
@@ -41,6 +40,7 @@ from ...schemas import (
     LatexPdfArtifactContent,
     SlidesArtifactContent,
     SuggestedTag,
+    TagRefEntity,
 )
 
 
@@ -125,7 +125,7 @@ class AgentArtifactPreview(BaseModel):
     published_content: ArtifactPreviewContent | None = None
     draft_content: ArtifactPreviewContent | None = None
     version: int = Field(ge=1)
-    tags: list[ArtifactTagEntity] = Field(default_factory=list)
+    tags: list[TagRefEntity] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 

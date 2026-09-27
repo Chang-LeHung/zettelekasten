@@ -1,23 +1,31 @@
 """Persistent tag taxonomy, assignment, API, and Agent tool tests."""
 
+import json
+from collections.abc import AsyncIterator
+
 import pytest
 from fastapi.testclient import TestClient
 from zett_agent.agent import (
+    Agent,
     AgentRunConfig,
     AgentRunContext,
     AgentState,
 )
+from zett_agent.messages import AssistantMessage, ToolCall, ToolMessage
+from zett_agent.model import ModelEvent, ModelRequest, ModelResponse
 
 from zett.agent.extensions import TagExtension
 from zett.application.tags.tagging import tag_service
-from zett.infra.persistence.dao import artifact_storage, session_storage, tag_storage
+from zett.infra.persistence.dao import artifact_storage, session_storage, static_asset_storage, tag_storage
 from zett.main import app
 from zett.schemas import (
     AgentArtifactWrite,
     AgentSessionCreate,
     ArtifactStatus,
     CardArtifactContent,
+    StaticAssetCreate,
     SuggestedTag,
+    TagTargetType,
 )
 
 
@@ -143,6 +151,103 @@ async def test_tag_extension_registers_real_taxonomy_tools() -> None:
     }
 
 
+def tool_payload(request: ModelRequest) -> dict[str, object]:
+    """Decode the latest successful object result from a model request."""
+    message = request.messages[-1]
+    assert isinstance(message, ToolMessage)
+    assert message.success
+    payload = json.loads(message.content)
+    assert isinstance(payload, dict)
+    return payload
+
+
+def tool_result(request: ModelRequest) -> object:
+    """Decode the latest successful tool result, whatever its JSON shape."""
+    message = request.messages[-1]
+    assert isinstance(message, ToolMessage)
+    assert message.success
+    return json.loads(message.content)
+
+
+class TagToolModel:
+    """Run the tag tools the way a model does, over one real artifact."""
+
+    def __init__(self, artifact_id: str) -> None:
+        self.step = 0
+        self.artifact_id = artifact_id
+        self.tag_id = ""
+
+    async def stream(self, request: ModelRequest) -> AsyncIterator[ModelEvent]:
+        match self.step:
+            case 0:
+                message = AssistantMessage(
+                    tool_calls=(ToolCall("create", "create_tag", {"path": "Engineering/Python", "color": "#3b82f6"}),)
+                )
+            case 1:
+                self.tag_id = str(tool_payload(request)["id"])
+                message = AssistantMessage(tool_calls=(ToolCall("list", "list_tags", {}),))
+            case 2:
+                paths = [node["path"] for node in json.loads(request.messages[-1].content)]
+                assert paths == ["Engineering"], paths
+                message = AssistantMessage(
+                    tool_calls=(
+                        ToolCall(
+                            "set-tags",
+                            "set_artifact_tags",
+                            {"artifact_id": self.artifact_id, "paths": ["Engineering/Python"]},
+                        ),
+                    )
+                )
+            case 3:
+                # The write answers with a bounded receipt, not the stored row.
+                receipt = tool_payload(request)
+                assert receipt["tags"] == ["Engineering/Python"]
+                assert "content" not in receipt
+                message = AssistantMessage(
+                    tool_calls=(
+                        ToolCall("rename", "update_tag", {"tag_id": self.tag_id, "path": "Engineering/Asyncio"}),
+                    )
+                )
+            case 4:
+                assert tool_payload(request)["path"] == "Engineering/Asyncio"
+                message = AssistantMessage(tool_calls=(ToolCall("guard", "delete_tag", {"tag_id": self.tag_id}),))
+            case 5:
+                refused = request.messages[-1]
+                assert isinstance(refused, ToolMessage)
+                assert not refused.success and "assigned" in refused.content
+                message = AssistantMessage(
+                    tool_calls=(ToolCall("force", "delete_tag", {"tag_id": self.tag_id, "force": True}),)
+                )
+            case _:
+                assert tool_result(request) is True
+                message = AssistantMessage(content="Classification complete.")
+        self.step += 1
+        yield ModelEvent.completed(ModelResponse(message))
+
+
+async def test_tag_tools_run_a_complete_classification_lifecycle() -> None:
+    """Every tag tool a model can call works against a real artifact.
+
+    Registration alone proves nothing: the tools resolve the artifact, write
+    through ``tag_storage``, honour the assignment guard, and answer with the
+    bounded receipt the artifact tools use.
+    """
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
+    artifact = await tagged_card(session_id)
+    model = TagToolModel(artifact.id)
+    agent = await Agent.create(model, config=AgentRunConfig(session_id=session_id), extensions=[TagExtension()])
+
+    result = await agent.run("Classify this card")
+
+    assert result.content == "Classification complete."
+    assert model.step == 7
+    stored = await artifact_storage.get(artifact.id)
+    assert stored is not None and stored.tags == []
+    # The forced delete removed the leaf and its assignment; the parent it was
+    # created under stays, because nothing asked for that one to go.
+    assert [tag.path for tag in await tag_storage.list()] == ["Engineering"]
+
+
 async def test_replacing_assignments_rolls_back_when_a_tag_is_missing() -> None:
     """The delete and the inserts share one transaction, so a failure keeps the old set.
 
@@ -158,7 +263,7 @@ async def test_replacing_assignments_rolls_back_when_a_tag_is_missing() -> None:
     await tag_service.replace_artifact_tags(artifact.id, ["Engineering/Python", "Projects/Zett"])
 
     with pytest.raises(KeyError):
-        await tag_storage.replace_artifact_tags(artifact.id, (keeper.id, "missing-tag"))
+        await tag_storage.replace_tags(TagTargetType.ARTIFACT, artifact.id, (keeper.id, "missing-tag"))
 
     refreshed = await artifact_storage.get(artifact.id)
     assert refreshed is not None
@@ -278,3 +383,97 @@ async def test_unchecking_a_suggestion_removes_it_when_the_artifact_is_saved() -
 
     assert saved.status_code == 200
     assert saved.json()["tags"] == []
+
+
+async def _library_file(name: str = "reference.txt", *, content: bytes = b"file body"):
+    return await static_asset_storage.create(StaticAssetCreate(name=name, mime_type="text/plain", content=content))
+
+
+async def test_a_static_asset_carries_the_same_taxonomy_as_an_artifact() -> None:
+    """One tag table classifies both kinds, and each link names which kind it is.
+
+    The link's ``target_type`` is what keeps the two apart: the same path may
+    classify a card and the file it was built from, and the tree counts every
+    resource a tag carries.
+    """
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
+    asset = await _library_file()
+    artifact = await tagged_card(session_id)
+
+    tagged = await tag_service.replace_asset_tags(asset.id, ["Engineering/Python"])
+    assert [tag.path for tag in tagged.tags] == ["Engineering/Python"]
+
+    confirmed = await tag_service.sync_confirmed_suggestions(artifact)
+    assert [tag.path for tag in confirmed.tags] == ["Engineering/Python/Asyncio"]
+
+    parent = next(node for node in await tag_service.list_tree() if node.path == "Engineering")
+    assert parent.total_count == 2
+    python = next(node for node in parent.children if node.path == "Engineering/Python")
+    assert python.direct_count == 1
+    assert python.total_count == 2
+    # Both reads group by the resource that carries the tag.
+    assert [tag.path for tag in (await static_asset_storage.get(asset.id)).tags] == ["Engineering/Python"]
+    assert [tag.path for tag in (await artifact_storage.get(artifact.id)).tags] == ["Engineering/Python/Asyncio"]
+
+
+async def test_static_asset_tagging_attaches_detaches_and_replaces() -> None:
+    asset = await _library_file("notes.pdf")
+    first = await tag_service.create_path("Projects/Zett")
+
+    attached = await tag_service.assign_asset_tag(asset.id, first.id)
+    assert [tag.path for tag in attached.tags] == ["Projects/Zett"]
+    # Attaching the same tag twice changes nothing.
+    assert len((await tag_service.assign_asset_tag(asset.id, first.id)).tags) == 1
+
+    replaced = await tag_service.replace_asset_tags(asset.id, ["Engineering/Python", "Projects/Zett"])
+    assert sorted(tag.path for tag in replaced.tags) == ["Engineering/Python", "Projects/Zett"]
+
+    detached = await tag_service.unassign_asset_tag(asset.id, first.id)
+    assert [tag.path for tag in detached.tags] == ["Engineering/Python"]
+    assert await tag_service.replace_asset_tags(asset.id, [])
+    assert (await static_asset_storage.get(asset.id)).tags == []
+
+    with pytest.raises(KeyError):
+        await tag_service.replace_asset_tags("missing-asset", ["Engineering/Python"])
+
+
+async def test_deleting_a_static_asset_removes_the_links_it_carried() -> None:
+    """No foreign key cleans this up, so the delete path has to."""
+    asset = await _library_file("doomed.txt")
+    tagged = await tag_service.replace_asset_tags(asset.id, ["Engineering/Python"])
+    tag_id = tagged.tags[0].id
+
+    assert await static_asset_storage.delete(asset.id) is True
+
+    assert await tag_storage.assignment_count(tag_id) == 0
+    # With the resource gone, the tag it carried is unused and can be deleted.
+    assert await tag_service.delete(tag_id) is True
+
+
+def test_asset_tag_api_attaches_detaches_and_replaces() -> None:
+    with TestClient(app) as client:
+        asset = client.post(
+            "/api/assets/upload?name=notes.txt",
+            content=b"file body",
+            headers={"content-type": "text/plain"},
+        ).json()
+        first = client.post("/api/library/tags", json={"path": "Engineering/Python"}).json()
+        second = client.post("/api/library/tags", json={"path": "Projects/Zett"}).json()
+
+        attached = client.put(f"/api/library/tags/{first['id']}/assets/{asset['id']}")
+        assert attached.status_code == 200
+        assert [tag["path"] for tag in attached.json()["tags"]] == ["Engineering/Python"]
+
+        replaced = client.put(f"/api/library/tags/assets/{asset['id']}", json={"paths": ["Projects/Zett"]})
+        assert [tag["path"] for tag in replaced.json()["tags"]] == ["Projects/Zett"]
+
+        detached = client.delete(f"/api/library/tags/{second['id']}/assets/{asset['id']}")
+        assert detached.status_code == 200
+        assert detached.json()["tags"] == []
+
+        # The uploaded asset lists its tags, and unknown ids are 404s.
+        listed = client.get("/api/assets").json()
+        assert listed[0]["id"] == asset["id"] and listed[0]["tags"] == []
+        assert client.put(f"/api/library/tags/{first['id']}/assets/missing").status_code == 404
+        assert client.put(f"/api/library/tags/missing/assets/{asset['id']}").status_code == 404
+        assert client.put("/api/library/tags/assets/missing", json={"paths": []}).status_code == 404

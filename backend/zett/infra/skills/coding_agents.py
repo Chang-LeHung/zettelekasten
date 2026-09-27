@@ -103,10 +103,12 @@ zett tag create Engineering/Python --description "Python notes" --color "#3b82f6
 zett tag update <tag-id> --path Engineering/Async --color "#8fa397"
 zett tag delete <tag-id> --recursive --force
 
-zett tag add <artifact-id> Engineering/Python       # keeps the tags it already has
-zett tag remove <artifact-id> Engineering/Python    # detach one existing tag
-zett tag set <artifact-id> Projects/Zett Release    # replace the whole set
-zett tag set <artifact-id> --clear                  # remove every tag
+zett tag add <artifact-id> Engineering/Python        # keeps the tags it already has
+zett tag add --asset <asset-id> Engineering/Python   # the same taxonomy, for an uploaded file
+zett tag remove <artifact-id> Engineering/Python     # detach one existing tag
+zett tag set <artifact-id> Projects/Zett Release     # replace the whole set
+zett tag set <artifact-id> --clear                   # remove every tag
+zett tag set --asset <asset-id> --clear              # every tag off one file
 ```
 
 Rules that matter:
@@ -115,6 +117,9 @@ Rules that matter:
   already means the same thing.
 - `direct` counts artifacts tagged exactly there, `total` adds its descendants,
   so a parent reads `0/1` when the only assignment sits on its child.
+- `add`, `remove`, and `set` take an artifact id; pass `--asset` to give a static
+  asset id instead. Artifacts and static assets share one taxonomy, so a path may
+  classify a card and the file it was built from, and the counts cover both.
 - `add` and `remove` name paths and change exactly that one assignment; `set` is
   the whole-set replace. Only `set` removes a tag you did not name, so reach for
   `add` when you mean "also".

@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator,
 from .._compat import Self, StrEnum
 from .cards import CardType, normalize_card_type
 from .common import ImageUrl, NonBlankName500
-from .tags import ArtifactTagEntity, SuggestedTag
+from .tags import SuggestedTag, TagRefEntity
 
 
 class ArtifactType(StrEnum):
@@ -413,7 +413,7 @@ class AgentArtifactEntity(BaseModel):
     raw_content: str | None = Field(default=None, description="Original input associated with this artifact")
     version: int = Field(default=1, ge=1, description="Monotonic revision number")
     metadata: dict[str, object] = Field(default_factory=dict, description="Extensible artifact metadata")
-    tags: list[ArtifactTagEntity] = Field(default_factory=list, description="Confirmed persistent library tags")
+    tags: list[TagRefEntity] = Field(default_factory=list, description="Confirmed persistent library tags")
     # Response-only ObjectStore URL. Example:
     # "/api/files/artifacts/<session_id>/<project>/paper.pdf".
     # Null for card/article/slides and for externally referenced images.

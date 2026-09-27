@@ -11,30 +11,32 @@ from .session_artifact import (
     STATUS_TO_CODE,
     TYPE_TO_CODE,
     ArtifactStatusCode,
-    ArtifactTagRow,
     ArtifactTypeCode,
     SessionArtifactRow,
 )
 from .session_asset import SessionAssetRow
 from .static_asset import StaticAssetRow
-from .tag import TagRow
+from .tag import CODE_TO_TARGET, TARGET_TO_CODE, TagLinkRow, TagRow, TagTargetTypeCode
 
 __all__ = [
     "ArtifactStatusCode",
-    "ArtifactTagRow",
     "ArtifactTypeCode",
     "Base",
     "CODE_TO_STATUS",
     "CODE_TO_TYPE",
+    "CODE_TO_TARGET",
     "KeyValueRow",
     "ModelUsageActivityRow",
     "ProviderRow",
     "ScheduledTaskRow",
     "ScheduledTaskRunRow",
     "STATUS_TO_CODE",
+    "TARGET_TO_CODE",
     "SessionArtifactRow",
     "SessionAssetRow",
     "StaticAssetRow",
     "TYPE_TO_CODE",
+    "TagLinkRow",
     "TagRow",
+    "TagTargetTypeCode",
 ]

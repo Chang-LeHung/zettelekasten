@@ -2,9 +2,9 @@
 
 from fastapi import APIRouter, HTTPException, Query, status
 
-from ....schemas import AgentArtifactEntity, TagEntity, TagTreeEntity
+from ....schemas import AgentArtifactEntity, StaticAssetEntity, TagEntity, TagTreeEntity
 from ...tags.tagging import tag_service
-from ..schemas import ArtifactTagsIn, TagCreateIn, TagUpdateIn
+from ..schemas import ArtifactTagsIn, AssetTagsIn, TagCreateIn, TagUpdateIn
 
 router = APIRouter(prefix="/library/tags", tags=["library-tags"])
 
@@ -101,6 +101,44 @@ async def unassign_tag_from_artifact(tag_id: str, artifact_id: str) -> AgentArti
     """Detach one tag from one artifact, keeping that artifact's other tags."""
     try:
         return await tag_service.unassign_tag(artifact_id, tag_id)
+    except KeyError as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
+
+
+@router.put("/assets/{asset_id}", response_model=StaticAssetEntity)
+async def replace_asset_tags(asset_id: str, payload: AssetTagsIn) -> StaticAssetEntity:
+    """Replace the confirmed classification of one static asset.
+
+    Static assets and artifacts share one taxonomy, so this is the asset-shaped
+    form of the artifact route above: the caller states the complete set, and the
+    editor that only knows what it changed uses the id-scoped routes below.
+    """
+    try:
+        return await tag_service.replace_asset_tags(asset_id, payload.paths)
+    except KeyError as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
+
+
+@router.put("/{tag_id}/assets/{asset_id}", response_model=StaticAssetEntity)
+async def assign_tag_to_asset(tag_id: str, asset_id: str) -> StaticAssetEntity:
+    """Attach one tag to one static asset, keeping that asset's other tags."""
+    try:
+        return await tag_service.assign_asset_tag(asset_id, tag_id)
+    except KeyError as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
+
+
+@router.delete("/{tag_id}/assets/{asset_id}", response_model=StaticAssetEntity)
+async def unassign_tag_from_asset(tag_id: str, asset_id: str) -> StaticAssetEntity:
+    """Detach one tag from one static asset, keeping that asset's other tags."""
+    try:
+        return await tag_service.unassign_asset_tag(asset_id, tag_id)
     except KeyError as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
     except ValueError as error:

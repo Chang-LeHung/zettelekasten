@@ -258,6 +258,48 @@ def test_set_replaces_the_whole_set_or_clears_it(
     assert recorder.calls[1] == ("PUT", "/api/library/tags/artifacts/artifact-1", {"paths": []})
 
 
+def test_asset_flag_points_every_assignment_at_a_static_asset(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """One set of commands classifies both kinds; --asset picks the endpoint."""
+    recorder = Recorder(
+        _tree(),
+        _artifact("Engineering/Python"),
+        _tree(),
+        _artifact("Engineering/Python"),
+        _artifact("Projects/Zett"),
+    )
+    monkeypatch.setattr(tag, "request_json", recorder)
+
+    assert tag.main(["add", "--asset", "asset-1", "Engineering/Python"]) == 0
+    assert recorder.calls[1] == ("PUT", "/api/library/tags/tag-python/assets/asset-1", None)
+    assert capsys.readouterr().out == "Engineering/Python\n"
+
+    assert tag.main(["remove", "--asset", "asset-1", "Engineering/Python"]) == 0
+    assert recorder.calls[3] == ("DELETE", "/api/library/tags/tag-python/assets/asset-1", None)
+    capsys.readouterr()
+
+    assert tag.main(["set", "--asset", "asset-1", "Projects/Zett"]) == 0
+    assert capsys.readouterr().out == "Projects/Zett\n"
+    assert recorder.calls[4] == ("PUT", "/api/library/tags/assets/asset-1", {"paths": ["Projects/Zett"]})
+
+
+def test_asset_flag_is_reported_as_a_static_asset_id(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    recorder = Recorder(_artifact())
+    monkeypatch.setattr(tag, "request_json", recorder)
+
+    with pytest.raises(SystemExit) as exit_info:
+        tag.main(["set", "--asset", " ", "--clear"])
+
+    assert exit_info.value.code == 2
+    assert "static asset id cannot be blank" in capsys.readouterr().err
+    assert recorder.calls == []
+
+
 def test_delete_sends_the_destructive_flags_the_api_requires(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],

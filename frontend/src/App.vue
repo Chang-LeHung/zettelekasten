@@ -18,6 +18,7 @@ import { addAgentUsage, latestAgentUsage, summarizeAgentUsage } from './utils/ag
 import { artifactContentFromLibraryUpdate, artifactEditableContent, hasPendingDraft, libraryItemFromArtifact } from './utils/artifactEditor'
 import { artifactListsEquivalent, sameArtifactRevision, stabilizeArtifactReferences } from './utils/artifactStability'
 import { diffArtifactContent } from './utils/artifactDiff'
+import { addTagPath } from './utils/tagAssignment'
 import { assetOpenAction, isPdfAsset } from './utils/assetOpen'
 import { createAsyncRefreshScheduler } from './utils/asyncRefresh'
 import { AtCommandInput, type AtCommandMatch } from './utils/atCommand'
@@ -149,6 +150,7 @@ const libraryEditorSaving = ref(false)
 const libraryLoading = ref(false)
 const deletingLibraryItemId = ref<string | null>(null)
 const draggingLibraryItem = ref<LibraryItem | null>(null)
+const draggingStaticAsset = ref<StaticAsset | null>(null)
 const tagDropTargetId = ref<string | null>(null)
 const tagAssignmentBusy = ref(false)
 const tags = ref<Tag[]>([])
@@ -243,6 +245,7 @@ const assetsPaneHidden = ref(readPaneHidden(assetsPaneKey))
 const pdfPreviewRef = ref<{ refit: () => void } | null>(null)
 const staticAssetImportOpen = ref(false)
 const staticAssets = ref<StaticAsset[]>([])
+const staticAssetsView = ref<{ reload: () => Promise<void> } | null>(null)
 const staticAssetsLoading = ref(false)
 const staticAssetImportingId = ref<string | null>(null)
 const sessions = ref<AgentSession[]>([])
@@ -1483,16 +1486,33 @@ function endLibraryItemDrag(): void {
   tagDropTargetId.value = null
 }
 
-function draggedLibraryItem(event: DragEvent): LibraryItem | null {
-  if (draggingLibraryItem.value) return draggingLibraryItem.value
+/** What a drag carries: a library artifact, or a static asset from the asset view. */
+type DraggedResource =
+  | { kind: 'artifact'; item: LibraryItem }
+  | { kind: 'asset'; asset: StaticAsset }
+
+function startStaticAssetDrag(asset: StaticAsset): void {
+  draggingStaticAsset.value = asset
+  tagDropTargetId.value = null
+}
+
+function endStaticAssetDrag(): void {
+  draggingStaticAsset.value = null
+  tagDropTargetId.value = null
+}
+
+function draggedResource(event: DragEvent): DraggedResource | null {
+  if (draggingLibraryItem.value) return { kind: 'artifact', item: draggingLibraryItem.value }
+  if (draggingStaticAsset.value) return { kind: 'asset', asset: draggingStaticAsset.value }
   const artifactId = event.dataTransfer?.getData('application/x-zett-artifact-id')
     || event.dataTransfer?.getData('text/plain')
-  return libraryItems.value.find((item) => item.id === artifactId) || null
+  const item = libraryItems.value.find((candidate) => candidate.id === artifactId)
+  return item ? { kind: 'artifact', item } : null
 }
 
 function handleTagDragOver(tag: Tag, event: DragEvent): void {
-  const item = draggedLibraryItem(event)
-  if (!item || tagAssignmentBusy.value) return
+  const dragged = draggedResource(event)
+  if (!dragged || tagAssignmentBusy.value) return
   event.preventDefault()
   if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
   tagDropTargetId.value = tag.id
@@ -1513,29 +1533,42 @@ function applyArtifactTags(artifact: AgentArtifact): void {
   if (selectedLibraryItem.value) selectedLibraryItem.value = updateItem(selectedLibraryItem.value)
 }
 
-async function dropLibraryItemOnTag(tag: Tag, event: DragEvent): Promise<void> {
-  const item = draggedLibraryItem(event)
-  if (!item || tagAssignmentBusy.value) return
+async function dropResourceOnTag(tag: Tag, event: DragEvent): Promise<void> {
+  const dragged = draggedResource(event)
+  if (!dragged || tagAssignmentBusy.value) return
   event.preventDefault()
-  const nextPaths = [...new Set([...item.tags, tag.path])]
-  if (nextPaths.length === item.tags.length) {
-    showNotice(`“${item.title}” is already in ${tag.path}`)
+  const current = dragged.kind === 'artifact' ? dragged.item.tags : dragged.asset.tags.map((item) => item.path)
+  const assignment = addTagPath(current, tag.path)
+  const label = dragged.kind === 'artifact' ? dragged.item.title : dragged.asset.name
+  if (!assignment.changed) {
+    showNotice(`“${label}” is already in ${tag.path}`)
     endLibraryItemDrag()
+    endStaticAssetDrag()
     return
   }
 
   tagAssignmentBusy.value = true
   try {
-    const updated = await tagClient.replaceArtifactTags(item.id, nextPaths)
-    applyArtifactTags(updated)
+    if (dragged.kind === 'artifact') {
+      applyArtifactTags(await tagClient.replaceArtifactTags(dragged.item.id, assignment.paths))
+    } else {
+      applyAssetTags(await tagClient.replaceAssetTags(dragged.asset.id, assignment.paths))
+    }
     tags.value = await tagClient.list()
-    showNotice(`Added “${item.title}” to ${tag.path}`)
+    showNotice(`Added “${label}” to ${tag.path}`)
   } catch (error) {
     showNotice(errorMessage(error), 'error')
   } finally {
     tagAssignmentBusy.value = false
     endLibraryItemDrag()
+    endStaticAssetDrag()
   }
+}
+
+/** Keep both asset lists in step: this view's, and the one the asset view owns. */
+function applyAssetTags(asset: StaticAsset): void {
+  staticAssets.value = staticAssets.value.map((item) => (item.id === asset.id ? asset : item))
+  void staticAssetsView.value?.reload()
 }
 
 async function deleteLibraryItem(item: LibraryItem): Promise<void> {
@@ -3329,7 +3362,7 @@ onBeforeUnmount(() => {
             @dragenter="handleTagDragOver(tag, $event)"
             @dragover="handleTagDragOver(tag, $event)"
             @dragleave="handleTagDragLeave(tag, $event)"
-            @drop="dropLibraryItemOnTag(tag, $event)"
+            @drop="dropResourceOnTag(tag, $event)"
           >
             <button
               v-if="tag.hasChildren"
@@ -4035,7 +4068,11 @@ onBeforeUnmount(() => {
       </template>
 
       <template v-else-if="view === 'assets'">
-        <StaticAssetsView />
+        <StaticAssetsView
+          ref="staticAssetsView"
+          @drag-start="startStaticAssetDrag"
+          @drag-end="endStaticAssetDrag"
+        />
       </template>
 
       <template v-else-if="view === 'scheduledTasks'">

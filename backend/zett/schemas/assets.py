@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from .._compat import StrEnum
 from .common import HttpUrl, NonBlankName500
+from .tags import TagRefEntity
 
 
 class SessionAssetType(StrEnum):
@@ -107,5 +108,9 @@ class StaticAssetEntity(BaseModel):
     # Example: "/api/files/assets/static/<static_asset_id>.pdf".
     content_url: str = Field(description="Derived URL for previewing or downloading this object")
     metadata: dict[str, object] = Field(default_factory=dict, description="Extensible asset metadata")
+    tags: list[TagRefEntity] = Field(
+        default_factory=list,
+        description="Confirmed persistent library tags; a static asset shares the taxonomy artifacts use",
+    )
     created_at: datetime = Field(description="UTC creation timestamp")
     updated_at: datetime = Field(description="UTC last modification timestamp")
