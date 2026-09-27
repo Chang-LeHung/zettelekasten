@@ -1,15 +1,17 @@
 """Persistence definitions for versioned artifacts produced by agent sessions.
 
 Everything the artifact tables need is defined here: the integer codes stored in
-``artifact_type`` and ``status``, the ``session_artifacts`` row itself, and the
-explicit ``artifact_tags`` relation. Storage adapters translate between these
-rows and the typed schemas; they do not redefine the encoding.
+``artifact_type`` and ``status`` and the ``session_artifacts`` row itself. The
+classifications an artifact carries live in ``tag_links`` next to the taxonomy
+they point at, because one relation classifies artifacts and static assets alike.
+Storage adapters translate between these rows and the typed schemas; they do not
+redefine the encoding.
 """
 
 from datetime import datetime
 from enum import IntEnum
 
-from sqlalchemy import Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ....schemas import ArtifactStatus, ArtifactType
@@ -80,22 +82,3 @@ class SessionArtifactRow(Base):
     created_at: Mapped[datetime] = mapped_column()
     # UTC timestamp when content, draft, or metadata was last replaced.
     updated_at: Mapped[datetime] = mapped_column(index=True)
-
-
-class ArtifactTagRow(Base):
-    """Explicit association between an artifact and a confirmed tag.
-
-    The relation has no foreign keys by design: deleting an artifact removes its
-    rows here explicitly, together with the artifact row itself.
-    """
-
-    __tablename__ = "artifact_tags"
-    __table_args__ = (
-        UniqueConstraint("artifact_id", "tag_id", name="uq_artifact_tag"),
-        Index("ix_artifact_tags_tag_artifact", "tag_id", "artifact_id"),
-    )
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    artifact_id: Mapped[str] = mapped_column(String(36), index=True)
-    tag_id: Mapped[str] = mapped_column(String(36), index=True)
-    created_at: Mapped[datetime] = mapped_column(index=True)

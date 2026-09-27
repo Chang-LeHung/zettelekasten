@@ -6,6 +6,20 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from .._compat import StrEnum
+
+
+class TagTargetType(StrEnum):
+    """Which kind of resource a tag link classifies.
+
+    The taxonomy itself is shared, so the type belongs to the link: the same tag
+    may classify an artifact and a static asset, and a caller that reads or
+    replaces one resource's tags states which kind it means.
+    """
+
+    ARTIFACT = "artifact"
+    ASSET = "asset"
+
 
 class SuggestedTag(BaseModel):
     """AI-proposed tag that requires user confirmation before saving."""
@@ -35,8 +49,8 @@ class TagEntity(TagWrite):
     updated_at: datetime
 
 
-class ArtifactTagEntity(BaseModel):
-    """Stable tag reference assigned to an artifact."""
+class TagRefEntity(BaseModel):
+    """Stable tag reference carried by one classified resource."""
 
     id: str
     path: str
@@ -44,7 +58,11 @@ class ArtifactTagEntity(BaseModel):
 
 
 class TagTreeEntity(TagEntity):
-    """Hierarchical tag facet with direct and descendant artifact counts."""
+    """Hierarchical tag facet with direct and descendant assignment counts.
+
+    Counts cover every resource a tag classifies — artifacts and static assets
+    alike — because the question the tree answers is "what carries this tag".
+    """
 
     direct_count: int = Field(default=0, ge=0)
     total_count: int = Field(default=0, ge=0)

@@ -8,16 +8,17 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+from sqlalchemy import delete as sql_delete
 from sqlalchemy import select
 from zett_agent.ids import new_uuid7
 
 from ...._compat import UTC
 from ....application.files.object_store import static_asset_key
-from ....schemas import StaticAssetCreate, StaticAssetEntity, StaticAssetListOptions
+from ....schemas import StaticAssetCreate, StaticAssetEntity, StaticAssetListOptions, TagRefEntity, TagTargetType
 from ...files.object_store import get_object_store
 from ..database import session_scope
 from ..storage import AsyncStorage
-from ..tables import StaticAssetRow
+from ..tables import TARGET_TO_CODE, StaticAssetRow, TagLinkRow
 
 
 def _safe_suffix(name: str) -> str:
@@ -26,7 +27,7 @@ def _safe_suffix(name: str) -> str:
     return suffix if re.fullmatch(r"\.[a-z0-9]+", suffix) else ""
 
 
-def _asset_out(model: StaticAssetRow) -> StaticAssetEntity:
+def _asset_out(model: StaticAssetRow, *, tags: list[TagRefEntity] | None = None) -> StaticAssetEntity:
     """Convert one persisted row into its public typed representation."""
     object_store = get_object_store()
     return StaticAssetEntity(
@@ -38,6 +39,7 @@ def _asset_out(model: StaticAssetRow) -> StaticAssetEntity:
         storage_path=model.storage_path,
         content_url=object_store.url(model.storage_path),
         metadata=json.loads(model.metadata_value),
+        tags=tags or [],
         created_at=model.created_at,
         updated_at=model.updated_at,
     )
@@ -76,7 +78,13 @@ class StaticAssetStorage(AsyncStorage[StaticAssetCreate, StaticAssetEntity, str,
     async def get(self, entity_id: str) -> StaticAssetEntity | None:
         async with session_scope() as session:
             model = await session.get(StaticAssetRow, entity_id)
-            return _asset_out(model) if model is not None else None
+            asset = _asset_out(model) if model is not None else None
+        if asset is None:
+            return None
+        from .tag import tag_storage
+
+        tags = (await tag_storage.tags_for(TagTargetType.ASSET, (entity_id,))).get(entity_id, [])
+        return asset.model_copy(update={"tags": tags})
 
     async def update(self, entity_id: str, entity: StaticAssetCreate) -> StaticAssetEntity:
         """Replace file content and editable metadata while retaining identity."""
@@ -111,13 +119,19 @@ class StaticAssetStorage(AsyncStorage[StaticAssetCreate, StaticAssetEntity, str,
         return result
 
     async def delete(self, entity_id: str) -> bool:
-        """Delete metadata first, then explicitly remove the owned file."""
+        """Delete metadata and its tag links first, then explicitly remove the owned file."""
         storage_path: str | None = None
         async with session_scope() as session:
             model = await session.get(StaticAssetRow, entity_id)
             if model is None:
                 return False
             storage_path = model.storage_path
+            await session.execute(
+                sql_delete(TagLinkRow).where(
+                    TagLinkRow.target_type == int(TARGET_TO_CODE[TagTargetType.ASSET]),
+                    TagLinkRow.target_id == entity_id,
+                )
+            )
             await session.delete(model)
         if storage_path is not None:
             await get_object_store().delete(storage_path)
@@ -134,7 +148,11 @@ class StaticAssetStorage(AsyncStorage[StaticAssetCreate, StaticAssetEntity, str,
                 .limit(options.limit)
                 .offset(options.offset)
             )
-            return [_asset_out(model) for model in await session.scalars(statement)]
+            assets = [_asset_out(model) for model in await session.scalars(statement)]
+        from .tag import tag_storage
+
+        tags = await tag_storage.tags_for(TagTargetType.ASSET, tuple(asset.id for asset in assets))
+        return [asset.model_copy(update={"tags": tags.get(asset.id, [])}) for asset in assets]
 
     async def content_path(self, entity_id: str) -> Path | None:
         """Resolve one stored file after confirming its metadata exists."""

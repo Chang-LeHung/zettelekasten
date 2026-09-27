@@ -110,6 +110,9 @@ zett tag delete <tag-id> --recursive --force    # explicit flags for children an
 zett tag add <artifact-id> Engineering/Python   # keeps the tags it already carries
 zett tag remove <artifact-id> Engineering/Python
 zett tag set <artifact-id> Projects/Zett        # replaces the whole set; --clear empties it
+
+zett tag add --asset <asset-id> Engineering/Python   # the same taxonomy, for an uploaded file
+zett tag set --asset <asset-id> --clear              # every tag off that file
 ```
 
 `zett tag add`/`remove` name tags by path and resolve them against the tree, then
@@ -117,6 +120,9 @@ attach or detach exactly that one assignment; `zett tag set` is the editor's
 whole-set replace. Only saved artifacts carry tags. Assigning a path the
 taxonomy does not have yet creates it — `add` and `set` do that, while `remove`
 refuses a path that does not exist instead of inventing a tag to detach.
+Pass `--asset` on any of the three to name a static asset instead of an
+artifact: both share one taxonomy, so a path may classify a card and the file it
+was built from, and the counts in `zett tag list` cover both.
 
 Every `zett tag list` line is `path  direct/total  id`. `direct` counts the
 artifacts tagged exactly there, and `total` adds the ones tagged in its

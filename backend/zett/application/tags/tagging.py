@@ -4,14 +4,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ...infra.persistence.dao import artifact_storage, tag_storage
+from ...infra.persistence.dao import artifact_storage, static_asset_storage, tag_storage
 from ...schemas import (
     AgentArtifactEntity,
     ArtifactContent,
     ArtifactStatus,
+    StaticAssetEntity,
     SuggestedTag,
     TagEntity,
     TagListOptions,
+    TagTargetType,
     TagTreeEntity,
     TagWrite,
 )
@@ -160,11 +162,40 @@ class TagService:
 
     async def replace_artifact_tags(self, artifact_id: str, paths: list[str]) -> AgentArtifactEntity:
         await self._tagged_artifact(artifact_id)
-        tags = [await self.create_path(path) for path in dict.fromkeys(paths)]
-        await tag_storage.replace_artifact_tags(artifact_id, tuple(tag.id for tag in tags))
-        refreshed = await artifact_storage.get(artifact_id)
-        if refreshed is None:  # pragma: no cover - guarded above
+        refreshed = await self._replace_tags(TagTargetType.ARTIFACT, artifact_id, paths)
+        if not isinstance(refreshed, AgentArtifactEntity):  # pragma: no cover - the kind decides
             raise KeyError(f"Artifact not found: {artifact_id}")
+        return refreshed
+
+    async def replace_asset_tags(self, asset_id: str, paths: list[str]) -> StaticAssetEntity:
+        """Replace the confirmed classification of one static asset.
+
+        Static assets are library files, so they carry tags the same way
+        artifacts do and share the taxonomy with them: the same path may
+        classify a card and the file it was built from.
+        """
+        await self._tagged_asset(asset_id)
+        refreshed = await self._replace_tags(TagTargetType.ASSET, asset_id, paths)
+        if not isinstance(refreshed, StaticAssetEntity):  # pragma: no cover - the kind decides
+            raise KeyError(f"Static asset not found: {asset_id}")
+        return refreshed
+
+    async def _replace_tags(
+        self,
+        target_type: TagTargetType,
+        target_id: str,
+        paths: list[str],
+    ) -> AgentArtifactEntity | StaticAssetEntity:
+        """Write one resource's complete tag set and return the refreshed resource."""
+        tags = [await self.create_path(path) for path in dict.fromkeys(paths)]
+        await tag_storage.replace_tags(target_type, target_id, tuple(tag.id for tag in tags))
+        refreshed = (
+            await artifact_storage.get(target_id)
+            if target_type is TagTargetType.ARTIFACT
+            else await static_asset_storage.get(target_id)
+        )
+        if refreshed is None:  # pragma: no cover - guarded above
+            raise KeyError(f"Tagged resource not found: {target_id}")
         return refreshed
 
     async def assign_tag(self, artifact_id: str, tag_id: str) -> AgentArtifactEntity:
@@ -190,6 +221,24 @@ class TagService:
             return current
         return await self.replace_artifact_tags(artifact_id, paths)
 
+    async def assign_asset_tag(self, asset_id: str, tag_id: str) -> StaticAssetEntity:
+        """Attach one tag to one static asset, keeping the tags it already carries."""
+        tag = await self.require(tag_id)
+        current = await self._tagged_asset(asset_id)
+        paths = [assignment.path for assignment in current.tags]
+        if tag.path in paths:
+            return current
+        return await self.replace_asset_tags(asset_id, [*paths, tag.path])
+
+    async def unassign_asset_tag(self, asset_id: str, tag_id: str) -> StaticAssetEntity:
+        """Detach one tag from one static asset, leaving every other assignment alone."""
+        tag = await self.require(tag_id)
+        current = await self._tagged_asset(asset_id)
+        paths = [assignment.path for assignment in current.tags if assignment.path != tag.path]
+        if len(paths) == len(current.tags):
+            return current
+        return await self.replace_asset_tags(asset_id, paths)
+
     @staticmethod
     async def _tagged_artifact(artifact_id: str) -> AgentArtifactEntity:
         """Return one artifact that may carry persistent tags."""
@@ -199,6 +248,18 @@ class TagService:
         if artifact.status != ArtifactStatus.SAVED:
             raise ValueError("Only saved artifacts can receive persistent tags")
         return artifact
+
+    @staticmethod
+    async def _tagged_asset(asset_id: str) -> StaticAssetEntity:
+        """Return one static asset that may carry persistent tags.
+
+        Unlike an artifact, a static asset has no draft state: it exists in the
+        library from the moment it is uploaded, so existence is the whole check.
+        """
+        asset = await static_asset_storage.get(asset_id)
+        if asset is None:
+            raise KeyError(f"Static asset not found: {asset_id}")
+        return asset
 
     async def sync_confirmed_suggestions(
         self,

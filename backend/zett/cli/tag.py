@@ -78,10 +78,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     add = commands.add_parser(
         "add",
-        help="Attach tags to an artifact",
-        description="Attach tags to one artifact, keeping the tags it already carries.",
+        help="Attach tags to an artifact or static asset",
+        description=(
+            "Attach tags to one library resource — an artifact, or a static asset with --asset — "
+            "keeping the tags it already carries. Both kinds share one taxonomy."
+        ),
     )
-    add.add_argument("artifact_id", help="Artifact id, as `zett artifact create` prints it")
+    add.add_argument(
+        "resource_id",
+        metavar="ID",
+        help="Artifact id, or a static asset id when --asset is set",
+    )
     add.add_argument(
         "paths",
         nargs="+",
@@ -89,30 +96,46 @@ def build_parser() -> argparse.ArgumentParser:
         help="Tag paths to attach, for example Engineering/Python or Projects/Zett; a path the taxonomy "
         "does not have yet is created",
     )
-    add.add_argument("--json", action="store_true", help="Print the artifact instead of its tag paths")
+    _add_resource_kind(add)
+    add.add_argument("--json", action="store_true", help="Print the resource instead of its tag paths")
     add.set_defaults(handler=_add)
 
     remove = commands.add_parser(
         "remove",
-        help="Detach tags from an artifact",
-        description="Detach tags from one artifact, keeping the tags it still carries.",
+        help="Detach tags from an artifact or static asset",
+        description=(
+            "Detach tags from one library resource — an artifact, or a static asset with --asset — "
+            "keeping the tags it still carries."
+        ),
     )
-    remove.add_argument("artifact_id", help="Artifact id, as `zett artifact create` prints it")
+    remove.add_argument(
+        "resource_id",
+        metavar="ID",
+        help="Artifact id, or a static asset id when --asset is set",
+    )
     remove.add_argument(
         "paths",
         nargs="+",
         metavar="TAG_PATH",
         help="Tag paths to detach, for example Engineering/Python; the path has to exist already",
     )
-    remove.add_argument("--json", action="store_true", help="Print the artifact instead of its tag paths")
+    _add_resource_kind(remove)
+    remove.add_argument("--json", action="store_true", help="Print the resource instead of its tag paths")
     remove.set_defaults(handler=_remove)
 
     replace = commands.add_parser(
         "set",
-        help="Replace the tag set of an artifact",
-        description="Replace every tag an artifact carries with the paths given here.",
+        help="Replace the tag set of an artifact or static asset",
+        description=(
+            "Replace every tag one library resource carries — an artifact, or a static asset with "
+            "--asset — with the paths given here."
+        ),
     )
-    replace.add_argument("artifact_id", help="Artifact id, as `zett artifact create` prints it")
+    replace.add_argument(
+        "resource_id",
+        metavar="ID",
+        help="Artifact id, or a static asset id when --asset is set",
+    )
     replace.add_argument(
         "paths",
         nargs="*",
@@ -120,10 +143,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="The complete tag set, for example Engineering/Python Projects/Zett; a path the taxonomy "
         "does not have yet is created",
     )
+    _add_resource_kind(replace)
     replace.add_argument("--clear", action="store_true", help="Assign no tags at all")
-    replace.add_argument("--json", action="store_true", help="Print the artifact instead of its tag paths")
+    replace.add_argument("--json", action="store_true", help="Print the resource instead of its tag paths")
     replace.set_defaults(handler=_set)
     return parser
+
+
+def _add_resource_kind(parser: argparse.ArgumentParser) -> None:
+    """Let one command classify either kind of library resource.
+
+    Artifacts and static assets share the taxonomy, so the only thing a caller
+    has to state is which kind the id names: the endpoint differs, the meaning of
+    a tag does not.
+    """
+    parser.add_argument(
+        "--asset",
+        action="store_true",
+        help="Treat ID as a static asset id instead of an artifact id",
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -222,44 +260,52 @@ def _delete(args: argparse.Namespace) -> int:
 
 
 def _add(args: argparse.Namespace) -> int:
-    """Attach every named path to one artifact, one assignment at a time.
+    """Attach every named path to one resource, one assignment at a time.
 
     A path the taxonomy does not have yet is created first, because assigning a
     tag the server has never seen is how a shell names a new one.
     """
-    artifact_id = urllib.parse.quote(validation.identifier(args.artifact_id, field="artifact id"))
+    kind, resource_id = _tagged_resource(args)
     paths = [validation.tag_path(path) for path in args.paths]
     known = {node["path"]: node["id"] for _, node in _walk(request_json("GET", TAGS_PATH))}
-    artifact: dict[str, Any] | None = None
+    tagged: dict[str, Any] | None = None
     for path in paths:
         tag_id = known.get(path) or request_json("POST", TAGS_PATH, {"path": path})["id"]
-        artifact = request_json("PUT", f"{TAGS_PATH}/{tag_id}/artifacts/{artifact_id}")
-    assert artifact is not None  # `paths` is a required argument
-    return _print_artifact(artifact, as_json=args.json)
+        tagged = request_json("PUT", f"{TAGS_PATH}/{tag_id}/{kind}/{resource_id}")
+    assert tagged is not None  # `paths` is a required argument
+    return _print_tagged_resource(tagged, as_json=args.json)
 
 
 def _remove(args: argparse.Namespace) -> int:
-    """Detach every named path from one artifact, one assignment at a time."""
-    artifact_id = urllib.parse.quote(validation.identifier(args.artifact_id, field="artifact id"))
-    artifact: dict[str, Any] | None = None
+    """Detach every named path from one resource, one assignment at a time."""
+    kind, resource_id = _tagged_resource(args)
+    tagged: dict[str, Any] | None = None
     for tag_id in _tag_ids([validation.tag_path(path) for path in args.paths]).values():
-        artifact = request_json("DELETE", f"{TAGS_PATH}/{tag_id}/artifacts/{artifact_id}")
-    assert artifact is not None  # `paths` is a required argument
-    return _print_artifact(artifact, as_json=args.json)
+        tagged = request_json("DELETE", f"{TAGS_PATH}/{tag_id}/{kind}/{resource_id}")
+    assert tagged is not None  # `paths` is a required argument
+    return _print_tagged_resource(tagged, as_json=args.json)
 
 
 def _set(args: argparse.Namespace) -> int:
-    """Replace the complete tag set of one artifact."""
+    """Replace the complete tag set of one resource."""
     if args.clear and args.paths:
         raise UsageError("--clear assigns no tags, so it cannot be combined with tag paths")
     if not args.clear and not args.paths:
         raise UsageError("name at least one TAG_PATH, or pass --clear to remove every tag")
-    artifact_id = validation.identifier(args.artifact_id, field="artifact id")
-    path = f"{TAGS_PATH}/artifacts/{urllib.parse.quote(artifact_id)}"
-    artifact = request_json(
-        "PUT", path, {"paths": [] if args.clear else [validation.tag_path(item) for item in args.paths]}
+    kind, resource_id = _tagged_resource(args)
+    tagged = request_json(
+        "PUT",
+        f"{TAGS_PATH}/{kind}/{resource_id}",
+        {"paths": [] if args.clear else [validation.tag_path(item) for item in args.paths]},
     )
-    return _print_artifact(artifact, as_json=args.json)
+    return _print_tagged_resource(tagged, as_json=args.json)
+
+
+def _tagged_resource(args: argparse.Namespace) -> tuple[str, str]:
+    """Return the endpoint segment and quoted id this command's id names."""
+    field = "static asset id" if args.asset else "artifact id"
+    resource_id = urllib.parse.quote(validation.identifier(args.resource_id, field=field))
+    return ("assets" if args.asset else "artifacts", resource_id)
 
 
 def _tag_ids(paths: Sequence[str]) -> dict[str, str]:
@@ -284,11 +330,11 @@ def _print_tag(tag: dict[str, Any], *, as_json: bool) -> int:
     return 0
 
 
-def _print_artifact(artifact: dict[str, Any], *, as_json: bool) -> int:
-    """Print one artifact as its tag paths, or as the stored entity."""
+def _print_tagged_resource(resource: dict[str, Any], *, as_json: bool) -> int:
+    """Print one artifact or static asset as its tag paths, or as the stored entity."""
     if as_json:
-        print(json.dumps(artifact, indent=2, ensure_ascii=False))
+        print(json.dumps(resource, indent=2, ensure_ascii=False))
         return 0
-    for tag in sorted(artifact["tags"], key=lambda item: item["path"]):
+    for tag in sorted(resource["tags"], key=lambda item: item["path"]):
         print(tag["path"])
     return 0

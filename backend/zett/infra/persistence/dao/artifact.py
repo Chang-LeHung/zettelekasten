@@ -17,11 +17,12 @@ from ....schemas import (
     ArtifactContent,
     ArtifactListOptions,
     ArtifactStatus,
-    ArtifactTagEntity,
     ArtifactType,
     ImageArtifactContent,
     LatexPdfArtifactContent,
     LatexPdfArtifactCreate,
+    TagRefEntity,
+    TagTargetType,
 )
 from ...artifacts.latex_projects import create_latex_project, validate_latex_project_path
 from ...artifacts.search import (
@@ -37,9 +38,10 @@ from ..tables import (
     CODE_TO_STATUS,
     CODE_TO_TYPE,
     STATUS_TO_CODE,
+    TARGET_TO_CODE,
     TYPE_TO_CODE,
-    ArtifactTagRow,
     SessionArtifactRow,
+    TagLinkRow,
 )
 
 CONTENT_ADAPTER = TypeAdapter(ArtifactContent)
@@ -55,7 +57,7 @@ def _json_load(value: str | None, fallback: JSONValueT) -> JSONValueT:
         return fallback
 
 
-def _artifact_out(model: SessionArtifactRow, *, tags: list[ArtifactTagEntity] | None = None) -> AgentArtifactEntity:
+def _artifact_out(model: SessionArtifactRow, *, tags: list[TagRefEntity] | None = None) -> AgentArtifactEntity:
     """Hydrate a typed artifact from its ORM record and discriminated JSON content."""
     content = _content(model.content_json)
     draft_content = _content(model.draft_content_json)
@@ -185,7 +187,7 @@ class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifactEntity, str,
             return None
         from .tag import tag_storage
 
-        tags = (await tag_storage.tags_for_artifacts((entity_id,))).get(entity_id, [])
+        tags = (await tag_storage.tags_for(TagTargetType.ARTIFACT, (entity_id,))).get(entity_id, [])
         return artifact.model_copy(update={"tags": tags})
 
     async def get_for_session(self, session_id: str, artifact_id: str) -> AgentArtifactEntity | None:
@@ -224,7 +226,12 @@ class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifactEntity, str,
             model = await session.get(SessionArtifactRow, entity_id)
             if model is None:
                 return False
-            await session.execute(sql_delete(ArtifactTagRow).where(ArtifactTagRow.artifact_id == entity_id))
+            await session.execute(
+                sql_delete(TagLinkRow).where(
+                    TagLinkRow.target_type == int(TARGET_TO_CODE[TagTargetType.ARTIFACT]),
+                    TagLinkRow.target_id == entity_id,
+                )
+            )
             await delete_artifact_search(session, entity_id)
             await session.delete(model)
             return True
@@ -244,7 +251,10 @@ class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifactEntity, str,
             if options.tag_ids:
                 statement = statement.where(
                     SessionArtifactRow.id.in_(
-                        select(ArtifactTagRow.artifact_id).where(ArtifactTagRow.tag_id.in_(options.tag_ids))
+                        select(TagLinkRow.target_id).where(
+                            TagLinkRow.target_type == int(TARGET_TO_CODE[TagTargetType.ARTIFACT]),
+                            TagLinkRow.tag_id.in_(options.tag_ids),
+                        )
                     )
                 )
             rank = None
@@ -281,7 +291,7 @@ class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifactEntity, str,
             artifacts = [_artifact_out(model) for model in await session.scalars(statement)]
         from .tag import tag_storage
 
-        tags = await tag_storage.tags_for_artifacts(tuple(artifact.id for artifact in artifacts))
+        tags = await tag_storage.tags_for(TagTargetType.ARTIFACT, tuple(artifact.id for artifact in artifacts))
         return [artifact.model_copy(update={"tags": tags.get(artifact.id, [])}) for artifact in artifacts]
 
     async def delete_session(self, session_id: str) -> int:
@@ -291,7 +301,12 @@ class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifactEntity, str,
                 await session.scalars(select(SessionArtifactRow.id).where(SessionArtifactRow.session_id == session_id))
             )
             if artifact_ids:
-                await session.execute(sql_delete(ArtifactTagRow).where(ArtifactTagRow.artifact_id.in_(artifact_ids)))
+                await session.execute(
+                    sql_delete(TagLinkRow).where(
+                        TagLinkRow.target_type == int(TARGET_TO_CODE[TagTargetType.ARTIFACT]),
+                        TagLinkRow.target_id.in_(artifact_ids),
+                    )
+                )
                 await delete_artifacts_search(session, artifact_ids)
             result = await session.execute(
                 sql_delete(SessionArtifactRow).where(SessionArtifactRow.session_id == session_id)

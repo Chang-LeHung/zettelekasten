@@ -154,6 +154,12 @@ class ArtifactTagsIn(BaseModel):
     paths: list[str] = Field(default_factory=list, max_length=100)
 
 
+class AssetTagsIn(BaseModel):
+    """Complete replacement set of confirmed tag paths for a static asset."""
+
+    paths: list[str] = Field(default_factory=list, max_length=100)
+
+
 class TextAssetIn(BaseModel):
     """Inline text asset submitted by the composer."""
 

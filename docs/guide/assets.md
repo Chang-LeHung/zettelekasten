@@ -53,3 +53,27 @@ Search filters both libraries by name and type. Every stored location is an
 object key relative to the storage root, and the only endpoint that streams
 binary content is `/api/files/{key}` — absolute filesystem paths are never part
 of a public model.
+
+## Classifying a file
+
+Static assets carry the same tags artifacts do, because the taxonomy is one
+tree: a path may classify a card and the paper it was built from. Drag a file
+card in the `Static Assets` view onto a tag in the sidebar to add that tag — the
+file keeps the tags it already carries, and the row shows them. Dropping it on a
+tag it already has says so instead of rewriting the same set.
+
+The API takes both shapes, exactly like artifacts: `PUT
+/api/library/tags/assets/{asset_id}` replaces the complete set, while `PUT` and
+`DELETE /api/library/tags/{tag_id}/assets/{asset_id}` attach or detach one tag
+without touching the rest. The collections tree counts every classified
+resource, so a tag's count includes the files it carries.
+
+From a shell, the tag commands take `--asset` to name a file instead of an
+artifact:
+
+```bash
+zett tag list
+zett tag add --asset <asset-id> Engineering/Python
+zett tag set --asset <asset-id> Projects/Zett Release
+zett tag remove --asset <asset-id> Projects/Zett
+```

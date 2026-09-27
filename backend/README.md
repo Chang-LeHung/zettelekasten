@@ -31,7 +31,7 @@ Domain rules currently live in `schemas.py`, storage contracts in
 | Message upload | Zett | `assets/sessions/<session-id>/uploads/` files written at submit time; no metadata row |
 | Static asset | Zett | `static_assets` plus uploaded files stored by relative object key |
 | Artifact | Zett | `session_artifacts`: card, article, image, slides, latex_pdf with published `content_json` and model `draft_content_json` |
-| Tag | Zett | `tags`, `artifact_tags` |
+| Tag | Zett | `tags`, `tag_links` (one relation for artifacts and static assets) |
 | Provider | Zett | `providers`, with credentials encrypted by the local provider key |
 | Runtime settings | Zett | `key_values` under `settings.runtime` |
 | Scheduled task | Zett | `scheduled_tasks` and `scheduled_task_runs`; `zett scheduler` queues due runs and `zett worker` executes them |
@@ -209,6 +209,8 @@ Everything is mounted under `/api`.
 | `/api/library/tags`, `POST/PUT/DELETE /api/library/tags/{tag_id}` | Tag tree listing, creation, single read, rename/move/restyle, and deletion |
 | `PUT /api/library/tags/artifacts/{artifact_id}` | Replace the complete tag set of one saved artifact (the editor's save path) |
 | `PUT/DELETE /api/library/tags/{tag_id}/artifacts/{artifact_id}` | Attach or detach one tag without rewriting the artifact's other assignments |
+| `PUT /api/library/tags/assets/{asset_id}` | Replace the complete tag set of one static asset, which shares the taxonomy artifacts use |
+| `PUT/DELETE /api/library/tags/{tag_id}/assets/{asset_id}` | Attach or detach one tag on a static asset without rewriting its other assignments |
 
 IM is split across three packages. `backend/agim` is a stateless SDK with one
 interface (`login` / `is_login` / `receive` / `send`) and platform clients; it
