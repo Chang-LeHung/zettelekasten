@@ -12,6 +12,9 @@ class SessionType(StrEnum):
     NORMAL = "normal"
     SCHEDULED = "scheduled"
     CHANNEL = "channel"
+    #: Owns artifacts created without a conversation, such as the ones the CLI
+    #: and scripts post to ``/api/artifacts``. Never listed in the sidebar.
+    LIBRARY = "library"
 
 
 #: Persisted integer codes for ``agent_sessions.session_type``. zett-agent stores
@@ -21,6 +24,7 @@ SESSION_TYPE_TO_CODE = {
     SessionType.NORMAL: 0,
     SessionType.SCHEDULED: 1,
     SessionType.CHANNEL: 2,
+    SessionType.LIBRARY: 3,
 }
 CODE_TO_SESSION_TYPE = {code: name for name, code in SESSION_TYPE_TO_CODE.items()}
 

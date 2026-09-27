@@ -179,13 +179,18 @@ Everything is mounted under `/api`.
 | `/api/agent/{id}/assets*` | Session asset CRUD, upload, rename, and Static Asset object references |
 | `/api/assets*` | Session-independent file listing, upload, metadata, and deletion |
 | `/api/agent/{id}/artifacts*`, `GET /api/artifacts` | Artifact CRUD, per-session listing, and library-wide search |
+| `POST /api/artifacts` | Create an artifact that belongs to no conversation, owned by the hidden library session; requires a non-blank `metadata.source` naming who creates it |
+| `GET /api/artifacts/{artifact_id}` | Read one artifact by id, whichever session owns it |
+| `DELETE /api/artifacts/{artifact_id}` | Delete one artifact, and only while the library session owns it: a conversation's artifact answers 403 and stays |
 | `/api/agent/{id}/artifacts/{artifact_id}/draft` | Stage edited content as the draft without touching published content |
 | `/api/agent/{id}/artifacts/{artifact_id}/save` | Publish the pending draft as the artifact's content (user action) |
 | `/api/agent/{id}/artifacts/{artifact}` | Artifact metadata; `content_url` addresses its unified file key |
 | `/api/ai/providers*` | Model endpoint configuration |
 | `/api/channels*` | Channel management (list/update/delete), plugin listing at `/api/channels/plugins`, and QR login behind the installed channel plugins |
 | `/api/settings` | Read or replace runtime limits |
-| `/api/library/tags*` | Tag tree CRUD and artifact tag assignment |
+| `/api/library/tags`, `POST/PUT/DELETE /api/library/tags/{tag_id}` | Tag tree listing, creation, single read, rename/move/restyle, and deletion |
+| `PUT /api/library/tags/artifacts/{artifact_id}` | Replace the complete tag set of one saved artifact (the editor's save path) |
+| `PUT/DELETE /api/library/tags/{tag_id}/artifacts/{artifact_id}` | Attach or detach one tag without rewriting the artifact's other assignments |
 
 IM is split across three packages. `backend/agim` is a stateless SDK with one
 interface (`login` / `is_login` / `receive` / `send`) and platform clients; it

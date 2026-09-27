@@ -145,17 +145,46 @@ class TagService:
         return tuple(expanded)
 
     async def replace_artifact_tags(self, artifact_id: str, paths: list[str]) -> AgentArtifactEntity:
-        artifact = await artifact_storage.get(artifact_id)
-        if artifact is None:
-            raise KeyError(f"Artifact not found: {artifact_id}")
-        if artifact.status != ArtifactStatus.SAVED:
-            raise ValueError("Only saved artifacts can receive persistent tags")
+        await self._tagged_artifact(artifact_id)
         tags = [await self.create_path(path) for path in dict.fromkeys(paths)]
         await tag_storage.replace_artifact_tags(artifact_id, tuple(tag.id for tag in tags))
         refreshed = await artifact_storage.get(artifact_id)
         if refreshed is None:  # pragma: no cover - guarded above
             raise KeyError(f"Artifact not found: {artifact_id}")
         return refreshed
+
+    async def assign_tag(self, artifact_id: str, tag_id: str) -> AgentArtifactEntity:
+        """Attach one tag to one artifact without disturbing its other tags.
+
+        The shell names a tag by path but the taxonomy keys it by id, so this is
+        the one-assignment form of ``replace_artifact_tags``: it reads the
+        current set, adds the tag when it is missing, and writes the union back.
+        """
+        tag = await self.require(tag_id)
+        current = await self._tagged_artifact(artifact_id)
+        paths = [assignment.path for assignment in current.tags]
+        if tag.path in paths:
+            return current
+        return await self.replace_artifact_tags(artifact_id, [*paths, tag.path])
+
+    async def unassign_tag(self, artifact_id: str, tag_id: str) -> AgentArtifactEntity:
+        """Detach one tag from one artifact, leaving every other assignment alone."""
+        tag = await self.require(tag_id)
+        current = await self._tagged_artifact(artifact_id)
+        paths = [assignment.path for assignment in current.tags if assignment.path != tag.path]
+        if len(paths) == len(current.tags):
+            return current
+        return await self.replace_artifact_tags(artifact_id, paths)
+
+    @staticmethod
+    async def _tagged_artifact(artifact_id: str) -> AgentArtifactEntity:
+        """Return one artifact that may carry persistent tags."""
+        artifact = await artifact_storage.get(artifact_id)
+        if artifact is None:
+            raise KeyError(f"Artifact not found: {artifact_id}")
+        if artifact.status != ArtifactStatus.SAVED:
+            raise ValueError("Only saved artifacts can receive persistent tags")
+        return artifact
 
     async def sync_confirmed_suggestions(self, artifact: AgentArtifactEntity) -> AgentArtifactEntity:
         """Promote the suggestions retained by the UI into persistent assignments."""

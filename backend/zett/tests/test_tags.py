@@ -141,3 +141,81 @@ async def test_tag_extension_registers_real_taxonomy_tools() -> None:
         "delete_tag",
         "set_artifact_tags",
     }
+
+
+async def test_replacing_assignments_rolls_back_when_a_tag_is_missing() -> None:
+    """The delete and the inserts share one transaction, so a failure keeps the old set.
+
+    ``replace_artifact_tags`` deletes every assignment for the artifact and then
+    inserts the new set. That is only safe because both halves commit together:
+    an exception mid-way — a tag that vanished between resolving it and writing
+    it — must leave the artifact with the tags it already had instead of none.
+    """
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
+    artifact = await tagged_card(session_id)
+    await tag_service.replace_artifact_tags(artifact.id, ["Engineering/Python"])
+    keeper = await tag_service.create_path("Projects/Zett")
+    await tag_service.replace_artifact_tags(artifact.id, ["Engineering/Python", "Projects/Zett"])
+
+    with pytest.raises(KeyError):
+        await tag_storage.replace_artifact_tags(artifact.id, (keeper.id, "missing-tag"))
+
+    refreshed = await artifact_storage.get(artifact.id)
+    assert refreshed is not None
+    assert sorted(tag.path for tag in refreshed.tags) == ["Engineering/Python", "Projects/Zett"]
+    assignment = await tag_storage.assignment_count(keeper.id)
+    assert assignment == 1
+
+
+def test_tag_api_serves_one_tag_and_edits_one_assignment() -> None:
+    """A shell adds or removes one tag without rewriting the artifact's whole set."""
+    with TestClient(app) as client:
+        artifact = client.post(
+            "/api/artifacts",
+            json={
+                "content": {"artifact_type": "card", "title": "Asyncio", "content": "Structured concurrency"},
+                "status": "saved",
+                "metadata": {"source": "test-suite"},
+            },
+        ).json()
+        first = client.post("/api/library/tags", json={"path": "Engineering/Python"}).json()
+        second = client.post("/api/library/tags", json={"path": "Projects/Zett"}).json()
+
+        # Read one tag by id; an unknown id is a 404 rather than an empty answer.
+        fetched = client.get(f"/api/library/tags/{second['id']}")
+        assert fetched.status_code == 200
+        assert fetched.json()["path"] == "Projects/Zett"
+        assert client.get("/api/library/tags/does-not-exist").status_code == 404
+
+        # Attaching keeps every tag the artifact already carries, and repeating
+        # the same assignment changes nothing.
+        assert [
+            tag["path"]
+            for tag in client.put(f"/api/library/tags/{first['id']}/artifacts/{artifact['id']}").json()["tags"]
+        ] == ["Engineering/Python"]
+        attached = client.put(f"/api/library/tags/{second['id']}/artifacts/{artifact['id']}")
+        assert sorted(tag["path"] for tag in attached.json()["tags"]) == ["Engineering/Python", "Projects/Zett"]
+        again = client.put(f"/api/library/tags/{second['id']}/artifacts/{artifact['id']}")
+        assert len(again.json()["tags"]) == 2
+
+        # Detaching removes exactly that assignment, and repeating it is safe.
+        detached = client.delete(f"/api/library/tags/{second['id']}/artifacts/{artifact['id']}")
+        assert [tag["path"] for tag in detached.json()["tags"]] == ["Engineering/Python"]
+        assert client.delete(f"/api/library/tags/{second['id']}/artifacts/{artifact['id']}").status_code == 200
+
+        # Unknown tags and artifacts are 404; a draft is refused like the UI's save path.
+        assert client.put(f"/api/library/tags/does-not-exist/artifacts/{artifact['id']}").status_code == 404
+        assert client.put(f"/api/library/tags/{first['id']}/artifacts/does-not-exist").status_code == 404
+        draft = client.post(
+            "/api/artifacts",
+            json={
+                "content": {"artifact_type": "card", "title": "Draft", "content": "Not saved"},
+                "status": "draft",
+                "metadata": {"source": "test-suite"},
+            },
+        ).json()
+        assert client.put(f"/api/library/tags/{first['id']}/artifacts/{draft['id']}").status_code == 422
+
+        # The whole-set endpoint still replaces everything the editor saved.
+        replaced = client.put(f"/api/library/tags/artifacts/{artifact['id']}", json={"paths": ["Projects/Zett"]})
+        assert [tag["path"] for tag in replaced.json()["tags"]] == ["Projects/Zett"]

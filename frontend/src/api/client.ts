@@ -16,6 +16,8 @@ import type {
   AIProviderDetail,
   AIProviderInput,
   ArtifactContent,
+  ArtifactCreateContent,
+  ArtifactStatus,
   CardListOptions,
   Channel,
   ChannelLogin,
@@ -134,6 +136,43 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const libraryClient = {
+  /**
+   * Create an artifact that belongs to no conversation. The server stores it
+   * under its hidden library session, so it appears in the library list like
+   * any other artifact and stays out of the conversation sidebar.
+   *
+   * `source` names who creates it and is required: an artifact with no
+   * conversation has nothing else to attribute it to, and the server refuses a
+   * blank one.
+   */
+  async createArtifact(
+    content: ArtifactCreateContent,
+    options: { source: string; status?: ArtifactStatus; rawContent?: string; metadata?: Record<string, unknown> },
+  ): Promise<AgentArtifact> {
+    if (!options.source.trim()) throw new Error('source is required: name who creates this artifact')
+    return await request<AgentArtifact>('/artifacts', {
+      method: 'POST',
+      body: JSON.stringify({
+        content,
+        status: options.status ?? 'saved',
+        metadata: { ...options.metadata, source: options.source.trim() },
+        ...(options.rawContent === undefined ? {} : { raw_content: options.rawContent }),
+      }),
+    })
+  },
+
+  getArtifact(artifactId: string): Promise<AgentArtifact> {
+    return request<AgentArtifact>(`/artifacts/${encodeURIComponent(artifactId)}`)
+  },
+
+  /**
+   * Delete an artifact that belongs to no conversation. The server refuses one
+   * a conversation owns (403), because that conversation deletes it.
+   */
+  deleteArtifact(artifactId: string): Promise<{ ok: boolean }> {
+    return request<{ ok: boolean }>(`/artifacts/${encodeURIComponent(artifactId)}`, { method: 'DELETE' })
+  },
+
   documentReference(itemId: string): Pick<AgentArtifact, 'id' | 'session_id' | 'content_url'> {
     const { id, session_id, content_url } = requireIndexedArtifact(itemId)
     return { id, session_id, content_url }
@@ -211,11 +250,31 @@ export const tagClient = {
     })
   },
 
+  get(tagId: string): Promise<TagRecord> {
+    return request<TagRecord>(`/library/tags/${encodeURIComponent(tagId)}`)
+  },
+
   replaceArtifactTags(artifactId: string, paths: string[]): Promise<AgentArtifact> {
     return request<AgentArtifact>(`/library/tags/artifacts/${encodeURIComponent(artifactId)}`, {
       method: 'PUT',
       body: JSON.stringify({ paths }),
     })
+  },
+
+  /** Attach one tag without rewriting the artifact's other assignments. */
+  assignTag(tagId: string, artifactId: string): Promise<AgentArtifact> {
+    return request<AgentArtifact>(
+      `/library/tags/${encodeURIComponent(tagId)}/artifacts/${encodeURIComponent(artifactId)}`,
+      { method: 'PUT' },
+    )
+  },
+
+  /** Detach one tag without rewriting the artifact's other assignments. */
+  detachTag(tagId: string, artifactId: string): Promise<AgentArtifact> {
+    return request<AgentArtifact>(
+      `/library/tags/${encodeURIComponent(tagId)}/artifacts/${encodeURIComponent(artifactId)}`,
+      { method: 'DELETE' },
+    )
   },
 
   delete(tagId: string): Promise<{ ok: boolean }> {
