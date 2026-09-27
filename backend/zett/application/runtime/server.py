@@ -6,21 +6,22 @@ orchestration over the same two adapters: the runtime process controller that
 owns ``runtime.json`` and the launcher that spawns a detached CLI process.
 """
 
+from __future__ import annotations
+
 import asyncio
 import time
 from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ...config import settings
 from ...infra.log import get_logger
 from ...infra.scheduler import process_platform
-from ...infra.scheduler.processes import (
-    BACKGROUND_LOG_FILE_NAME,
-    BackgroundServerProcess,
-    launch_background_server,
-)
 from ...infra.scheduler.runtime_state import RuntimeProcessController
 from ...schemas import RuntimeStatus, ServerStartResult
+
+if TYPE_CHECKING:
+    from ...infra.scheduler.processes import BackgroundServerProcess
 
 logger = get_logger(__name__)
 
@@ -39,10 +40,12 @@ class RuntimeService:
         self,
         *,
         controller: RuntimeProcessController | None = None,
-        launcher: Callable[..., BackgroundServerProcess] = launch_background_server,
+        launcher: Callable[..., BackgroundServerProcess] | None = None,
         timeout_seconds: float = settings.background_start_timeout_seconds,
         poll_seconds: float = 0.2,
     ) -> None:
+        # The launcher lives with the scheduler adapters and pulls in httpx it
+        # does not need for `zett status`, so it is resolved where it is used.
         self.controller = controller or RuntimeProcessController()
         self.launcher = launcher
         self.timeout_seconds = max(0.1, timeout_seconds)
@@ -57,10 +60,13 @@ class RuntimeService:
         and reported with the tail of its console log, because a detached
         process has no other way to explain itself.
         """
+        from ...infra.scheduler.processes import BACKGROUND_LOG_FILE_NAME, launch_background_server
+
         await self.controller.prepare_start(port=port)
         log_path = settings.log_directory / BACKGROUND_LOG_FILE_NAME
         try:
-            launched = self.launcher(host=host, port=port, reload=reload, log_path=log_path)
+            launcher = self.launcher or launch_background_server
+            launched = launcher(host=host, port=port, reload=reload, log_path=log_path)
         except OSError as error:
             raise BackgroundStartError(f"Could not start the background server: {error}") from error
         if not await self._wait_until_ready(launched, port):

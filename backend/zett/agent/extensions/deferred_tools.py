@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import aclosing
 from dataclasses import replace
+from typing import TYPE_CHECKING
 
 from zett_agent.agent import (
     AgentRunContext,
@@ -12,9 +13,6 @@ from zett_agent.agent import (
 from zett_agent.extensions.base import (
     AgentExtension,
     ModelRequestNext,
-)
-from zett_agent.extensions.tool_search import (
-    ToolSearchExtension,
 )
 from zett_agent.messages import (
     SystemMessage,
@@ -26,6 +24,12 @@ from zett_agent.model import (
 )
 
 from ..model_factory import uses_responses_api
+
+if TYPE_CHECKING:
+    # zett-agent's tool-search module imports the openai SDK at module level,
+    # which costs about a third of a second. Only a Responses API turn needs
+    # it, so the import waits until this extension builds its search host.
+    from zett_agent.extensions.tool_search import ToolSearchExtension
 
 
 class DeferredToolExtension(AgentExtension):
@@ -48,7 +52,11 @@ class DeferredToolExtension(AgentExtension):
     priority = 90
 
     def __init__(self, search: ToolSearchExtension | None = None) -> None:
-        self._search = search or ToolSearchExtension()
+        if search is None:
+            from zett_agent.extensions.tool_search import ToolSearchExtension
+
+            search = ToolSearchExtension()
+        self._search = search
 
     async def on_tool(self, context: AgentRunContext) -> None:
         """Register the request-scoped search tool for a Responses API run only."""
