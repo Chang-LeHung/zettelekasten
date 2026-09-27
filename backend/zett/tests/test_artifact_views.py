@@ -2,12 +2,13 @@
 
 import json
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
+from datetime import datetime
 
 from zett_agent.agent import Agent, AgentRunConfig
 from zett_agent.messages import AssistantMessage, ToolCall, ToolMessage
 from zett_agent.model import ModelEvent, ModelRequest, ModelResponse
 
+from zett._compat import UTC
 from zett.agent.extensions import ArtifactExtension
 from zett.application.artifacts.artifact_views import (
     ArtifactDocument,
