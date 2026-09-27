@@ -55,6 +55,12 @@ build-backend = "hatchling.build"
 [tool.hatch.metadata.hooks.custom]
 path = "hatch_build.py"
 
+# Profiling output (`zett/profile/`) stays out of the wheel and sdist: the
+# directory is git-ignored, but the build runs from `backend/`, where the
+# repository-level ignore file is not the one hatchling reads.
+[tool.hatch.build]
+exclude = ["zett/profile"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["zett"]
 exclude = ["zett/tests"]
@@ -77,6 +83,7 @@ dev = [
   "markdown>=3.7,<4",
   "pymdown-extensions>=10.14,<11",
   "pygments>=2.18,<3",
+  "viztracer>=1.1.1",
 ]
 
 [tool.ruff]
