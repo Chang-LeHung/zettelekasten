@@ -59,6 +59,9 @@ class Settings:
     process_watchdog_interval_seconds: float = float(os.getenv("ZETT_PROCESS_WATCHDOG_INTERVAL_SECONDS", "5"))
     process_watchdog_failure_threshold: int = int(os.getenv("ZETT_PROCESS_WATCHDOG_FAILURE_THRESHOLD", "3"))
     worker_processes: int = int(os.getenv("ZETT_WORKER_PROCESSES", "1"))
+    #: How long ``zett start`` waits for the detached server to bind its port
+    #: before reporting a failed background start.
+    background_start_timeout_seconds: float = float(os.getenv("ZETT_START_TIMEOUT_SECONDS", "30"))
     #: Path prefix to "log one line per this many requests"; unmatched paths log
     #: every request. Example: "/api/health=100,/api/files=20".
     access_log_sample_rates: dict[str, int] = parse_access_log_sample_rates(

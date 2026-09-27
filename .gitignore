@@ -11,5 +11,7 @@ data/*.db
 .env
 .vscode/settings.json
 backend/.zett-tool-output/
+# Profiling output written next to the package, e.g. zett/profile/result.json.
+backend/zett/profile/
 **/.pytest_cache/
 **/.ruff_cache/

@@ -2,6 +2,7 @@
 
 import os
 import signal
+import socket
 
 import pytest
 
@@ -42,6 +43,37 @@ def test_helper_process_kwargs_hide_the_console_on_windows(monkeypatch: pytest.M
     monkeypatch.setattr(process_platform, "WINDOWS", True)
 
     assert process_platform.helper_process_kwargs() == {"creationflags": process_platform.CREATE_NO_WINDOW}
+
+
+def test_background_spawn_kwargs_detach_from_the_terminal_on_posix(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(process_platform, "WINDOWS", False)
+
+    assert process_platform.background_spawn_kwargs() == {"start_new_session": True}
+
+
+def test_background_spawn_kwargs_drop_the_console_on_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(process_platform, "WINDOWS", True)
+
+    assert process_platform.background_spawn_kwargs() == {"creationflags": process_platform.DETACHED_PROCESS}
+
+
+def test_dialable_host_names_loopback_for_wildcard_binds() -> None:
+    assert process_platform.dialable_host("0.0.0.0") == "127.0.0.1"
+    assert process_platform.dialable_host("::") == "127.0.0.1"
+    assert process_platform.dialable_host("localhost") == "localhost"
+
+
+def test_port_is_open_reports_a_listening_socket() -> None:
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen()
+    port = listener.getsockname()[1]
+    try:
+        assert process_platform.port_is_open(port) is True
+    finally:
+        listener.close()
+
+    assert process_platform.port_is_open(port) is False
 
 
 def test_is_process_running_rejects_sentinel_pids() -> None:

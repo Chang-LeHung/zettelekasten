@@ -10,6 +10,7 @@ platform flag; CI also runs the full suite on Windows and macOS.
 
 import os
 import signal
+import socket
 import subprocess  # noqa: S404
 import sys
 from typing import Any
@@ -22,6 +23,9 @@ CREATE_NEW_PROCESS_GROUP = 0x00000200
 # A console-subsystem helper started by a parent that owns no console would
 # otherwise open its own console window.
 CREATE_NO_WINDOW = 0x08000000
+# A background server must outlive the terminal that started it, and on Windows
+# that means no attached console at all.
+DETACHED_PROCESS = 0x00000008
 
 _STILL_ACTIVE = 259
 _PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
@@ -35,6 +39,20 @@ def spawn_kwargs() -> dict[str, Any]:
     """
     if WINDOWS:
         return {"creationflags": CREATE_NEW_PROCESS_GROUP}
+    return {"start_new_session": True}
+
+
+def background_spawn_kwargs() -> dict[str, Any]:
+    """Return ``Popen`` kwargs for a server that outlives this process.
+
+    ``zett start`` returns to the shell while the server keeps running, so the
+    child must not share the caller's terminal: POSIX starts a new session, and
+    Windows starts a process without a console at all. Supervised scheduler and
+    worker children use ``spawn_kwargs`` instead, because they stay attached to
+    the Web process that owns and restarts them.
+    """
+    if WINDOWS:
+        return {"creationflags": DETACHED_PROCESS}
     return {"start_new_session": True}
 
 
@@ -103,6 +121,24 @@ def pids_listening_on(port: int) -> list[int]:
     return sorted({int(value) for value in output.split() if value.isdigit()})
 
 
+def port_is_open(port: int, *, host: str = "127.0.0.1", timeout: float = 0.5) -> bool:
+    """Return whether something accepts a connection on ``host:port``."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def dialable_host(host: str) -> str:
+    """Return the host a local client should dial for a bind address.
+
+    A wildcard bind listens on every interface, which is not something a URL or
+    a readiness probe can name, so those cases resolve to the loopback address.
+    """
+    return "127.0.0.1" if host in {"0.0.0.0", "::", "::0", "*"} else host
+
+
 def restrict_file_mode(descriptor: int) -> None:
     """Apply owner-only file permissions where the platform supports them.
 
@@ -166,10 +202,13 @@ def _run_command(command: list[str], *, timeout: float = 2.0) -> str | None:
 
 __all__ = [
     "WINDOWS",
+    "background_spawn_kwargs",
     "command_line",
+    "dialable_host",
     "helper_process_kwargs",
     "is_process_running",
     "pids_listening_on",
+    "port_is_open",
     "restrict_file_mode",
     "spawn_kwargs",
     "terminate_process",

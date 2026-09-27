@@ -54,7 +54,7 @@ compiled interface — so this is the whole install:
 
 ```bash
 uv tool install zett      # or: pipx install zett  /  pip install zett
-zett start
+zett start                # serves 127.0.0.1:6280 in the background
 ```
 
 The package is not on PyPI yet: its `agim` and `zett-weixin` dependencies have
@@ -64,11 +64,13 @@ to be published first. Until then, install the same package from a checkout:
 git clone https://github.com/Chang-LeHung/zettelekasten
 cd zettelekasten
 make install             # builds the interface and installs the `zett` command
-zett start
+zett start               # serves 127.0.0.1:6280 in the background
 ```
 
 Either way, open <http://127.0.0.1:6280>, add a model provider in **Settings**,
-and start a conversation. `zett stop` shuts the application down.
+and start a conversation. `zett start` returns once the server answers and
+leaves it running without the terminal, `zett status` reports it, and
+`zett stop` shuts it down; `zett start --foreground` stays attached instead.
 
 ## First steps
 

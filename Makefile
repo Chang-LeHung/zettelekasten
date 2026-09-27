@@ -1,13 +1,14 @@
 HOST ?= 127.0.0.1
 PORT ?= 6280
 
-.PHONY: help install backend-install frontend-install frontend-build start scheduler worker dev check \
+.PHONY: help install backend-install frontend-install frontend-build start status scheduler worker dev check \
 	agim-check zett-weixin-check ruff-check typecheck pre-commit-install docs-build docs-serve site package
 
 help:
 	@echo "Available targets:"
 	@echo "  make install   Build the frontend and install the zett command"
 	@echo "  make start     Start the installed application"
+	@echo "  make status    Show whether the application is running"
 	@echo "  make scheduler Start the scheduling control process"
 	@echo "  make worker    Start an execution worker"
 	@echo "  make dev       Build and start the application from source"
@@ -34,6 +35,9 @@ frontend-build:
 start:
 	zett start --host $(HOST) --port $(PORT)
 
+status:
+	zett status
+
 scheduler: backend-install
 	uv run --directory backend zett scheduler
 
@@ -41,7 +45,7 @@ worker: backend-install
 	uv run --directory backend zett worker
 
 dev: backend-install frontend-build
-	uv run --directory backend zett start --host $(HOST) --port $(PORT) --reload
+	uv run --directory backend zett start --foreground --host $(HOST) --port $(PORT) --reload
 
 ruff-check:
 	uv run --directory backend ruff format --check zett

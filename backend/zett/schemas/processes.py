@@ -86,3 +86,33 @@ class ServerRuntimeState(BaseModel):
     scheduler_pids: list[int] = Field(default_factory=list)
     worker_pids: list[int] = Field(default_factory=list)
     started_at: datetime | None = None
+
+
+class RuntimeChildStatus(BaseModel):
+    """Liveness of one scheduler or worker process in the runtime state file."""
+
+    role: ProcessRole
+    pid: int = Field(ge=1)
+    running: bool
+
+
+class RuntimeStatus(BaseModel):
+    """Point-in-time server and child state read by ``zett status``."""
+
+    running: bool
+    state_recorded: bool = False
+    server_pid: int | None = None
+    server_running: bool = False
+    port: int | None = None
+    url: str | None = None
+    started_at: datetime | None = None
+    children: list[RuntimeChildStatus] = Field(default_factory=list)
+
+
+class ServerStartResult(BaseModel):
+    """Outcome of detaching one background server process."""
+
+    pid: int = Field(ge=1)
+    port: int = Field(ge=1, le=65_535)
+    url: str
+    log_path: str
