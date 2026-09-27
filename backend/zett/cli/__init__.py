@@ -46,6 +46,7 @@ COMMANDS: tuple[Command, ...] = (
     Command("stop", "zett.cli.stop", "Stop the running Zett server"),
     Command("artifact", "zett.cli.artifact", "Create, read, and list artifacts that belong to no conversation"),
     Command("tag", "zett.cli.tag", "Manage library tags and the tags an artifact carries"),
+    Command("install", "zett.cli.install", "Install Zett's skill into Claude Code, Codex, or another agent"),
     Command("scheduler", "zett.cli.role", entry="run_scheduler"),
     Command("worker", "zett.cli.role", entry="run_worker"),
 )
