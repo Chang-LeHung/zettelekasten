@@ -3,6 +3,7 @@
 import base64
 import json
 from collections.abc import AsyncIterator
+from pathlib import Path
 
 import pytest
 from zett_agent.agent import (
@@ -357,17 +358,28 @@ async def test_upload_asset_stores_a_file_the_model_wrote(tmp_path) -> None:
     assert stored_bytes is not None and stored_bytes.read_bytes() == payload
 
 
-async def test_read_upload_refuses_paths_outside_the_conversation_and_oversized_files() -> None:
+async def test_read_upload_refuses_paths_outside_the_conversation_and_oversized_files(
+    tmp_path: Path,
+) -> None:
     """An upload tool that could read any file would turn a mistake into a leak."""
     session_id = (await session_storage.create(AgentSessionCreate())).session_id
     directory = get_object_store().resolve(session_directory_key(session_id))
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "big.bin").write_bytes(b"x" * 101)
+    # A hard-coded "/etc/hosts" reads as absolute here and as drive-relative on
+    # Windows, where the tool then answers "must be absolute" instead of the
+    # containment refusal this case is about. Build the outsider from the
+    # temporary storage root instead: it is absolute, readable, and owned by no
+    # conversation on every platform.
+    outside = tmp_path / "outside-upload.txt"
+    outside.write_text("secret", encoding="utf-8")
+    assert outside.is_absolute()
+    assert not outside.is_relative_to(directory)
 
     with pytest.raises(ValueError, match="must be absolute"):
         _read_upload(session_id, "big.bin", max_bytes=100)
     with pytest.raises(ValueError, match="stay inside this conversation"):
-        _read_upload(session_id, "/etc/hosts", max_bytes=100)
+        _read_upload(session_id, str(outside), max_bytes=100)
     with pytest.raises(ValueError, match="File not found"):
         _read_upload(session_id, str(directory / "missing.png"), max_bytes=100)
     with pytest.raises(ValueError, match="the asset limit is 100"):
