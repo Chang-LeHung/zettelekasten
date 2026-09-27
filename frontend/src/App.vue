@@ -353,6 +353,14 @@ const pageDescription = computed(() => {
     ? t('{count} matching items', { count: libraryItems.value.length })
     : t('{count} items in your library', { count: libraryItems.value.length })
 })
+/**
+ * Identity of the result set on screen. The grid is keyed by it, so a filter
+ * that lands on a different set remounts its cards and replays the float-in,
+ * while an unchanged set keeps the same nodes instead of animating again.
+ */
+const libraryGridKey = computed(() =>
+  libraryItems.value.map((item) => `${item.item_type}-${item.id}`).join('|'),
+)
 const conversationStarted = computed(
   () => loading.value || conversation.value.length > 0 || artifacts.value.length > 0 || artifactContent.value !== null,
 )
@@ -445,6 +453,10 @@ function artifactTitle(content: ArtifactContent | null): string {
 function libraryExcerpt(item: LibraryItem): string {
   const source = item.summary || (item.item_type === 'slides' ? item.subtitle : '') || item.content
   return libraryExcerptText(source) || 'Open to explore this item.'
+}
+/** Stagger a freshly filtered grid so it blooms instead of snapping in at once. */
+function cardFloatDelay(index: number): string {
+  return `${Math.min(index, 8) * 40}ms`
 }
 const activeSessions = computed(() => (
   sessionScope.value === 'scheduled' ? scheduledSessions.value
@@ -3427,15 +3439,22 @@ onBeforeUnmount(() => {
             >{{ $t(filter.label) }}</button>
           </div>
 
-          <div v-if="libraryLoading" class="card-grid" aria-label="Loading artifacts">
+          <!--
+            Skeleton cards only stand in for a library that has nothing to show yet.
+            Replacing an already loaded grid with placeholders made every filter
+            click flash: with two results the other four shimmering slots appeared
+            and vanished, which reads as the grid itself flickering.
+          -->
+          <div v-if="libraryLoading && !libraryItems.length" class="card-grid" aria-label="Loading artifacts">
             <div v-for="index in 6" :key="index" class="card skeleton" />
           </div>
-          <div v-else-if="libraryItems.length" class="card-grid">
+          <div v-else-if="libraryItems.length" :key="libraryGridKey" class="card-grid" :aria-busy="libraryLoading">
             <article
-              v-for="item in libraryItems"
+              v-for="(item, index) in libraryItems"
               :key="`${item.item_type}-${item.id}`"
               class="card"
               :class="[`library-${item.item_type}`, { dragging: draggingLibraryItem?.id === item.id }]"
+              :style="{ animationDelay: cardFloatDelay(index) }"
               role="button"
               tabindex="0"
               draggable="true"
@@ -4316,6 +4335,11 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .library-type-filters button:hover { color: #435449; background: rgba(255,255,255,.6); }
 .library-type-filters button.active { border-color: rgba(78,111,91,.12); color: #3f604c; background: #edf3ef; box-shadow: inset 0 0 0 1px rgba(255,255,255,.55); }
 .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr)); gap: 1rem; }
+/* A filtered grid is remounted, so its cards rise the last few pixels into place.
+   `backwards` fill keeps the start state during the stagger delay and hands the
+   transform back to the hover lift once the animation ends. */
+.card-grid > article.card { animation: card-float-in 420ms cubic-bezier(.22,.72,.24,1) backwards; }
+@keyframes card-float-in { from { opacity: 0; transform: translateY(14px); } }
 .card { container-type: inline-size; container-name: artifact-card; min-width: 0; height: 18rem; box-sizing: border-box; display: flex; flex-direction: column; padding: 1.1rem 1.2rem; overflow: hidden; border: 1px solid rgba(29,29,31,.075); border-radius: 1rem; background: var(--surface); box-shadow: 0 1px 2px rgba(0,0,0,.025); backdrop-filter: blur(14px); transition: transform 260ms cubic-bezier(.2,.8,.2,1), box-shadow 260ms cubic-bezier(.2,.8,.2,1), background 180ms ease; }
 .card[role="button"] { cursor: pointer; }
 .card[draggable="true"] { cursor: grab; }
