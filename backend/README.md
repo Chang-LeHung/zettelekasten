@@ -9,7 +9,7 @@ when a build exists.
 | Path | Contents |
 | --- | --- |
 | `zett/agent/` | Composition root for conversations: container, capability contracts, model factory, SSE dispatcher, session title agent |
-| `zett/agent/extensions/` | Zett's adapters to the zett-agent `AgentExtension` point: the asset, artifact, tag, and context-composition tools |
+| `zett/agent/extensions/` | Zett's adapters to the zett-agent `AgentExtension` point: the asset, artifact, tag, upload, and context-composition tools |
 | `zett/agent/plugins/` | Zett's own `ZettelkastenExt` plugins: the skill slash commands and the `@` reference kinds |
 | `zett/application/` | Routes, use-case services, and the framework-neutral `ObjectStore` contract |
 | `zett/infra/scheduler/` | Scheduler control loop, execution worker loop, action registry, and executor contracts |

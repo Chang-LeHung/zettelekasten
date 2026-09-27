@@ -59,6 +59,7 @@ class ArtifactExtension(AgentExtension):
 
             Snippet:
                 create_artifact(content={"artifact_type": "card", "title": "...", "content": "..."})
+                create_artifact(content={"artifact_type": "image", "title": "...", "asset_path": "assets/sessions/<session>/<asset>.png"})
                 create_artifact(content={"artifact_type": "latex_pdf", "pdf_name": "paper.pdf"})
                 create_artifact(content={"artifact_type": "slides", "title": "...", "content": "# Topic\\n\\n--\\n\\n## Detail\\n\\n---\\n\\n# Next topic"})
                 create_artifact(content={"artifact_type": "slides", "title": "Processes", "content": "<!-- slide:cover -->\\n# Processes\\n\\n## From programs to execution\\n\\nAuthor name\\n\\n[Website](https://example.com)\\n\\n---\\n# Overview\\n\\n--\\n## Process state\\n\\n- One idea"})
@@ -68,6 +69,7 @@ class ArtifactExtension(AgentExtension):
                 - Create an artifact only when it is a useful output of the conversation, and keep it in draft state until the user saves it.
                 - Creation stores the supplied content directly; later updates write draft content only, and never claim an artifact is saved unless the user saves it.
                 - For a LaTeX PDF, pass only pdf_name and treat the returned content.project_path as authoritative: never guess it, and preserve it when updating.
+                - For an image you produced locally, write or download the file first, upload it with upload_asset, and pass the storage_path it returns as asset_path; an external image uses source_url instead. An asset_path this conversation does not own, or one that names no file, is refused.
                 - A LaTeX project is your git repository: init it, keep the build output in a '.gitignore', and commit each meaningful change from the project directory with a Conventional Commit message. Zett never touches that history, and it refuses to save while the project is not a committed git repository.
                 - Compile with the shell tools: a missing or invalid PDF leaves metadata and saving intact, and the preview appears once project_path/pdf_name exists.
             """

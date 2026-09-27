@@ -2,6 +2,8 @@
 
 import base64
 import binascii
+import mimetypes
+from pathlib import Path
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -16,7 +18,9 @@ from zett_agent.tools.base import (
 )
 
 from ..._compat import Self
+from ...application.files.object_store import session_directory_key
 from ...config import settings
+from ...infra.files.object_store import get_object_store
 from ...infra.persistence.dao import session_asset_storage
 from ...schemas import (
     HttpUrl,
@@ -70,6 +74,24 @@ class AssetDetails(SessionAssetEntity):
     )
 
 
+class UploadedAsset(BaseModel):
+    """What a model needs after uploading a file, and nothing more.
+
+    The stored asset row is an internal record: its ids, hash, and timestamps
+    are never something the model acts on, and repeating them in a tool result
+    only spends context. ``storage_path`` is the key an image artifact takes as
+    its ``asset_path``, and ``content_url`` is the address this site serves the
+    bytes from.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(description="Stored file name")
+    mime_type: str | None = Field(default=None, description="Detected media type when known")
+    storage_path: str = Field(description="Relative object key to pass as an image artifact's asset_path")
+    content_url: str = Field(description="Site URL that serves this file")
+
+
 def _decode_binary(content_base64: str | None) -> bytes | None:
     """Decode a model-provided Base64 payload while tolerating visual line wrapping."""
     if content_base64 is None:
@@ -92,6 +114,37 @@ def _write_model(session_id: str, asset: AssetInput) -> SessionAssetCreate:
         source_url=asset.source_url,
         metadata=asset.metadata,
     )
+
+
+def _read_upload(session_id: str, source: str, *, max_bytes: int) -> tuple[str, bytes, str | None]:
+    """Read one file of this conversation for upload as (name, bytes, media type).
+
+    The path must be absolute, the way the session-files system message names the
+    conversation's directory: a relative path would silently mean something
+    different here than under the shell that wrote the file. Besides that, the
+    resolved file has to stay inside the conversation's directory — an upload
+    tool that could read any file on the machine would turn a model mistake into
+    a data leak. Oversized files are refused here, before anything is written.
+    """
+    directory = get_object_store().resolve(session_directory_key(session_id))
+    candidate = Path(source)
+    if not candidate.is_absolute():
+        # Refusing beats guessing: "relative" means the shell's working
+        # directory to whoever wrote the file and this conversation's directory
+        # here, and reading the wrong file is a leak rather than a typo.
+        raise ValueError(f"Upload path must be absolute; this conversation's files live under {directory}")
+    resolved = candidate.resolve()
+    if not resolved.is_relative_to(directory.resolve()):
+        # The model can name any absolute path; only files this conversation
+        # owns may leave through a tool result.
+        raise ValueError("Upload path must stay inside this conversation's directory")
+    if not resolved.is_file():
+        raise ValueError(f"File not found: {source}")
+    size = resolved.stat().st_size
+    if size > max_bytes:
+        raise ValueError(f"File is {size} bytes; the asset limit is {max_bytes}")
+    name = resolved.name
+    return name, resolved.read_bytes(), mimetypes.guess_type(name)[0]
 
 
 class AssetExtension(AgentExtension):
@@ -128,6 +181,52 @@ class AssetExtension(AgentExtension):
             """
             self._precheck_binary_size(asset)
             return await session_asset_storage.create(self._write_model(session_id, asset))
+
+        @tool
+        async def upload_asset(path: str, name: str | None = None, mime_type: str | None = None) -> UploadedAsset:
+            """Upload a file from this conversation's directory as a session asset.
+
+            Args:
+                path: Absolute path of the file to upload, inside this conversation's directory (the session-files message names it).
+                name: User-facing name; defaults to the file name.
+                mime_type: IANA media type; guessed from the file name when omitted.
+
+            Snippet:
+                upload_asset(path="/home/me/.zettelekasten/assets/sessions/<session>/uploads/chart.png")
+
+            Guidelines:
+                - Write or download the file first, inside this conversation's directory, and pass its absolute path: bytes never travel through an argument.
+                - Use the directory the session-files system message names; a relative path is refused instead of being guessed.
+                - Put the returned `storage_path` into an image artifact's `asset_path` to show it in the conversation.
+                - Files outside this conversation's directory and files above the asset size limit are refused.
+            """
+            file_name, payload, guessed = _read_upload(session_id, path, max_bytes=self._max_asset_size_bytes)
+            resolved_mime = mime_type or guessed
+            asset_type = SessionAssetType.IMAGE if (resolved_mime or "").startswith("image/") else SessionAssetType.FILE
+            stored = await session_asset_storage.create(
+                SessionAssetCreate(
+                    session_id=session_id,
+                    asset_type=asset_type,
+                    name=name or file_name,
+                    mime_type=resolved_mime,
+                    content=payload,
+                )
+            )
+            if stored.storage_path is None:
+                # An upload always copies bytes, so a row without a key means the
+                # storage answered a different contract; fail loudly instead of
+                # returning a result the model cannot use.
+                raise ValueError("Uploaded asset has no stored file")
+            # The model needs two things from here: the key that becomes an image
+            # artifact's asset_path, and the URL a body can link to. The stored
+            # row's ids, hash, and timestamps would only spend context, which is
+            # why this answers with UploadedAsset instead of the entity.
+            return UploadedAsset(
+                name=stored.name,
+                mime_type=stored.mime_type,
+                storage_path=stored.storage_path,
+                content_url=get_object_store().url(stored.storage_path),
+            )
 
         @tool
         async def get_asset(asset_id: str, include_binary_content: bool = False) -> AssetDetails:
@@ -219,7 +318,7 @@ class AssetExtension(AgentExtension):
                 )
             )
 
-        for registered in (create_asset, get_asset, update_asset, delete_asset, list_assets):
+        for registered in (create_asset, upload_asset, get_asset, update_asset, delete_asset, list_assets):
             context.register_tool(registered)
 
     @staticmethod

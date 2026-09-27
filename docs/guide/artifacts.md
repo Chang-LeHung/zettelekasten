@@ -67,6 +67,29 @@ checked, so unrelated work in an enclosing repository never blocks a save.
 If you edit the sources yourself, commit them; a dirty tree blocks the next
 publish.
 
+## Images
+
+An image artifact is either external or local. An external one carries a
+`source_url`; a local one carries the object key of a file this conversation
+uploaded, and the pane renders it through `/api/files/<key>`.
+
+The Agent gets that key by uploading a file it wrote. It generates or downloads
+the image with the shell — under this conversation's own directory, which the
+session-files message names — and then calls its `upload_asset` tool with that
+absolute path. The tool stores the file as a session asset and answers with only
+what the next step needs: the file name, its media type, the `storage_path` to
+hand to the artifact, and the URL this site serves it from. Bytes never travel
+through the model's arguments, so a large PNG costs nothing in context. A
+relative path is refused instead of guessed: it would mean the shell's working
+directory to whoever wrote the file and this conversation's directory here, and
+reading the wrong file is a leak rather than a typo.
+
+Zett refuses an image artifact whose local path it does not own or cannot find:
+the path has to be a relative object key below `assets/sessions/<session>/`, and
+the file has to exist, so a typo can never be published as a permanently broken
+image. The artifact editor shows the local path read-only next to the external
+URL, because the key belongs to the upload rather than to the edit.
+
 ## The library
 
 The `Artifacts` view is the library of everything published, searchable by
