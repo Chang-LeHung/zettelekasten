@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Chang-LeHung/zettelekasten/main/frontend/public/logo.png" width="144" height="144" alt="Zett logo">
+  <img src="https://github.com/Chang-LeHung/zettelekasten/raw/main/frontend/public/logo.png" width="144" height="144" alt="Zett logo">
 </p>
 
 <h1 align="center">Zett</h1>
