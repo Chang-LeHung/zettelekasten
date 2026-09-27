@@ -134,6 +134,34 @@ def test_terminate_process_uses_terminate_process_on_windows(monkeypatch: pytest
     assert calls == [(4242, signal.SIGTERM), (4242, signal.SIGTERM)]
 
 
+def test_terminate_process_normalizes_a_missing_windows_pid(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Windows reports a vanished PID as a bare OSError; callers handle one error."""
+
+    def missing(pid: int, sig: int) -> None:
+        raise OSError(87, "The parameter is incorrect")
+
+    monkeypatch.setattr(process_platform, "WINDOWS", True)
+    monkeypatch.setattr(process_platform.os, "kill", missing)
+    monkeypatch.setattr(process_platform, "is_process_running", lambda pid: False)
+
+    with pytest.raises(ProcessLookupError):
+        process_platform.terminate_process(4242, force=False)
+
+
+def test_terminate_process_keeps_a_windows_error_for_a_live_pid(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A live process that refuses termination is a real failure, not a missing one."""
+
+    def denied(pid: int, sig: int) -> None:
+        raise PermissionError(5, "Access is denied")
+
+    monkeypatch.setattr(process_platform, "WINDOWS", True)
+    monkeypatch.setattr(process_platform.os, "kill", denied)
+    monkeypatch.setattr(process_platform, "is_process_running", lambda pid: True)
+
+    with pytest.raises(PermissionError):
+        process_platform.terminate_process(4242, force=False)
+
+
 def test_restrict_file_mode_avoids_fchmod_on_windows(monkeypatch: pytest.MonkeyPatch) -> None:
     def explode(_descriptor: int, _mode: int) -> None:
         raise AssertionError("os.fchmod does not exist on Windows")
