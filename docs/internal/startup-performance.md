@@ -105,10 +105,14 @@ From Zett itself (commit `perf: cut CLI and server startup time`):
    a Responses-API turn instead of with the process.
 5. **Lazy tokenizer**: `context_composition` loads `tiktoken` and the `o200k_base`
    encoding on the first token count instead of at import.
-6. **Per-command CLI imports**: `zett.cli` imports only the standard library at
-   module level. `--help` never leaves argparse; `status` and `stop` import the
-   runtime-state controller; `uvicorn`, `init_db`, and the role runners are
-   imported inside the commands that run them.
+6. **Per-command CLI modules**: the CLI is a `zett/cli/` package with one module
+   per command, and `zett.cli.main` — the jump function the console script calls
+   — reads the command name, imports that module, and hands the rest over. So
+   `--help` imports only the package `__init__` (a static table plus argparse),
+   `status` and `stop` import the runtime-state controller, and `uvicorn`,
+   `init_db`, and the role runners are imported inside the commands that run
+   them. `zett start -h` costs 0.02 s because it imports `zett/cli/start.py` and
+   nothing else.
 7. **Lazy package re-exports (PEP 562)**: `zett/infra/scheduler/__init__.py` and
    `zett/schemas/__init__.py` resolve a name through module `__getattr__`, so
    `from ...scheduler import SchedulerRunner` still works, but
