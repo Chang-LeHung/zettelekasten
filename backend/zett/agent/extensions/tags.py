@@ -13,9 +13,10 @@ from zett_agent.tools.base import (
     tool,
 )
 
+from ...application.artifacts.artifact_views import ArtifactReceipt, artifact_receipt
 from ...application.tags.tagging import tag_service
 from ...infra.persistence.dao import artifact_storage
-from ...schemas import AgentArtifactEntity, TagEntity, TagTreeEntity
+from ...schemas import TagEntity, TagTreeEntity
 
 
 class TagExtension(AgentExtension):
@@ -101,7 +102,7 @@ class TagExtension(AgentExtension):
         async def set_artifact_tags(
             artifact_id: str,
             paths: Annotated[list[str], Field(max_length=100)],
-        ) -> AgentArtifactEntity:
+        ) -> ArtifactReceipt:
             """Replace the confirmed persistent tags assigned to one saved artifact.
 
             Args:
@@ -115,10 +116,11 @@ class TagExtension(AgentExtension):
                 - The artifact must belong to this conversation and already be saved.
                 - This is a complete replacement, not an append operation.
                 - Missing paths are created as real tags, including their parent nodes.
+                - The answer is a bounded receipt whose `tags` is the complete set you just wrote.
             """
             if await artifact_storage.get_for_session(session_id, artifact_id) is None:
                 raise ValueError(f"Artifact not found in this session: {artifact_id}")
-            return await tag_service.replace_artifact_tags(artifact_id, paths)
+            return artifact_receipt(await tag_service.replace_artifact_tags(artifact_id, paths))
 
         for registered in (create_tag, list_tags, update_tag, delete_tag, set_artifact_tags):
             context.register_tool(registered)

@@ -28,7 +28,7 @@ import { buildMessageParts, rebaseImagePositions, type PositionedMessageImage } 
 import { restorePersistedConversation } from './utils/persistedConversation'
 import { moveItemBeforeOrAfter } from './utils/reorder'
 import { readPaneHidden, writePaneHidden } from './utils/paneVisibility'
-import { versionedPreviewUrl } from './utils/artifactPreview'
+import { artifactImageUrl, versionedPreviewUrl } from './utils/artifactPreview'
 import { appendStreamedAssistantMessage, createStreamedAssistantMessage } from './utils/streamedAssistant'
 import { defaultProviderBaseUrl, providerBaseUrlHelp } from './utils/providerDefaults'
 import { todoFromTool } from './utils/toolPresentation'
@@ -430,10 +430,7 @@ const selectedArtifactDiff = computed(() => diffArtifactContent(
   selectedArtifact.value?.draft_content ?? null,
 ))
 const selectedImageUrl = computed(() => {
-  const content = artifactContent.value
-  if (content?.artifact_type !== 'image') return null
-  if (content.source_url) return content.source_url
-  return selectedArtifact.value?.content_url || null
+  return artifactImageUrl(artifactContent.value, selectedArtifact.value)
 })
 
 function artifactTypeLabel(type: ArtifactContent['artifact_type']): string {
@@ -3988,7 +3985,11 @@ onBeforeUnmount(() => {
                     <label class="card-summary-control"><span>{{ artifactContent.artifact_type === 'image' ? 'Caption' : 'Summary' }}</span><textarea v-model="artifactContent.summary" rows="3" /></label>
                     <label v-if="artifactContent.artifact_type === 'image'" class="card-content-control"><span>Image prompt</span><textarea v-model="artifactContent.prompt" placeholder="Creative direction or generation prompt" /></label>
                     <label v-if="artifactContent.artifact_type === 'image'" class="card-summary-control"><span>Alt text</span><textarea v-model="artifactContent.alt_text" rows="3" /></label>
-                    <label v-if="artifactContent.artifact_type === 'image'" class="card-summary-control"><span>Source URL</span><textarea v-model="artifactContent.source_url" rows="2" placeholder="https://…" /></label>
+                    <template v-if="artifactContent.artifact_type === 'image'">
+                      <label class="card-summary-control"><span>Source URL</span><textarea v-model="artifactContent.source_url" rows="2" placeholder="https://…" /></label>
+                      <!-- The local key belongs to an uploaded session file, not to this edit: the assistant sets it through upload_asset, so it is shown read-only instead of being typed here. -->
+                      <label v-if="artifactContent.asset_path" class="card-summary-control"><span>Local file</span><textarea :value="artifactContent.asset_path" rows="1" readonly /></label>
+                    </template>
                     <label v-else class="card-content-control"><span>{{ artifactContent.artifact_type === 'article' ? 'Article' : artifactContent.artifact_type === 'slides' ? 'Slides' : 'Knowledge' }} · Markdown</span><textarea v-model="artifactContent.content" /></label>
                   </template>
                   <article v-else class="artifact-preview" :class="`artifact-preview-${artifactContent.artifact_type}`">

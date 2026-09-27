@@ -10,7 +10,7 @@ from sqlalchemy import delete as sql_delete
 from zett_agent.ids import new_uuid7
 
 from ...._compat import UTC
-from ....application.files.object_store import ObjectKey
+from ....application.files.object_store import InvalidObjectKey, ObjectKey, session_directory_key
 from ....schemas import (
     AgentArtifactEntity,
     AgentArtifactWrite,
@@ -100,6 +100,7 @@ def _created_content(
     """Resolve one create payload, allocating a LaTeX project when requested."""
     if isinstance(content, LatexPdfArtifactCreate):
         return create_latex_project(session_id, content)
+    _validate_image_path(session_id, content)
     return content
 
 
@@ -113,7 +114,29 @@ def _updated_content(
     if isinstance(content, LatexPdfArtifactContent):
         # A draft or saved reference can precede compilation; only validate its location.
         validate_latex_project_path(session_id, content)
+    _validate_image_path(session_id, content)
     return content
+
+
+def _validate_image_path(session_id: str, content: ArtifactContent | None) -> None:
+    """Require an image artifact's local file to exist and belong to this session.
+
+    An image artifact points either outside the application (``source_url``) or
+    at one file this conversation uploaded (``asset_path``). A path nobody owns,
+    or one that names nothing on disk, would render as a broken image forever,
+    so it is refused before it is stored instead of after the user opens it.
+    """
+    if not isinstance(content, ImageArtifactContent) or content.asset_path is None:
+        return
+    try:
+        key = ObjectKey(content.asset_path)
+    except InvalidObjectKey as error:
+        raise ValueError(f"Image asset_path is not a relative object key: {content.asset_path!r}") from error
+    directory = session_directory_key(session_id).value
+    if not key.value.startswith(f"{directory}/"):
+        raise ValueError("Image asset_path must be a file this conversation uploaded")
+    if not get_object_store().resolve(key).is_file():
+        raise ValueError(f"Image asset_path does not exist: {key.value}")
 
 
 class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifactEntity, str, ArtifactListOptions]):

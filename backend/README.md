@@ -9,7 +9,7 @@ when a build exists.
 | Path | Contents |
 | --- | --- |
 | `zett/agent/` | Composition root for conversations: container, capability contracts, model factory, SSE dispatcher, session title agent |
-| `zett/agent/extensions/` | Zett's adapters to the zett-agent `AgentExtension` point: the asset, artifact, tag, and context-composition tools |
+| `zett/agent/extensions/` | Zett's adapters to the zett-agent `AgentExtension` point: the asset, artifact, tag, upload, and context-composition tools |
 | `zett/agent/plugins/` | Zett's own `ZettelkastenExt` plugins: the skill slash commands and the `@` reference kinds |
 | `zett/application/` | Routes, use-case services, and the framework-neutral `ObjectStore` contract |
 | `zett/infra/scheduler/` | Scheduler control loop, execution worker loop, action registry, and executor contracts |
@@ -130,6 +130,24 @@ conversation UI, previews, search, and the draft-versus-published diff, and
 `ArtifactPruner` returns `published_content` and `draft_content` previews
 together so a querying model can compare what the user kept with what it
 proposes.
+The tools never answer with the stored row. `ArtifactReceipt`
+(`zett/application/artifacts/artifact_views.py`) is what `create_artifact`,
+`update_artifact`, and `set_artifact_tags` return: the id, state, version,
+title, pending-draft flag, confirmed tag paths, and the server-assigned
+locations — `project_path`/`pdf_name` for a LaTeX project and `asset_path` for
+a local image — because `project_path` is the one server-owned key the LaTeX
+workflow must preserve. Only `get_artifact` returns the bodies, as
+`ArtifactDocument` with `content` and `draft_content` and none of the stored
+row's `raw_content`, metadata, timestamps, or owning session. Echoing a body the
+model sent in the same turn spent the context of a long article on itself.
+Because the draft is that view, every model update patches the draft rather than
+the published text: successive `update_artifact` calls accumulate into one
+working copy, and `content_json` still changes only on create or a user save.
+Tag promotion reads the published side for the same reason, and it is additive:
+a save applies the suggestions that content confirms, drops only a suggestion
+the editor unchecked, and never deletes an assignment it did not propose, so a
+tag attached by `set_artifact_tags`, the Library, or `zett tag add` survives an
+unrelated save.
 
 The artifact body syntax lives in a built-in skill rather than in the tool
 docstrings: `zett/infra/skills/builtin.py` holds the fixed

@@ -178,7 +178,7 @@ async def update_artifact(session_id: str, artifact_id: str, payload: ArtifactUp
     )
     try:
         updated = await artifact_storage.update(artifact_id, entity)
-        return await tag_service.sync_confirmed_suggestions(updated)
+        return await tag_service.sync_confirmed_suggestions(updated, superseded_content=current.content)
     except (ValueError, FileNotFoundError) as error:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
 
@@ -237,7 +237,7 @@ async def save_artifact(session_id: str, artifact_id: str) -> AgentArtifactEntit
     )
     try:
         saved = await artifact_storage.update(artifact_id, entity)
-        return await tag_service.sync_confirmed_suggestions(saved)
+        return await tag_service.sync_confirmed_suggestions(saved, superseded_content=current.content)
     except (ValueError, FileNotFoundError) as error:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
 

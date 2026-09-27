@@ -3,7 +3,9 @@ from sqlalchemy import select
 
 from zett.infra.persistence import database
 from zett.infra.persistence.dao.artifact import artifact_storage
+from zett.infra.persistence.dao.asset import session_asset_storage
 from zett.infra.persistence.dao.session import session_storage
+from zett.infra.persistence.dao.static_asset import static_asset_storage
 from zett.infra.persistence.storage import AsyncStorage
 from zett.infra.persistence.tables import SessionArtifactRow
 from zett.schemas import (
@@ -14,7 +16,10 @@ from zett.schemas import (
     ArtifactStatus,
     CardArtifactContent,
     ImageArtifactContent,
+    SessionAssetCreate,
+    SessionAssetType,
     SlidesArtifactContent,
+    StaticAssetCreate,
 )
 
 
@@ -207,3 +212,86 @@ def test_slides_support_horizontal_sections_with_vertical_pages() -> None:
 def test_slides_reject_ambiguous_or_empty_vertical_pages(content: str) -> None:
     with pytest.raises(ValueError):
         SlidesArtifactContent(title="Invalid vertical deck", content=content)
+
+
+async def _session_image(session_id: str, name: str = "chart.png") -> str:
+    """Store one session-owned image and return its ObjectKey."""
+    asset = await session_asset_storage.create(
+        SessionAssetCreate(
+            session_id=session_id,
+            asset_type=SessionAssetType.IMAGE,
+            name=name,
+            mime_type="image/png",
+            content=b"\x89PNG\r\n\x1a\n",
+        )
+    )
+    assert asset.storage_path is not None
+    return asset.storage_path
+
+
+async def test_image_artifact_accepts_a_file_this_session_uploaded() -> None:
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
+    stored_path = await _session_image(session_id)
+
+    artifact = await artifact_storage.create(
+        AgentArtifactWrite(
+            session_id=session_id,
+            status=ArtifactStatus.SAVED,
+            content=ImageArtifactContent(title="Chart", asset_path=stored_path),
+        )
+    )
+
+    assert artifact.content_url == f"/api/files/{stored_path}"
+
+
+async def test_image_artifact_refuses_a_path_it_does_not_own_or_cannot_find() -> None:
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
+    other_session = (await session_storage.create(AgentSessionCreate())).session_id
+    foreign = await _session_image(other_session, "other.png")
+    static_asset = await static_asset_storage.create(
+        StaticAssetCreate(name="library.png", mime_type="image/png", content=b"\x89PNG\r\n\x1a\n")
+    )
+
+    for path, message in (
+        (foreign, "this conversation"),
+        (static_asset.storage_path, "this conversation"),
+        (f"assets/sessions/{session_id}/missing.png", "does not exist"),
+        ("../escape.png", "relative object key"),
+        ("/tmp/absolute.png", "relative object key"),
+    ):
+        with pytest.raises(ValueError, match=message):
+            await artifact_storage.create(
+                AgentArtifactWrite(
+                    session_id=session_id,
+                    status=ArtifactStatus.SAVED,
+                    content=ImageArtifactContent(title="Broken", asset_path=path),
+                )
+            )
+
+    # An external image needs no local file, and an update cannot slip past the
+    # same check by replacing the path of an artifact that already exists.
+    await artifact_storage.create(
+        AgentArtifactWrite(
+            session_id=session_id,
+            status=ArtifactStatus.SAVED,
+            content=ImageArtifactContent(title="External", source_url="https://example.com/picture.png"),
+        )
+    )
+    stored_path = await _session_image(session_id, "kept.png")
+    stored = await artifact_storage.create(
+        AgentArtifactWrite(
+            session_id=session_id,
+            status=ArtifactStatus.SAVED,
+            content=ImageArtifactContent(title="Kept", asset_path=stored_path),
+        )
+    )
+
+    with pytest.raises(ValueError, match="does not exist"):
+        await artifact_storage.update(
+            stored.id,
+            AgentArtifactWrite(
+                session_id=session_id,
+                status=ArtifactStatus.SAVED,
+                content=ImageArtifactContent(title="Kept", asset_path=f"assets/sessions/{session_id}/gone.png"),
+            ),
+        )

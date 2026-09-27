@@ -27,8 +27,8 @@ handle the Agent uses for a shell command or an image tool. These uploads are no
 assets — they never appear in `list_assets` — and deleting the conversation
 removes the whole session directory, so no orphan file is left behind.
 
-The Agent reaches assets with its own tools (`create_asset`, `get_asset`,
-`update_asset`, `delete_asset`, `list_assets`) and can reference one with `@` in
+The Agent reaches assets with its own tools (`create_asset`, `upload_asset`,
+`get_asset`, `update_asset`, `delete_asset`, `list_assets`) and can reference one with `@` in
 the composer, which reads it through the same tool rather than pasting its
 content into the prompt.
 

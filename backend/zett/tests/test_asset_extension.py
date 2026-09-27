@@ -4,9 +4,12 @@ import base64
 import json
 from collections.abc import AsyncIterator
 
+import pytest
 from zett_agent.agent import (
     Agent,
     AgentRunConfig,
+    AgentRunContext,
+    AgentState,
 )
 from zett_agent.messages import (
     AssistantMessage,
@@ -20,8 +23,19 @@ from zett_agent.model import (
 )
 
 from zett.agent import AssetExtension
-from zett.infra.persistence.dao import session_asset_storage, session_storage
-from zett.schemas import AgentSessionCreate, SessionAssetCreate, SessionAssetListOptions
+from zett.agent.extensions.assets import UploadedAsset, _read_upload
+from zett.application.files.object_store import session_directory_key
+from zett.infra.files.object_store import get_object_store
+from zett.infra.persistence.dao import artifact_storage, session_asset_storage, session_storage
+from zett.schemas import (
+    AgentArtifactWrite,
+    AgentSessionCreate,
+    ArtifactStatus,
+    ImageArtifactContent,
+    SessionAssetCreate,
+    SessionAssetListOptions,
+    SessionAssetType,
+)
 
 
 def _tool_payload(request: ModelRequest) -> dict[str, object]:
@@ -44,7 +58,7 @@ class AssetCrudModel:
 
     async def stream(self, request: ModelRequest) -> AsyncIterator[ModelEvent]:
         names = {definition.name for definition in request.tools}
-        assert names == {"create_asset", "get_asset", "update_asset", "delete_asset", "list_assets"}
+        assert names == {"create_asset", "upload_asset", "get_asset", "update_asset", "delete_asset", "list_assets"}
         match self.step:
             case 0:
                 message = AssistantMessage(
@@ -297,3 +311,67 @@ async def test_asset_extension_rejects_payloads_above_the_configured_limit() -> 
 
     assert result.content == "Rejected oversized content."
     assert await session_asset_storage.list(SessionAssetListOptions(session_id=session_id)) == []
+
+
+async def test_upload_asset_stores_a_file_the_model_wrote(tmp_path) -> None:
+    """The model writes a file, uploads it, and points an image artifact at it."""
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
+    directory = get_object_store().resolve(session_directory_key(session_id))
+    directory.mkdir(parents=True, exist_ok=True)
+    payload = b"\x89PNG\r\n\x1a\n" + b"pixels" * 4
+    (directory / "generated.png").write_bytes(payload)
+
+    context = AgentRunContext(
+        config=AgentRunConfig(session_id=session_id),
+        state=AgentState(),
+        tools={},
+    )
+    await AssetExtension().on_tool(context)
+
+    uploaded = await context.tools["upload_asset"].handler(path=str(directory / "generated.png"))
+
+    # The tool answers with the next step's key and URL, not the whole row: the
+    # model never acts on a session id, a hash, or a timestamp.
+    assert isinstance(uploaded, UploadedAsset)
+    assert set(UploadedAsset.model_fields) == {"name", "mime_type", "storage_path", "content_url"}
+    assert uploaded.name == "generated.png"
+    assert uploaded.mime_type == "image/png"
+    assert uploaded.storage_path.startswith(f"assets/sessions/{session_id}/")
+    assert uploaded.content_url == f"/api/files/{uploaded.storage_path}"
+
+    # The uploaded key is exactly what an image artifact needs, and the artifact
+    # renders it through the same file URL the upload reported.
+    artifact = await artifact_storage.create(
+        AgentArtifactWrite(
+            session_id=session_id,
+            status=ArtifactStatus.SAVED,
+            content=ImageArtifactContent(title="Generated chart", asset_path=uploaded.storage_path),
+        )
+    )
+    assert artifact.content_url == uploaded.content_url
+    assets = await session_asset_storage.list(SessionAssetListOptions(session_id=session_id))
+    assert [asset.name for asset in assets] == ["generated.png"]
+    assert assets[0].asset_type is SessionAssetType.IMAGE
+    assert assets[0].size_bytes == len(payload)
+    stored_bytes = await session_asset_storage.content_path(session_id, assets[0].id)
+    assert stored_bytes is not None and stored_bytes.read_bytes() == payload
+
+
+async def test_read_upload_refuses_paths_outside_the_conversation_and_oversized_files() -> None:
+    """An upload tool that could read any file would turn a mistake into a leak."""
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
+    directory = get_object_store().resolve(session_directory_key(session_id))
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "big.bin").write_bytes(b"x" * 101)
+
+    with pytest.raises(ValueError, match="must be absolute"):
+        _read_upload(session_id, "big.bin", max_bytes=100)
+    with pytest.raises(ValueError, match="stay inside this conversation"):
+        _read_upload(session_id, "/etc/hosts", max_bytes=100)
+    with pytest.raises(ValueError, match="File not found"):
+        _read_upload(session_id, str(directory / "missing.png"), max_bytes=100)
+    with pytest.raises(ValueError, match="the asset limit is 100"):
+        _read_upload(session_id, str(directory / "big.bin"), max_bytes=100)
+
+    name, content, media_type = _read_upload(session_id, str(directory / "big.bin"), max_bytes=200)
+    assert (name, len(content), media_type) == ("big.bin", 101, "application/octet-stream")
