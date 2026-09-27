@@ -241,7 +241,9 @@ async def test_closing_stream_releases_session_and_provider_for_next_turn(monkey
                     pass
 
         consumer = asyncio.create_task(consume())
-        assert await asyncio.to_thread(entered.wait, 1)
+        # A loaded CI runner schedules this task seconds later; the wait only
+        # has to prove the stream started, not how fast the runner is.
+        assert await asyncio.to_thread(entered.wait, 30)
         assert await agent_routes.active_requests.pending(session_id) is True
 
         # Starlette uses task cancellation when the HTTP client disconnects.
