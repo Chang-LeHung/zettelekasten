@@ -40,7 +40,7 @@ uv tool install --force --with zett-weixin ./backend
 
 # Running from a source checkout: put it in the backend environment
 uv add --directory backend zett-weixin
-uv run --directory backend zett start --reload
+uv run --directory backend zett start --foreground --reload
 ```
 
 Restart Zett afterwards. Startup logs name what loaded — channel plugins are

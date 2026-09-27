@@ -1,6 +1,6 @@
 # Zett backend
 
-FastAPI service and Typer CLI for Zett. The backend owns two SQLite databases,
+FastAPI service and argparse CLI for Zett. The backend owns two SQLite databases,
 a few file directories, and serves the compiled Vue frontend from `zett/static`
 when a build exists.
 
@@ -359,9 +359,11 @@ stalled process) instead of a run that is merely slow, and that run is recovered
 as `interrupted`.
 
 The Web lifespan writes the server PID, port, scheduler PIDs, and worker PIDs
-to `runtime.json` below `storage_root`. `zett stop` reads that file, stops the
-recorded server and child processes, and removes the file. Stale or partial
-runtime state is cleaned before a new server starts.
+to `runtime.json` below `storage_root`. `zett status` reports that file — the
+server PID and port plus whether each recorded child is still alive — and
+`zett stop` reads it to stop the recorded server and child processes before
+removing the file. Stale or partial runtime state is cleaned before a new
+server starts.
 
 Scheduler and worker processes also run a watchdog against that file. They exit
 after repeated failures when the file is missing or incomplete, when the owning
@@ -434,7 +436,9 @@ restart is always visible.
 
 All process types configure SQLite with WAL, a bounded busy timeout, and short
 transactions. The Web process writes `logs/zett.log`, the scheduler writes
-`logs/scheduler.log`, and workers write `logs/worker.log`. Every record starts
+`logs/scheduler.log`, and workers write `logs/worker.log`; a detached server
+additionally keeps its console output in `logs/background.log`, because nothing
+is attached to its stdout. Every record starts
 with the host's local wall-clock time and its explicit `±HH:MM` offset
 (`2026-09-26 17:51:03+08:00`), so a log read next to local events needs no
 conversion and a log copied between machines still names its zone.
@@ -473,6 +477,7 @@ conversion and a log copied between machines still names its zone.
 | `ZETT_PROCESS_WATCHDOG_INTERVAL_SECONDS` | Interval between runtime ownership checks |
 | `ZETT_PROCESS_WATCHDOG_FAILURE_THRESHOLD` | Consecutive failures required before a child exits |
 | `ZETT_WORKER_PROCESSES` | Required number of execution worker processes |
+| `ZETT_START_TIMEOUT_SECONDS` | How long `zett start` waits for the detached server to answer, default `30` |
 | `ZETT_IM_GATEWAY_DATABASE_PATH` | Imported gateway channel and route database |
 | `ZETT_IM_GATEWAY_KEY_PATH` | Local key encrypting channel credentials |
 
@@ -480,18 +485,37 @@ Conversation limits are user settings rather than environment variables:
 `max_message_images`, `max_turn_iterations`, `compaction_max_tokens`, and
 `compaction_keep_recent_tokens`, read and replaced through `/api/settings`.
 
-`zett start` owns the API and supervises scheduler and worker child processes:
+`zett start` owns the API and supervises scheduler and worker child processes.
+It detaches by default: the command returns once the server answers on its
+port, so the terminal stays free and the server survives it. `zett status`
+reports what is running and exits non-zero when nothing is.
 
 ```bash
-uv run --directory backend zett start
+uv run --directory backend zett start                 # returns once the port answers
+uv run --directory backend zett start --foreground    # block in this terminal
+uv run --directory backend zett status
 
 # Separate scheduler/worker debugging processes
 uv run --directory backend zett scheduler
 uv run --directory backend zett worker
 ```
 
-`zett stop` stops the API and every supervised child process. The IM gateway
-has no separate process to stop because it is imported directly by Zett.
+Short forms: `-b`/`-f` for the background switch, `-p` for `--port`, and `-r`
+for `--reload`. `--host` stays long-only, because `-h` reads as help.
+
+Serving also exports the effective `--host`/`--port` as `ZETT_HOST`/`ZETT_PORT`,
+because the reload worker and the supervised scheduler and workers re-read the
+configuration from the environment: without it they heartbeat — and the reload
+worker records runtime state — for the default port instead of the one this
+command was actually given.
+
+The detached child runs `zett start --foreground` in its own session, which is
+why the blocking form still exists: it is what a process manager, a debugger,
+or `make dev` uses. Anything the detached process prints before logging is
+configured lands in `logs/background.log`, and a start that never becomes ready
+reports that file with its last lines. `zett stop` stops the API and every
+supervised child process. The IM gateway has no separate process to stop
+because it is imported directly by Zett.
 
 ### Platform support
 
@@ -512,7 +536,7 @@ works; starting its TUI reports that it requires a POSIX terminal.
 
 ```bash
 uv sync --directory backend
-uv run --directory backend zett start --reload
+uv run --directory backend zett start --foreground --reload
 ```
 
 `make check` runs Ruff, the backend, agim, and zett-weixin test suites, frontend

@@ -3,7 +3,6 @@
 import asyncio
 import json
 import os
-import socket
 import tempfile
 import time
 from collections.abc import Awaitable, Callable
@@ -12,7 +11,7 @@ from pathlib import Path
 
 from ..._compat import UTC
 from ...config import settings
-from ...schemas import ProcessRole, ServerRuntimeState
+from ...schemas import ProcessRole, RuntimeChildStatus, RuntimeStatus, ServerRuntimeState
 from ..log import get_logger
 from . import process_platform
 
@@ -121,6 +120,43 @@ class RuntimeProcessController:
         await self.store.remove()
         return state
 
+    async def status(self) -> RuntimeStatus:
+        """Report the recorded server and child processes without changing them.
+
+        The file is the only authority: a recorded server PID that is alive, or
+        a recorded port that still accepts connections when no PID was written,
+        counts as running. A stale file is reported as recorded-but-not-running
+        rather than silently deleted, because ``zett status`` must show the same
+        process that ``zett stop`` would stop.
+        """
+        state = await self.store.read()
+        if state is None:
+            return RuntimeStatus(running=False)
+        server_running = state.server_pid is not None and self._pid_running(state.server_pid)
+        port_serving = state.port is not None and self._port_open(state.port)
+        children = [
+            RuntimeChildStatus(role=role, pid=pid, running=self._pid_running(pid))
+            for role, pids in (
+                (ProcessRole.SCHEDULER, state.scheduler_pids),
+                (ProcessRole.WORKER, state.worker_pids),
+            )
+            for pid in pids
+        ]
+        return RuntimeStatus(
+            running=server_running or (state.server_pid is None and port_serving),
+            state_recorded=True,
+            server_pid=state.server_pid,
+            server_running=server_running,
+            port=state.port,
+            url=(
+                f"http://{process_platform.dialable_host(settings.host)}:{state.port}"
+                if state.port is not None
+                else None
+            ),
+            started_at=state.started_at,
+            children=children,
+        )
+
     async def _terminate_children(self, state: ServerRuntimeState, *, timeout: float = 5.0) -> None:
         for pid in (*state.scheduler_pids, *state.worker_pids):
             await self._terminate_pid(pid, timeout=timeout, expected="zett")
@@ -164,11 +200,7 @@ class RuntimeProcessController:
 
     @staticmethod
     def _port_open(port: int) -> bool:
-        try:
-            with socket.create_connection(("127.0.0.1", port), timeout=0.5):
-                return True
-        except OSError:
-            return False
+        return process_platform.port_is_open(port)
 
     @staticmethod
     def _port_pids(port: int) -> list[int]:

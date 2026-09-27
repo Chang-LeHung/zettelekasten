@@ -55,13 +55,13 @@ uv run --directory backend zett scheduler   # queues due runs
 uv run --directory backend zett worker      # claims and executes them
 ```
 
-`zett start` supervises both as child processes, and `zett stop` stops them
-along with the API. The scheduler only writes pending run rows; one or more
-workers claim and execute them with leases, so a crashed worker does not hold a
-task forever. A watchdog makes each child verify that the runtime state is
-complete and that the web process that owns it is still alive, and exit after a
-bounded number of failures, so an unclean crash cannot leave permanent orphan
-workers behind.
+`zett start` supervises both as child processes, `zett status` reports their
+recorded PIDs, and `zett stop` stops them along with the API. The scheduler only
+writes pending run rows; one or more workers claim and execute them with
+leases, so a crashed worker does not hold a task forever. A watchdog makes each
+child verify that the runtime state is complete and that the web process that
+owns it is still alive, and exit after a bounded number of failures, so an
+unclean crash cannot leave permanent orphan workers behind.
 
 If a task's provider is disabled or deleted, the scheduler refuses to queue it
 instead of failing silently, and a provider cannot be disabled while a task

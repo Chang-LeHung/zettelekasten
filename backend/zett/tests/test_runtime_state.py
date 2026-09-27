@@ -85,6 +85,57 @@ async def test_prepare_start_cleans_stale_pid_state(tmp_path: Path) -> None:
     assert await store.read() is None
 
 
+async def test_status_reports_a_missing_state_file_as_not_running(tmp_path: Path) -> None:
+    controller = RuntimeProcessController(RuntimeStateStore(tmp_path / "runtime.json"))
+
+    status = await controller.status()
+
+    assert status.running is False
+    assert status.state_recorded is False
+    assert status.server_pid is None
+    assert status.children == []
+
+
+async def test_status_reports_the_recorded_server_and_child_liveness(tmp_path: Path) -> None:
+    store = RuntimeStateStore(tmp_path / "runtime.json")
+    await store.write(
+        ServerRuntimeState(
+            server_pid=os.getpid(),
+            port=6310,
+            scheduler_pids=[os.getpid()],
+            worker_pids=[999_999_993],
+            started_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+    )
+    controller = RuntimeProcessController(store)
+
+    status = await controller.status()
+
+    assert status.running is True
+    assert status.state_recorded is True
+    assert status.server_running is True
+    assert status.port == 6310
+    assert status.url is not None and status.url.endswith(":6310")
+    assert {(child.role, child.pid, child.running) for child in status.children} == {
+        (ProcessRole.SCHEDULER, os.getpid(), True),
+        (ProcessRole.WORKER, 999_999_993, False),
+    }
+    assert status.started_at == datetime(2026, 1, 1, tzinfo=UTC)
+
+
+async def test_status_reports_a_stale_state_file_without_deleting_it(tmp_path: Path) -> None:
+    store = RuntimeStateStore(tmp_path / "runtime.json")
+    await store.write(ServerRuntimeState(server_pid=999_999_992, port=6311))
+    controller = RuntimeProcessController(store)
+
+    status = await controller.status()
+
+    assert status.running is False
+    assert status.state_recorded is True
+    assert status.server_pid == 999_999_992
+    assert store.path.exists()
+
+
 async def test_stop_removes_state_when_recorded_processes_are_gone(tmp_path: Path) -> None:
     store = RuntimeStateStore(tmp_path / "runtime.json")
     await store.write(

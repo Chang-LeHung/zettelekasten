@@ -5,8 +5,10 @@ import os
 import subprocess  # noqa: S404
 import sys
 import time
+import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import httpx
 
@@ -16,6 +18,10 @@ from ..log import get_logger
 from . import process_platform
 
 logger = get_logger(__name__)
+
+#: Console output of a detached ``zett start`` server. Nothing is attached to
+#: that process' stdout, so startup lines and tracebacks have to land in a file.
+BACKGROUND_LOG_FILE_NAME = "background.log"
 
 
 @dataclass(slots=True)
@@ -62,6 +68,67 @@ class SubprocessLauncher:
         return ManagedProcess(role=role, instance_id=instance_id, process=process)
 
 
+@dataclass(slots=True)
+class BackgroundServerProcess:
+    """One detached server process started by ``zett start``."""
+
+    pid: int
+    log_path: Path
+
+    def is_running(self) -> bool:
+        return process_platform.is_process_running(self.pid)
+
+
+def launch_background_server(
+    *,
+    host: str,
+    port: int,
+    reload: bool,
+    log_path: Path,
+) -> BackgroundServerProcess:
+    """Detach one server process and return its PID and console log file.
+
+    The caller returns to the shell as soon as the server answers on its port,
+    so the child runs itself in the foreground from a new session and keeps no
+    handle on this terminal. Its stdout and stderr go to ``log_path``: startup
+    tracebacks are the only record left when a detached process fails before it
+    can write runtime state.
+    """
+    command = [
+        sys.executable,
+        "-m",
+        "zett.cli",
+        "start",
+        "--foreground",
+        "--host",
+        host,
+        "--port",
+        str(port),
+    ]
+    if reload:
+        command.append("--reload")
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("ab") as stream, warnings.catch_warnings():
+        # This process returns to the shell while the server keeps running, so
+        # it deliberately keeps no child handle: liveness is answered by
+        # ``is_process_running``. Dropping that handle here — inside the
+        # filtering block — keeps the intentional detachment from being
+        # reported as an unwaited child process.
+        warnings.simplefilter("ignore", ResourceWarning)
+        process = subprocess.Popen(  # noqa: S603
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=stream,
+            stderr=subprocess.STDOUT,
+            close_fds=True,
+            **process_platform.background_spawn_kwargs(),
+        )
+        pid = process.pid
+        del process
+    logger.info("Started background Zett server; pid=%d log_file=%s", pid, log_path)
+    return BackgroundServerProcess(pid=pid, log_path=log_path)
+
+
 class HeartbeatReporter(ABC):
     """Send one heartbeat to the FastAPI process."""
 
@@ -74,9 +141,7 @@ class HttpHeartbeatReporter(HeartbeatReporter):
     """Post heartbeats to the local FastAPI health endpoint."""
 
     def __init__(self, base_url: str | None = None) -> None:
-        host = settings.host
-        if host in {"0.0.0.0", "::"}:
-            host = "127.0.0.1"
+        host = process_platform.dialable_host(settings.host)
         self.base_url = (base_url or f"http://{host}:{settings.port}").rstrip("/")
 
     async def report(self, heartbeat: ProcessHeartbeatIn) -> None:

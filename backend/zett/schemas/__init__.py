@@ -58,7 +58,10 @@ from .processes import (
     ProcessInstanceHealth,
     ProcessRole,
     ProcessRoleHealth,
+    RuntimeChildStatus,
+    RuntimeStatus,
     ServerRuntimeState,
+    ServerStartResult,
 )
 from .providers import ProviderChoice, ProviderConnection, ProviderEntity, ProviderType, ProviderWrite
 from .scheduled_actions import AGENT_PROMPT_ACTION_KIND, AgentPromptAction
@@ -143,6 +146,9 @@ __all__ = [
     "ProcessInstanceHealth",
     "ProcessRole",
     "ProcessRoleHealth",
+    "RuntimeChildStatus",
+    "RuntimeStatus",
+    "ServerStartResult",
     "ServerRuntimeState",
     "ScheduledTaskAction",
     "ScheduledTaskCreate",

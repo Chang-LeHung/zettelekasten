@@ -13,12 +13,15 @@ to use it, and what a plugin author has to implement.
 git clone https://github.com/Chang-LeHung/zettelekasten
 cd zettelekasten
 make install     # build the interface and install the `zett` command
-zett start       # serve the API and the interface on 127.0.0.1:6280
+zett start       # serve on 127.0.0.1:6280 in the background
+zett status      # what is running, and which background roles are up
 ```
 
 Open `http://127.0.0.1:6280`, add a provider in `Settings`, and start a
 conversation. The API documentation is at `/docs` while the service runs, and
-`make check` runs the whole verification suite.
+`make check` runs the whole verification suite. `zett start` returns as soon as
+the server answers and keeps running without the terminal; use
+`zett start --foreground` to stay attached, and `zett stop` to end it.
 
 ## User guide
 
