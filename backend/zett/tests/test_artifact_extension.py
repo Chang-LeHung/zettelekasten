@@ -95,9 +95,14 @@ class ArtifactQueryModel:
                     )
                 )
             case 2:
+                # A write answers with a bounded receipt, never the body it was just sent.
                 created = _tool_payload(request)
-                assert str(created["content"]["title"]) == "Rust ownership"
-                assert created["draft_content"] is None
+                assert created["title"] == "Rust ownership"
+                assert created["artifact_type"] == "card"
+                assert created["status"] == "draft"
+                assert created["pending_draft"] is False
+                assert "content" not in created
+                assert "raw_content" not in created
                 message = AssistantMessage(
                     tool_calls=(ToolCall("get", "get_artifact", {"artifact_id": self.first_id}),)
                 )
@@ -262,9 +267,9 @@ async def test_update_artifact_can_target_an_artifact_from_another_session() -> 
                 )
             else:
                 updated = _tool_payload(request)
-                assert updated["session_id"] == owner
-                assert updated["content"]["title"] == "Other session"
-                assert updated["draft_content"]["title"] == "Updated across sessions"
+                assert updated["id"] == secret.id
+                assert updated["title"] == "Updated across sessions"
+                assert updated["pending_draft"] is True
                 message = AssistantMessage(content="Cross-session update complete.")
             self.step += 1
             yield ModelEvent.completed(ModelResponse(message))
@@ -313,8 +318,9 @@ async def test_direct_current_session_edits_update_content_without_a_draft() -> 
                 )
             else:
                 updated = _tool_payload(request)
-                assert updated["content"]["title"] == "After"
-                assert updated["draft_content"] is None
+                assert updated["title"] == "After"
+                # A direct current-session edit writes content, so nothing is pending.
+                assert updated["pending_draft"] is False
                 message = AssistantMessage(content="Direct update complete.")
             self.step += 1
             yield ModelEvent.completed(ModelResponse(message))

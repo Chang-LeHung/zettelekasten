@@ -14,6 +14,12 @@ from zett_agent.tools.base import (
 )
 
 from ...application.artifacts.artifact_pruner import AgentArtifactPreview, ArtifactPruner
+from ...application.artifacts.artifact_views import (
+    ArtifactDocument,
+    ArtifactReceipt,
+    artifact_document,
+    artifact_receipt,
+)
 from ...application.tags.tagging import tag_service
 from ...infra.persistence.dao import artifact_storage
 from ...schemas import (
@@ -48,9 +54,7 @@ class ArtifactExtension(AgentExtension):
         session_id = context.config.session_id
 
         @tool
-        async def create_artifact(
-            content: ArtifactCreateContent, raw_content: str | None = None
-        ) -> AgentArtifactEntity:
+        async def create_artifact(content: ArtifactCreateContent, raw_content: str | None = None) -> ArtifactReceipt:
             """Create a draft card, article, image, slide deck, or LaTeX PDF in this conversation.
 
             Args:
@@ -68,18 +72,19 @@ class ArtifactExtension(AgentExtension):
                 - Read the 'zett-artifact-syntax' skill with read_skill before writing any body; it carries the exact Markdown, figure, cover, HTML page, and slide separator rules.
                 - Create an artifact only when it is a useful output of the conversation, and keep it in draft state until the user saves it.
                 - Creation stores the supplied content directly; later updates write draft content only, and never claim an artifact is saved unless the user saves it.
-                - For a LaTeX PDF, pass only pdf_name and treat the returned content.project_path as authoritative: never guess it, and preserve it when updating.
+                - For a LaTeX PDF, pass only pdf_name and treat the `project_path` the receipt returns as authoritative: never guess it, and preserve it when updating.
                 - For an image you produced locally, write or download the file first, upload it with upload_asset, and pass the storage_path it returns as asset_path; an external image uses source_url instead. An asset_path this conversation does not own, or one that names no file, is refused.
                 - A LaTeX project is your git repository: init it, keep the build output in a '.gitignore', and commit each meaningful change from the project directory with a Conventional Commit message. Zett never touches that history, and it refuses to save while the project is not a committed git repository.
                 - Compile with the shell tools: a missing or invalid PDF leaves metadata and saving intact, and the preview appears once project_path/pdf_name exists.
+                - The answer is a bounded receipt: the id, state, tags, and server-assigned paths. Read the body back with get_artifact when a later step needs it.
             """
             created = await artifact_storage.create(
                 AgentArtifactWrite(session_id=session_id, content=content, raw_content=raw_content)
             )
-            return await tag_service.sync_confirmed_suggestions(created)
+            return artifact_receipt(await tag_service.sync_confirmed_suggestions(created))
 
         @tool
-        async def get_artifact(artifact_id: str) -> AgentArtifactEntity:
+        async def get_artifact(artifact_id: str) -> ArtifactDocument:
             """Return one artifact with its published content and its draft.
 
             Args:
@@ -92,7 +97,7 @@ class ArtifactExtension(AgentExtension):
                 - Use to fetch the latest content of an artifact after changes.
                 - `content` is what the user published; `draft_content` is the working copy you edit, and the two are equal right after a save.
             """
-            return await self._artifact(session_id, artifact_id)
+            return artifact_document(await self._artifact(session_id, artifact_id))
 
         @tool
         async def query_artifacts(
@@ -134,7 +139,7 @@ class ArtifactExtension(AgentExtension):
             return artifact_pruner.prune(artifacts)
 
         @tool
-        async def update_artifact(artifact_id: str, patch: ArtifactContentPatch) -> AgentArtifactEntity:
+        async def update_artifact(artifact_id: str, patch: ArtifactContentPatch) -> ArtifactReceipt:
             """Change part of one artifact's draft, including an artifact from another conversation.
 
             Args:
@@ -156,6 +161,7 @@ class ArtifactExtension(AgentExtension):
                 - Fix part of a body with content_edits instead of resending it: old_text must match exactly once unless replace_all is set, and content and content_edits never travel together.
                 - The artifact may belong to another conversation when its ID came from query_artifacts(all_sessions=True); the owning session is preserved.
                 - A latex_pdf patch only changes the reference: edit the project files and commit each meaningful change from the project directory, because saving is refused while the project has uncommitted changes.
+                - The answer is a bounded receipt, not the new body: call get_artifact when you need to read the result back.
             """
             current = await artifact_storage.get(artifact_id)
             if current is None:
@@ -176,7 +182,7 @@ class ArtifactExtension(AgentExtension):
                     metadata=current.metadata,
                 ),
             )
-            return await tag_service.sync_confirmed_suggestions(updated)
+            return artifact_receipt(await tag_service.sync_confirmed_suggestions(updated))
 
         if self.allow_direct_current_session_edits:
             update_artifact.guidelines = (
