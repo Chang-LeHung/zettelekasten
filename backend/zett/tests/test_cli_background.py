@@ -5,6 +5,7 @@ import importlib
 import os
 import re
 import socket
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +16,8 @@ from zett import cli
 from zett._compat import UTC
 from zett.application.runtime import BackgroundStartError, RuntimeService
 from zett.cli import main
+from zett.cli import role as cli_role
+from zett.cli import start as cli_start
 from zett.config import settings
 from zett.infra.scheduler import processes
 from zett.infra.scheduler.processes import BACKGROUND_LOG_FILE_NAME, BackgroundServerProcess
@@ -185,8 +188,8 @@ def test_cli_status_exits_nonzero_when_not_running(
 def test_cli_start_short_flags_select_foreground_port_and_reload(monkeypatch: pytest.MonkeyPatch) -> None:
     launched: list[tuple[str, int, bool]] = []
     monkeypatch.setattr(
-        cli,
-        "_run_server",
+        cli_start,
+        "run_server",
         lambda *, host, port, reload: launched.append((host, port, reload)) or 0,
     )
 
@@ -232,11 +235,10 @@ def test_cli_start_reports_a_failed_detached_start_on_stderr(
 
 
 def test_cli_help_lists_only_user_commands(capsys: pytest.CaptureFixture[str]) -> None:
-    with pytest.raises(SystemExit) as exit_info:
-        main(["--help"])
+    exit_code = main(["--help"])
 
     output = capsys.readouterr().out
-    assert exit_info.value.code == 0
+    assert exit_code == 0
     for command in ("start", "status", "stop"):
         assert command in output
     # The scheduler and worker roles belong to `zett start`, not to this CLI.
@@ -256,10 +258,10 @@ def test_cli_description_matches_the_readme_tagline(capsys: pytest.CaptureFixtur
     summary = re.search(r'^description = "(.+)"$', pyproject.read_text(encoding="utf-8"), re.MULTILINE)
     assert summary is not None
 
-    with pytest.raises(SystemExit):
-        main(["--help"])
+    exit_code = main(["--help"])
 
     help_text = " ".join(capsys.readouterr().out.split())
+    assert exit_code == 0
     assert cli.PROGRAM_DESCRIPTION.rstrip(".") == summary.group(1).rstrip(".")
     assert cli.PROGRAM_DESCRIPTION.rstrip(".") in readme
     assert cli.PROGRAM_DESCRIPTION in help_text
@@ -278,7 +280,6 @@ def test_cli_rejects_bad_options_with_usage(capsys: pytest.CaptureFixture[str]) 
         ["start", "-b", "-f"],
         ["stop", "--timeout", "0.5"],
         ["worker", "--poll-interval", "0"],
-        ["unknown"],
     )
     for argv in bad_invocations:
         with pytest.raises(SystemExit) as exit_info:
@@ -287,16 +288,48 @@ def test_cli_rejects_bad_options_with_usage(capsys: pytest.CaptureFixture[str]) 
     assert "usage: zett" in capsys.readouterr().err
 
 
+def test_cli_rejects_an_unknown_command(capsys: pytest.CaptureFixture[str]) -> None:
+    """The jump table answers an unknown command without importing a module."""
+    exit_code = main(["bogus"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "unknown command 'bogus'" in captured.err
+    assert "start" in captured.err
+
+
 def test_cli_keeps_the_internal_roles_runnable_but_unlisted() -> None:
     """`zett start` spawns `python -m zett.cli <role>`, so roles stay parseable."""
-    parser = cli.build_parser()
+    scheduler = cli_role.build_parser("scheduler").parse_args(["--instance-id", "instance-1"])
+    worker = cli_role.build_parser("worker").parse_args([])
 
-    scheduler = parser.parse_args(["scheduler", "--instance-id", "instance-1"])
-    worker = parser.parse_args(["worker"])
-
-    assert scheduler.handler is cli._scheduler
     assert scheduler.instance_id == "instance-1"
-    assert worker.handler is cli._worker
+    assert worker.poll_interval == 1.0
+    assert cli.COMMANDS_BY_NAME["scheduler"].entry == "run_scheduler"
+    assert cli.COMMANDS_BY_NAME["worker"].entry == "run_worker"
+
+
+def test_cli_dispatches_a_command_to_its_own_module(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`main` jumps to the module named in the table and hands over the rest."""
+    calls: list[list[str]] = []
+    monkeypatch.setattr(cli_role, "run_scheduler", lambda argv=None: calls.append(list(argv or [])) or 0)
+
+    assert main(["scheduler", "--instance-id", "instance-1"]) == 0
+    assert calls == [["--instance-id", "instance-1"]]
+
+
+def test_importing_the_cli_package_imports_no_command_dependency(capsys: pytest.CaptureFixture[str]) -> None:
+    """The package must stay importable in milliseconds for `zett --help`."""
+    del capsys
+    check = (
+        "import sys, zett.cli; "
+        "heavy = [name for name in ('fastapi', 'sqlalchemy', 'uvicorn', 'httpx', 'zett_agent') if name in sys.modules]; "
+        "print(heavy)"
+    )
+    result = subprocess.run([sys.executable, "-c", check], capture_output=True, text=True)
+
+    assert result.returncode == 0
+    assert result.stdout.strip() == "[]"
 
 
 def test_subprocess_launcher_starts_the_internal_role(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -332,10 +365,10 @@ def test_run_server_exports_the_bind_address_its_children_re_read(
     monkeypatch.delenv("ZETT_HOST", raising=False)
     monkeypatch.delenv("ZETT_PORT", raising=False)
     served: list[dict[str, object]] = []
-    # ``_run_server`` imports uvicorn where it serves, so patch the module itself.
+    # ``run_server`` imports uvicorn where it serves, so patch the module itself.
     monkeypatch.setattr(importlib.import_module("uvicorn"), "run", lambda *args, **kwargs: served.append(kwargs))
 
-    cli._run_server(host="127.0.0.1", port=port, reload=True)
+    cli_start.run_server(host="127.0.0.1", port=port, reload=True)
 
     assert os.environ["ZETT_HOST"] == "127.0.0.1"
     assert os.environ["ZETT_PORT"] == str(port)
