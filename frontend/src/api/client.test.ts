@@ -148,6 +148,48 @@ it('loads supervised process health through the typed client', async () => {
   }))
 })
 
+it('libraryClient creates and reads artifacts that belong to no conversation', async () => {
+  const artifact = {
+    id: 'artifact-1',
+    session_id: 'library-session',
+    artifact_type: 'card' as const,
+    status: 'saved' as const,
+    content: {
+      artifact_type: 'card' as const,
+      title: 'Shell card',
+      summary: '',
+      suggested_tags: [],
+      keywords: [],
+      card_type: 'note' as const,
+      content: 'Created from the command line.',
+    },
+    draft_content: null,
+    raw_content: null,
+    version: 1,
+    metadata: {},
+    tags: [],
+    content_url: null,
+    created_at: '2026-09-27T00:00:00Z',
+    updated_at: '2026-09-27T00:00:00Z',
+  }
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify(artifact), { status: 201 }))
+    .mockResolvedValueOnce(new Response(JSON.stringify(artifact)))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true })))
+  vi.stubGlobal('fetch', fetchMock)
+
+  await expect(libraryClient.createArtifact(artifact.content, { source: 'cli' })).resolves.toEqual(artifact)
+  await expect(libraryClient.getArtifact('artifact-1')).resolves.toEqual(artifact)
+  await expect(libraryClient.deleteArtifact('artifact-1')).resolves.toEqual({ ok: true })
+  expect(fetchMock).toHaveBeenCalledWith('/api/artifacts', expect.objectContaining({
+    method: 'POST',
+    body: expect.stringContaining('"source":"cli"'),
+  }))
+  expect(fetchMock).toHaveBeenCalledWith('/api/artifacts/artifact-1', expect.any(Object))
+  expect(fetchMock).toHaveBeenCalledWith('/api/artifacts/artifact-1', expect.objectContaining({ method: 'DELETE' }))
+  await expect(libraryClient.createArtifact(artifact.content, { source: '   ' })).rejects.toThrow('source is required')
+})
+
 it('loads the persistent tag tree and delegates subtree filtering to the backend', async () => {
   const tree = [{
     id: 'engineering', path: 'Engineering', normalized_path: 'engineering', name: 'Engineering',
@@ -233,6 +275,35 @@ it('replaces an artifact tag set through the persistent tag endpoint', async () 
   expect(fetchMock).toHaveBeenCalledWith('/api/library/tags/artifacts/artifact-1', expect.objectContaining({
     method: 'PUT',
     body: JSON.stringify({ paths: ['Engineering/Python'] }),
+  }))
+})
+
+it('reads one tag and edits one assignment without rewriting the set', async () => {
+  const tag = {
+    id: 'python', path: 'Engineering/Python', normalized_path: 'engineering/python', name: 'Python',
+    parent_id: 'engineering', description: null, color: null, created_at: '', updated_at: '',
+  }
+  const artifact = {
+    id: 'artifact-1', session_id: 'session-1', artifact_type: 'card', status: 'saved',
+    content: null, draft_content: null, raw_content: null, version: 1, metadata: {},
+    tags: [{ id: 'python', path: 'Engineering/Python', name: 'Python' }],
+    content_url: null, created_at: '', updated_at: '',
+  }
+  const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify(tag)))
+    .mockResolvedValueOnce(new Response(JSON.stringify(artifact)))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ ...artifact, tags: [] })))
+  vi.stubGlobal('fetch', fetchMock)
+
+  await expect(tagClient.get('python')).resolves.toEqual(tag)
+  await expect(tagClient.assignTag('python', 'artifact-1')).resolves.toEqual(artifact)
+  await expect(tagClient.detachTag('python', 'artifact-1')).resolves.toEqual({ ...artifact, tags: [] })
+
+  expect(fetchMock).toHaveBeenCalledWith('/api/library/tags/python', expect.any(Object))
+  expect(fetchMock).toHaveBeenCalledWith('/api/library/tags/python/artifacts/artifact-1', expect.objectContaining({
+    method: 'PUT',
+  }))
+  expect(fetchMock).toHaveBeenCalledWith('/api/library/tags/python/artifacts/artifact-1', expect.objectContaining({
+    method: 'DELETE',
   }))
 })
 

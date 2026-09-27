@@ -44,6 +44,8 @@ COMMANDS: tuple[Command, ...] = (
     Command("start", "zett.cli.start", "Serve the API and the frontend, detached by default"),
     Command("status", "zett.cli.status", "Report whether Zett is running"),
     Command("stop", "zett.cli.stop", "Stop the running Zett server"),
+    Command("artifact", "zett.cli.artifact", "Create, read, and list artifacts that belong to no conversation"),
+    Command("tag", "zett.cli.tag", "Manage library tags and the tags an artifact carries"),
     Command("scheduler", "zett.cli.role", entry="run_scheduler"),
     Command("worker", "zett.cli.role", entry="run_worker"),
 )

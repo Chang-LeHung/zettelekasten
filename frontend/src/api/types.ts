@@ -535,6 +535,20 @@ export interface LatexPdfArtifactContent {
 
 export type ArtifactContent = CardArtifactContent | ArticleArtifactContent | ImageArtifactContent | SlidesArtifactContent | LatexPdfArtifactContent
 
+export interface LatexPdfArtifactCreate {
+  artifact_type: 'latex_pdf'
+  /** Compiled PDF basename, including `.pdf`; the server creates the project directory. */
+  pdf_name: string
+}
+
+/** Content accepted when creating an artifact, before any project directory exists. */
+export type ArtifactCreateContent =
+  | CardArtifactContent
+  | ArticleArtifactContent
+  | ImageArtifactContent
+  | SlidesArtifactContent
+  | LatexPdfArtifactCreate
+
 export interface AgentArtifact {
   id: string
   session_id: string

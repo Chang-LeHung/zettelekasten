@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 
 from ....infra.persistence.dao import artifact_storage, session_storage
 from ....schemas import AgentArtifactEntity, AgentArtifactWrite, ArtifactListOptions, ArtifactStatus, ArtifactType
+from ...artifacts.library import library_session_service
 from ...artifacts.versioning import UncommittedLatexProjectError, artifact_versioning
 from ...tags.tagging import tag_service
 from ..schemas import ArtifactCreateIn, ArtifactUpdateIn, DeleteResponse
@@ -61,6 +62,45 @@ async def create_artifact(session_id: str, payload: ArtifactCreateIn) -> AgentAr
     """Create one typed artifact owned by the URL session."""
     if await session_storage.get(session_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+    return await _create_artifact(session_id, payload)
+
+
+@router.post("/artifacts", response_model=AgentArtifactEntity, status_code=status.HTTP_201_CREATED)
+async def create_library_artifact(payload: ArtifactCreateIn) -> AgentArtifactEntity:
+    """Create one artifact that belongs to no conversation.
+
+    A shell or a script has no session to create into, so the server owns that
+    decision: the artifact is persisted under the hidden library session, which
+    the sidebar never lists but the library view reads like any other owner.
+
+    A session-owned artifact is attributed to its conversation. One created
+    without a conversation has nothing else to name its creator, so this route
+    requires ``metadata.source`` — who created it — and refuses a blank one.
+    """
+    source = _library_source(payload)
+    attributed = payload.model_copy(update={"metadata": {**payload.metadata, "source": source}})
+    return await _create_artifact(await library_session_service.get_or_create(), attributed)
+
+
+def _library_source(payload: ArtifactCreateIn) -> str:
+    """Return the trimmed ``metadata.source`` of a library artifact, or refuse it.
+
+    Provenance is the point of the library session: it has no conversation to
+    attribute an artifact to, so an empty ``source`` would leave an artifact
+    nobody can account for. The check lives here rather than in the CLI because
+    the endpoint is also reachable with ``curl`` and from any script.
+    """
+    source = payload.metadata.get("source")
+    if not isinstance(source, str) or not source.strip():
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "metadata.source is required: name who creates this artifact",
+        )
+    return source.strip()
+
+
+async def _create_artifact(session_id: str, payload: ArtifactCreateIn) -> AgentArtifactEntity:
+    """Persist one typed artifact for an existing session and sync its tags."""
     entity = AgentArtifactWrite(
         session_id=session_id,
         content=payload.content,
@@ -74,6 +114,39 @@ async def create_artifact(session_id: str, payload: ArtifactCreateIn) -> AgentAr
         return await tag_service.sync_confirmed_suggestions(created)
     except (ValueError, FileNotFoundError) as error:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
+
+
+@router.get("/artifacts/{artifact_id}", response_model=AgentArtifactEntity)
+async def get_library_artifact(artifact_id: str) -> AgentArtifactEntity:
+    """Read one artifact by id, whichever session owns it."""
+    artifact = await artifact_storage.get(artifact_id)
+    if artifact is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Artifact not found")
+    return artifact
+
+
+@router.delete("/artifacts/{artifact_id}", response_model=DeleteResponse)
+async def delete_library_artifact(artifact_id: str) -> DeleteResponse:
+    """Delete one artifact from the library, and nothing outside it.
+
+    Only an artifact this library session owns can be deleted here. Ownership
+    decides, not the caller: an artifact a conversation owns is deleted through
+    that conversation's route, refused with 403 here, and left untouched, so a
+    library client — the CLI included — can never remove a chat's artifact by
+    naming its id. A missing artifact answers 404 and a foreign one answers 403,
+    which is the difference a script needs to tell "gone already" from "not
+    mine to delete".
+    """
+    artifact = await artifact_storage.get(artifact_id)
+    if artifact is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Artifact not found")
+    owner = await library_session_service.current()
+    if owner is None or artifact.session_id != owner:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Artifact belongs to a conversation; delete it through that conversation",
+        )
+    return DeleteResponse(ok=await artifact_storage.delete(artifact_id))
 
 
 @router.get("/agent/{session_id}/artifacts/{artifact_id}", response_model=AgentArtifactEntity)
