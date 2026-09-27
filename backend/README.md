@@ -130,6 +130,14 @@ conversation UI, previews, search, and the draft-versus-published diff, and
 `ArtifactPruner` returns `published_content` and `draft_content` previews
 together so a querying model can compare what the user kept with what it
 proposes.
+Because the draft is that view, every model update patches the draft rather than
+the published text: successive `update_artifact` calls accumulate into one
+working copy, and `content_json` still changes only on create or a user save.
+Tag promotion reads the published side for the same reason, and it is additive:
+a save applies the suggestions that content confirms, drops only a suggestion
+the editor unchecked, and never deletes an assignment it did not propose, so a
+tag attached by `set_artifact_tags`, the Library, or `zett tag add` survives an
+unrelated save.
 
 The artifact body syntax lives in a built-in skill rather than in the tool
 docstrings: `zett/infra/skills/builtin.py` holds the fixed

@@ -20,7 +20,13 @@ from zett_agent.model import (
 
 from zett.agent.extensions import ArtifactExtension
 from zett.infra.persistence.dao import artifact_storage, session_storage
-from zett.schemas import AgentArtifactWrite, AgentSessionCreate, ArticleArtifactContent, CardArtifactContent
+from zett.schemas import (
+    AgentArtifactWrite,
+    AgentSessionCreate,
+    ArticleArtifactContent,
+    ArtifactStatus,
+    CardArtifactContent,
+)
 
 
 def _tool_payload(request: ModelRequest) -> dict[str, object]:
@@ -383,3 +389,88 @@ async def test_artifact_workspace_is_not_reinjected_into_system_context() -> Non
         not (message.role == "system" and "Current Zett conversation workspace previews:" in str(message.content))
         for message in requests[0].messages
     )
+
+
+class TwoEditsModel:
+    """Create one card, then apply two snippet edits to it in a row."""
+
+    def __init__(self) -> None:
+        self.step = 0
+        self.artifact_id: str | None = None
+
+    async def stream(self, request: ModelRequest) -> AsyncIterator[ModelEvent]:
+        match self.step:
+            case 0:
+                message = AssistantMessage(
+                    tool_calls=(
+                        ToolCall(
+                            "create",
+                            "create_artifact",
+                            {"content": {"artifact_type": "card", "title": "T", "content": "alpha beta gamma"}},
+                        ),
+                    )
+                )
+            case 1:
+                self.artifact_id = str(_tool_payload(request)["id"])
+                message = AssistantMessage(
+                    tool_calls=(
+                        ToolCall(
+                            "edit-first",
+                            "update_artifact",
+                            {
+                                "artifact_id": self.artifact_id,
+                                "patch": {
+                                    "artifact_type": "card",
+                                    "content_edits": [{"old_text": "alpha", "new_text": "ALPHA"}],
+                                },
+                            },
+                        ),
+                    )
+                )
+            case 2:
+                message = AssistantMessage(
+                    tool_calls=(
+                        ToolCall(
+                            "edit-second",
+                            "update_artifact",
+                            {
+                                "artifact_id": self.artifact_id,
+                                "patch": {
+                                    "artifact_type": "card",
+                                    "content_edits": [{"old_text": "gamma", "new_text": "GAMMA"}],
+                                },
+                            },
+                        ),
+                    )
+                )
+            case _:
+                message = AssistantMessage(content="Draft updated twice.")
+        self.step += 1
+        yield ModelEvent.completed(ModelResponse(message))
+
+
+async def test_successive_model_updates_build_on_the_previous_draft() -> None:
+    """Each update edits the draft, so two edits accumulate and content never moves.
+
+    An update that based its patch on the published content would silently drop
+    the earlier draft: the artifact would look like it was reverted to the text
+    the user saved.
+    """
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
+    model = TwoEditsModel()
+    agent = await Agent.create(model, config=AgentRunConfig(session_id=session_id), extensions=[ArtifactExtension()])
+
+    result = await agent.run("Edit the card twice")
+
+    assert result.content == "Draft updated twice."
+    stored = await artifact_storage.get(model.artifact_id or "")
+    assert stored is not None
+    assert isinstance(stored.content, CardArtifactContent)
+    assert isinstance(stored.draft_content, CardArtifactContent)
+    # Creation wrote the published content; both edits accumulate in the draft.
+    assert stored.content.content == "alpha beta gamma"
+    assert stored.draft_content.content == "ALPHA beta GAMMA"
+    assert stored.status == ArtifactStatus.DRAFT
+    assert stored.editable_content is not None
+    # The editable view is the draft, which is what every editor continues from.
+    assert stored.editable_content.content == "ALPHA beta GAMMA"

@@ -5,7 +5,21 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ...infra.persistence.dao import artifact_storage, tag_storage
-from ...schemas import AgentArtifactEntity, ArtifactStatus, TagEntity, TagListOptions, TagTreeEntity, TagWrite
+from ...schemas import (
+    AgentArtifactEntity,
+    ArtifactContent,
+    ArtifactStatus,
+    SuggestedTag,
+    TagEntity,
+    TagListOptions,
+    TagTreeEntity,
+    TagWrite,
+)
+
+
+def _suggested_tags(content: ArtifactContent | None) -> tuple[SuggestedTag, ...]:
+    """Return the tag proposals one content carries, or none when it carries no list."""
+    return tuple(getattr(content, "suggested_tags", ()) or ())
 
 
 def normalize_tag_path(path: str) -> tuple[str, str, tuple[str, ...]]:
@@ -186,13 +200,33 @@ class TagService:
             raise ValueError("Only saved artifacts can receive persistent tags")
         return artifact
 
-    async def sync_confirmed_suggestions(self, artifact: AgentArtifactEntity) -> AgentArtifactEntity:
-        """Promote the suggestions retained by the UI into persistent assignments."""
-        content = artifact.editable_content
+    async def sync_confirmed_suggestions(
+        self,
+        artifact: AgentArtifactEntity,
+        *,
+        superseded_content: ArtifactContent | None = None,
+    ) -> AgentArtifactEntity:
+        """Apply the suggestions the user confirmed without resetting the taxonomy.
+
+        A suggestion is a proposal until a save confirms it, so the published
+        content decides — never the model's draft. Saving is not a whole-set
+        rewrite, though: a tag this save never proposed is left alone, because
+        the Library's tag editor, `zett tag add`, and `set_artifact_tags` attach
+        real assignments that an unrelated save must not delete. The one removal
+        a save owns is a suggestion the user unchecked: the caller passes the
+        content this save replaces as ``superseded_content``, and only paths that
+        were proposed there drop out.
+        """
+        content = artifact.content
         if artifact.status != ArtifactStatus.SAVED or not hasattr(content, "suggested_tags"):
             return artifact
-        paths = [tag.path for tag in content.suggested_tags]
-        return await self.replace_artifact_tags(artifact.id, paths)
+        stored = await artifact_storage.get(artifact.id)
+        if stored is None:  # pragma: no cover - the artifact was just written
+            return artifact
+        superseded = {tag.path for tag in _suggested_tags(superseded_content)}
+        keep = [tag.path for tag in stored.tags if tag.path not in superseded]
+        confirmed = [tag.path for tag in content.suggested_tags]
+        return await self.replace_artifact_tags(artifact.id, [*keep, *confirmed])
 
     @staticmethod
     async def require(tag_id: str) -> TagEntity:

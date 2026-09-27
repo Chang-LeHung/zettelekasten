@@ -136,6 +136,11 @@ cleans up its artifact links.
 
 The Agent can suggest tags while it works, but a suggestion stays a proposal
 until you save the artifact — the tag is only applied when the save confirms it.
+Saving never resets the rest of the taxonomy: a tag the Agent set explicitly,
+one you attached from the Library, or one added with `zett tag add` stays put.
+Unchecking a suggestion in the conversation editor removes that suggestion, and
+removing any other tag is its own action (`zett tag remove`, `zett tag set
+--clear`, or detaching it in the Library's tag editor).
 
 ## Creating artifacts without a conversation
 

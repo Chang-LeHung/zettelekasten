@@ -219,3 +219,62 @@ def test_tag_api_serves_one_tag_and_edits_one_assignment() -> None:
         # The whole-set endpoint still replaces everything the editor saved.
         replaced = client.put(f"/api/library/tags/artifacts/{artifact['id']}", json={"paths": ["Projects/Zett"]})
         assert [tag["path"] for tag in replaced.json()["tags"]] == ["Projects/Zett"]
+
+
+async def test_saving_keeps_tags_attached_outside_the_suggestion_list() -> None:
+    """A save confirms suggestions; it does not reset the artifact's taxonomy.
+
+    Regression: saving an artifact whose published content carried no suggested
+    tags replaced the whole assignment set with that empty list. Tags the model
+    attached with ``set_artifact_tags`` — or the Library's tag editor, or
+    ``zett tag add`` — silently disappeared, so the Library showed the artifact
+    untagged even though the tool had answered with the tags it just attached.
+    """
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
+    artifact = await artifact_storage.create(
+        AgentArtifactWrite(
+            session_id=session_id,
+            status=ArtifactStatus.SAVED,
+            content=CardArtifactContent(title="Memory layout", content="Body"),
+        )
+    )
+    attached = await tag_service.replace_artifact_tags(artifact.id, ["操作系统/内存管理", "操作系统/进程"])
+    assert sorted(tag.path for tag in attached.tags) == ["操作系统/内存管理", "操作系统/进程"]
+
+    with TestClient(app) as client:
+        saved = client.post(f"/api/agent/{session_id}/artifacts/{artifact.id}/save")
+        listed = client.get("/api/artifacts?statuses=saved").json()
+
+    assert saved.status_code == 200
+    assert sorted(tag["path"] for tag in saved.json()["tags"]) == ["操作系统/内存管理", "操作系统/进程"]
+    assert sorted(tag["path"] for tag in listed[0]["tags"]) == ["操作系统/内存管理", "操作系统/进程"]
+
+
+async def test_unchecking_a_suggestion_removes_it_when_the_artifact_is_saved() -> None:
+    """The one removal a save owns: a suggestion the user dropped in the editor."""
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
+    artifact = await artifact_storage.create(
+        AgentArtifactWrite(
+            session_id=session_id,
+            status=ArtifactStatus.SAVED,
+            content=CardArtifactContent(
+                title="Asyncio",
+                content="Structured concurrency",
+                suggested_tags=[SuggestedTag(path="Engineering/Python", existing=False, confidence=0.9)],
+            ),
+        )
+    )
+    applied = await tag_service.sync_confirmed_suggestions(artifact)
+    assert [tag.path for tag in applied.tags] == ["Engineering/Python"]
+
+    with TestClient(app) as client:
+        # The editor saves a draft whose suggestion list no longer carries the tag.
+        drafted = client.put(
+            f"/api/agent/{session_id}/artifacts/{artifact.id}/draft",
+            json={"content": {"artifact_type": "card", "title": "Asyncio", "content": "Structured concurrency"}},
+        )
+        assert drafted.status_code == 200
+        saved = client.post(f"/api/agent/{session_id}/artifacts/{artifact.id}/save")
+
+    assert saved.status_code == 200
+    assert saved.json()["tags"] == []

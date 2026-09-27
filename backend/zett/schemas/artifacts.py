@@ -378,8 +378,13 @@ class AgentArtifactWrite(BaseModel):
 
     @property
     def editable_content(self) -> ArtifactContent | LatexPdfArtifactCreate:
-        """Return the content that describes this artifact right now."""
-        return self.content or self.draft_content  # type: ignore[return-value]
+        """Return the content that describes this artifact right now.
+
+        The draft wins because it is the working copy: a write that carries a
+        published content and a newer draft means "the published text is what
+        the user kept, and the draft is what an editor just proposed".
+        """
+        return self.draft_content or self.content  # type: ignore[return-value]
 
 
 class AgentArtifactEntity(BaseModel):
@@ -422,4 +427,4 @@ class AgentArtifactEntity(BaseModel):
     @property
     def editable_content(self) -> ArtifactContent | None:
         """Return the content the UI and the model should show for this artifact."""
-        return self.content or self.draft_content
+        return self.draft_content or self.content
