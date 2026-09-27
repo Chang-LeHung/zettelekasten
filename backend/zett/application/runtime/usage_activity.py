@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from datetime import date, datetime, timedelta
 
-from zett_agent import ModelUsageActivityStorage
+from zett_agent.extensions.usage_activity import ModelUsageActivityStorage
 
 from ..._compat import UTC
 from ...infra.persistence.dao import model_usage_activity_storage

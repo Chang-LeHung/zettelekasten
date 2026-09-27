@@ -1,11 +1,21 @@
 """Build zett-agent provider adapters from encrypted application settings."""
 
-from zett_agent import (
+from zett_agent.model import (
     AgentModel,
+)
+from zett_agent.providers.anthropic import (
     AnthropicProvider,
+)
+from zett_agent.providers.deepseek import (
     DeepSeekProvider,
+)
+from zett_agent.providers.google import (
     GoogleProvider,
+)
+from zett_agent.providers.ollama import (
     OllamaProvider,
+)
+from zett_agent.providers.openai import (
     OpenAIProvider,
 )
 

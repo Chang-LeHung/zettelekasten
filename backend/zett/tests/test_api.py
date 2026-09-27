@@ -12,19 +12,25 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import select
-from zett_agent import (
+from zett_agent.agent import (
     AgentRunConfig,
-    AssistantMessage,
+)
+from zett_agent.extensions.external import (
     ExternalEvent,
+)
+from zett_agent.messages import (
+    AssistantMessage,
     ImageContent,
     ImageUrlSource,
-    ModelEvent,
-    ModelRequest,
-    ModelResponse,
     TextContent,
     ToolCall,
     ToolMessage,
     UserMessage,
+)
+from zett_agent.model import (
+    ModelEvent,
+    ModelRequest,
+    ModelResponse,
 )
 
 from zett.application.agent.session_context import SESSION_CONTEXT_KEY_PREFIX

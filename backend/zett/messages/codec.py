@@ -13,7 +13,7 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from zett_agent import (
+from zett_agent.messages import (
     ImageBytesSource,
     ImageContent,
     ImageUrlSource,

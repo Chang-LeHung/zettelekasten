@@ -3,7 +3,13 @@
 from datetime import date, datetime, time, timedelta
 
 from sqlalchemy import func, select
-from zett_agent import ModelUsageActivityDay, ModelUsageActivityRecord, new_uuid7
+from zett_agent.extensions.usage_activity import (
+    ModelUsageActivityDay,
+    ModelUsageActivityRecord,
+)
+from zett_agent.ids import (
+    new_uuid7,
+)
 
 from ...._compat import UTC
 from ....schemas import ModelUsageActivitySeries, UsageActivityDayRecord

@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from zett_agent import ReasoningEffort
+from zett_agent.model import ReasoningEffort
 
 from ..plugins import ChannelLoginStatus
 from .common import JsonValue, NonBlankName100

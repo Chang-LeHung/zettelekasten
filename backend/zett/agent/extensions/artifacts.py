@@ -3,7 +3,15 @@
 from typing import Annotated
 
 from pydantic import Field
-from zett_agent import AgentExtension, AgentRunContext, tool
+from zett_agent.agent import (
+    AgentRunContext,
+)
+from zett_agent.extensions.base import (
+    AgentExtension,
+)
+from zett_agent.tools.base import (
+    tool,
+)
 
 from ...application.artifacts.artifact_pruner import AgentArtifactPreview, ArtifactPruner
 from ...application.tags.tagging import tag_service

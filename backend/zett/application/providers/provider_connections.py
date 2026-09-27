@@ -2,7 +2,14 @@
 
 from contextlib import aclosing
 
-from zett_agent import ModelEventType, ModelRequest, ReasoningEffort, UserMessage
+from zett_agent.messages import (
+    UserMessage,
+)
+from zett_agent.model import (
+    ModelEventType,
+    ModelRequest,
+    ReasoningEffort,
+)
 
 from ..._compat import timeout
 from ...agent.model_factory import create_model

@@ -5,7 +5,15 @@ import binascii
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from zett_agent import AgentExtension, AgentRunContext, tool
+from zett_agent.agent import (
+    AgentRunContext,
+)
+from zett_agent.extensions.base import (
+    AgentExtension,
+)
+from zett_agent.tools.base import (
+    tool,
+)
 
 from ..._compat import Self
 from ...config import settings

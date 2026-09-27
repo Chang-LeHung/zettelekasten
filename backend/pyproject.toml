@@ -33,7 +33,7 @@ dependencies = [
   "httpx>=0.27,<1",
   "sqlalchemy>=2.0,<3",
   "tiktoken>=0.12,<1",
-  "zett-agent==0.1.3",
+  "zett-agent==0.1.4",
   "croniter>=6,<7",
   "agim==0.1.0",
   "zett-weixin==0.1.0",

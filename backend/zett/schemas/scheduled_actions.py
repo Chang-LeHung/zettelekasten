@@ -1,7 +1,7 @@
 """Typed payloads for built-in scheduled task actions."""
 
 from pydantic import BaseModel, ConfigDict, Field
-from zett_agent import ReasoningEffort
+from zett_agent.model import ReasoningEffort
 
 AGENT_PROMPT_ACTION_KIND = "agent_prompt"
 

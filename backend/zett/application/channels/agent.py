@@ -11,13 +11,15 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
-from zett_agent import (
+from zett_agent.messages import (
     ImageBytesSource,
     ImageContent,
-    ReasoningEffort,
     TextContent,
     UserContent,
     UserContentPart,
+)
+from zett_agent.model import (
+    ReasoningEffort,
 )
 
 from ..._compat import StrEnum

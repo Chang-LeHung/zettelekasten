@@ -4,23 +4,53 @@ import asyncio
 import re
 from collections.abc import AsyncIterator
 
-from zett_agent import (
+from zett_agent.agent import (
     Agent,
-    AgentClient,
-    AgentEvent,
-    AgentEventDispatcher,
     AgentRunConfig,
+)
+from zett_agent.client import (
+    AgentClient,
+)
+from zett_agent.dispatcher import (
+    AgentEventDispatcher,
+)
+from zett_agent.events import (
+    AgentEvent,
+)
+from zett_agent.extensions.ask_user import (
     AskUserExtension,
+)
+from zett_agent.extensions.coding import (
     CodingExtension,
+)
+from zett_agent.extensions.compaction import (
     CompactionExtension,
+)
+from zett_agent.extensions.external import (
     ExternalEvent,
+)
+from zett_agent.extensions.mcp import (
     McpExtension,
+)
+from zett_agent.extensions.model_request_trace import (
     ModelRequestTraceExtension,
+)
+from zett_agent.extensions.session_persistence import (
     SessionPersistenceExtension,
+)
+from zett_agent.extensions.shell_approval import (
     ShellApprovalExtension,
+)
+from zett_agent.extensions.skill import (
     SkillExtension,
+)
+from zett_agent.extensions.todo import (
     TodoWriteExtension,
+)
+from zett_agent.extensions.tool_guidelines import (
     ToolGuidelinesExtension,
+)
+from zett_agent.extensions.usage_activity import (
     UsageActivityExtension,
 )
 

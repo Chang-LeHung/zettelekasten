@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
-from zett_agent import new_uuid7
+from zett_agent.ids import new_uuid7
 
 from ..._compat import UTC
 from ...infra.security import decrypt_secret, encrypt_secret

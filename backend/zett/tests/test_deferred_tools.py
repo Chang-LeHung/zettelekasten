@@ -4,17 +4,29 @@ from collections.abc import AsyncIterator
 
 import pytest
 from fastapi.testclient import TestClient
-from zett_agent import (
+from zett_agent.agent import (
     Agent,
-    AgentExtension,
     AgentRunConfig,
+)
+from zett_agent.extensions.base import (
+    AgentExtension,
+)
+from zett_agent.extensions.tool_search import (
+    ToolSearchExtension,
+)
+from zett_agent.messages import (
     AssistantMessage,
+    SystemMessage,
+)
+from zett_agent.model import (
     ModelEvent,
     ModelRequest,
     ModelResponse,
+)
+from zett_agent.providers.openai import (
     OpenAIProvider,
-    SystemMessage,
-    ToolSearchExtension,
+)
+from zett_agent.tools.base import (
     tool,
 )
 

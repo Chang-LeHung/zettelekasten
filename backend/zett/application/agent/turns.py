@@ -11,14 +11,24 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass, field
 
-from zett_agent import (
-    AgentClient,
-    AgentEvent,
-    AgentModel,
+from zett_agent.agent import (
     AgentRunConfig,
+)
+from zett_agent.client import (
+    AgentClient,
+)
+from zett_agent.events import (
+    AgentEvent,
+)
+from zett_agent.json_types import (
     JsonValue,
-    ReasoningEffort,
+)
+from zett_agent.messages import (
     UserMessage,
+)
+from zett_agent.model import (
+    AgentModel,
+    ReasoningEffort,
 )
 
 

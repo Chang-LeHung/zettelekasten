@@ -1,7 +1,7 @@
 """Persistent shell approval allowlist behavior."""
 
 import pytest
-from zett_agent import ShellApprovalMode
+from zett_agent.extensions.shell_approval import ShellApprovalMode
 
 from zett.infra.agent.shell_approval import SQLiteShellApprovalStorage
 

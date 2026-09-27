@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from zett_agent import RawMessageRecord, SessionSummary
+from zett_agent.extensions.persistence import (
+    RawMessageRecord,
+    SessionSummary,
+)
 
 from ....application.assets.message_files import delete_session_files
 from ....schemas import SESSION_TYPE_TO_CODE, AgentSessionCreate, SessionListOptions

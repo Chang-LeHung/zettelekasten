@@ -3,12 +3,20 @@
 from typing import Annotated
 
 from pydantic import Field
-from zett_agent import (
+from zett_agent.agent import (
     Agent,
-    AgentModel,
-    AssistantMessage,
+)
+from zett_agent.extensions.persistence import (
     RawMessageRecord,
+)
+from zett_agent.messages import (
+    AssistantMessage,
     UserMessage,
+)
+from zett_agent.model import (
+    AgentModel,
+)
+from zett_agent.tools.base import (
     tool,
 )
 

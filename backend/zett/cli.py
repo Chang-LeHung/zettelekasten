@@ -8,7 +8,7 @@ from collections.abc import Callable, Sequence
 from datetime import datetime
 
 import uvicorn
-from zett_agent import new_uuid7
+from zett_agent.ids import new_uuid7
 
 from ._compat import UTC
 from .application.runtime import RuntimeService

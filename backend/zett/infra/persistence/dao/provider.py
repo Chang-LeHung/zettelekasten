@@ -7,7 +7,7 @@ from datetime import datetime
 from enum import IntEnum
 
 from sqlalchemy import or_, select
-from zett_agent import new_uuid7
+from zett_agent.ids import new_uuid7
 
 from ...._compat import UTC
 from ....schemas import ProviderConnection, ProviderEntity, ProviderListOptions, ProviderType, ProviderWrite
