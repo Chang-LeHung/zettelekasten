@@ -533,6 +533,17 @@ that loads uvicorn and FastAPI, and a model provider's SDK is imported by the
 turn that calls it rather than by the process that starts. `zett status` and
 `zett stop` answer in tens of milliseconds.
 
+`zett install` writes the shell-facing skill into a coding agent that runs
+outside Zett, so Claude Code, Codex, or another harness can drive `zett artifact`
+and `zett tag` on its own. The text lives in
+`zett/infra/skills/coding_agents.py`, next to the built-in skill Zett serves its
+own agent, for the same reason: the CLI it documents ships in this package, so
+the two cannot drift. The table there maps each agent name to the skill root its
+owner documents (`~/.claude/skills`, `~/.codex/skills`), `--dir` serves a harness
+this table does not know, and an existing file whose content differs is kept
+until `--force` confirms replacing it — an agent owner's edits are not this
+command's to discard.
+
 Serving also exports the effective `--host`/`--port` as `ZETT_HOST`/`ZETT_PORT`,
 because the reload worker and the supervised scheduler and workers re-read the
 configuration from the environment: without it they heartbeat — and the reload

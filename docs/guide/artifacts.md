@@ -178,6 +178,26 @@ conversation — so a shell can never remove a chat's artifact by naming its id.
 The same rule holds for the API: `DELETE /api/artifacts/{artifact_id}` decides by
 ownership, not by who calls it.
 
+## Teaching another coding agent to use Zett
+
+The commands above are what an agent needs, and `zett install` writes them into
+the agent's own skill directory as one `SKILL.md`, so Claude Code, Codex, or
+another harness can create artifacts and classify them without being told how
+every time:
+
+```bash
+zett install --list            # the agents this knows, and the root each reads
+zett install claude            # ~/.claude/skills/zett-cli/SKILL.md
+zett install codex             # ~/.codex/skills/zett-cli/SKILL.md
+zett install --dir ~/.myharness/skills   # anything else, by its skill root
+```
+
+The skill text ships inside Zett, so it always describes the flags the installed
+CLI actually accepts. Installation only writes files — it never talks to the
+server, and Zett does not have to be running for it. A skill file that already
+exists with different content is kept until you pass `--force`, because that copy
+may be yours.
+
 `zett artifact` talks HTTP to the server recorded in `runtime.json`; it needs a
 running `zett start` and refuses to run against nothing. It creates cards,
 articles, and slides today: an image artifact has to point at an asset and a
