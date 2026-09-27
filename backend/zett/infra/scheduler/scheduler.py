@@ -5,7 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
-from zett_agent import new_uuid7
+from zett_agent.ids import new_uuid7
 
 from ..._compat import UTC, TypeAliasType
 from ...schemas import (

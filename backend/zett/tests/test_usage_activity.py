@@ -1,7 +1,7 @@
 from datetime import date, datetime
 
 from fastapi.testclient import TestClient
-from zett_agent import ModelUsageActivityRecord
+from zett_agent.extensions.usage_activity import ModelUsageActivityRecord
 
 from zett._compat import UTC
 from zett.infra.persistence.dao import model_usage_activity_storage

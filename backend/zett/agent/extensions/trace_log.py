@@ -17,16 +17,22 @@ from contextlib import aclosing
 from time import monotonic
 from typing import Any
 
-from zett_agent import (
-    AgentExtension,
+from zett_agent.agent import (
     AgentRunContext,
+)
+from zett_agent.extensions.base import (
+    AgentExtension,
+)
+from zett_agent.messages import (
     ImageContent,
+    ToolCall,
+)
+from zett_agent.model import (
     ModelEvent,
     ModelEventType,
     ModelRequest,
-    ToolCall,
 )
-from zett_agent.tools import ToolResult
+from zett_agent.tools.base import ToolResult
 
 from ...infra.log import LOG_PREVIEW_CHARS, get_logger, log_preview
 

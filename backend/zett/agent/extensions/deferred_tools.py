@@ -6,15 +6,23 @@ from collections.abc import AsyncIterator
 from contextlib import aclosing
 from dataclasses import replace
 
-from zett_agent import (
-    AgentExtension,
+from zett_agent.agent import (
     AgentRunContext,
+)
+from zett_agent.extensions.base import (
+    AgentExtension,
+    ModelRequestNext,
+)
+from zett_agent.extensions.tool_search import (
+    ToolSearchExtension,
+)
+from zett_agent.messages import (
+    SystemMessage,
+)
+from zett_agent.model import (
     ModelEvent,
     ModelRequest,
-    ModelRequestNext,
-    SystemMessage,
     ToolDefinition,
-    ToolSearchExtension,
 )
 
 from ..model_factory import uses_responses_api

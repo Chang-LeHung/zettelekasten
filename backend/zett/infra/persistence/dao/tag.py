@@ -7,7 +7,7 @@ from datetime import datetime
 from sqlalchemy import delete as sql_delete
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
-from zett_agent import new_uuid7
+from zett_agent.ids import new_uuid7
 
 from ...._compat import UTC
 from ....schemas import ArtifactTagEntity, TagEntity, TagListOptions, TagWrite

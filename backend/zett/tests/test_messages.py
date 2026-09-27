@@ -4,7 +4,13 @@ import base64
 
 import pytest
 from pydantic import ValidationError
-from zett_agent import ImageBytesSource, ImageContent, ImageUrlSource, TextContent, UserMessage
+from zett_agent.messages import (
+    ImageBytesSource,
+    ImageContent,
+    ImageUrlSource,
+    TextContent,
+    UserMessage,
+)
 
 from zett.messages import (
     FrontImagePart,

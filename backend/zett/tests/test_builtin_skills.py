@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from fastapi.testclient import TestClient
-from zett_agent import SkillFileParser
+from zett_agent.extensions.skill import SkillFileParser
 
 from zett.agent import config as agent_config
 from zett.agent import extensions as agent_extensions

@@ -3,14 +3,24 @@
 from collections.abc import Mapping
 from datetime import datetime
 
-from zett_agent import (
-    AgentEvent,
-    AgentEventDispatcher,
+from zett_agent.agent import (
     AgentRunConfig,
-    ReasoningEffort,
+)
+from zett_agent.dispatcher import (
+    AgentEventDispatcher,
+)
+from zett_agent.events import (
+    AgentEvent,
+)
+from zett_agent.extensions.shell_approval import (
     ShellApprovalMode,
+)
+from zett_agent.messages import (
     ToolMessage,
     UserMessage,
+)
+from zett_agent.model import (
+    ReasoningEffort,
 )
 
 from ...agent.config import ZettelkastenAgentConfig

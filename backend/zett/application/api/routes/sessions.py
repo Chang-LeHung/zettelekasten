@@ -3,7 +3,7 @@
 import asyncio
 
 from fastapi import APIRouter, HTTPException, Query, status
-from zett_agent import ShellApprovalMode
+from zett_agent.extensions.shell_approval import ShellApprovalMode
 
 from ....agent.config import SYSTEM_PROMPT
 from ....infra.agent.runtime import get_agent_runtime_storage

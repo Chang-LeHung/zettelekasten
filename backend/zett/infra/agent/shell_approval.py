@@ -4,7 +4,7 @@ import asyncio
 from collections.abc import Iterable
 from weakref import WeakKeyDictionary
 
-from zett_agent import ShellApprovalMode
+from zett_agent.extensions.shell_approval import ShellApprovalMode
 
 from ...schemas import JsonValue
 from ..persistence.dao import KeyValueStorage, key_value_storage

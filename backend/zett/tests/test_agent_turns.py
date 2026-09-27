@@ -3,7 +3,19 @@
 from collections.abc import AsyncIterator
 
 import pytest
-from zett_agent import AgentEvent, AgentEventType, AgentRunConfig, ReasoningEffort, UserMessage
+from zett_agent.agent import (
+    AgentRunConfig,
+)
+from zett_agent.events import (
+    AgentEvent,
+    AgentEventType,
+)
+from zett_agent.messages import (
+    UserMessage,
+)
+from zett_agent.model import (
+    ReasoningEffort,
+)
 
 from zett.application.agent.turns import AgentTurn, TurnAlreadyPromptedError
 

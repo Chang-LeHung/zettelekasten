@@ -18,15 +18,23 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import replace
 from typing import Any
 
-from zett_agent import (
-    AgentExtension,
+from zett_agent.agent import (
     AgentRunContext,
-    AgentTool,
+)
+from zett_agent.extensions.base import (
+    AgentExtension,
+)
+from zett_agent.messages import (
     AssistantMessage,
-    ModelRequest,
-    ModelResponse,
     ToolCall,
     ToolMessage,
+)
+from zett_agent.model import (
+    ModelRequest,
+    ModelResponse,
+)
+from zett_agent.tools.base import (
+    AgentTool,
 )
 
 from ...infra.log import get_logger

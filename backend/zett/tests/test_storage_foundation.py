@@ -6,7 +6,7 @@ from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
-from zett_agent import UserMessage
+from zett_agent.messages import UserMessage
 
 from zett.config import settings
 from zett.infra.agent.runtime import get_agent_runtime_storage

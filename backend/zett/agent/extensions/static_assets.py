@@ -1,6 +1,14 @@
 """Tell the model how to publish a file into the global Static Assets library."""
 
-from zett_agent import AgentExtension, AgentRunContext, SystemMessage
+from zett_agent.agent import (
+    AgentRunContext,
+)
+from zett_agent.extensions.base import (
+    AgentExtension,
+)
+from zett_agent.messages import (
+    SystemMessage,
+)
 
 from ...config import settings
 

@@ -14,7 +14,7 @@ from io import BytesIO
 
 import qrcode
 from qrcode.image.svg import SvgPathImage
-from zett_agent import new_uuid7
+from zett_agent.ids import new_uuid7
 
 from ..._compat import UTC
 from ...infra.log import get_logger, log_preview

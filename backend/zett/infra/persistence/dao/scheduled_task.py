@@ -8,7 +8,7 @@ from datetime import datetime
 from sqlalchemy import delete as sql_delete
 from sqlalchemy import or_, select, update
 from sqlalchemy.exc import IntegrityError
-from zett_agent import new_uuid7
+from zett_agent.ids import new_uuid7
 
 from ...._compat import UTC
 from ....schemas import (

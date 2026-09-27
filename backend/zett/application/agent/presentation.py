@@ -1,10 +1,12 @@
 """Typed projections from zett-agent persistence records to HTTP models."""
 
-from zett_agent import (
-    AgentMessage,
-    AssistantMessage,
+from zett_agent.extensions.persistence import (
     RawMessageRecord,
     SessionSummary,
+)
+from zett_agent.messages import (
+    AgentMessage,
+    AssistantMessage,
     ToolMessage,
     UserMessage,
 )

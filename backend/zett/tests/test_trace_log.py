@@ -4,14 +4,18 @@ from collections.abc import AsyncIterator
 from types import SimpleNamespace
 
 import pytest
-from zett_agent import (
+from zett_agent.agent import (
     AgentRunConfig,
+)
+from zett_agent.messages import (
     ImageBytesSource,
     ImageContent,
-    ModelEvent,
-    ModelRequest,
     ToolCall,
     UserMessage,
+)
+from zett_agent.model import (
+    ModelEvent,
+    ModelRequest,
 )
 
 from zett.agent.extensions import TraceLogExtension

@@ -9,7 +9,7 @@ from pathlib import Path
 
 from sqlalchemy import delete as sql_delete
 from sqlalchemy import func, or_, select
-from zett_agent import new_uuid7
+from zett_agent.ids import new_uuid7
 
 from ...._compat import UTC
 from ....application.files.object_store import session_asset_key

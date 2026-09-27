@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from uuid import UUID, uuid5
 
-from zett_agent import AgentEvent
+from zett_agent.events import AgentEvent
 
 from .._compat import TypeAliasType
 from ..application.agent.turns import AgentTurn

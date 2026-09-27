@@ -4,11 +4,17 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from zett_agent import (
+from zett_agent.extensions.mcp import (
     DEFAULT_MCP_SERVER_KEYS,
     McpServer,
-    ModelUsageActivityStorage,
+)
+from zett_agent.extensions.shell_approval import (
     ShellApprovalStorage,
+)
+from zett_agent.extensions.usage_activity import (
+    ModelUsageActivityStorage,
+)
+from zett_agent.storage import (
     SQLiteSessionStorage,
 )
 

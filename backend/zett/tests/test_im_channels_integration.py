@@ -8,16 +8,20 @@ from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
-from zett_agent import (
+from zett_agent.extensions.shell_approval import (
+    ShellApprovalMode,
+)
+from zett_agent.messages import (
     AssistantMessage,
     ImageBytesSource,
     ImageContent,
+    TextContent,
+    ToolCall,
+)
+from zett_agent.model import (
     ModelEvent,
     ModelRequest,
     ModelResponse,
-    ShellApprovalMode,
-    TextContent,
-    ToolCall,
 )
 
 from zett._compat import UTC

@@ -3,7 +3,7 @@
 from pathlib import Path
 from threading import RLock
 
-from zett_agent import SQLiteSessionStorage
+from zett_agent.storage import SQLiteSessionStorage
 
 from ...config import settings
 

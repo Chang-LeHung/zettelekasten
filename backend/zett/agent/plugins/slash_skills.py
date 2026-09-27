@@ -5,11 +5,15 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Sequence
 from pathlib import Path
 
-from zett_agent import (
-    READ_SKILL_TOOL_NAME,
+from zett_agent.events import (
     AgentEvent,
-    ImageContent,
+)
+from zett_agent.extensions.skill import (
+    READ_SKILL_TOOL_NAME,
     SkillExtension,
+)
+from zett_agent.messages import (
+    ImageContent,
     TextContent,
     UserMessage,
 )

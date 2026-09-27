@@ -4,17 +4,25 @@ from collections.abc import AsyncIterator
 
 import pytest
 from fastapi.testclient import TestClient
-from zett_agent import (
+from zett_agent.agent import (
+    AgentRunConfig,
+)
+from zett_agent.client import (
     AgentClient,
+)
+from zett_agent.events import (
     AgentEvent,
     AgentEventType,
-    AgentRunConfig,
+)
+from zett_agent.messages import (
     ImageBytesSource,
     ImageContent,
-    ReasoningEffort,
     TextContent,
     UserContent,
     UserMessage,
+)
+from zett_agent.model import (
+    ReasoningEffort,
 )
 
 from zett.agent import (

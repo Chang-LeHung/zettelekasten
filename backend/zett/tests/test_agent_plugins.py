@@ -6,17 +6,23 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from zett_agent import (
+from zett_agent.agent import (
     AgentRunConfig,
     AgentRunContext,
-    AgentTool,
+)
+from zett_agent.messages import (
     AssistantMessage,
-    ModelRequest,
-    ModelResponse,
-    ReasoningEffort,
     ToolCall,
     ToolMessage,
     UserMessage,
+)
+from zett_agent.model import (
+    ModelRequest,
+    ModelResponse,
+    ReasoningEffort,
+)
+from zett_agent.tools.base import (
+    AgentTool,
     tool,
 )
 
