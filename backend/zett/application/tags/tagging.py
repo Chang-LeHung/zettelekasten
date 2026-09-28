@@ -39,25 +39,35 @@ def normalize_tag_path(path: str) -> tuple[str, str, tuple[str, ...]]:
 
 @dataclass(slots=True)
 class TagService:
-    """Coordinate taxonomy changes and artifact assignments."""
+    """Coordinate one library's taxonomy and the resources it classifies.
+
+    Every read and write names the library it belongs to: a tag is created for
+    artifacts or for static assets, lives only in that tree, and can never be
+    attached to the other kind. The two libraries share the storage table and
+    nothing else, so a path created in one is a different collection from the
+    same path in the other.
+    """
 
     async def create_path(
         self,
         path: str,
+        target_type: TagTargetType,
         *,
         description: str | None = None,
         color: str | None = None,
     ) -> TagEntity:
+        """Create a path in one library and return its leaf, reusing what exists there."""
         display, _, segments = normalize_tag_path(path)
         parent: TagEntity | None = None
         for index in range(len(segments)):
             node_path = "/".join(segments[: index + 1])
             normalized = node_path.casefold()
-            current = await tag_storage.get_by_normalized_path(normalized)
+            current = await tag_storage.get_by_normalized_path(target_type, normalized)
             if current is None:
                 is_leaf = index == len(segments) - 1
                 current = await tag_storage.create(
                     TagWrite(
+                        target_type=target_type,
                         path=node_path,
                         normalized_path=normalized,
                         name=segments[index],
@@ -75,6 +85,7 @@ class TagService:
             parent = await tag_storage.update(
                 parent.id,
                 TagWrite(
+                    target_type=parent.target_type,
                     path=parent.path,
                     normalized_path=parent.normalized_path,
                     name=parent.name,
@@ -93,16 +104,18 @@ class TagService:
         description: str | None = None,
         color: str | None = None,
     ) -> TagEntity:
+        """Rename, move, or restyle one tag, staying inside its own library."""
         if path is None and description is None and color is None:
             raise ValueError("At least one tag field must be supplied")
         current = await self.require(tag_id)
         target_path, target_normalized, segments = normalize_tag_path(path or current.path)
         if target_normalized != current.normalized_path and await tag_storage.child_count(tag_id):
             raise ValueError("A tag with children cannot be moved or renamed")
-        parent = await self.create_path("/".join(segments[:-1])) if len(segments) > 1 else None
+        parent = await self.create_path("/".join(segments[:-1]), current.target_type) if len(segments) > 1 else None
         return await tag_storage.update(
             tag_id,
             TagWrite(
+                target_type=current.target_type,
                 path=target_path,
                 normalized_path=target_normalized,
                 name=segments[-1],
@@ -127,26 +140,32 @@ class TagService:
             await tag_storage.delete(tag.id)
         return True
 
-    async def list_tree(self) -> list[TagTreeEntity]:
-        tags = list(await tag_storage.list(TagListOptions(limit=2_000)))
-        assignments = await tag_storage.assignments()
+    async def list_tree(self, target: TagTargetType | None = None) -> list[TagTreeEntity]:
+        """Return one library's collection tree with its own counts.
+
+        ``target`` is the library to read; every tag in the answer belongs to it,
+        and every count describes the resources it classifies, so the artifact
+        tree never shows a file collection and the other way round.
+        """
+        tags = list(await tag_storage.list(TagListOptions(target_type=target, limit=2_000)))
+        assignments = await tag_storage.assignments(target)
         children: dict[str | None, list[TagEntity]] = {}
         for tag in tags:
             children.setdefault(tag.parent_id, []).append(tag)
 
         def build(tag: TagEntity) -> tuple[TagTreeEntity, set[str]]:
             built_children = [build(child) for child in children.get(tag.id, [])]
-            child_nodes = [child for child, _ in built_children]
-            direct_artifacts = assignments.get(tag.id, set())
-            subtree_artifacts = set(direct_artifacts)
-            for _, child_artifacts in built_children:
-                subtree_artifacts.update(child_artifacts)
-            return TagTreeEntity(
+            direct = set(assignments.get(tag.id, set()))
+            subtree = set(direct)
+            for _, child_resources in built_children:
+                subtree.update(child_resources)
+            node = TagTreeEntity(
                 **tag.model_dump(),
-                direct_count=len(direct_artifacts),
-                total_count=len(subtree_artifacts),
-                children=child_nodes,
-            ), subtree_artifacts
+                direct_count=len(direct),
+                total_count=len(subtree),
+                children=[child for child, _ in built_children],
+            )
+            return node, subtree
 
         return [node for node, _ in (build(root) for root in children.get(None, []))]
 
@@ -187,7 +206,7 @@ class TagService:
         paths: list[str],
     ) -> AgentArtifactEntity | StaticAssetEntity:
         """Write one resource's complete tag set and return the refreshed resource."""
-        tags = [await self.create_path(path) for path in dict.fromkeys(paths)]
+        tags = [await self.create_path(path, target_type) for path in dict.fromkeys(paths)]
         await tag_storage.replace_tags(target_type, target_id, tuple(tag.id for tag in tags))
         refreshed = (
             await artifact_storage.get(target_id)
@@ -205,7 +224,7 @@ class TagService:
         the one-assignment form of ``replace_artifact_tags``: it reads the
         current set, adds the tag when it is missing, and writes the union back.
         """
-        tag = await self.require(tag_id)
+        tag = await self._require_kind(tag_id, TagTargetType.ARTIFACT)
         current = await self._tagged_artifact(artifact_id)
         paths = [assignment.path for assignment in current.tags]
         if tag.path in paths:
@@ -214,7 +233,7 @@ class TagService:
 
     async def unassign_tag(self, artifact_id: str, tag_id: str) -> AgentArtifactEntity:
         """Detach one tag from one artifact, leaving every other assignment alone."""
-        tag = await self.require(tag_id)
+        tag = await self._require_kind(tag_id, TagTargetType.ARTIFACT)
         current = await self._tagged_artifact(artifact_id)
         paths = [assignment.path for assignment in current.tags if assignment.path != tag.path]
         if len(paths) == len(current.tags):
@@ -223,7 +242,7 @@ class TagService:
 
     async def assign_asset_tag(self, asset_id: str, tag_id: str) -> StaticAssetEntity:
         """Attach one tag to one static asset, keeping the tags it already carries."""
-        tag = await self.require(tag_id)
+        tag = await self._require_kind(tag_id, TagTargetType.ASSET)
         current = await self._tagged_asset(asset_id)
         paths = [assignment.path for assignment in current.tags]
         if tag.path in paths:
@@ -232,7 +251,7 @@ class TagService:
 
     async def unassign_asset_tag(self, asset_id: str, tag_id: str) -> StaticAssetEntity:
         """Detach one tag from one static asset, leaving every other assignment alone."""
-        tag = await self.require(tag_id)
+        tag = await self._require_kind(tag_id, TagTargetType.ASSET)
         current = await self._tagged_asset(asset_id)
         paths = [assignment.path for assignment in current.tags if assignment.path != tag.path]
         if len(paths) == len(current.tags):
@@ -294,6 +313,19 @@ class TagService:
         tag = await tag_storage.get(tag_id)
         if tag is None:
             raise KeyError(f"Tag not found: {tag_id}")
+        return tag
+
+    async def _require_kind(self, tag_id: str, target_type: TagTargetType) -> TagEntity:
+        """Return one tag after confirming it belongs to the library being written.
+
+        The two libraries never share a node, so an id from the other tree is a
+        mistake to fix rather than an assignment to write.
+        """
+        tag = await self.require(tag_id)
+        if tag.target_type is not target_type:
+            library = "static assets" if tag.target_type is TagTargetType.ASSET else "artifacts"
+            raise ValueError(f"Tag belongs to the {library} library")
+        return tag
         return tag
 
 

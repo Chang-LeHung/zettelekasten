@@ -239,8 +239,16 @@ export const libraryClient = {
 }
 
 export const tagClient = {
-  list(): Promise<Tag[]> {
-    return request<Tag[]>('/library/tags')
+  /**
+   * Read the taxonomy, or one library's collection tree.
+   *
+   * `target` keeps only the tags that kind classifies and reports that kind's
+   * counts, which is what each library browses; without it the complete taxonomy
+   * comes back with counts for both kinds.
+   */
+  list(target: 'artifact' | 'asset' | null = null): Promise<Tag[]> {
+    const suffix = target ? `?target=${target}` : ''
+    return request<Tag[]>(`/library/tags${suffix}`)
   },
 
   create(payload: TagCreateInput): Promise<TagRecord> {
@@ -662,9 +670,14 @@ export const aiClient = {
 }
 
 export const assetClient = {
-  list(query = '', limit = 500, offset = 0): Promise<StaticAsset[]> {
+  /**
+   * List library files. `tagId` narrows them to one collection, expanding the
+   * tag's descendants server-side so a parent collection shows its whole subtree.
+   */
+  list(query = '', limit = 500, offset = 0, tagId: string | null = null): Promise<StaticAsset[]> {
     const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
     if (query) params.set('query', query)
+    if (tagId) params.set('tag_ids', tagId)
     return request<StaticAsset[]>(`/assets?${params}`)
   },
 

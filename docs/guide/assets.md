@@ -56,17 +56,20 @@ of a public model.
 
 ## Classifying a file
 
-Static assets carry the same tags artifacts do, because the taxonomy is one
-tree: a path may classify a card and the paper it was built from. Drag a file
-card in the `Static Assets` view onto a tag in the sidebar to add that tag — the
-file keeps the tags it already carries, and the row shows them. Dropping it on a
-tag it already has says so instead of rewriting the same set.
+Files carry tags from their own collection tree: the artifact library and the
+static asset library keep separate paths, so a collection you create here is not
+one of the artifact library's, and neither ever lists or counts the other's.
+Drag a file card in the `Static Assets` view onto a tag in the sidebar to add
+that tag — the file keeps the tags it already carries, and the row shows them.
+Dropping it on a tag it already has says so instead of rewriting the same set.
 
 The API takes both shapes, exactly like artifacts: `PUT
 /api/library/tags/assets/{asset_id}` replaces the complete set, while `PUT` and
 `DELETE /api/library/tags/{tag_id}/assets/{asset_id}` attach or detach one tag
-without touching the rest. The collections tree counts every classified
-resource, so a tag's count includes the files it carries.
+without touching the rest. This view browses its own collections: the sidebar
+tree filters to the paths files actually use, counts only files, and clicking a
+collection narrows the grid to it — a file collection never borrows the count of
+an artifact, and the artifact library never shows a path only files use.
 
 From a shell, the tag commands take `--asset` to name a file instead of an
 artifact:

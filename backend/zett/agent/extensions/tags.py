@@ -16,7 +16,7 @@ from zett_agent.tools.base import (
 from ...application.artifacts.artifact_views import ArtifactReceipt, artifact_receipt
 from ...application.tags.tagging import tag_service
 from ...infra.persistence.dao import artifact_storage
-from ...schemas import TagEntity, TagTreeEntity
+from ...schemas import TagEntity, TagTargetType, TagTreeEntity
 
 
 class TagExtension(AgentExtension):
@@ -33,7 +33,7 @@ class TagExtension(AgentExtension):
 
         @tool
         async def create_tag(path: str, description: str | None = None, color: str | None = None) -> TagEntity:
-            """Create a persistent library tag and any missing parent tags.
+            """Create a tag in the artifact library and any missing parent tags.
 
             Args:
                 path: Slash-delimited hierarchy such as "Engineering/Python".
@@ -44,15 +44,21 @@ class TagExtension(AgentExtension):
                 create_tag(path="Engineering/Python", description="Python language knowledge")
 
             Guidelines:
+                - Tags classify artifacts here; the static asset library keeps its own separate tree.
                 - Create a real tag only when the user explicitly asks for it or approves a durable classification.
                 - Reuse an existing path when it already expresses the same category.
                 - Keep segments short, stable, and meaningful; do not encode dates or confidence in the path.
             """
-            return await tag_service.create_path(path, description=description, color=color)
+            return await tag_service.create_path(
+                path,
+                TagTargetType.ARTIFACT,
+                description=description,
+                color=color,
+            )
 
         @tool
         async def list_tags() -> list[TagTreeEntity]:
-            """List the complete persistent tag tree and artifact counts.
+            """List the artifact library's tag tree and assignment counts.
 
             Snippet:
                 list_tags()
@@ -60,7 +66,7 @@ class TagExtension(AgentExtension):
             Guidelines:
                 - Inspect existing tags before creating a near-duplicate category.
             """
-            return await tag_service.list_tree()
+            return await tag_service.list_tree(TagTargetType.ARTIFACT)
 
         @tool
         async def update_tag(

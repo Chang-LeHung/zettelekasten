@@ -84,3 +84,59 @@ async def test_init_db_removes_the_retired_scheduled_task_misfire_column_once() 
         )
     )
     assert created.name == "After migration"
+
+
+async def test_init_db_rebuilds_the_tag_uniqueness_of_an_older_database() -> None:
+    """A database from before per-library collections keeps its tags.
+
+    PostgreSQL and SQLite alike cannot alter a constraint in place, so the shape
+    this release needs — one path per library instead of one path overall — is
+    reached by adding the missing column and swapping the unique index. The rows
+    that predate it were all artifact collections, and they stay.
+    """
+    await init_db()
+    async with database.engine.begin() as connection:
+        # Rebuild the shape the earlier release wrote: SQLite cannot drop a column
+        # an index and a unique constraint both name.
+        await connection.execute(text("DROP TABLE IF EXISTS tag_links"))
+        await connection.execute(text("DROP TABLE IF EXISTS tags"))
+        await connection.execute(
+            text(
+                "CREATE TABLE tags ("
+                "id VARCHAR(36) NOT NULL PRIMARY KEY, "
+                "path VARCHAR(500) NOT NULL, "
+                "normalized_path VARCHAR(500) NOT NULL, "
+                "name VARCHAR(100) NOT NULL, "
+                "parent_id VARCHAR(36), description TEXT, color VARCHAR(32), "
+                "created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL)"
+            )
+        )
+        await connection.execute(text("CREATE UNIQUE INDEX ix_tags_normalized_path ON tags (normalized_path)"))
+        await connection.execute(
+            text(
+                "INSERT INTO tags (id, path, normalized_path, name, parent_id, description, color, created_at, "
+                "updated_at) VALUES ('legacy', 'Engineering', 'engineering', 'Engineering', NULL, NULL, NULL, "
+                "'2026-01-01 00:00:00', '2026-01-01 00:00:00')"
+            )
+        )
+
+    assert "target_type" not in await _columns("tags")
+
+    await init_db()
+    await init_db()
+
+    assert "target_type" in await _columns("tags")
+    async with database.engine.begin() as connection:
+        indexes = {row[1]: row[2] for row in (await connection.execute(text("PRAGMA index_list(tags)"))).fetchall()}
+    assert indexes["ix_tags_normalized_path"] == 0
+    assert indexes["uq_tags_target_type_normalized_path"] == 1
+
+    from zett.application.tags.tagging import tag_service
+    from zett.schemas import TagTargetType
+
+    # The legacy node is an artifact collection, and the same path can now be
+    # created as a file collection instead of colliding with it.
+    artifact_tag = await tag_service.create_path("Engineering", TagTargetType.ARTIFACT)
+    assert artifact_tag.id == "legacy"
+    file_tag = await tag_service.create_path("Engineering", TagTargetType.ASSET)
+    assert file_tag.id != artifact_tag.id

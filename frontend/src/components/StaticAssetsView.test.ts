@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { createApp, nextTick } from 'vue'
+import { createApp, nextTick, ref } from 'vue'
 import { afterEach, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
@@ -140,4 +140,40 @@ it('shows the tags a file carries and hands a dragged card to the sidebar', asyn
 
   expect(dragged).toHaveLength(1)
   expect(transfer.setData).toHaveBeenCalledWith('application/x-zett-asset-id', 'asset-tagged')
+})
+
+it('lists only the selected collection and reloads when it changes', async () => {
+  mocks.list.mockResolvedValue([])
+  const host = document.createElement('div')
+  document.body.append(host)
+  const cleared: unknown[] = []
+  const tagId = ref<string | null>('tag-projects')
+  const app = createApp({
+    components: { StaticAssetsView },
+    setup: () => ({ tagId, cleared }),
+    template: `<StaticAssetsView
+      :tag-id="tagId"
+      :tag-path="tagId ? 'Projects/Zett' : null"
+      @clear-tag="cleared.push(true)"
+    />`,
+  })
+  app.mount(host)
+  cleanups.push(() => { app.unmount(); host.remove() })
+  await nextTick()
+  await Promise.resolve()
+  await nextTick()
+
+  // The grid asks for that collection, and says which one it is showing.
+  expect(mocks.list).toHaveBeenCalledWith('', 500, 0, 'tag-projects')
+  expect(host.textContent).toContain('Projects/Zett')
+  expect(host.textContent).toContain('No files in this collection')
+
+  host.querySelector<HTMLButtonElement>('.asset-collection-filter')?.click()
+  expect(cleared).toHaveLength(1)
+
+  tagId.value = 'tag-python'
+  await nextTick()
+  await Promise.resolve()
+  await nextTick()
+  expect(mocks.list).toHaveBeenLastCalledWith('', 500, 0, 'tag-python')
 })

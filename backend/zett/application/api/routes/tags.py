@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, HTTPException, Query, status
 
-from ....schemas import AgentArtifactEntity, StaticAssetEntity, TagEntity, TagTreeEntity
+from ....schemas import AgentArtifactEntity, StaticAssetEntity, TagEntity, TagTargetType, TagTreeEntity
 from ...tags.tagging import tag_service
 from ..schemas import ArtifactTagsIn, AssetTagsIn, TagCreateIn, TagUpdateIn
 
@@ -10,9 +10,16 @@ router = APIRouter(prefix="/library/tags", tags=["library-tags"])
 
 
 @router.get("", response_model=list[TagTreeEntity])
-async def list_tags() -> list[TagTreeEntity]:
-    """Return the complete stable taxonomy with direct and descendant counts."""
-    return await tag_service.list_tree()
+async def list_tags(
+    target: TagTargetType = Query(description="Library whose collection tree to read: `artifact` or `asset`"),
+) -> list[TagTreeEntity]:
+    """Return one library's collection tree.
+
+    The two libraries keep separate trees, so ``target`` is required: the answer
+    lists only that library's tags, and every count describes the resources it
+    classifies.
+    """
+    return await tag_service.list_tree(target)
 
 
 @router.post("", response_model=TagEntity, status_code=status.HTTP_201_CREATED)
@@ -21,6 +28,7 @@ async def create_tag(payload: TagCreateIn) -> TagEntity:
     try:
         return await tag_service.create_path(
             payload.path,
+            payload.target,
             description=payload.description,
             color=payload.color,
         )

@@ -82,7 +82,7 @@ def test_session_owned_artifacts_keep_their_conversation_as_provenance() -> None
 def test_library_delete_removes_the_artifact_and_its_assignments() -> None:
     with TestClient(app) as client:
         artifact = client.post("/api/artifacts", json=_card_payload("Delete me")).json()
-        tag = client.post("/api/library/tags", json={"path": "Trash/Temp"}).json()
+        tag = client.post("/api/library/tags", json={"path": "Trash/Temp", "target": "artifact"}).json()
         assert client.put(f"/api/library/tags/{tag['id']}/artifacts/{artifact['id']}").status_code == 200
 
         deleted = client.delete(f"/api/artifacts/{artifact['id']}")
@@ -92,7 +92,7 @@ def test_library_delete_removes_the_artifact_and_its_assignments() -> None:
         assert client.get(f"/api/artifacts/{artifact['id']}").status_code == 404
         assert client.get("/api/artifacts", params={"limit": 50}).json() == []
         # The taxonomy survives; only the assignment left with the artifact.
-        assert client.get("/api/library/tags").json()[0]["total_count"] == 0
+        assert client.get("/api/library/tags?target=artifact").json()[0]["total_count"] == 0
         # Deleting it twice answers 404 rather than pretending it worked.
         assert client.delete(f"/api/artifacts/{artifact['id']}").status_code == 404
 

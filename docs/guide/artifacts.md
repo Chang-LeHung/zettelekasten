@@ -121,14 +121,16 @@ whole-set replace. Only saved artifacts carry tags. Assigning a path the
 taxonomy does not have yet creates it — `add` and `set` do that, while `remove`
 refuses a path that does not exist instead of inventing a tag to detach.
 Pass `--asset` on any of the three to name a static asset instead of an
-artifact: both share one taxonomy, so a path may classify a card and the file it
-was built from, and the counts in `zett tag list` cover both.
+artifact. The two libraries keep separate collection trees, so a path created in
+one is a different collection from the same path in the other, and a tag from the
+other tree is refused rather than assigned.
 
 Every `zett tag list` line is `path  direct/total  id`. `direct` counts the
-artifacts tagged exactly there, and `total` adds the ones tagged in its
-descendants (an artifact that carries both a tag and its child counts once), so
-a parent reads `0/1` when the only assignment sits on its child — the same
-numbers the collections tree shows in the library.
+resources tagged exactly there, and `total` adds the ones tagged in its
+descendants (a resource that carries both a tag and its child counts once), so a
+parent reads `0/1` when the only assignment sits on its child. The command prints
+the artifact library's tree; `zett tag list --asset` prints the static asset
+library's, and each count describes only that library.
 
 Search and listings show bounded previews rather than complete documents. The
 full body is read only when you open it, and server-owned locations such as a PDF

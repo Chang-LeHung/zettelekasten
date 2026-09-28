@@ -20,12 +20,13 @@ from ...._compat import UTC
 from ....schemas import TagEntity, TagListOptions, TagRefEntity, TagTargetType, TagWrite
 from ..database import session_scope
 from ..storage import AsyncStorage
-from ..tables import TARGET_TO_CODE, TagLinkRow, TagRow
+from ..tables import CODE_TO_TARGET, TARGET_TO_CODE, TagLinkRow, TagRow
 
 
 def _tag_out(model: TagRow) -> TagEntity:
     return TagEntity(
         id=model.id,
+        target_type=CODE_TO_TARGET[model.target_type],
         path=model.path,
         normalized_path=model.normalized_path,
         name=model.name,
@@ -45,7 +46,8 @@ class TagStorage(AsyncStorage[TagWrite, TagEntity, str, TagListOptions]):
         async with session_scope() as session:
             model = TagRow(
                 id=new_uuid7(),
-                **entity.model_dump(),
+                **entity.model_dump(exclude={"target_type"}),
+                target_type=int(TARGET_TO_CODE[entity.target_type]),
                 created_at=now,
                 updated_at=now,
             )
@@ -53,7 +55,7 @@ class TagStorage(AsyncStorage[TagWrite, TagEntity, str, TagListOptions]):
             try:
                 await session.flush()
             except IntegrityError as error:
-                raise ValueError(f"Tag path already exists: {entity.path}") from error
+                raise ValueError(f"Tag path already exists in this library: {entity.path}") from error
             return _tag_out(model)
 
     async def get(self, entity_id: str) -> TagEntity | None:
@@ -61,9 +63,19 @@ class TagStorage(AsyncStorage[TagWrite, TagEntity, str, TagListOptions]):
             model = await session.get(TagRow, entity_id)
             return _tag_out(model) if model else None
 
-    async def get_by_normalized_path(self, normalized_path: str) -> TagEntity | None:
+    async def get_by_normalized_path(
+        self,
+        target_type: TagTargetType,
+        normalized_path: str,
+    ) -> TagEntity | None:
+        """Read one library's node at this path; the other library has its own."""
         async with session_scope() as session:
-            model = await session.scalar(select(TagRow).where(TagRow.normalized_path == normalized_path))
+            model = await session.scalar(
+                select(TagRow).where(
+                    TagRow.target_type == int(TARGET_TO_CODE[target_type]),
+                    TagRow.normalized_path == normalized_path,
+                )
+            )
             return _tag_out(model) if model else None
 
     async def update(self, entity_id: str, entity: TagWrite) -> TagEntity:
@@ -71,13 +83,16 @@ class TagStorage(AsyncStorage[TagWrite, TagEntity, str, TagListOptions]):
             model = await session.get(TagRow, entity_id)
             if model is None:
                 raise KeyError(f"Tag not found: {entity_id}")
-            for key, value in entity.model_dump().items():
+            for key, value in entity.model_dump(exclude={"target_type"}).items():
                 setattr(model, key, value)
+            # A tag never changes libraries: moving one would leave its links
+            # pointing at resources of the other kind.
+            model.target_type = int(TARGET_TO_CODE[entity.target_type])
             model.updated_at = datetime.now(UTC)
             try:
                 await session.flush()
             except IntegrityError as error:
-                raise ValueError(f"Tag path already exists: {entity.path}") from error
+                raise ValueError(f"Tag path already exists in this library: {entity.path}") from error
             return _tag_out(model)
 
     async def delete(self, entity_id: str) -> bool:
@@ -93,6 +108,8 @@ class TagStorage(AsyncStorage[TagWrite, TagEntity, str, TagListOptions]):
         options = options or TagListOptions()
         async with session_scope() as session:
             statement = select(TagRow)
+            if options.target_type is not None:
+                statement = statement.where(TagRow.target_type == int(TARGET_TO_CODE[options.target_type]))
             if options.prefix:
                 statement = statement.where(
                     (TagRow.normalized_path == options.prefix) | TagRow.normalized_path.startswith(f"{options.prefix}/")
@@ -150,15 +167,19 @@ class TagStorage(AsyncStorage[TagWrite, TagEntity, str, TagListOptions]):
             grouped.setdefault(target_id, []).append(TagRefEntity(id=tag_id, path=path, name=name))
         return grouped
 
-    async def assignments(self) -> dict[str, set[str]]:
+    async def assignments(self, target_type: TagTargetType | None = None) -> dict[str, set[str]]:
         """Return the directly assigned resource UUIDs keyed by tag UUID.
 
-        Artifacts and static assets share the key space because the tree counts
-        everything one tag classifies; a target id is a UUID either way, so the
-        two kinds cannot collide.
+        ``target_type`` narrows the answer to one kind of resource, which is how
+        each library builds its own collection tree; without it both kinds are
+        counted together, which is what a taxonomy-wide view wants. The two kinds
+        share the key space because a target id is a UUID either way.
         """
+        statement = select(TagLinkRow.tag_id, TagLinkRow.target_id)
+        if target_type is not None:
+            statement = statement.where(TagLinkRow.target_type == int(TARGET_TO_CODE[target_type]))
         async with session_scope() as session:
-            rows = (await session.execute(select(TagLinkRow.tag_id, TagLinkRow.target_id))).all()
+            rows = (await session.execute(statement)).all()
         result: dict[str, set[str]] = {}
         for tag_id, target_id in rows:
             result.setdefault(tag_id, set()).add(target_id)

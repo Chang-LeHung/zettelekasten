@@ -21,6 +21,7 @@ from ...schemas import (
     ProviderType,
     SessionAssetEntity,
     SessionType,
+    TagTargetType,
 )
 
 
@@ -133,8 +134,14 @@ class ArtifactUpdateIn(BaseModel):
 
 
 class TagCreateIn(BaseModel):
-    """Create one persistent hierarchical library tag."""
+    """Create one persistent hierarchical library tag.
 
+    ``target`` names the library the collection belongs to: the two libraries
+    keep separate trees, so the same path may be created once in each and
+    neither one ever lists the other's tags.
+    """
+
+    target: TagTargetType = Field(description="Library this collection belongs to: artifact or asset")
     path: str = Field(min_length=1, max_length=500)
     description: str | None = Field(default=None, max_length=1_000)
     color: str | None = Field(default=None, max_length=32)

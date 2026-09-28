@@ -153,7 +153,13 @@ const draggingLibraryItem = ref<LibraryItem | null>(null)
 const draggingStaticAsset = ref<StaticAsset | null>(null)
 const tagDropTargetId = ref<string | null>(null)
 const tagAssignmentBusy = ref(false)
-const tags = ref<Tag[]>([])
+/**
+ * The collection tree of the library being browsed, and the only one this app
+ * ever shows: the sidebar, the manager, and every count read from it belong to
+ * the library on screen, because the artifact library and the static asset
+ * library keep separate trees.
+ */
+const collectionTags = ref<Tag[]>([])
 const collapsedTagIds = ref<Set<string>>(new Set())
 const hoveredTagId = ref<string | null>(null)
 const tagManagerOpen = ref(false)
@@ -165,6 +171,7 @@ const activeQuery = ref('')
 const selectedTag = ref<string | null>(null)
 const selectedLibraryType = ref<LibraryItem['item_type'] | null>(null)
 const view = ref<View>('new')
+const collectionTarget = computed<'artifact' | 'asset'>(() => (view.value === 'assets' ? 'asset' : 'artifact'))
 const raw = ref('')
 const artifactContent = ref<ArtifactContent | null>(null)
 const conversation = ref<AnalysisMessage[]>([])
@@ -341,7 +348,7 @@ const libraryTypeFilters: Array<{ value: LibraryItem['item_type'] | null; label:
   { value: 'latex_pdf', label: 'PDFs' },
 ]
 
-const flatTags = computed(() => visibleTagRows(tags.value, collapsedTagIds.value))
+const flatTags = computed(() => visibleTagRows(collectionTags.value, collapsedTagIds.value))
 const selectedTagName = computed(() => flatTags.value.find((tag) => tag.id === selectedTag.value)?.path)
 const pageTitle = computed(() => {
   if (view.value === 'search') {
@@ -1189,8 +1196,8 @@ async function createTag(path: string): Promise<void> {
   tagManagerFeedback.value = ''
   tagManagerBusy.value = true
   try {
-    const created = await tagClient.create({ path })
-    tags.value = await tagClient.list()
+    const created = await tagClient.create({ path, target: collectionTarget.value })
+    await refreshTags()
     tagManagerFeedbackKind.value = 'success'
     tagManagerFeedback.value = `Created “${created.path}”.`
     showNotice(`Tag “${created.path}” added`)
@@ -1235,8 +1242,7 @@ async function deleteTag(tag: Tag): Promise<void> {
   try {
     await tagClient.delete(tag.id)
     if (selectedTag.value && tagSubtreeContains(tag, selectedTag.value)) selectedTag.value = null
-    const [tagData] = await Promise.all([tagClient.list(), loadLibrary()])
-    tags.value = tagData
+    await Promise.all([refreshTags(), loadLibrary()])
     showNotice(`Tag “${tag.path}” deleted`)
   } catch (error) {
     showNotice(errorMessage(error), 'error')
@@ -1287,6 +1293,23 @@ async function loadLibrary(): Promise<void> {
   }
 }
 
+/** Reload the collection tree of the library being browsed. */
+async function loadCollectionTags(): Promise<void> {
+  collectionTags.value = await tagClient.list(collectionTarget.value)
+}
+
+/** Refresh that tree after an assignment or a collection changes. */
+async function refreshTags(): Promise<void> {
+  collectionTags.value = await tagClient.list(collectionTarget.value)
+}
+
+// Each library browses its own tree, so switching libraries drops a selection
+// that belongs to the other one instead of filtering a list it cannot show.
+watch(collectionTarget, () => {
+  selectedTag.value = null
+  loadCollectionTags().catch((error: unknown) => showNotice(errorMessage(error), 'error'))
+})
+
 async function loadInitialData(): Promise<void> {
   usageActivityLoading.value = true
   try {
@@ -1298,14 +1321,14 @@ async function loadInitialData(): Promise<void> {
       usageActivityData,
       modelUsageActivityData,
     ] = await Promise.all([
-      tagClient.list(),
+      tagClient.list(collectionTarget.value),
       libraryClient.list(),
       aiClient.listProviders(),
       settingsClient.get(),
       settingsClient.getUsageActivity().catch(() => []),
       settingsClient.getModelUsageActivity(30).catch(() => []),
     ])
-    tags.value = tagData
+    collectionTags.value = tagData
     libraryItems.value = libraryData
     providers.value = providerData
     runtimeSettings.value = runtimeSettingsData
@@ -1454,7 +1477,7 @@ async function saveLibraryEditor(payload: LibraryItemUpdate): Promise<void> {
     if (selectedLibraryItem.value?.item_type === updated.item_type && selectedLibraryItem.value.id === updated.id) {
       selectedLibraryItem.value = updated
     }
-    tags.value = await tagClient.list()
+    await refreshTags()
     showNotice(`${artifactTypeLabel(updated.item_type)} saved`)
   } catch (error) {
     showNotice(errorMessage(error), 'error')
@@ -1554,7 +1577,7 @@ async function dropResourceOnTag(tag: Tag, event: DragEvent): Promise<void> {
     } else {
       applyAssetTags(await tagClient.replaceAssetTags(dragged.asset.id, assignment.paths))
     }
-    tags.value = await tagClient.list()
+    await refreshTags()
     showNotice(`Added “${label}” to ${tag.path}`)
   } catch (error) {
     showNotice(errorMessage(error), 'error')
@@ -1588,7 +1611,7 @@ async function deleteLibraryItem(item: LibraryItem): Promise<void> {
       libraryEditorItem.value = null
       libraryEditorArtifactId.value = null
     }
-    tags.value = await tagClient.list()
+    await refreshTags()
     showNotice(`${item.item_type === 'article' ? 'Article' : 'Card'} deleted`)
   } catch (error) {
     showNotice(errorMessage(error), 'error')
@@ -1612,6 +1635,11 @@ async function filterByTag(tagId: string | null): Promise<void> {
   selectedTag.value = tagId
   activeQuery.value = ''
   query.value = ''
+  if (view.value === 'assets') {
+    // The collection tree belongs to the library on screen: filter the files
+    // instead of leaving the view the user is browsing.
+    return
+  }
   view.value = 'library'
   await loadLibrary()
 }
@@ -3075,7 +3103,7 @@ async function saveSelectedArtifact(): Promise<boolean> {
     }
     if (content.artifact_type !== 'image') {
       await loadLibrary()
-      tags.value = await tagClient.list()
+      await refreshTags()
     }
     showNotice(
       content.artifact_type === 'image'
@@ -3424,7 +3452,7 @@ onBeforeUnmount(() => {
       </Transition>
 
       <ConfirmDialog :open="confirmation.open" :title="confirmation.title" :message="confirmation.message" :confirm-label="confirmation.confirmLabel" @cancel="settleConfirmation(false)" @confirm="settleConfirmation(true)" />
-      <TagManagerDialog v-if="tagManagerOpen" :tags="tags" :busy="tagManagerBusy" :feedback="tagManagerFeedback" :feedback-kind="tagManagerFeedbackKind" @close="tagManagerOpen = false" @create="createTag" @delete="deleteTag" />
+      <TagManagerDialog v-if="tagManagerOpen" :tags="collectionTags" :busy="tagManagerBusy" :feedback="tagManagerFeedback" :feedback-kind="tagManagerFeedbackKind" @close="tagManagerOpen = false" @create="createTag" @delete="deleteTag" />
       <AssetPreviewDialog :asset="previewAsset" @close="previewAsset = null" />
       <StaticAssetImportDialog
         v-if="staticAssetImportOpen"
@@ -4070,8 +4098,11 @@ onBeforeUnmount(() => {
       <template v-else-if="view === 'assets'">
         <StaticAssetsView
           ref="staticAssetsView"
+          :tag-id="selectedTag"
+          :tag-path="selectedTagName ?? null"
           @drag-start="startStaticAssetDrag"
           @drag-end="endStaticAssetDrag"
+          @clear-tag="filterByTag(null)"
         />
       </template>
 
