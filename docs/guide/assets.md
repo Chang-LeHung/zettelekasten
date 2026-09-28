@@ -43,11 +43,14 @@ creates a reference to the same stored object rather than a second copy, so
 editing or re-uploading the original changes what every conversation sees, and
 deleting a static asset is refused while a session still points at it.
 
-The Agent publishes to this library through the local HTTP API instead of a
-tool argument. Files it already wrote or compiled on disk are uploaded with a
-shell command against `POST /api/assets/upload`, so binary content never has to
-travel through the model's context as Base64. Importing a static asset back into
-a conversation remains your action.
+The Agent publishes to this library with `upload_static_asset`, naming a file it
+already wrote or compiled on disk by its absolute path, so binary content never
+travels through the model's context. A shell that already holds the file can post
+it to `POST /api/assets/upload` instead, which is the same endpoint the tool
+calls. Classifying a published file is the model's too, through
+`create_asset_tag`, `list_asset_tags`, and `set_asset_tags` — all of which stay
+inside this library's own collection tree. Importing a static asset back into a
+conversation remains your action.
 
 Search filters both libraries by name and type. Every stored location is an
 object key relative to the storage root, and the only endpoint that streams
@@ -56,17 +59,20 @@ of a public model.
 
 ## Classifying a file
 
-Static assets carry the same tags artifacts do, because the taxonomy is one
-tree: a path may classify a card and the paper it was built from. Drag a file
-card in the `Static Assets` view onto a tag in the sidebar to add that tag — the
-file keeps the tags it already carries, and the row shows them. Dropping it on a
-tag it already has says so instead of rewriting the same set.
+Files carry tags from their own collection tree: the artifact library and the
+static asset library keep separate paths, so a collection you create here is not
+one of the artifact library's, and neither ever lists or counts the other's.
+Drag a file card in the `Static Assets` view onto a tag in the sidebar to add
+that tag — the file keeps the tags it already carries, and the row shows them.
+Dropping it on a tag it already has says so instead of rewriting the same set.
 
 The API takes both shapes, exactly like artifacts: `PUT
 /api/library/tags/assets/{asset_id}` replaces the complete set, while `PUT` and
 `DELETE /api/library/tags/{tag_id}/assets/{asset_id}` attach or detach one tag
-without touching the rest. The collections tree counts every classified
-resource, so a tag's count includes the files it carries.
+without touching the rest. This view browses its own collections: the sidebar
+tree filters to the paths files actually use, counts only files, and clicking a
+collection narrows the grid to it — a file collection never borrows the count of
+an artifact, and the artifact library never shows a path only files use.
 
 From a shell, the tag commands take `--asset` to name a file instead of an
 artifact:

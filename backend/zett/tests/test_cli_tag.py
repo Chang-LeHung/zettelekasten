@@ -113,8 +113,8 @@ def test_list_help_explains_the_direct_and_total_counts(capsys: pytest.CaptureFi
 
     help_text = " ".join(capsys.readouterr().out.split())
     assert exit_info.value.code == 0
-    assert "direct counts the artifacts tagged exactly there" in help_text
-    assert "0/1 when the only assignment sits on its child" in help_text
+    assert "each has its own paths and counts" in help_text
+    assert "reads 0/1 when the only assignment sits on its child" in help_text
 
 
 def test_create_prints_the_id_and_json_when_asked(
@@ -130,7 +130,7 @@ def test_create_prints_the_id_and_json_when_asked(
         (
             "POST",
             "/api/library/tags",
-            {"path": "Projects/Zett", "description": "Zett work", "color": "#3b82f6"},
+            {"path": "Projects/Zett", "target": "artifact", "description": "Zett work", "color": "#3b82f6"},
         )
     ]
 
@@ -191,7 +191,7 @@ def test_add_resolves_paths_to_ids_and_prints_the_resulting_tags(
 
     assert exit_code == 0
     assert capsys.readouterr().out == "Engineering/Python\nProjects/Zett\n"
-    assert recorder.calls[0] == ("GET", "/api/library/tags", None)
+    assert recorder.calls[0] == ("GET", "/api/library/tags?target=artifact", None)
     assert recorder.calls[1] == ("PUT", "/api/library/tags/tag-python/artifacts/artifact-1", None)
     assert recorder.calls[2] == ("PUT", "/api/library/tags/tag-zett/artifacts/artifact-1", None)
 
@@ -206,8 +206,8 @@ def test_add_creates_a_path_the_taxonomy_lacks(
 
     assert exit_code == 0
     assert recorder.calls == [
-        ("GET", "/api/library/tags", None),
-        ("POST", "/api/library/tags", {"path": "Projects/New"}),
+        ("GET", "/api/library/tags?target=artifact", None),
+        ("POST", "/api/library/tags", {"path": "Projects/New", "target": "artifact"}),
         ("PUT", "/api/library/tags/tag-new/artifacts/artifact-1", None),
     ]
 
@@ -225,7 +225,7 @@ def test_remove_refuses_a_path_the_taxonomy_does_not_have(
 
     assert exit_info.value.code == 2
     assert "unknown tag path" in capsys.readouterr().err
-    assert recorder.calls == [("GET", "/api/library/tags", None)]
+    assert recorder.calls == [("GET", "/api/library/tags?target=artifact", None)]
 
 
 def test_remove_detaches_every_named_path(

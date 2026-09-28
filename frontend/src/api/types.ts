@@ -1,5 +1,7 @@
 export interface TagRecord {
   id: string
+  /** Library this collection belongs to: the artifact or the static asset tree. */
+  target_type: 'artifact' | 'asset'
   name: string
   parent_id: string | null
   description: string | null
@@ -17,6 +19,8 @@ export interface Tag extends TagRecord {
 }
 
 export interface TagCreateInput {
+  /** Library the collection belongs to; the two keep separate trees. */
+  target: 'artifact' | 'asset'
   path: string
   description?: string | null
   color?: string | null

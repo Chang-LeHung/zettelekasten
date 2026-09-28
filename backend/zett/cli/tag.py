@@ -25,21 +25,26 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=f"{PROGRAM_NAME} tag",
         description=(
-            "Manage the library tag taxonomy and the tags an artifact carries. Tags are a "
-            "recursive path tree; assigning one creates the path and every missing parent."
+            "Manage the collection trees and the tags a resource carries. Tags are recursive path "
+            "trees, and the artifact library and the static asset library keep separate ones: a path "
+            "created in one is a different collection from the same path in the other. Assigning a "
+            "path creates it and every missing parent."
         ),
     )
     commands = parser.add_subparsers(dest="command", metavar="COMMAND", required=True)
 
     listing = commands.add_parser(
         "list",
-        help="Print the tag tree",
+        help="Print one library's tag tree",
         description=(
-            "Print the complete tag tree. Every line is `path  direct/total  id`, where direct counts the "
-            "artifacts tagged exactly there and total counts those plus everything tagged in its "
-            "descendants, so a parent node reads 0/1 when the only assignment sits on its child."
+            "Print one library's collection tree — the artifact library by default, the static asset "
+            "library with --asset. The two libraries are separate: each has its own paths and counts. "
+            "Every line is `path  direct/total  id`, where direct counts the resources tagged exactly "
+            "there and total counts those plus everything tagged in its descendants, so a parent node "
+            "reads 0/1 when the only assignment sits on its child."
         ),
     )
+    _add_resource_kind(listing)
     listing.add_argument("--json", action="store_true", help="Print the raw tree instead of one line per tag")
     listing.set_defaults(handler=_list)
 
@@ -49,9 +54,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     create = commands.add_parser(
         "create",
-        help="Create a tag path",
-        description="Create a tag path and any missing parent tag it names.",
+        help="Create a tag path in one library",
+        description=(
+            "Create a tag path and any missing parent tag it names, in the artifact library by default "
+            "or in the static asset library with --asset. The same path may exist in both libraries; "
+            "each is its own collection."
+        ),
     )
+    _add_resource_kind(create)
     create.add_argument("path", help="Display path separated by slashes, for example Engineering/Python")
     create.add_argument("--description", help="Optional description shown on the tag")
     create.add_argument("--color", help="Optional color shown on the tag")
@@ -151,16 +161,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _add_resource_kind(parser: argparse.ArgumentParser) -> None:
-    """Let one command classify either kind of library resource.
+    """Let one command work on either library's collections.
 
-    Artifacts and static assets share the taxonomy, so the only thing a caller
-    has to state is which kind the id names: the endpoint differs, the meaning of
-    a tag does not.
+    The two libraries keep separate trees, so a command that creates, lists, or
+    assigns has to say which one it means; without this flag it means artifacts.
     """
     parser.add_argument(
         "--asset",
         action="store_true",
-        help="Treat ID as a static asset id instead of an artifact id",
+        help="Work on the static asset library instead of the artifact library",
     )
 
 
@@ -172,8 +181,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _list(args: argparse.Namespace) -> int:
-    """Print the tag tree with the counts the library view shows."""
-    tree = request_json("GET", TAGS_PATH)
+    """Print one library's tag tree with the counts that library view shows."""
+    tree = request_json("GET", f"{TAGS_PATH}?{urllib.parse.urlencode({'target': _target(args)})}")
     if args.json:
         print(json.dumps(tree, indent=2, ensure_ascii=False))
         return 0
@@ -218,7 +227,7 @@ def _get(args: argparse.Namespace) -> int:
 
 def _create(args: argparse.Namespace) -> int:
     """Create a tag path and print its id, or the stored tag with ``--json``."""
-    payload: dict[str, Any] = {"path": validation.tag_path(args.path)}
+    payload: dict[str, Any] = {"path": validation.tag_path(args.path), "target": _target(args)}
     if args.description is not None:
         payload["description"] = validation.text(
             args.description,
@@ -266,11 +275,12 @@ def _add(args: argparse.Namespace) -> int:
     tag the server has never seen is how a shell names a new one.
     """
     kind, resource_id = _tagged_resource(args)
+    target = _target(args)
     paths = [validation.tag_path(path) for path in args.paths]
-    known = {node["path"]: node["id"] for _, node in _walk(request_json("GET", TAGS_PATH))}
+    known = {node["path"]: node["id"] for _, node in _walk(request_json("GET", f"{TAGS_PATH}?target={target}"))}
     tagged: dict[str, Any] | None = None
     for path in paths:
-        tag_id = known.get(path) or request_json("POST", TAGS_PATH, {"path": path})["id"]
+        tag_id = known.get(path) or request_json("POST", TAGS_PATH, {"path": path, "target": target})["id"]
         tagged = request_json("PUT", f"{TAGS_PATH}/{tag_id}/{kind}/{resource_id}")
     assert tagged is not None  # `paths` is a required argument
     return _print_tagged_resource(tagged, as_json=args.json)
@@ -280,7 +290,7 @@ def _remove(args: argparse.Namespace) -> int:
     """Detach every named path from one resource, one assignment at a time."""
     kind, resource_id = _tagged_resource(args)
     tagged: dict[str, Any] | None = None
-    for tag_id in _tag_ids([validation.tag_path(path) for path in args.paths]).values():
+    for tag_id in _tag_ids([validation.tag_path(path) for path in args.paths], _target(args)).values():
         tagged = request_json("DELETE", f"{TAGS_PATH}/{tag_id}/{kind}/{resource_id}")
     assert tagged is not None  # `paths` is a required argument
     return _print_tagged_resource(tagged, as_json=args.json)
@@ -308,9 +318,14 @@ def _tagged_resource(args: argparse.Namespace) -> tuple[str, str]:
     return ("assets" if args.asset else "artifacts", resource_id)
 
 
-def _tag_ids(paths: Sequence[str]) -> dict[str, str]:
+def _target(args: argparse.Namespace) -> str:
+    """Return the library a command works on, as the API spells it."""
+    return "asset" if args.asset else "artifact"
+
+
+def _tag_ids(paths: Sequence[str], target: str) -> dict[str, str]:
     """Map the tag paths a shell names to the tag ids the endpoints take."""
-    by_path = {node["path"]: node["id"] for _, node in _walk(request_json("GET", TAGS_PATH))}
+    by_path = {node["path"]: node["id"] for _, node in _walk(request_json("GET", f"{TAGS_PATH}?target={target}"))}
     unknown = [path for path in paths if path not in by_path]
     if unknown:
         raise UsageError(f"unknown tag path(s): {', '.join(unknown)}; create them with `zett tag create`")

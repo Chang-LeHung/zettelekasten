@@ -1,12 +1,17 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { assetClient } from '../api/client'
 import type { StaticAsset } from '../api/types'
 import { useI18n } from '../i18n'
 import PdfThumbnail from './PdfThumbnail.vue'
 
 const { t } = useI18n()
-const emit = defineEmits<{ 'drag-start': [asset: StaticAsset]; 'drag-end': [] }>()
+/**
+ * The collection the sidebar selected. The tree belongs to this library, so the
+ * grid filters by it: the parent owns the selection, this view owns the files.
+ */
+const props = defineProps<{ tagId?: string | null; tagPath?: string | null }>()
+const emit = defineEmits<{ 'drag-start': [asset: StaticAsset]; 'drag-end': []; 'clear-tag': [] }>()
 const assets = ref<StaticAsset[]>([])
 const loading = ref(false)
 const uploading = ref(false)
@@ -29,7 +34,7 @@ async function loadAssets(): Promise<void> {
   loading.value = true
   error.value = ''
   try {
-    assets.value = await assetClient.list()
+    assets.value = await assetClient.list('', 500, 0, props.tagId ?? null)
   } catch (errorValue) {
     error.value = message(errorValue)
   } finally {
@@ -149,6 +154,9 @@ onMounted(() => {
   void loadAssets()
 })
 
+// The sidebar owns the selection, so a change there reloads the filtered grid.
+watch(() => props.tagId, () => void loadAssets())
+
 onBeforeUnmount(() => {
   window.removeEventListener('paste', pasteFiles)
 })
@@ -180,6 +188,10 @@ defineExpose({ reload: loadAssets })
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4 4" /></svg>
         <input v-model="query" type="search" :placeholder="t('Search files')" />
       </label>
+      <button v-if="tagPath" class="asset-collection-filter" type="button" @click="emit('clear-tag')">
+        <span>{{ t('Collection: {path}', { path: tagPath }) }}</span>
+        <small>{{ t('Clear') }}</small>
+      </button>
       <span>{{ visibleAssets.length === 1 ? t('{count} file', { count: visibleAssets.length }) : t('{count} files', { count: visibleAssets.length }) }}</span>
     </div>
 
@@ -225,8 +237,9 @@ defineExpose({ reload: loadAssets })
     </div>
     <div v-else class="static-asset-empty">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8.5 12.5 6.2-6.2a3 3 0 1 1 4.2 4.2l-8.1 8.1a5 5 0 0 1-7.1-7.1l8-8" /></svg>
-      <strong>{{ t('No assets yet') }}</strong>
-      <button class="primary-action" type="button" @click="fileInput?.click()">{{ t('Upload files') }}</button>
+      <strong>{{ tagPath ? t('No files in this collection') : t('No assets yet') }}</strong>
+      <button v-if="tagPath" class="secondary-action" type="button" @click="emit('clear-tag')">{{ t('Clear filter') }}</button>
+      <button v-else class="primary-action" type="button" @click="fileInput?.click()">{{ t('Upload files') }}</button>
     </div>
   </section>
 
@@ -248,6 +261,9 @@ defineExpose({ reload: loadAssets })
 .static-assets-view.dragging { border-radius: 1rem; outline: 2px dashed #74917f; outline-offset: -.75rem; background: #f3f7f4; }
 .assets-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin: .35rem 0 1.15rem; }
 .assets-toolbar > span { color: var(--tertiary); font-size: .72rem; }
+.asset-collection-filter { display: inline-flex; align-items: center; gap: .4rem; min-height: 2rem; padding: 0 .6rem; border: 1px solid rgba(78,111,91,.16); border-radius: .55rem; color: #3f604c; background: #edf3ef; cursor: pointer; font-size: .68rem; font-weight: 600; }
+.asset-collection-filter small { color: #6c7f74; font-size: .6rem; }
+.asset-collection-filter:hover { background: #e3ece7; }
 .asset-search { width: min(100%, 25rem); height: 2.6rem; display: flex; align-items: center; gap: .5rem; padding: 0 .72rem; border: 1px solid rgba(29,29,31,.11); border-radius: .65rem; background: #fff; }
 .asset-search:focus-within { border-color: rgba(71,105,87,.45); box-shadow: 0 0 0 3px rgba(71,105,87,.08); }
 .asset-search svg { width: .9rem; height: .9rem; flex: 0 0 auto; fill: none; stroke: #87908a; stroke-width: 1.7; stroke-linecap: round; }

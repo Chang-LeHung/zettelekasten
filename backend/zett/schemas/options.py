@@ -3,6 +3,7 @@
 from pydantic import BaseModel, ConfigDict, Field
 
 from .sessions import SessionType
+from .tags import TagTargetType
 
 
 class SessionListOptions(BaseModel):
@@ -33,6 +34,7 @@ class TagListOptions(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    target_type: TagTargetType | None = Field(default=None, description="Library whose tree to list")
     prefix: str | None = Field(default=None, description="Normalized hierarchical path prefix")
     limit: int = Field(default=500, ge=1, le=2_000, description="Maximum tags returned")
     offset: int = Field(default=0, ge=0, description="Number of tags skipped")
@@ -56,6 +58,7 @@ class StaticAssetListOptions(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     query: str | None = Field(default=None, description="Text matched against asset names")
+    tag_ids: tuple[str, ...] = Field(default=(), description="Tag ids that must classify the asset")
     limit: int = Field(default=100, ge=1, le=500, description="Maximum assets returned")
     offset: int = Field(default=0, ge=0, description="Number of assets skipped")
 

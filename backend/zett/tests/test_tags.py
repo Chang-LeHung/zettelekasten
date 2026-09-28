@@ -48,7 +48,7 @@ async def test_hierarchical_paths_create_stable_nodes_and_aggregate_counts() -> 
     artifact = await tagged_card(session_id)
 
     tagged = await tag_service.sync_confirmed_suggestions(artifact)
-    tree = await tag_service.list_tree()
+    tree = await tag_service.list_tree(TagTargetType.ARTIFACT)
 
     assert [tag.path for tag in await tag_storage.list()] == [
         "Engineering",
@@ -61,20 +61,20 @@ async def test_hierarchical_paths_create_stable_nodes_and_aggregate_counts() -> 
     assert tree[0].total_count == 1
     assert tree[0].children[0].children[0].direct_count == 1
 
-    same = await tag_service.create_path("engineering/python/asyncio")
+    same = await tag_service.create_path("engineering/python/asyncio", TagTargetType.ARTIFACT)
     assert same.id == tagged.tags[0].id
     assert len(await tag_storage.list()) == 3
 
     # Assigning the same artifact to an ancestor must not inflate the ancestor's subtree count.
     await tag_service.replace_artifact_tags(artifact.id, ["Engineering", "Engineering/Python/Asyncio"])
-    assert (await tag_service.list_tree())[0].direct_count == 1
-    assert (await tag_service.list_tree())[0].total_count == 1
+    assert (await tag_service.list_tree(TagTargetType.ARTIFACT))[0].direct_count == 1
+    assert (await tag_service.list_tree(TagTargetType.ARTIFACT))[0].total_count == 1
 
 
 async def test_tag_deletion_protects_children_and_assignments() -> None:
     session_id = (await session_storage.create(AgentSessionCreate())).session_id
     tagged = await tag_service.sync_confirmed_suggestions(await tagged_card(session_id))
-    root = await tag_storage.get_by_normalized_path("engineering")
+    root = await tag_storage.get_by_normalized_path(TagTargetType.ARTIFACT, "engineering")
     assert root is not None
 
     with pytest.raises(ValueError, match="children"):
@@ -95,7 +95,7 @@ async def test_library_tag_api_filters_a_parent_subtree_and_blocks_its_deletion(
     assert [tag.path for tag in confirmed.tags] == ["Engineering/Python/Asyncio"]
 
     with TestClient(app) as client:
-        tree = client.get("/api/library/tags").json()
+        tree = client.get("/api/library/tags?target=artifact").json()
         root_id = tree[0]["id"]
         assert tree[0]["path"] == "Engineering"
         assert tree[0]["children"][0]["children"][0]["total_count"] == 1
@@ -109,7 +109,7 @@ async def test_library_tag_api_filters_a_parent_subtree_and_blocks_its_deletion(
 
         # Clearing a confirmed assignment removes the assignment for good.
         assert client.put(f"/api/library/tags/artifacts/{artifact.id}", json={"paths": []}).status_code == 200
-        assert client.get("/api/library/tags").json()[0]["total_count"] == 0
+        assert client.get("/api/library/tags?target=artifact").json()[0]["total_count"] == 0
         assert client.delete(f"/api/library/tags/{root_id}?recursive=true").json() == {"ok": True}
 
 
@@ -119,7 +119,7 @@ async def test_library_tag_api_force_delete_removes_all_artifact_assignments() -
     await tag_service.sync_confirmed_suggestions(artifact)
 
     with TestClient(app) as client:
-        tree = client.get("/api/library/tags").json()
+        tree = client.get("/api/library/tags?target=artifact").json()
         root_id = tree[0]["id"]
 
         # The management UI makes both destructive choices explicit. Storage then
@@ -129,7 +129,7 @@ async def test_library_tag_api_force_delete_removes_all_artifact_assignments() -
         assert response.json() == {"ok": True}
         refreshed = await artifact_storage.get(artifact.id)
         assert refreshed is not None and refreshed.tags == []
-        assert client.get("/api/library/tags").json() == []
+        assert client.get("/api/library/tags?target=artifact").json() == []
 
 
 async def test_tag_extension_registers_real_taxonomy_tools() -> None:
@@ -259,7 +259,7 @@ async def test_replacing_assignments_rolls_back_when_a_tag_is_missing() -> None:
     session_id = (await session_storage.create(AgentSessionCreate())).session_id
     artifact = await tagged_card(session_id)
     await tag_service.replace_artifact_tags(artifact.id, ["Engineering/Python"])
-    keeper = await tag_service.create_path("Projects/Zett")
+    keeper = await tag_service.create_path("Projects/Zett", TagTargetType.ARTIFACT)
     await tag_service.replace_artifact_tags(artifact.id, ["Engineering/Python", "Projects/Zett"])
 
     with pytest.raises(KeyError):
@@ -283,8 +283,9 @@ def test_tag_api_serves_one_tag_and_edits_one_assignment() -> None:
                 "metadata": {"source": "test-suite"},
             },
         ).json()
-        first = client.post("/api/library/tags", json={"path": "Engineering/Python"}).json()
-        second = client.post("/api/library/tags", json={"path": "Projects/Zett"}).json()
+        # This artifact carries the tag, so the collections belong to its library.
+        first = client.post("/api/library/tags", json={"path": "Engineering/Python", "target": "artifact"}).json()
+        second = client.post("/api/library/tags", json={"path": "Projects/Zett", "target": "artifact"}).json()
 
         # Read one tag by id; an unknown id is a 404 rather than an empty answer.
         fetched = client.get(f"/api/library/tags/{second['id']}")
@@ -389,36 +390,53 @@ async def _library_file(name: str = "reference.txt", *, content: bytes = b"file 
     return await static_asset_storage.create(StaticAssetCreate(name=name, mime_type="text/plain", content=content))
 
 
-async def test_a_static_asset_carries_the_same_taxonomy_as_an_artifact() -> None:
-    """One tag table classifies both kinds, and each link names which kind it is.
+async def test_the_two_libraries_keep_separate_collection_trees() -> None:
+    """One storage table, two trees: a path is a different collection per library.
 
-    The link's ``target_type`` is what keeps the two apart: the same path may
-    classify a card and the file it was built from, and the tree counts every
-    resource a tag carries.
+    The artifact library and the static asset library never share a node, so a
+    file tagged ``Engineering/Python`` does not appear in the artifact tree, and
+    an artifact's node is not assignable to a file.
     """
     session_id = (await session_storage.create(AgentSessionCreate())).session_id
     asset = await _library_file()
     artifact = await tagged_card(session_id)
 
-    tagged = await tag_service.replace_asset_tags(asset.id, ["Engineering/Python"])
-    assert [tag.path for tag in tagged.tags] == ["Engineering/Python"]
-
     confirmed = await tag_service.sync_confirmed_suggestions(artifact)
     assert [tag.path for tag in confirmed.tags] == ["Engineering/Python/Asyncio"]
+    file_tagged = await tag_service.replace_asset_tags(asset.id, ["Engineering/Python"])
+    assert [tag.path for tag in file_tagged.tags] == ["Engineering/Python"]
 
-    parent = next(node for node in await tag_service.list_tree() if node.path == "Engineering")
-    assert parent.total_count == 2
-    python = next(node for node in parent.children if node.path == "Engineering/Python")
-    assert python.direct_count == 1
-    assert python.total_count == 2
-    # Both reads group by the resource that carries the tag.
+    artifact_tree = await tag_service.list_tree(TagTargetType.ARTIFACT)
+    asset_tree = await tag_service.list_tree(TagTargetType.ASSET)
+
+    # Each tree holds only its own nodes, even where the paths read the same.
+    assert [node.path for node in artifact_tree] == ["Engineering"]
+    engineering_artifacts = artifact_tree[0]
+    assert engineering_artifacts.total_count == 1
+    python_artifacts = engineering_artifacts.children[0]
+    assert python_artifacts.total_count == 1 and python_artifacts.direct_count == 0
+
+    assert [node.path for node in asset_tree] == ["Engineering"]
+    engineering_assets = asset_tree[0]
+    assert engineering_assets.total_count == 1
+    python_assets = engineering_assets.children[0]
+    assert python_assets.total_count == 1 and python_assets.direct_count == 1
+
+    # The same path in the two trees is two different nodes.
+    assert python_artifacts.id != python_assets.id
     assert [tag.path for tag in (await static_asset_storage.get(asset.id)).tags] == ["Engineering/Python"]
     assert [tag.path for tag in (await artifact_storage.get(artifact.id)).tags] == ["Engineering/Python/Asyncio"]
+
+    # A tag from the other library is refused rather than assigned.
+    with pytest.raises(ValueError, match="belongs to the artifacts library"):
+        await tag_service.assign_asset_tag(asset.id, python_artifacts.id)
+    with pytest.raises(ValueError, match="belongs to the static assets library"):
+        await tag_service.assign_tag(artifact.id, python_assets.id)
 
 
 async def test_static_asset_tagging_attaches_detaches_and_replaces() -> None:
     asset = await _library_file("notes.pdf")
-    first = await tag_service.create_path("Projects/Zett")
+    first = await tag_service.create_path("Projects/Zett", TagTargetType.ASSET)
 
     attached = await tag_service.assign_asset_tag(asset.id, first.id)
     assert [tag.path for tag in attached.tags] == ["Projects/Zett"]
@@ -457,8 +475,8 @@ def test_asset_tag_api_attaches_detaches_and_replaces() -> None:
             content=b"file body",
             headers={"content-type": "text/plain"},
         ).json()
-        first = client.post("/api/library/tags", json={"path": "Engineering/Python"}).json()
-        second = client.post("/api/library/tags", json={"path": "Projects/Zett"}).json()
+        first = client.post("/api/library/tags", json={"path": "Engineering/Python", "target": "asset"}).json()
+        second = client.post("/api/library/tags", json={"path": "Projects/Zett", "target": "asset"}).json()
 
         attached = client.put(f"/api/library/tags/{first['id']}/assets/{asset['id']}")
         assert attached.status_code == 200
@@ -477,3 +495,72 @@ def test_asset_tag_api_attaches_detaches_and_replaces() -> None:
         assert client.put(f"/api/library/tags/{first['id']}/assets/missing").status_code == 404
         assert client.put(f"/api/library/tags/missing/assets/{asset['id']}").status_code == 404
         assert client.put("/api/library/tags/assets/missing", json={"paths": []}).status_code == 404
+
+
+async def test_each_library_reads_its_own_tree_from_the_api() -> None:
+    """`GET /api/library/tags?target=` answers for one library, and only that one.
+
+    This is the endpoint the sidebar uses: the artifact library must not show a
+    collection that only files carry, which is what made a collection read "1"
+    and then open an empty list.
+    """
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
+    artifact = await tagged_card(session_id)
+    asset = await _library_file()
+    await tag_service.sync_confirmed_suggestions(artifact)
+    await tag_service.replace_asset_tags(asset.id, ["Projects/Zett", "Engineering/Python"])
+
+    with TestClient(app) as client:
+        artifact_tree = client.get("/api/library/tags?target=artifact").json()
+        asset_tree = client.get("/api/library/tags?target=asset").json()
+
+    # Projects is a file-only collection and stays out of the artifact tree, even
+    # though both libraries use the path Engineering/Python (as separate nodes).
+    assert [node["path"] for node in artifact_tree] == ["Engineering"]
+    assert [node["path"] for node in asset_tree] == ["Engineering", "Projects"]
+
+    engineering_artifacts = artifact_tree[0]
+    assert engineering_artifacts["total_count"] == 1
+    assert engineering_artifacts["children"][0]["path"] == "Engineering/Python"
+
+    engineering_assets = next(node for node in asset_tree if node["path"] == "Engineering")
+    assert engineering_assets["total_count"] == 1
+    assert engineering_assets["children"][0]["path"] == "Engineering/Python"
+    # Two libraries, two nodes: the ids differ, so a selection never crosses over.
+    assert engineering_artifacts["children"][0]["id"] != engineering_assets["children"][0]["id"]
+
+    # Creating a path in one library leaves the other untouched.
+    with TestClient(app) as client:
+        client.post("/api/library/tags", json={"path": "Engineering", "target": "artifact"})
+        client.post("/api/library/tags", json={"path": "Engineering/Assets", "target": "asset"})
+        assert [node["path"] for node in client.get("/api/library/tags?target=artifact").json()] == ["Engineering"]
+        assert [node["path"] for node in client.get("/api/library/tags?target=asset").json()] == [
+            "Engineering",
+            "Projects",
+        ]
+        # The taxonomy endpoint requires a library to answer for.
+        assert client.get("/api/library/tags").status_code == 422
+
+
+def test_asset_list_filters_by_a_collection_and_its_subtree() -> None:
+    with TestClient(app) as client:
+        first = client.post(
+            "/api/assets/upload?name=first.txt", content=b"first", headers={"content-type": "text/plain"}
+        ).json()
+        second = client.post(
+            "/api/assets/upload?name=second.txt", content=b"second", headers={"content-type": "text/plain"}
+        ).json()
+        client.post("/api/assets/upload?name=untagged.txt", content=b"third", headers={"content-type": "text/plain"})
+        parent = client.post("/api/library/tags", json={"path": "Projects", "target": "asset"}).json()
+        child = client.post("/api/library/tags", json={"path": "Projects/Zett", "target": "asset"}).json()
+        client.put(f"/api/library/tags/{child['id']}/assets/{first['id']}")
+        client.put(f"/api/library/tags/{parent['id']}/assets/{second['id']}")
+
+        # Filtering one collection expands to its descendants, like the library view.
+        assert sorted(asset["name"] for asset in client.get(f"/api/assets?tag_ids={parent['id']}").json()) == [
+            "first.txt",
+            "second.txt",
+        ]
+        assert [asset["name"] for asset in client.get(f"/api/assets?tag_ids={child['id']}").json()] == ["first.txt"]
+        assert client.get("/api/assets?tag_ids=missing-tag").status_code == 404
+        assert len(client.get("/api/assets").json()) == 3

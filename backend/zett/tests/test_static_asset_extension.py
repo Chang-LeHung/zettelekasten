@@ -75,15 +75,22 @@ def _run_turns(monkeypatch: pytest.MonkeyPatch, contents: tuple[str, ...]) -> Re
     return model
 
 
-def test_static_asset_message_names_the_upload_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_static_asset_message_names_the_library_and_its_tools(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The library's purpose is policy a tool list cannot state, so it stays."""
     model = _run_turns(monkeypatch, ("Publish the compiled paper.",))
 
     messages = _static_asset_messages(model.requests[0])
     assert len(messages) == 1
     instruction = messages[0].content
-    assert f"http://{settings.host}:{settings.port}/api/assets/upload" in instruction
-    assert "--data-binary" in instruction
-    assert "/api/assets`" in instruction
+    assert "global Static Assets library" in instruction
+    assert "upload_static_asset" in instruction
+    assert "set_asset_tags" in instruction
+    assert "create_asset_tag" in instruction
+    assert "list_asset_tags" in instruction
+    # The library is reached through tools, so the message carries no shell
+    # recipe: an endpoint documented here would be one more thing to keep true.
+    assert "curl" not in instruction
+    assert "--data-binary" not in instruction
 
 
 def test_static_asset_message_is_byte_identical_across_turns(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -95,11 +102,16 @@ def test_static_asset_message_is_byte_identical_across_turns(monkeypatch: pytest
     assert first[0].content == second[0].content
 
 
-def test_static_asset_message_reaches_a_wildcard_bind_address(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_static_asset_message_carries_no_route(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The message describes the library, not how to reach it.
+
+    A route in the leading system prefix is one more thing that has to stay true
+    across the file, and the tools already name the way in.
+    """
     monkeypatch.setattr(settings, "host", "0.0.0.0")
     model = _run_turns(monkeypatch, ("Publish something.",))
 
     instruction = _static_asset_messages(model.requests[0])[0].content
-    # A shell command cannot dial a wildcard address, so the message names loopback.
     assert "0.0.0.0" not in instruction
-    assert f"http://127.0.0.1:{settings.port}/api/assets" in instruction
+    assert "http://" not in instruction
+    assert "/api/" not in instruction

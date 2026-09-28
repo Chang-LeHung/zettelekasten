@@ -17,7 +17,10 @@ from sqlalchemy.schema import CreateColumn, CreateIndex
 
 from ...config import settings
 from ..artifacts.search import ensure_artifact_search
+from ..log import get_logger
 from .tables import Base
+
+logger = get_logger(__name__)
 
 #: NullPool keeps every connection inside the loop that opened it, matching the
 #: Agent session storage and allowing tests to swap paths per event loop.
@@ -57,6 +60,17 @@ _ADDED_COLUMNS = (("session_artifacts", "draft_content_json"),)
 #: DDL migration idempotently before the application serves requests.
 _REMOVED_COLUMNS = (("scheduled_tasks", "misfire_grace_seconds"),)
 
+#: Columns an earlier release left out whose existing rows need a value: SQLite
+#: refuses ``ADD COLUMN ... NOT NULL`` without a default, and every tag that
+#: predates per-library collection trees was an artifact one.
+_ADDED_COLUMNS_WITH_DEFAULT = (("tags", "target_type", "INTEGER NOT NULL DEFAULT 1"),)
+
+#: Uniqueness rules that changed shape, as ``(table, index to drop, columns)``.
+#: SQLite cannot alter a constraint in place and ``create_all`` never touches an
+#: existing table, so the old unique index is dropped and an equivalent unique
+#: index for the new rule is created instead; the rows stay where they are.
+_REPLACED_UNIQUE_INDEXES = (("tags", "ix_tags_normalized_path", ("target_type", "normalized_path")),)
+
 
 async def ensure_columns(connection: AsyncConnection) -> None:
     """Add columns missing from databases created by an older application version.
@@ -84,14 +98,56 @@ async def remove_columns(connection: AsyncConnection) -> None:
 
 
 async def init_db() -> None:
-    """Create the current schema; do not migrate retired application tables."""
+    """Create the current schema and repair the shapes an older release wrote.
+
+    The steps run in this order for a reason: a column has to exist before an
+    index can name it, and a uniqueness rule a newer release changed has to be
+    replaced before ``ensure_indexes`` sees the old index under the same name.
+    """
     settings.database_path.parent.mkdir(parents=True, exist_ok=True)
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
-        await ensure_indexes(connection)
+        await add_columns_with_default(connection)
         await ensure_columns(connection)
+        await replace_unique_indexes(connection)
+        await ensure_indexes(connection)
         await remove_columns(connection)
         await ensure_artifact_search(connection)
+
+
+async def add_columns_with_default(connection: AsyncConnection) -> None:
+    """Add one column an earlier release lacked, filling in its legacy value."""
+    for table_name, column_name, definition in _ADDED_COLUMNS_WITH_DEFAULT:
+        existing = {row[1] for row in (await connection.exec_driver_sql(f"PRAGMA table_info({table_name})")).fetchall()}
+        if column_name in existing:
+            continue
+        await connection.exec_driver_sql(f'ALTER TABLE "{table_name}" ADD COLUMN "{column_name}" {definition}')
+        logger.info(
+            "Added a column an older database lacked; table=%s column=%s default=%s",
+            table_name,
+            column_name,
+            definition,
+        )
+
+
+async def replace_unique_indexes(connection: AsyncConnection) -> None:
+    """Swap a uniqueness rule an earlier release enforced differently."""
+    for table_name, index_name, columns in _REPLACED_UNIQUE_INDEXES:
+        existing = {row[1] for row in (await connection.exec_driver_sql(f"PRAGMA index_list({table_name})")).fetchall()}
+        if index_name not in existing:
+            continue
+        await connection.exec_driver_sql(f'DROP INDEX "{index_name}"')
+        names = ", ".join(f'"{column}"' for column in columns)
+        replacement = f"uq_{table_name}_{'_'.join(columns)}"
+        await connection.exec_driver_sql(
+            f'CREATE UNIQUE INDEX IF NOT EXISTS "{replacement}" ON "{table_name}" ({names})'
+        )
+        logger.info(
+            "Replaced a uniqueness rule an older database carried; table=%s index=%s columns=%s",
+            table_name,
+            replacement,
+            ",".join(columns),
+        )
 
 
 @asynccontextmanager

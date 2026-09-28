@@ -80,13 +80,14 @@ uploads no row points at cannot leak.
 
 `AssetExtension` exposes the session-scoped tools `create_asset`, `get_asset`,
 `update_asset`, `delete_asset`, and `list_assets`; importing a static asset into
-a conversation remains the user's action. Publishing a file to the global Static
-Assets library is an HTTP call rather than a tool argument:
-`StaticAssetExtension` adds one system message naming
-`POST /api/assets/upload?name=...`, so the model uploads bytes it already wrote
-with a shell command instead of moving a whole binary through the model context
-as Base64. The message names the endpoint and its contract only, and a wildcard
-bind address is reported as loopback, so a shell command can dial it.
+a conversation remains the user's action. `StaticAssetExtension` owns the global
+Static Assets library: `upload_static_asset` publishes a file by its absolute
+path, so bytes never travel through an argument or as Base64, and
+`create_asset_tag`, `list_asset_tags`, and `set_asset_tags` classify it inside
+that library's own collection tree. One system message states what the library is
+for; it names no route and describes no library state, so it stays byte-identical
+across turns, and the HTTP route stays available for scripts and shells without
+being part of the agent's prefix.
 
 The scheduled-task tools are declared `deferred` and are the only deferred set
 for now, so they leave a request until the model finds them through search.

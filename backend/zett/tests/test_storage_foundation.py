@@ -1,7 +1,6 @@
 """Real isolated SQLite tests for the new storage-only foundation."""
 
 import sqlite3
-from pathlib import Path
 from uuid import UUID
 
 import pytest
@@ -164,9 +163,11 @@ def test_schema_and_http_surface_contain_no_retired_business_logic(isolated_data
         for path in ("/api/cards", "/api/tags", "/api/library", "/api/ai/providers"):
             expected = 200 if path == "/api/ai/providers" else 404
             assert client.get(path).status_code == expected
-        from zett import main
-
-        if Path(main.static_directory, "index.html").is_file():
+        # Whether the SPA is served is decided when the app is imported, so ask
+        # the app rather than the filesystem: a frontend build running next to
+        # this test empties and refills ``zett/static``, and reading the
+        # directory afterwards would describe a mount this process never made.
+        if any(getattr(route, "name", None) == "frontend" for route in app.routes):
             response = client.get("/")
             assert response.status_code == 200
             assert "text/html" in response.headers["content-type"]

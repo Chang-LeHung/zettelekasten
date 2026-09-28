@@ -93,13 +93,19 @@ Rules that matter:
 
 ## Tags
 
-Tags are one shared library taxonomy: paths are normalized, missing parent nodes
-are created as you go, and only saved artifacts carry assignments.
+Every library keeps its own collection tree: the artifact library and the static
+asset library hold separate paths, so `zett tag create Engineering/Python`
+creates a different collection from `zett tag create --asset Engineering/Python`,
+and neither ever lists, counts, or accepts the other's tags. Within a library the
+paths are normalized, missing parent nodes are created as you go, and only saved
+artifacts carry assignments.
 
 ```bash
-zett tag list                                      # path  direct/total  id
+zett tag list                                      # the artifact library's tree
+zett tag list --asset                              # the static asset library's tree
 zett tag list --json
 zett tag create Engineering/Python --description "Python notes" --color "#3b82f6"
+zett tag create --asset Assets/Covers --description "Book covers"
 zett tag update <tag-id> --path Engineering/Async --color "#8fa397"
 zett tag delete <tag-id> --recursive --force
 
@@ -115,11 +121,13 @@ Rules that matter:
 
 - Run `zett tag list` before creating anything and reuse an existing path that
   already means the same thing.
-- `direct` counts artifacts tagged exactly there, `total` adds its descendants,
-  so a parent reads `0/1` when the only assignment sits on its child.
+- `direct` counts resources tagged exactly there, `total` adds its descendants,
+  so a parent reads `0/1` when the only assignment sits on its child. `zett tag
+  list` is the taxonomy-wide view: it counts everything a tag classifies, while
+  each library in the app browses its own tree.
 - `add`, `remove`, and `set` take an artifact id; pass `--asset` to give a static
-  asset id instead. Artifacts and static assets share one taxonomy, so a path may
-  classify a card and the file it was built from, and the counts cover both.
+  asset id instead. The tag you name has to belong to that same library, and a
+  tag id from the other tree is refused rather than assigned.
 - `add` and `remove` name paths and change exactly that one assignment; `set` is
   the whole-set replace. Only `set` removes a tag you did not name, so reach for
   `add` when you mean "also".

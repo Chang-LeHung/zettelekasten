@@ -33,6 +33,7 @@ class SuggestedTag(BaseModel):
 class TagWrite(BaseModel):
     """Complete mutable fields for one persistent library tag."""
 
+    target_type: TagTargetType = Field(description="Library this tag classifies: artifact or asset")
     path: str = Field(min_length=1, max_length=500, description="Display path separated by slashes")
     normalized_path: str = Field(min_length=1, max_length=500, description="Canonical path used for uniqueness")
     name: str = Field(min_length=1, max_length=100, description="Final display segment")
@@ -58,10 +59,11 @@ class TagRefEntity(BaseModel):
 
 
 class TagTreeEntity(TagEntity):
-    """Hierarchical tag facet with direct and descendant assignment counts.
+    """One library's collection tree, with direct and descendant assignment counts.
 
-    Counts cover every resource a tag classifies — artifacts and static assets
-    alike — because the question the tree answers is "what carries this tag".
+    A tree is always built for one ``target_type``, so every count describes that
+    library alone: the artifact tree never counts a file, and the asset tree
+    never counts an artifact.
     """
 
     direct_count: int = Field(default=0, ge=0)

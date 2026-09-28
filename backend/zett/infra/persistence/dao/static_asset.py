@@ -143,6 +143,15 @@ class StaticAssetStorage(AsyncStorage[StaticAssetCreate, StaticAssetEntity, str,
             statement = select(StaticAssetRow)
             if options.query:
                 statement = statement.where(StaticAssetRow.name.ilike(f"%{options.query}%"))
+            if options.tag_ids:
+                statement = statement.where(
+                    StaticAssetRow.id.in_(
+                        select(TagLinkRow.target_id).where(
+                            TagLinkRow.target_type == int(TARGET_TO_CODE[TagTargetType.ASSET]),
+                            TagLinkRow.tag_id.in_(options.tag_ids),
+                        )
+                    )
+                )
             statement = (
                 statement.order_by(StaticAssetRow.created_at.desc(), StaticAssetRow.id.desc())
                 .limit(options.limit)
