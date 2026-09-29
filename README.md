@@ -121,6 +121,13 @@ SDK, and `zett-weixin`, the WeChat channel plugin built on it. The agent runtime
 Zett runs on lives in its own repository,
 [`zett-agent`](https://github.com/Chang-LeHung/zett-agent).
 
+`zett3rd/` keeps integrations that live beside Zett without being part of its
+build — nothing there is imported by the backend or the interface, so a broken
+one can never fail Zett itself. It currently holds a
+[Zettelekasten Chrome extension](zett3rd/chrome-extension/) (Vue 3 +
+TypeScript, built with Vite) that embeds a separate conversation in each
+webpage, reads that page, and saves useful results into your library.
+
 ### Plugins
 
 Zett discovers installed packages through entry points, so an extension is a
