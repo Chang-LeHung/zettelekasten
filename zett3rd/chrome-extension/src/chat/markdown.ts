@@ -9,91 +9,11 @@
  */
 
 import DOMPurify from 'dompurify'
-import hljs from 'highlight.js/lib/core'
-import bash from 'highlight.js/lib/languages/bash'
-import c from 'highlight.js/lib/languages/c'
-import cpp from 'highlight.js/lib/languages/cpp'
-import csharp from 'highlight.js/lib/languages/csharp'
-import css from 'highlight.js/lib/languages/css'
-import diff from 'highlight.js/lib/languages/diff'
-import dockerfile from 'highlight.js/lib/languages/dockerfile'
-import go from 'highlight.js/lib/languages/go'
-import ini from 'highlight.js/lib/languages/ini'
-import java from 'highlight.js/lib/languages/java'
-import javascript from 'highlight.js/lib/languages/javascript'
-import json from 'highlight.js/lib/languages/json'
-import kotlin from 'highlight.js/lib/languages/kotlin'
-import lua from 'highlight.js/lib/languages/lua'
-import makefile from 'highlight.js/lib/languages/makefile'
-import markdown from 'highlight.js/lib/languages/markdown'
-import php from 'highlight.js/lib/languages/php'
-import powershell from 'highlight.js/lib/languages/powershell'
-import python from 'highlight.js/lib/languages/python'
-import ruby from 'highlight.js/lib/languages/ruby'
-import rust from 'highlight.js/lib/languages/rust'
-import sql from 'highlight.js/lib/languages/sql'
-import swift from 'highlight.js/lib/languages/swift'
-import typescript from 'highlight.js/lib/languages/typescript'
-import xml from 'highlight.js/lib/languages/xml'
-import yaml from 'highlight.js/lib/languages/yaml'
 import MarkdownIt from 'markdown-it'
 
 import 'highlight.js/styles/github.css'
 
-const LANGUAGES = {
-  bash,
-  c,
-  cpp,
-  csharp,
-  css,
-  diff,
-  dockerfile,
-  go,
-  ini,
-  java,
-  javascript,
-  json,
-  kotlin,
-  lua,
-  makefile,
-  markdown,
-  php,
-  powershell,
-  python,
-  ruby,
-  rust,
-  sql,
-  swift,
-  typescript,
-  xml,
-  yaml,
-}
-
-/** Names a shell or a model uses for a language it already highlighted for us. */
-const LANGUAGE_ALIASES: Record<string, string> = {
-  sh: 'bash',
-  shell: 'bash',
-  shellsession: 'bash',
-  zsh: 'bash',
-  ts: 'typescript',
-  tsx: 'typescript',
-  js: 'javascript',
-  jsx: 'javascript',
-  py: 'python',
-  yml: 'yaml',
-  md: 'markdown',
-  'c++': 'cpp',
-  'c#': 'csharp',
-}
-
-for (const [name, language] of Object.entries(LANGUAGES)) {
-  hljs.registerLanguage(name, language)
-}
-
-function resolveLanguage(language: string): string {
-  const resolved = LANGUAGE_ALIASES[language.trim().toLowerCase()] ?? language.trim().toLowerCase()
-  return /^[a-z0-9_-]+$/u.test(resolved) && hljs.getLanguage(resolved) ? resolved : ''
-}
+import { hljs, languageLabelFor, resolveLanguage } from '../../../../frontend/src/utils/markdownCode'
 
 const renderer = new MarkdownIt({
   breaks: true,
@@ -107,13 +27,18 @@ const renderer = new MarkdownIt({
   },
 })
 
-// Fenced code keeps the app's block class, so both threads style it the same way.
-const defaultFence = renderer.renderer.rules.fence
-renderer.renderer.rules.fence = (tokens, index, options, env, self) => {
-  const rendered = defaultFence
-    ? defaultFence(tokens, index, options, env, self)
-    : self.renderToken(tokens, index, options)
-  return rendered.replace('<pre>', '<pre class="code-block">')
+// Fenced code renders the web thread's block: a toolbar with the language label
+// and a copy button, then the highlighted body.
+renderer.renderer.rules.fence = (tokens, index) => {
+  const token = tokens[index]
+  const language = token.info.trim().split(/\s+/u)[0] ?? ''
+  const resolved = resolveLanguage(language)
+  const highlighted = resolved
+    ? hljs.highlight(token.content, { language: resolved, ignoreIllegals: true }).value
+    : renderer.utils.escapeHtml(token.content)
+  const languageClass = resolved ? ` class="language-${resolved}"` : ''
+  const languageLabel = renderer.utils.escapeHtml(languageLabelFor(language, resolved))
+  return `<div class="code-block"><div class="code-block-toolbar"><span class="code-language"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 9-3 3 3 3m8-6 3 3-3 3m-2.5-8-3 12" /></svg>${languageLabel}</span><button type="button" class="code-copy-button icon-button" data-code-copy aria-label="Copy code" title="Copy code"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg></button></div><pre><code${languageClass}>${highlighted}</code></pre></div>`
 }
 
 export function renderMarkdown(content: string): string {

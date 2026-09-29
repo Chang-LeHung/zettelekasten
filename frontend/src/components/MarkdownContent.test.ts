@@ -45,6 +45,15 @@ it('renders a language header and copy-only action for fenced code', async () =>
   expect(host.querySelector('code')?.classList.contains('language-python')).toBe(true)
 })
 
+it('labels every fence the shared registry resolves, including LaTeX', async () => {
+  const latex = await mount(MarkdownContent, { content: '```tex\n\\frac{1}{2}\n```' })
+  expect(latex.querySelector('.code-language')?.textContent).toBe('LaTeX')
+  expect(latex.querySelector('code')?.classList.contains('language-latex')).toBe(true)
+
+  const graphql = await mount(MarkdownContent, { content: '```graphql\n{ me { id } }\n```' })
+  expect(graphql.querySelector('.code-language')?.textContent).toBe('GraphQL')
+})
+
 it('renders Mermaid after the Markdown DOM is committed', async () => {
   const host = await mount(MarkdownContent, { content: '```mermaid\ngraph TD\nA-->B\n```' })
   expect(host.querySelector('[data-mermaid-canvas] svg')).not.toBeNull()
