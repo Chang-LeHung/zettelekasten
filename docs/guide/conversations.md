@@ -122,7 +122,9 @@ resize it. Its pickers and `•••` menu close as soon as the pointer leaves 
 trigger or the menu, and hovering `•••` shows it. The composer keeps model and
 effort visible; the menu holds browser connection, Save all and token
 statistics (cache, tokens, generation speed, and the context share of the
-compaction threshold). Answers render with the web thread's Markdown, including
+compaction threshold). Hovering the **Context** row there shows the composition
+pie and the share each part takes (system, tool prompt, tool output, user,
+assistant). Answers render with the web thread's Markdown, including
 the same fenced-code toolbar, copy button and language set. When a page
 conversation is restored or an answer
 streams, the chat follows the newest output. `fill` also supports
