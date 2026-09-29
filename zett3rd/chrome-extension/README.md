@@ -31,9 +31,8 @@ welcome screen show the same logo.
 5. Open an HTTP(S) webpage and click the Zett icon in the toolbar. A panel
    appears inside that page, at the right edge. Click the icon or the panel's
    close button to hide it; click the icon again to restore that page's chat.
-   Drag the thin strip at the top or any blank area of the panel to move it;
-   drag its lower-right corner to enlarge or shrink it. Its default size leaves
-   the webpage visible.
+   Drag the thin strip at the top to move it; drag any of its four corners to
+   enlarge or shrink it. Its default size leaves the webpage visible.
 
 After a change, run `npm run build` again and press the reload button on the
 extension's card.
@@ -51,7 +50,7 @@ the server address you configured, and only when you send a message.
 | Control | What happens |
 | --- | --- |
 | Page context | Reads the page that owns this panel (bounded to 20 000 characters). Each tab and URL has its own conversation; navigating to a new page switches to that page's conversation, and returning restores its previous chat. |
-| Composer picks | Compact connection/model and thinking controls stay under the input. Both choices stick across turns. |
+| Composer picks | Compact connection/model and thinking controls stay under the input. Both choices stick across turns, and their menus close as soon as the pointer leaves the trigger or the menu. |
 | More options | The `•••` button holds connection retry/disconnect, Save all and usage metrics (cache, tokens, context percentage), leaving the composer uncluttered. |
 | **Send** | Enter sends and clears the input immediately; Shift + Enter starts a new line. The answer streams in and renders as Markdown. When the browser bridge is connected, the Agent can read the page through `get_browser_page`; otherwise a bounded page excerpt accompanies the message. |
 | **Stop** | While running, Send becomes a square Stop button. It aborts the current Agent stream and disconnects page control, cancelling pending DOM approval. Partial output and any next-message draft stay visible; send a new message to continue. Applied edits are not rolled back. |
@@ -59,7 +58,7 @@ the server address you configured, and only when you send a message.
 | **Artifact card** | When the agent creates or changes an artifact, its card appears in the thread — title, kind, and whether it is still an unsaved draft — with a **Save** button that publishes it. |
 | **Save all** | Publishes every artifact of this conversation that still has something to save, and says how many it saved. |
 | **New chat** | Starts a fresh conversation for this page only, leaving the conversations of other tabs and pages unchanged. |
-| Floating panel | Starts at 440px wide and up to 90% of the viewport height. Drag the top strip or any blank area to move it, or the lower-right handle to resize it. |
+| Floating panel | Starts at 440px wide and up to 90% of the viewport height. Drag the top strip to move it; drag any corner to resize it. Invisible corner zones keep the page's own content unobstructed. |
 | Page connection | Connects automatically when the page's conversation opens. **Disconnect page** turns off browser tools for this panel; **Connect page** retries a failed or deliberately disconnected connection. |
 | **Allow once / Reject** | Reviews each DOM edit's selector, action and value before applying it. No model-authored code executes. |
 
@@ -101,8 +100,10 @@ including parallel calls that finish out of order, and a failed stream keeps its
 partial answer and execution details available for inspection.
 
 The composer grows with the panel but the model/effort controls keep bounded
-widths. Their menus are anchored to the buttons, not stretched across the panel;
-narrow panels wrap the controls and metrics without hiding connection names.
+widths. Their menus are anchored to the buttons, not stretched across the panel,
+and they close as soon as the pointer leaves the trigger or the menu. Each menu
+sits flush against its trigger, so the pointer never crosses a gap on the way
+in. Narrow panels wrap the controls and metrics without hiding connection names.
 
 ## Webpage control
 

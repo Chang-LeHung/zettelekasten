@@ -57,6 +57,7 @@ const effort = ref<ReasoningEffort>('medium')
 const page = ref<Awaited<ReturnType<typeof readActivePage>> | null>(null)
 const transcript = ref<TranscriptEntry[]>([])
 const thread = ref<HTMLElement | null>(null)
+const composer = ref<HTMLFormElement | null>(null)
 const prompt = ref('')
 const busy = ref(false)
 const stopping = ref(false)
@@ -115,6 +116,17 @@ function togglePicker(which: 'model' | 'effort'): void {
   moreOpen.value = false
 }
 
+function closeMenus(): void {
+  modelOpen.value = false
+  effortOpen.value = false
+  moreOpen.value = false
+}
+
+function onDocumentPointerDown(event: PointerEvent): void {
+  if (event.target instanceof Node && composer.value?.contains(event.target)) return
+  closeMenus()
+}
+
 function chooseProvider(id: string): void {
   selectedProviderId.value = id
   modelOpen.value = false
@@ -153,44 +165,6 @@ function closePanel(): void {
   void chrome.tabs.sendMessage(owningTabId, {
     channel: 'zett-dom', type: 'close-panel', panelNonce,
   }, { frameId: 0 }).catch(error => notify((error as Error).message, 'error'))
-}
-
-/** A pointerdown on blank panel chrome moves the window; text, controls, menus
- * and scrollbars keep their own behavior. The page owns the gesture once the
- * message arrives, so only the pointer's position inside this frame travels. */
-const DRAG_BLOCKERS = 'button, a, input, textarea, select, label, summary, option, [contenteditable="true"], [role="button"], [role="link"], [role="tab"], [role="option"], [role="listbox"], [role="menu"], .markdown-body, .prompt-bubble, .picker-popover, .more-popover'
-
-function isBlankSpot(event: PointerEvent): boolean {
-  const target = event.target
-  if (!(target instanceof Element) || target.closest(DRAG_BLOCKERS)) return false
-  for (const node of target.childNodes) {
-    if (node.nodeType === Node.TEXT_NODE && (node.textContent ?? '').trim()) return false
-  }
-  if (target instanceof HTMLElement) {
-    const rect = target.getBoundingClientRect()
-    if (target.scrollHeight > target.clientHeight && event.clientX - rect.left >= target.clientLeft + target.clientWidth) return false
-    if (target.scrollWidth > target.clientWidth && event.clientY - rect.top >= target.clientTop + target.clientHeight) return false
-  }
-  return true
-}
-
-function onPanelPointerDown(event: PointerEvent): void {
-  if (owningTabId === null || !panelNonce || event.button !== 0 || event.pointerType === 'touch') return
-  if (!isBlankSpot(event)) return
-  event.preventDefault()
-  void chrome.tabs.sendMessage(owningTabId, {
-    channel: 'zett-dom', type: 'panel-drag-start', panelNonce,
-    x: event.clientX, y: event.clientY,
-  }, { frameId: 0 }).catch(() => {})
-}
-
-function onPanelPointerMove(event: PointerEvent): void {
-  if (event.pointerType === 'touch') return
-  document.documentElement.classList.toggle('panel-drag-ready', isBlankSpot(event))
-}
-
-function clearDragCursor(): void {
-  document.documentElement.classList.remove('panel-drag-ready')
 }
 
 function stopGeneration(): void {
@@ -574,9 +548,7 @@ onMounted(async () => {
   await connect()
   await openPage()
   chrome.tabs.onUpdated.addListener(onTabUpdated)
-  document.addEventListener('pointerdown', onPanelPointerDown)
-  document.addEventListener('pointermove', onPanelPointerMove, { passive: true })
-  document.addEventListener('pointerleave', clearDragCursor)
+  document.addEventListener('pointerdown', onDocumentPointerDown)
 })
 
 onBeforeUnmount(() => {
@@ -584,10 +556,7 @@ onBeforeUnmount(() => {
   activeStreamController?.abort()
   clearInterval(clockTimer)
   chrome.tabs.onUpdated.removeListener(onTabUpdated)
-  document.removeEventListener('pointerdown', onPanelPointerDown)
-  document.removeEventListener('pointermove', onPanelPointerMove)
-  document.removeEventListener('pointerleave', clearDragCursor)
-  clearDragCursor()
+  document.removeEventListener('pointerdown', onDocumentPointerDown)
   void disconnectBrowser()
 })
 
@@ -699,7 +668,7 @@ watch([selectedProviderId, effort], () => {
     <div class="consent-actions"><button type="button" @click="browserConsent.reject">Reject</button><button class="allow" type="button" @click="browserConsent.approve">Allow once</button></div>
   </section>
 
-  <form class="agent-input" @submit.prevent="send">
+  <form ref="composer" class="agent-input" @submit.prevent="send">
     <div class="composer-wrap">
       <textarea
         v-model="prompt"
@@ -721,7 +690,7 @@ watch([selectedProviderId, effort], () => {
     </div>
     <div class="input-footer">
       <div class="composer-picks">
-        <div class="picker">
+        <div class="picker" @pointerleave="modelOpen = false">
           <button class="picker-trigger model-trigger" type="button" :disabled="busy" :aria-expanded="modelOpen" aria-label="Model provider" @click="togglePicker('model')">
             <span class="picker-label">{{ selectedProvider?.name || 'Connection' }}</span>
             <strong>{{ selectedProvider?.model || 'Choose model' }}</strong><span class="picker-chevron">⌄</span>
@@ -733,7 +702,7 @@ watch([selectedProviderId, effort], () => {
             <button v-if="!providers.length" type="button" @click="settingsOpen = true; modelOpen = false">Configure provider</button>
           </div>
         </div>
-        <div class="picker">
+        <div class="picker" @pointerleave="effortOpen = false">
           <button class="picker-trigger effort-trigger" type="button" :disabled="busy" :aria-expanded="effortOpen" aria-label="Thinking effort" @click="togglePicker('effort')">
             <span class="picker-label">Thinking</span><strong>{{ EFFORTS.find(option => option.value === effort)?.label }}</strong><span class="picker-chevron">⌄</span>
           </button>
@@ -744,17 +713,19 @@ watch([selectedProviderId, effort], () => {
           </div>
         </div>
       </div>
-      <button class="more-trigger" type="button" :aria-expanded="moreOpen" aria-label="More options" title="More options" @click="moreOpen = !moreOpen; modelOpen = false; effortOpen = false">•••</button>
-    </div>
-    <div v-if="moreOpen" class="more-popover">
-      <div v-if="usage" class="usage-details">
-        <span>Cache <strong>{{ usage.cache_hit_rate === null ? '—' : `${(usage.cache_hit_rate * 100).toFixed(1)}%` }}</strong></span>
-        <span>Tokens <strong>{{ formatTokenCount(usage.input_tokens + usage.output_tokens) }}</strong></span>
-        <span v-if="currentUsage && compactionMaxTokens > 0">Context <strong>{{ Math.round((currentUsage.input_tokens + currentUsage.output_tokens) / compactionMaxTokens * 100) }}%</strong></span>
+      <div class="more-menu" @pointerleave="moreOpen = false">
+        <button class="more-trigger" type="button" :aria-expanded="moreOpen" aria-label="More options" title="More options" @click="moreOpen = !moreOpen; modelOpen = false; effortOpen = false">•••</button>
+        <div v-if="moreOpen" class="more-popover">
+          <div v-if="usage" class="usage-details">
+            <span>Cache <strong>{{ usage.cache_hit_rate === null ? '—' : `${(usage.cache_hit_rate * 100).toFixed(1)}%` }}</strong></span>
+            <span>Tokens <strong>{{ formatTokenCount(usage.input_tokens + usage.output_tokens) }}</strong></span>
+            <span v-if="currentUsage && compactionMaxTokens > 0">Context <strong>{{ Math.round((currentUsage.input_tokens + currentUsage.output_tokens) / compactionMaxTokens * 100) }}%</strong></span>
+          </div>
+          <button v-if="!browserConnected" type="button" :disabled="browserConnecting || !conversationId" @click="connectBrowser(); moreOpen = false">{{ browserConnecting ? 'Connecting…' : 'Connect page' }}</button>
+          <button v-else type="button" @click="disconnectBrowser(); moreOpen = false">Disconnect page</button>
+          <button type="button" :disabled="savingIds.length > 0 || busy" @click="saveAll(); moreOpen = false">Save all artifacts</button>
+        </div>
       </div>
-      <button v-if="!browserConnected" type="button" :disabled="browserConnecting || !conversationId" @click="connectBrowser(); moreOpen = false">{{ browserConnecting ? 'Connecting…' : 'Connect page' }}</button>
-      <button v-else type="button" @click="disconnectBrowser(); moreOpen = false">Disconnect page</button>
-      <button type="button" :disabled="savingIds.length > 0 || busy" @click="saveAll(); moreOpen = false">Save all artifacts</button>
     </div>
     <p v-if="notice" class="notice" :class="noticeKind">{{ notice }}</p>
   </form>
@@ -779,10 +750,6 @@ watch([selectedProviderId, effort], () => {
 
 html, body { height: 100%; }
 body { margin: 0; overflow: hidden; background: #fff; }
-
-/* Blank panel chrome is a move surface, so the pointer offers grab before the
-   drag starts. Controls and message text keep their own cursor. */
-html.panel-drag-ready { cursor: grab; }
 
 /* Only the thread flexes and scrolls. The optional settings section takes its
    own height without moving the composer below the viewport. */
@@ -886,7 +853,9 @@ button svg { width: .9rem; height: .9rem; fill: none; stroke: currentColor; stro
 .picker-trigger .picker-chevron { grid-column: 2; grid-row: 1 / 3; color: #9ea8a0; font-size: 1rem; }
 .model-trigger { width: 9.6rem; }
 .effort-trigger { width: 5.8rem; }
-.picker-popover { position: absolute; z-index: 20; bottom: calc(100% + .55rem); left: 0; width: min(17rem,calc(100vw - 3rem)); max-height: 50dvh; padding: .35rem; overflow-y: auto; border: 1px solid #e3e9e4; border-radius: .8rem; background: #fff; box-shadow: 0 16px 44px rgba(30,45,34,.16); }
+/* Menus sit flush against their trigger: the pointer never crosses a gap, so
+   leaving the trigger or the menu can close it immediately. */
+.picker-popover { position: absolute; z-index: 20; bottom: 100%; left: 0; width: min(17rem,calc(100vw - 3rem)); max-height: 50dvh; padding: .35rem; overflow-y: auto; border: 1px solid #e3e9e4; border-radius: .8rem; background: #fff; box-shadow: 0 16px 44px rgba(30,45,34,.16); }
 .picker-popover button { display: grid; gap: .1rem; width: 100%; min-height: 2.4rem; padding: .45rem .6rem; border: 0; border-radius: .55rem; background: transparent; text-align: left; }
 .picker-popover button:hover, .picker-popover button.selected { background: #edf4ef; }
 .picker-popover button strong { overflow: hidden; color: #435649; text-overflow: ellipsis; white-space: nowrap; }
@@ -894,7 +863,8 @@ button svg { width: .9rem; height: .9rem; fill: none; stroke: currentColor; stro
 .effort-popover { width: 9rem; }
 .more-trigger { flex: 0 0 auto; width: 2rem; height: 2rem; border: 0; border-radius: 50%; background: transparent; color: #7c8b80; letter-spacing: .07em; }
 .more-trigger:hover, .more-trigger[aria-expanded="true"] { background: #eef3ef; }
-.more-popover { position: absolute; z-index: 22; right: .45rem; bottom: calc(100% + .4rem); display: grid; gap: .2rem; width: min(15rem,calc(100vw - 2.5rem)); padding: .45rem; border: 1px solid #e3e9e4; border-radius: .8rem; background: #fff; box-shadow: 0 16px 44px rgba(30,45,34,.16); }
+.more-menu { position: relative; flex: 0 0 auto; }
+.more-popover { position: absolute; z-index: 22; right: 0; bottom: 100%; display: grid; gap: .2rem; width: min(15rem,calc(100vw - 2.5rem)); padding: .45rem; border: 1px solid #e3e9e4; border-radius: .8rem; background: #fff; box-shadow: 0 16px 44px rgba(30,45,34,.16); }
 .more-popover > button { padding: .5rem .65rem; border: 0; background: transparent; text-align: left; }
 .more-popover > button:hover { background: #edf4ef; }
 .usage-details { display: grid; gap: .35rem; padding: .5rem .65rem; color: #8b978e; font-size: .64rem; }
