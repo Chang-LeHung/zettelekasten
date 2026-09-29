@@ -35,6 +35,7 @@ export function restoreTranscript(records: readonly AgentPersistedMessage[]): Tr
       timeline: settleTimeline(turn.responses.flatMap(response => response.timeline ?? [])),
       usage: usage ?? undefined,
       durationMs: turn.responses.reduce((sum, response) => sum + (response.duration_ms ?? 0), 0),
+      generationDurationMs: turn.responses.reduce((sum, response) => sum + (response.generation_duration_ms ?? 0), 0),
     })
   }
   return entries

@@ -44,6 +44,7 @@ export interface StreamTurnOptions {
   reasoningEffort: ReasoningEffort
   text: string
   onDelta?: (delta: string) => void
+  onModelStarted?: () => void
   onTool?: (outcome: ToolOutcome) => void
   onEvent?: (entry: AgentTimelineEntry) => void
   onUsage?: (usage: AgentModelUsage) => void
@@ -188,6 +189,7 @@ export class ZettClient {
               options.onUsage?.(Object.fromEntries(keys.map(key => [key, usage[key]])) as unknown as AgentModelUsage)
             }
           }
+          if (event === 'model_started') options.onModelStarted?.()
           if (event === 'custom') {
             if (payload.name === 'context_composition') {
               const composition = asContextComposition(asRecord(payload.payload))

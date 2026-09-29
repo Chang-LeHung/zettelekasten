@@ -96,6 +96,8 @@ export interface TranscriptEntry {
   timeline?: AgentTimelineEntry[]
   startedAt?: number
   durationMs?: number
+  /** Model wall-clock time behind this answer, the denominator of tok/s. */
+  generationDurationMs?: number
   detailsOpen?: boolean
   error?: string
   usage?: AgentModelUsage
