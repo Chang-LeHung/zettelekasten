@@ -105,6 +105,29 @@ async function send(host: HTMLElement): Promise<void> {
   await nextTick()
 }
 
+it('moves the panel from a blank pointerdown but not from text or a control', async () => {
+  const host = await mount()
+  const sendMessage = vi.mocked(chrome.tabs.sendMessage)
+  sendMessage.mockClear()
+  function press(target: Element, x: number, y: number): Event {
+    const event = Object.assign(new Event('pointerdown', { bubbles: true, cancelable: true }), {
+      button: 0, pointerType: 'mouse', clientX: x, clientY: y,
+    })
+    target.dispatchEvent(event)
+    return event
+  }
+  const blank = press(host.querySelector('.thread')!, 120, 200)
+  expect(blank.defaultPrevented).toBe(true)
+  expect(sendMessage).toHaveBeenCalledWith(7, expect.objectContaining({
+    channel: 'zett-dom', type: 'panel-drag-start',
+    panelNonce: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', x: 120, y: 200,
+  }), { frameId: 0 })
+  sendMessage.mockClear()
+  press(host.querySelector('.send-button')!, 120, 200)
+  press(host.querySelector('.welcome p')!, 120, 200)
+  expect(sendMessage).not.toHaveBeenCalled()
+})
+
 it('removes the page bar, retains automatic page context, and clears on Enter before the response', async () => {
   const host = await mount()
   expect(host.querySelector('.page-strip')).toBeNull()

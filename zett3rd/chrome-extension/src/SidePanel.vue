@@ -155,6 +155,44 @@ function closePanel(): void {
   }, { frameId: 0 }).catch(error => notify((error as Error).message, 'error'))
 }
 
+/** A pointerdown on blank panel chrome moves the window; text, controls, menus
+ * and scrollbars keep their own behavior. The page owns the gesture once the
+ * message arrives, so only the pointer's position inside this frame travels. */
+const DRAG_BLOCKERS = 'button, a, input, textarea, select, label, summary, option, [contenteditable="true"], [role="button"], [role="link"], [role="tab"], [role="option"], [role="listbox"], [role="menu"], .markdown-body, .prompt-bubble, .picker-popover, .more-popover'
+
+function isBlankSpot(event: PointerEvent): boolean {
+  const target = event.target
+  if (!(target instanceof Element) || target.closest(DRAG_BLOCKERS)) return false
+  for (const node of target.childNodes) {
+    if (node.nodeType === Node.TEXT_NODE && (node.textContent ?? '').trim()) return false
+  }
+  if (target instanceof HTMLElement) {
+    const rect = target.getBoundingClientRect()
+    if (target.scrollHeight > target.clientHeight && event.clientX - rect.left >= target.clientLeft + target.clientWidth) return false
+    if (target.scrollWidth > target.clientWidth && event.clientY - rect.top >= target.clientTop + target.clientHeight) return false
+  }
+  return true
+}
+
+function onPanelPointerDown(event: PointerEvent): void {
+  if (owningTabId === null || !panelNonce || event.button !== 0 || event.pointerType === 'touch') return
+  if (!isBlankSpot(event)) return
+  event.preventDefault()
+  void chrome.tabs.sendMessage(owningTabId, {
+    channel: 'zett-dom', type: 'panel-drag-start', panelNonce,
+    x: event.clientX, y: event.clientY,
+  }, { frameId: 0 }).catch(() => {})
+}
+
+function onPanelPointerMove(event: PointerEvent): void {
+  if (event.pointerType === 'touch') return
+  document.documentElement.classList.toggle('panel-drag-ready', isBlankSpot(event))
+}
+
+function clearDragCursor(): void {
+  document.documentElement.classList.remove('panel-drag-ready')
+}
+
 function stopGeneration(): void {
   if (!busy.value || stopping.value) return
   stopping.value = true
@@ -536,6 +574,9 @@ onMounted(async () => {
   await connect()
   await openPage()
   chrome.tabs.onUpdated.addListener(onTabUpdated)
+  document.addEventListener('pointerdown', onPanelPointerDown)
+  document.addEventListener('pointermove', onPanelPointerMove, { passive: true })
+  document.addEventListener('pointerleave', clearDragCursor)
 })
 
 onBeforeUnmount(() => {
@@ -543,6 +584,10 @@ onBeforeUnmount(() => {
   activeStreamController?.abort()
   clearInterval(clockTimer)
   chrome.tabs.onUpdated.removeListener(onTabUpdated)
+  document.removeEventListener('pointerdown', onPanelPointerDown)
+  document.removeEventListener('pointermove', onPanelPointerMove)
+  document.removeEventListener('pointerleave', clearDragCursor)
+  clearDragCursor()
   void disconnectBrowser()
 })
 
@@ -734,6 +779,10 @@ watch([selectedProviderId, effort], () => {
 
 html, body { height: 100%; }
 body { margin: 0; overflow: hidden; background: #fff; }
+
+/* Blank panel chrome is a move surface, so the pointer offers grab before the
+   drag starts. Controls and message text keep their own cursor. */
+html.panel-drag-ready { cursor: grab; }
 
 /* Only the thread flexes and scrolls. The optional settings section takes its
    own height without moving the composer below the viewport. */
