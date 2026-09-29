@@ -3,7 +3,7 @@
 import asyncio
 from collections.abc import AsyncIterator, Callable
 from contextlib import aclosing
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -50,6 +50,7 @@ from ....infra.log import get_logger, log_preview
 from ....infra.persistence.dao import model_usage_activity_storage, provider_storage, session_storage
 from ....messages import MessageImageSizeExceeded, MessagePartCodec, MessagePartError
 from ....schemas import ProviderConnection
+from ...agent.browser import BrowserUnavailableError, browser_bridge
 from ...agent.session_context import session_context_composition_service
 from ...agent.session_preferences import session_model_preference_service
 from ...agent.session_titles import generate_initial_session_title
@@ -220,6 +221,12 @@ async def _prepare_agent_request(session_id: str, payload: AnalyzeRequest) -> _P
     """Validate input, reserve its session, and construct request-owned resources."""
     if await session_storage.get(session_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+    browser_connection = None
+    if payload.browser_token is not None:
+        try:
+            browser_connection = browser_bridge.require(session_id, payload.browser_token)
+        except BrowserUnavailableError as error:
+            raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
     connection = await provider_storage.resolve_connection(payload.provider_id)
     if connection is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Enabled provider not found")
@@ -247,7 +254,10 @@ async def _prepare_agent_request(session_id: str, payload: AnalyzeRequest) -> _P
 
         # Reserve the session before binding the Agent, allowing each new Agent
         # instance to apply the latest configuration immediately.
-        agent = ZettelkastenAgent(_agent_config(session_id, runtime_settings))
+        agent_config = _agent_config(session_id, runtime_settings)
+        if browser_connection is not None:
+            agent_config = replace(agent_config, browser_connection=browser_connection)
+        agent = ZettelkastenAgent(agent_config)
         await agent.initialize()
         await active_requests.bind(config, agent)
         # Remember only a fully prepared request. Validation, Model creation,

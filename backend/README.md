@@ -24,6 +24,72 @@ Domain rules currently live in `schemas.py`, storage contracts in
 
 ## Storage boundaries
 
+### Chrome panel browser tools
+
+The Chrome integration under `zett3rd/chrome-extension` embeds an isolated
+extension frame in a webpage through its content script. Each tab/page URL
+maps to its own persisted Agent session; reopening restores history through
+`GET /api/agent/sessions/{id}`. The panel automatically connects the current
+document on open using `WS /api/agent/{session_id}/browser`: an extension-origin
+handshake returns a `ready` frame with a temporary token. A normal
+`POST /api/agent/{session_id}/messages` supplies that value as `browser_token`.
+The application validates the live connection before constructing the Agent;
+missing, stale, or cross-session tokens fail with 409. Without a token there are
+no browser tools, including in normal Web, CLI, scheduled, and channel turns.
+
+`BrowserExtension` exposes two tools:
+
+- `get_browser_page(selector=None)`: the connected document's title, URL, bounded
+  visible text and form-control descriptions with usable CSS selectors. An
+  optional selector reads exactly one subtree. Hidden, password, file-input,
+  and script contents are excluded.
+- `update_browser_dom(change)`: one CSS selector, an action, a value and a short
+  description. Actions are `set_text` (plain text elements), `fill` (text-like
+  inputs/textareas and `contenteditable="true"` editors), `select` (existing enabled options), and `set_checked`
+  (checkboxes). The panel displays the edit and waits for **Allow once** or
+  **Reject**. Updates target exactly one visible, supported, enabled element.
+- `interact_with_browser(interaction)`: one reviewed click, double-click,
+  hover, focus, scroll, bounded key press or drag/drop, with a single
+  unambiguous selector and action-specific parameters. The content script
+  dispatches synthetic DOM events. A result confirms dispatch, not the
+  website's final state; callers must read the page again to verify.
+
+`application/agent/browser.py` orchestrates commands without a FastAPI dependency;
+the WebSocket route is a transport adapter and the extension is the executor.
+Frames use command IDs, one pending operation per connection, and bounded
+payloads (500-character selectors, 10,000-character values, 64 KB result, 100 KB incoming frame).
+Approval expires after 90 seconds, the server waits at most 120 seconds, and
+content-script replies have a ten-second client wait bound and message expiry.
+Disconnect/cancellation fails outstanding work and never retries a mutation.
+No connection, token, command queue, or page snapshot is stored in the database.
+Normal Agent tool history still records tool arguments and results.
+
+The panel injects the bundled `content-script.js` using `chrome.scripting`, then
+uses `chrome.tabs.sendMessage` pinned to the top-frame `documentId`. A per-connection
+nonce, sender validation, expiry and duplicate detection guard the content-script
+boundary. There is no debugger permission or arbitrary JS execution: values
+remain plain data, `set_text` uses `textContent`, and HTML, arbitrary attributes,
+arbitrary JavaScript and direct navigation are not supported. A reviewed click
+or key press can activate a site's submit control, but synthetic events may be
+ignored by sites requiring trusted input. Filling fields dispatches
+input/change events, which may trigger the website's own autosave handlers.
+Rich text editors use the browser's `insertText` editing command on a selected
+contenteditable root, allowing frameworks such as ProseMirror to process a real
+input event rather than having their nested DOM overwritten. Rejected input
+returns an error; form submission is never implied.
+Switching tabs leaves each tab's connection separate. Navigating to another
+URL opens that page's own conversation and new document connection; stopping
+or closing the panel disconnects control, with explicit retry available.
+Cross-origin iframes, background/offline automation, and rollback are not provided.
+An error/timeout does not prove an edit had no effect. Inspect before retrying.
+
+Extension-origin checks block ordinary websites, not native clients that can
+forge an Origin header. This local server is not a multi-user authentication
+service: use loopback, or an authenticated TLS proxy for remote deployments.
+The token goes in WebSocket frames and message bodies, never URL logs.
+
+### Persisted resources
+
 | Boundary | Owner | Tables and files |
 | --- | --- | --- |
 | Session | `zett-agent` | `agent_sessions`, `raw_messages`, `session_snapshots` |
