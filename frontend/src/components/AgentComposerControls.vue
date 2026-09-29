@@ -5,8 +5,8 @@ import { formatTokenCount, type AgentUsageSummary } from '../utils/agentUsage'
 import { useI18n } from '../i18n'
 import ContextCompositionRing from './ContextCompositionRing.vue'
 
-const props = defineProps<{
-  providers: AIProvider[]
+const props = withDefaults(defineProps<{
+  providers: Pick<AIProvider, 'id' | 'name' | 'model' | 'provider' | 'enabled'>[]
   selectedProviderId: string | null
   effort: ReasoningEffort
   shellApproval: ShellApprovalMode
@@ -15,7 +15,9 @@ const props = defineProps<{
   currentUsage: AgentModelUsage | null
   contextComposition: AgentContextComposition | null
   compactionMaxTokens: number
-}>()
+  compact?: boolean
+  showShell?: boolean
+}>(), { compact: false, showShell: true })
 
 const emit = defineEmits<{
   'update:selectedProviderId': [value: string]
@@ -93,7 +95,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="root" class="agent-composer-controls">
+  <div ref="root" class="agent-composer-controls" :class="{ 'panel-controls': compact }">
     <div class="control-menu model-menu">
       <button
         class="control-trigger model-trigger"
@@ -107,7 +109,7 @@ onBeforeUnmount(() => {
           <svg viewBox="0 0 24 24"><path d="m12 3 1.2 4.8L18 9.5l-4.8 1.7L12 16l-1.2-4.8L6 9.5l4.8-1.7zM18.5 15l.6 2.1 2.1.6-2.1.6-.6 2.1-.6-2.1-2.1-.6 2.1-.6z" /></svg>
         </span>
         <span class="control-copy">
-          <small>{{ t('composer.model') }}</small>
+          <small :title="selectedProvider?.name">{{ compact ? selectedProvider?.name || t('composer.model') : t('composer.model') }}</small>
           <strong>{{ selectedProvider?.model || 'Add a provider' }}</strong>
         </span>
         <svg class="control-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m6 8 4 4 4-4" /></svg>
@@ -166,7 +168,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div class="control-menu shell-menu">
+    <div v-if="showShell" class="control-menu shell-menu">
       <button
         class="control-trigger shell-trigger"
         type="button"
@@ -314,5 +316,39 @@ onBeforeUnmount(() => {
 .cache-popover em { color: #4f5a53; font-size: .54rem; font-style: normal; font-weight: 680; font-variant-numeric: tabular-nums; }
 @media (prefers-reduced-motion: reduce) {
   .control-popover { animation-duration: 1ms; }
+}
+/* Panel controls keep bounded, content-sized tracks even when the side panel is
+   wide. Only the composer grows; its buttons and popovers must not stretch.
+   These opt-in rules leave the web app's default composer layout unchanged. */
+.panel-controls { width: max-content; max-width: 100%; display: grid; grid-template-columns: minmax(0, 12rem) minmax(0, 7.2rem) max-content auto; align-items: center; gap: .35rem; }
+.panel-controls .model-menu { grid-column: 1; grid-row: 1; }
+.panel-controls .effort-menu { grid-column: 2; grid-row: 1; }
+.panel-controls .control-menu { min-width: 0; position: relative; }
+.panel-controls .model-trigger, .panel-controls .effort-trigger { width: 100%; }
+.panel-controls .control-copy small { display: block; text-transform: none; }
+.panel-controls .control-chevron { display: block; }
+.panel-controls .control-icon { display: none; }
+.panel-controls .usage-strip { display: none; }
+.panel-controls .compact-cache { position: relative; display: flex; flex-wrap: wrap; gap: .48rem; grid-column: 3; grid-row: 1; margin: 0 .3rem; justify-self: start; color: #7b857f; font-size: .6rem; }
+.panel-controls .context-ring-control { grid-column: 4; grid-row: 1; margin: 0; }
+.panel-controls .control-popover { left: 0; right: auto; bottom: calc(100% + .4rem); max-height: min(22rem, 55dvh); overflow-y: auto; background: #fff; }
+.panel-controls .model-popover { width: min(19rem, calc(100vw - 3rem)); }
+.panel-controls .effort-popover { left: auto; right: 0; width: min(14rem, calc(100vw - 3rem)); }
+.panel-controls .cache-popover { left: 0; right: auto; max-width: calc(100vw - 3rem); }
+.panel-controls .compact-stat { display: inline-flex; gap: .2rem; }
+@container composer-footer (max-width: 600px) {
+  .panel-controls { grid-template-columns: minmax(0, 12rem) minmax(0, 7.2rem) auto; }
+  .panel-controls .compact-cache { grid-column: 1 / 3; grid-row: 2; margin: .1rem .3rem; }
+  .panel-controls .context-ring-control { grid-column: 3; grid-row: 1 / span 2; }
+}
+@container composer-footer (max-width: 300px) {
+  .panel-controls { grid-template-columns: minmax(0, 1fr) auto; }
+  .panel-controls .model-menu { grid-column: 1; }
+  .panel-controls .effort-menu { grid-column: 1; grid-row: 2; }
+  .panel-controls .model-trigger { width: 12rem; max-width: 100%; }
+  .panel-controls .effort-trigger { width: 7.2rem; max-width: 100%; }
+  .panel-controls .effort-popover { left: 0; right: auto; }
+  .panel-controls .compact-cache { grid-column: 1; grid-row: 3; }
+  .panel-controls .context-ring-control { grid-column: 2; grid-row: 1 / 4; }
 }
 </style>
