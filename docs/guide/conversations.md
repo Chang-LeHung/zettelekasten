@@ -81,6 +81,60 @@ every earlier snapshot stay on disk, so nothing is lost by compacting.
 
 ## What the Agent can reach
 
+### Chrome extension
+
+The Chrome extension embeds a panel on the right edge of the webpage when you
+click its toolbar icon; it does not use Chrome's native side panel. Each tab
+and page URL owns a separate conversation. Closing and reopening the panel
+restores that page's messages and pending artifacts. The embedded panel reuses
+the web conversation's execution details and model
+controls. Model choices show the connection name so two providers with the same
+model are distinguishable. Cache hit rate uses the real model usage counters;
+the context ring shows the latest input/output tokens relative to the configured
+compaction threshold, not the provider's advertised maximum context window.
+Hover or focus the ring to inspect the percentage and context composition.
+
+To let the Agent fill a webpage, click the extension's toolbar icon on that
+page. The embedded panel automatically connects the content script to its
+session, without debugger permission. Send a request
+such as “Fill this form from these details, but do not submit it.” The Agent can
+read the connected page and propose a structured DOM edit; review the selector,
+action and value, then choose **Allow once** or **Reject**. It can replace plain
+text, fill text fields, select a dropdown option, or set a checkbox. Arbitrary
+JavaScript and HTML injection are not available. `interact_with_browser` can
+request a reviewed click, hover, focus, scroll, bounded key press or drag/drop.
+Clicking a submit button can have real side effects and requires explicit user
+intent and approval. Synthetic events may be ignored by sites that require
+trusted input; the Agent must read the page again to verify the result.
+
+Only the connected top-level document is controlled. Switching tabs keeps each
+tab's embedded panel independent. Navigating to a different URL opens that
+page's conversation; returning restores the earlier one. Closing the panel
+disconnects its live tools without deleting its history. A failed connection
+can be retried with **Connect page**; failed edits are not replayed. Field changes
+send input/change events and may trigger the website's
+own autosave. A timeout cannot roll back edits that already happened.
+Ordinary web conversations do not receive these browser tools.
+
+The webpage panel is a movable, resizable floating window rather than a
+full-height overlay: drag its top strip to reposition it, or the lower-right
+corner to enlarge it. The composer keeps model and effort visible while its
+`•••` menu holds browser connection, Save all and token statistics. When a page
+conversation is restored or an answer
+streams, the chat follows the newest output. `fill` also supports
+`contenteditable="true"` editors (including ProseMirror-style editors with
+nested paragraphs), using the browser's text-editing path; it does not submit
+the prompt or overwrite HTML.
+
+While the extension is generating, the Send button becomes **Stop**. It cancels
+the current turn and pending webpage approvals while preserving partial output
+and your next-message draft. Send another message to continue the conversation;
+Stop is cancellation, not suspension of an executing tool. Edits already applied
+to a page are not undone, and page control must be explicitly reconnected after
+Stop.
+
+### Application tools
+
 Inside a conversation the Agent's tools cover the whole local application:
 
 - artifacts and library search/tagging (`create_artifact`, `update_artifact`, `query_artifacts`)
