@@ -117,8 +117,9 @@ own autosave. A timeout cannot roll back edits that already happened.
 Ordinary web conversations do not receive these browser tools.
 
 The webpage panel is a movable, resizable floating window rather than a
-full-height overlay: drag its top strip to reposition it, or the lower-right
-corner to enlarge it. The composer keeps model and effort visible while its
+full-height overlay: drag its top strip or any blank area of the panel to
+reposition it, or the lower-right corner to enlarge it. The composer keeps
+model and effort visible while its
 `•••` menu holds browser connection, Save all and token statistics. When a page
 conversation is restored or an answer
 streams, the chat follows the newest output. `fill` also supports

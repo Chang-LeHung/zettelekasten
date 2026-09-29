@@ -113,5 +113,20 @@ it('moves and resizes the floating panel without covering the whole viewport', (
   expect(host.style.height).toBe('560px')
   expect(host.style.left).toBe('360px')
   resize.dispatchEvent(pointer('pointerup', 900, 640))
+  // A blank pointerdown inside the panel hands the move to the page. Panel
+  // coordinates are frame-relative, so the frame's offset must be applied.
+  const frame = shadow!.querySelector<HTMLIFrameElement>('iframe')!
+  const panelNonce = new URL(frame.src).searchParams.get('panelNonce')!
+  vi.spyOn(frame, 'getBoundingClientRect').mockReturnValue({
+    left: 361, top: 89, right: 781, bottom: 579, width: 420, height: 490,
+  } as DOMRect)
+  expect(send({ type: 'panel-drag-start', panelNonce: 'wrong', x: 100, y: 20 })).toBeUndefined()
+  expect(send({ type: 'panel-drag-start', panelNonce, x: 100, y: 20 })).toEqual({ ok: true })
+  expect(frame.style.pointerEvents).toBe('none')
+  document.dispatchEvent(pointer('pointermove', 341, 159))
+  expect(host.style.left).toBe('240px')
+  expect(host.style.top).toBe('130px')
+  document.dispatchEvent(pointer('pointerup', 341, 159))
+  expect(frame.style.pointerEvents).toBe('')
   attach.mockRestore()
 })

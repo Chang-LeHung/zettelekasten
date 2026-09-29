@@ -13,10 +13,15 @@ if (!scope.__zettDOMBridgeInstalled) {
   let panel: HTMLElement | undefined
   let panelNonce: string | undefined
   let panelTabId: number | undefined
+  let panelDrag: ((clientX: number, clientY: number) => void) | undefined
+  let cancelPanelDrag: (() => void) | undefined
   let lastUrl = location.href
   let pageTimer: ReturnType<typeof setInterval> | undefined
 
   function removePanel(): void {
+    cancelPanelDrag?.()
+    cancelPanelDrag = undefined
+    panelDrag = undefined
     panel?.remove()
     panel = undefined
     panelNonce = undefined
@@ -97,6 +102,59 @@ if (!scope.__zettDOMBridgeInstalled) {
     }
     handle.addEventListener('pointerdown', event => drag(event, 'move'))
     resize.addEventListener('pointerdown', event => drag(event, 'resize'))
+
+    let activeDrag: (() => void) | undefined
+
+    function finishPanelDrag(): void {
+      const cleanup = activeDrag
+      if (!cleanup) return
+      activeDrag = undefined
+      cleanup()
+    }
+
+    /** A blank pointerdown inside the panel adopts the gesture on the page.
+     * The iframe disables its own hit testing so the document keeps receiving
+     * moves even when the pointer crosses the panel, and the first move only
+     * counts once it passes a small threshold, so a click stays a click. */
+    function startPanelDrag(clientX: number, clientY: number): void {
+      finishPanelDrag()
+      const start = host.getBoundingClientRect()
+      // The panel reports coordinates inside its own viewport; the frame's
+      // position turns them back into page coordinates.
+      const frameRect = frame.getBoundingClientRect()
+      const originX = frameRect.left + clientX
+      const originY = frameRect.top + clientY
+      const grabX = originX - start.left
+      const grabY = originY - start.top
+      let moved = false
+      const move = (next: PointerEvent) => {
+        if (!moved) {
+          if (Math.abs(next.clientX - originX) < 3 && Math.abs(next.clientY - originY) < 3) return
+          moved = true
+        }
+        next.preventDefault()
+        host.style.left = `${Math.max(0, Math.min(innerWidth - start.width, next.clientX - grabX))}px`
+        host.style.top = `${Math.max(0, Math.min(innerHeight - start.height, next.clientY - grabY))}px`
+        host.style.right = 'auto'
+      }
+      activeDrag = () => {
+        frame.style.pointerEvents = ''
+        document.documentElement.style.cursor = ''
+        document.removeEventListener('pointermove', move, true)
+        document.removeEventListener('pointerup', finishPanelDrag, true)
+        document.removeEventListener('pointercancel', finishPanelDrag, true)
+        window.removeEventListener('blur', finishPanelDrag, true)
+      }
+      frame.style.pointerEvents = 'none'
+      document.documentElement.style.cursor = 'grabbing'
+      document.addEventListener('pointermove', move, { capture: true, passive: false })
+      document.addEventListener('pointerup', finishPanelDrag, true)
+      document.addEventListener('pointercancel', finishPanelDrag, true)
+      window.addEventListener('blur', finishPanelDrag, true)
+    }
+
+    panelDrag = startPanelDrag
+    cancelPanelDrag = finishPanelDrag
     ;(document.documentElement ?? document.body).append(host)
     panel = host
     panelTabId = tabId
@@ -136,7 +194,14 @@ if (!scope.__zettDOMBridgeInstalled) {
       respond({ ok: true })
       return
     }
-    if (message.type === 'close-panel' || message.type === 'panel-hello') return
+    if (message.type === 'panel-drag-start' && panel && panelDrag && message.panelNonce === panelNonce
+      && sender.url?.startsWith(chrome.runtime.getURL('sidepanel.html'))
+      && Number.isFinite(message.x) && Number.isFinite(message.y)) {
+      panelDrag(Number(message.x), Number(message.y))
+      respond({ ok: true })
+      return
+    }
+    if (message.type === 'close-panel' || message.type === 'panel-hello' || message.type === 'panel-drag-start') return
     if (!sender.url?.startsWith(chrome.runtime.getURL('sidepanel.html'))) return
     if (typeof message.nonce !== 'string' || !/^[a-f0-9-]{36}$/.test(message.nonce)) return
     try {

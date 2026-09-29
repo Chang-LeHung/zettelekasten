@@ -31,8 +31,9 @@ welcome screen show the same logo.
 5. Open an HTTP(S) webpage and click the Zett icon in the toolbar. A panel
    appears inside that page, at the right edge. Click the icon or the panel's
    close button to hide it; click the icon again to restore that page's chat.
-   Drag the thin strip at the top to move the panel; drag its lower-right corner
-   to enlarge or shrink it. Its default size leaves the webpage visible.
+   Drag the thin strip at the top or any blank area of the panel to move it;
+   drag its lower-right corner to enlarge or shrink it. Its default size leaves
+   the webpage visible.
 
 After a change, run `npm run build` again and press the reload button on the
 extension's card.
@@ -58,7 +59,7 @@ the server address you configured, and only when you send a message.
 | **Artifact card** | When the agent creates or changes an artifact, its card appears in the thread — title, kind, and whether it is still an unsaved draft — with a **Save** button that publishes it. |
 | **Save all** | Publishes every artifact of this conversation that still has something to save, and says how many it saved. |
 | **New chat** | Starts a fresh conversation for this page only, leaving the conversations of other tabs and pages unchanged. |
-| Floating panel | Starts at 440px wide and up to 90% of the viewport height. Drag the top strip to move it or the lower-right handle to resize it. |
+| Floating panel | Starts at 440px wide and up to 90% of the viewport height. Drag the top strip or any blank area to move it, or the lower-right handle to resize it. |
 | Page connection | Connects automatically when the page's conversation opens. **Disconnect page** turns off browser tools for this panel; **Connect page** retries a failed or deliberately disconnected connection. |
 | **Allow once / Reject** | Reviews each DOM edit's selector, action and value before applying it. No model-authored code executes. |
 
