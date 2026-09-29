@@ -4,6 +4,12 @@
  * startups must not overwrite each other's read/modify/write of one map.
  */
 export const PAGE_SESSION_PREFIX = 'pageSession:'
+/** The session's own "always allow page edits" choice, so reopening keeps it. */
+export const BROWSER_APPROVAL_PREFIX = 'browserApproval:'
+
+export function browserApprovalKey(sessionId: string): string {
+  return `${BROWSER_APPROVAL_PREFIX}${sessionId}`
+}
 
 export function belongsToTab(key: string, tabId: number): boolean {
   if (!key.startsWith(PAGE_SESSION_PREFIX)) return false

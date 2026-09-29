@@ -28,7 +28,7 @@ import { formatTurnDuration, splitTurnTimeline } from '../../../frontend/src/uti
 import { settleTimeline, turnTask, updateTimeline } from './chat/timeline'
 import { readActivePage } from './page/page-reader'
 import { MAX_PAGE_CHARS, pageContext } from './page/page-text'
-import { pageKey } from './chat/page-sessions'
+import { browserApprovalKey, pageKey } from './chat/page-sessions'
 import { PAGE_PROMPT_MARKER, restoreTranscript } from './chat/restore-transcript'
 
 /** Thinking effort the app offers, in the order it lists them. */
@@ -97,6 +97,7 @@ const compactionMaxTokens = ref(0)
 const browserConnected = ref(false)
 const browserConnecting = ref(false)
 const browserConsent = ref<BrowserConsent | null>(null)
+const browserAutoApprove = ref(false)
 const browserBridge = new BrowserBridgeClient(
   consent => { browserConsent.value = consent },
   reason => { browserConnected.value = false; notify(reason, 'error') },
@@ -200,6 +201,37 @@ async function connectBrowser(): Promise<void> {
 async function disconnectBrowser(): Promise<void> {
   browserConnected.value = false
   await browserBridge.disconnect()
+}
+
+/** Load the session's stored "always allow page edits" choice. */
+async function loadBrowserApproval(sessionId: string | null): Promise<void> {
+  const key = sessionId ? browserApprovalKey(sessionId) : null
+  const stored = key ? (await chrome.storage.local.get(key))[key] : undefined
+  if (conversationId.value !== sessionId) return
+  browserAutoApprove.value = stored === true
+  browserBridge.autoApprove = browserAutoApprove.value
+}
+
+async function rememberBrowserApproval(value: boolean): Promise<void> {
+  const sessionId = conversationId.value
+  if (sessionId) {
+    const key = browserApprovalKey(sessionId)
+    if (value) await chrome.storage.local.set({ [key]: true })
+    else await chrome.storage.local.remove(key)
+  }
+  browserAutoApprove.value = value
+  browserBridge.autoApprove = value
+  notify(value
+    ? 'Page edits will be applied without review for this session.'
+    : 'Page edits will ask for review again.')
+}
+
+/** "Always allow in this session": approve now and skip this card from here on. */
+function allowBrowserForSession(): void {
+  const consent = browserConsent.value
+  if (!consent) return
+  void rememberBrowserApproval(true)
+  consent.approve()
 }
 
 function closePanel(): void {
@@ -384,7 +416,7 @@ async function openPage(): Promise<void> {
         return
       }
       // Only a confirmed 404 means the mapped session was deleted.
-      await chrome.storage.local.remove(nextKey)
+      await chrome.storage.local.remove([nextKey, browserApprovalKey(String(sessionValue))])
     }
   }
   if (switchId !== pageSwitch) return
@@ -883,6 +915,9 @@ onBeforeUnmount(() => {
 watch([selectedProviderId, effort], () => {
   void chrome.storage.local.set({ providerId: selectedProviderId.value, effort: effort.value })
 })
+
+// Each conversation keeps its own page-edit approval policy.
+watch(conversationId, (sessionId) => { void loadBrowserApproval(sessionId) })
 </script>
 
 <template>
@@ -987,7 +1022,12 @@ watch([selectedProviderId, effort], () => {
       <div v-if="consentDetails.value"><dt>Value</dt><dd class="consent-value">{{ consentDetails.value }}</dd></div>
     </dl>
     <p class="consent-warning">This may trigger changes on the website. Review before allowing.</p>
-    <div class="consent-actions"><button type="button" @click="browserConsent.reject">Reject</button><button class="allow" type="button" @click="browserConsent.approve">Allow once</button></div>
+    <p class="consent-note">Always allow skips this review for the rest of this conversation; turn it off again from the ••• menu.</p>
+    <div class="consent-actions">
+      <button type="button" @click="browserConsent.reject">Reject</button>
+      <button class="allow" type="button" @click="browserConsent.approve">Allow once</button>
+      <button class="allow-session" type="button" @click="allowBrowserForSession">Always allow in this session</button>
+    </div>
   </section>
 
   <section v-if="pendingQuestion" class="ask-user" aria-live="polite" @paste="onAskPaste">
@@ -1145,6 +1185,7 @@ watch([selectedProviderId, effort], () => {
           </div>
           <button v-if="!browserConnected" type="button" :disabled="browserConnecting || !conversationId" @click="connectBrowser(); moreOpen = false">{{ browserConnecting ? 'Connecting…' : 'Connect page' }}</button>
           <button v-else type="button" @click="disconnectBrowser(); moreOpen = false">Disconnect page</button>
+          <button v-if="browserAutoApprove" type="button" @click="rememberBrowserApproval(false); moreOpen = false">Ask before page edits again</button>
           <button type="button" :disabled="savingIds.length > 0 || busy" @click="saveAll(); moreOpen = false">Save all artifacts</button>
         </div>
       </div>
@@ -1367,10 +1408,12 @@ button svg { width: .9rem; height: .9rem; fill: none; stroke: currentColor; stro
 .browser-consent code { font-size: .72rem; }
 .consent-value { max-height: 4.5rem; overflow-y: auto; white-space: pre-wrap; }
 .browser-consent p { margin: .4rem 0 .65rem; overflow-wrap: anywhere; }
-.browser-consent .consent-actions { display: flex; justify-content: flex-end; gap: .5rem; }
+.browser-consent .consent-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; }
 .browser-consent button { padding: .45rem .7rem; }
 .browser-consent button.allow { border-color: #476957; background: #476957; color: #fff; }
+.browser-consent button.allow-session { border-color: #cbd9d1; color: #3f5b4a; background: #eef4f0; }
 .consent-warning { color: #796339; font-size: .65rem; }
+.consent-note { margin: -.25rem 0 .55rem; color: var(--tertiary); font-size: .6rem; }
 .notice { margin: .15rem .6rem .35rem; font-size: .66rem; }
 .notice.ok { color: var(--accent-dark); }
 .notice.error { color: #a33e3e; }

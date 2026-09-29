@@ -99,7 +99,10 @@ page. The embedded panel automatically connects the content script to its
 session, without debugger permission. Send a request
 such as “Fill this form from these details, but do not submit it.” The Agent can
 read the connected page and propose a structured DOM edit; review the selector,
-action and value, then choose **Allow once** or **Reject**. It can replace plain
+action and value, then choose **Allow once**, **Always allow in this session**, or
+**Reject**. Always allow approves that edit and stops asking for this
+conversation; **Ask before page edits again** in the `•••` menu restores the
+review. It can replace plain
 text, fill text fields, select a dropdown option, or set a checkbox. Arbitrary
 JavaScript and HTML injection are not available. `interact_with_browser` can
 request a reviewed click, hover, focus, scroll, bounded key press or drag/drop.
