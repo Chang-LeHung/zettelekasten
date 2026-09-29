@@ -17,6 +17,17 @@ describe('renderMarkdown', () => {
 
     expect(html).toContain('class="code-block"')
     expect(html).toContain('hljs')
+    expect(html).toContain('data-code-copy')
+    expect(html).toContain('>Python<')
+  })
+
+  it('highlights the shared language registry, including LaTeX', () => {
+    const latex = renderMarkdown('```tex\n\\frac{1}{2}\n```')
+
+    expect(latex).toContain('class="language-latex"')
+    expect(latex).toContain('>LaTeX<')
+    expect(renderMarkdown('```scss\n$x: 1;\n```')).toContain('class="language-scss"')
+    expect(renderMarkdown('```graphql\n{ me { id } }\n```')).toContain('class="language-graphql"')
   })
 
   it('turns a link into something safe to click', () => {
