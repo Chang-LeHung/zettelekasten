@@ -91,7 +91,7 @@ it('moves and resizes the floating panel without covering the whole viewport', (
   // geometry is covered separately in Chrome. Exercise pointer transitions.
   expect(host.style.right).toBe('16px')
   const handle = shadow!.querySelector<HTMLElement>('[aria-label="Move Zettelekasten panel"]')!
-  const resize = shadow!.querySelector<HTMLElement>('[aria-label="Resize Zettelekasten panel"]')!
+  const corner = (label: string) => shadow!.querySelector<HTMLElement>(`[aria-label="Resize Zettelekasten panel from the ${label}"]`)!
   // jsdom does not implement layout or pointer capture; supply deterministic
   // geometry while exercising the exact production pointer handlers.
   vi.spyOn(host, 'getBoundingClientRect').mockReturnValue({
@@ -107,26 +107,30 @@ it('moves and resizes the floating panel without covering the whole viewport', (
   expect(host.style.left).toBe('240px')
   expect(host.style.top).toBe('130px')
   handle.dispatchEvent(pointer('pointerup', 580, 140))
-  resize.dispatchEvent(pointer('pointerdown', 780, 580))
-  resize.dispatchEvent(pointer('pointermove', 900, 640))
+  // All four corners resize through invisible zones: no handle chrome is left
+  // over the page, and only the cursor advertises the corner.
+  expect(shadow!.querySelectorAll('[aria-label^="Resize Zettelekasten panel"]')).toHaveLength(4)
+  expect(corner('bottom right').style.background).toBe('')
+  corner('bottom right').dispatchEvent(pointer('pointerdown', 780, 580))
+  corner('bottom right').dispatchEvent(pointer('pointermove', 900, 640))
   expect(host.style.width).toBe('540px')
   expect(host.style.height).toBe('560px')
   expect(host.style.left).toBe('360px')
-  resize.dispatchEvent(pointer('pointerup', 900, 640))
-  // A blank pointerdown inside the panel hands the move to the page. Panel
-  // coordinates are frame-relative, so the frame's offset must be applied.
-  const frame = shadow!.querySelector<HTMLIFrameElement>('iframe')!
-  const panelNonce = new URL(frame.src).searchParams.get('panelNonce')!
-  vi.spyOn(frame, 'getBoundingClientRect').mockReturnValue({
-    left: 361, top: 89, right: 781, bottom: 579, width: 420, height: 490,
-  } as DOMRect)
-  expect(send({ type: 'panel-drag-start', panelNonce: 'wrong', x: 100, y: 20 })).toBeUndefined()
-  expect(send({ type: 'panel-drag-start', panelNonce, x: 100, y: 20 })).toEqual({ ok: true })
-  expect(frame.style.pointerEvents).toBe('none')
-  document.dispatchEvent(pointer('pointermove', 341, 159))
-  expect(host.style.left).toBe('240px')
-  expect(host.style.top).toBe('130px')
-  document.dispatchEvent(pointer('pointerup', 341, 159))
-  expect(frame.style.pointerEvents).toBe('')
+  expect(host.style.top).toBe('80px')
+  corner('bottom right').dispatchEvent(pointer('pointerup', 900, 640))
+  // A top-left drag pins the opposite corner, and dragging past the minimum
+  // stops at the panel's CSS size instead of collapsing it.
+  corner('top left').dispatchEvent(pointer('pointerdown', 360, 80))
+  corner('top left').dispatchEvent(pointer('pointermove', 300, 40))
+  expect(host.style.left).toBe('300px')
+  expect(host.style.top).toBe('40px')
+  expect(host.style.width).toBe('480px')
+  expect(host.style.height).toBe('540px')
+  corner('top left').dispatchEvent(pointer('pointermove', 1000, 700))
+  expect(host.style.left).toBe('480px')
+  expect(host.style.top).toBe('220px')
+  expect(host.style.width).toBe('300px')
+  expect(host.style.height).toBe('360px')
+  corner('top left').dispatchEvent(pointer('pointerup', 1000, 700))
   attach.mockRestore()
 })

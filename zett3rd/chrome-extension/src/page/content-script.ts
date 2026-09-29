@@ -13,15 +13,13 @@ if (!scope.__zettDOMBridgeInstalled) {
   let panel: HTMLElement | undefined
   let panelNonce: string | undefined
   let panelTabId: number | undefined
-  let panelDrag: ((clientX: number, clientY: number) => void) | undefined
-  let cancelPanelDrag: (() => void) | undefined
   let lastUrl = location.href
   let pageTimer: ReturnType<typeof setInterval> | undefined
+  const MIN_PANEL_WIDTH = 300
+  const MIN_PANEL_HEIGHT = 360
+  const CORNER_SIZE = 16
 
   function removePanel(): void {
-    cancelPanelDrag?.()
-    cancelPanelDrag = undefined
-    panelDrag = undefined
     panel?.remove()
     panel = undefined
     panelNonce = undefined
@@ -36,7 +34,7 @@ if (!scope.__zettDOMBridgeInstalled) {
     const host = document.createElement('div')
     host.id = 'zettelekasten-panel-host'
     // Shadow DOM isolates the panel's chrome from the page's CSS/selectors.
-    host.style.cssText = 'position:fixed!important;top:3vh;right:16px;width:min(440px,calc(100vw - 32px));height:min(90vh,920px);min-width:min(300px,100vw);min-height:min(360px,100dvh);z-index:2147483647!important;'
+    host.style.cssText = `position:fixed!important;top:3vh;right:16px;width:min(440px,calc(100vw - 32px));height:min(90vh,920px);min-width:min(${MIN_PANEL_WIDTH}px,100vw);min-height:min(${MIN_PANEL_HEIGHT}px,100dvh);z-index:2147483647!important;`
     const shadow = host.attachShadow({ mode: 'closed' })
     const shell = document.createElement('div')
     shell.style.cssText = 'position:relative;display:flex;flex-direction:column;width:100%;height:100%;overflow:hidden;border:1px solid rgba(32,46,37,.12);border-radius:20px;background:#fff;box-shadow:0 22px 70px rgba(22,31,26,.16),0 3px 16px rgba(22,31,26,.06);'
@@ -48,19 +46,27 @@ if (!scope.__zettDOMBridgeInstalled) {
     const frame = document.createElement('iframe')
     frame.title = 'Zettelekasten'
     frame.style.cssText = 'display:block;flex:1;min-height:0;border:0;width:100%;background:white;'
-    const resize = document.createElement('div')
-    resize.setAttribute('role', 'button')
-    resize.setAttribute('aria-label', 'Resize Zettelekasten panel')
-    resize.title = 'Drag to resize'
-    resize.style.cssText = 'position:absolute;right:0;bottom:0;width:28px;height:28px;cursor:nwse-resize;touch-action:none;background:linear-gradient(135deg,transparent 67%,#c6d2ca 68%,#c6d2ca 72%,transparent 73%);'
+    // Every corner resizes; the zones stay invisible so no handle chrome sits
+    // over the page the panel is describing, and only the cursor reveals them.
+    const corners = (['nw', 'ne', 'sw', 'se'] as const).map(corner => {
+      const zone = document.createElement('div')
+      const westwards = corner === 'nw' || corner === 'sw'
+      const northwards = corner === 'nw' || corner === 'ne'
+      zone.setAttribute('role', 'button')
+      zone.setAttribute('aria-label', `Resize Zettelekasten panel from the ${corner === 'nw' ? 'top left' : corner === 'ne' ? 'top right' : corner === 'sw' ? 'bottom left' : 'bottom right'}`)
+      zone.title = 'Drag to resize'
+      zone.style.cssText = `position:absolute;${westwards ? 'left' : 'right'}:0;${northwards ? 'top' : 'bottom'}:0;width:${CORNER_SIZE}px;height:${CORNER_SIZE}px;cursor:${westwards === northwards ? 'nwse' : 'nesw'}-resize;touch-action:none;z-index:2;`
+      zone.addEventListener('pointerdown', event => drag(event, corner))
+      return zone
+    })
     const url = new URL(chrome.runtime.getURL('sidepanel.html'))
     url.searchParams.set('tabId', String(tabId))
     panelNonce = crypto.randomUUID()
     url.searchParams.set('panelNonce', panelNonce)
     frame.src = url.href
-    shell.append(handle, frame, resize)
+    shell.append(handle, frame, ...corners)
     shadow.append(shell)
-    function drag(event: PointerEvent, kind: 'move' | 'resize'): void {
+    function drag(event: PointerEvent, kind: 'move' | 'nw' | 'ne' | 'sw' | 'se'): void {
       if (event.button !== 0) return
       event.preventDefault()
       const start = host.getBoundingClientRect()
@@ -79,16 +85,25 @@ if (!scope.__zettDOMBridgeInstalled) {
           host.style.left = `${Math.max(0, Math.min(innerWidth - start.width, start.left + dx))}px`
           host.style.top = `${Math.max(0, Math.min(innerHeight - start.height, start.top + dy))}px`
           host.style.right = 'auto'
-        } else {
-          // Resize at the lower-right corner. The move strip remains available
-          // when the user needs to reposition a larger panel.
-          const width = Math.max(Math.min(300, innerWidth), Math.min(innerWidth - start.left, start.width + dx))
-          const height = Math.max(Math.min(320, innerHeight), Math.min(innerHeight - start.top, start.height + dy))
-          host.style.left = `${start.left}px`
-          host.style.right = 'auto'
-          host.style.width = `${width}px`
-          host.style.height = `${height}px`
+          return
         }
+        // Keep the opposite corner pinned while clamping to the viewport and
+        // to the panel's CSS minimum size.
+        const right = start.left + start.width
+        const bottom = start.top + start.height
+        const westwards = kind === 'nw' || kind === 'sw'
+        const northwards = kind === 'nw' || kind === 'ne'
+        const width = westwards
+          ? Math.max(Math.min(MIN_PANEL_WIDTH, innerWidth), Math.min(right, start.width - dx))
+          : Math.max(Math.min(MIN_PANEL_WIDTH, innerWidth), Math.min(innerWidth - start.left, start.width + dx))
+        const height = northwards
+          ? Math.max(Math.min(MIN_PANEL_HEIGHT, innerHeight), Math.min(bottom, start.height - dy))
+          : Math.max(Math.min(MIN_PANEL_HEIGHT, innerHeight), Math.min(innerHeight - start.top, start.height + dy))
+        host.style.left = `${westwards ? right - width : start.left}px`
+        host.style.top = `${northwards ? bottom - height : start.top}px`
+        host.style.right = 'auto'
+        host.style.width = `${width}px`
+        host.style.height = `${height}px`
       }
       const done = () => {
         frame.style.pointerEvents = ''
@@ -101,60 +116,7 @@ if (!scope.__zettDOMBridgeInstalled) {
       target.addEventListener('pointercancel', done)
     }
     handle.addEventListener('pointerdown', event => drag(event, 'move'))
-    resize.addEventListener('pointerdown', event => drag(event, 'resize'))
 
-    let activeDrag: (() => void) | undefined
-
-    function finishPanelDrag(): void {
-      const cleanup = activeDrag
-      if (!cleanup) return
-      activeDrag = undefined
-      cleanup()
-    }
-
-    /** A blank pointerdown inside the panel adopts the gesture on the page.
-     * The iframe disables its own hit testing so the document keeps receiving
-     * moves even when the pointer crosses the panel, and the first move only
-     * counts once it passes a small threshold, so a click stays a click. */
-    function startPanelDrag(clientX: number, clientY: number): void {
-      finishPanelDrag()
-      const start = host.getBoundingClientRect()
-      // The panel reports coordinates inside its own viewport; the frame's
-      // position turns them back into page coordinates.
-      const frameRect = frame.getBoundingClientRect()
-      const originX = frameRect.left + clientX
-      const originY = frameRect.top + clientY
-      const grabX = originX - start.left
-      const grabY = originY - start.top
-      let moved = false
-      const move = (next: PointerEvent) => {
-        if (!moved) {
-          if (Math.abs(next.clientX - originX) < 3 && Math.abs(next.clientY - originY) < 3) return
-          moved = true
-        }
-        next.preventDefault()
-        host.style.left = `${Math.max(0, Math.min(innerWidth - start.width, next.clientX - grabX))}px`
-        host.style.top = `${Math.max(0, Math.min(innerHeight - start.height, next.clientY - grabY))}px`
-        host.style.right = 'auto'
-      }
-      activeDrag = () => {
-        frame.style.pointerEvents = ''
-        document.documentElement.style.cursor = ''
-        document.removeEventListener('pointermove', move, true)
-        document.removeEventListener('pointerup', finishPanelDrag, true)
-        document.removeEventListener('pointercancel', finishPanelDrag, true)
-        window.removeEventListener('blur', finishPanelDrag, true)
-      }
-      frame.style.pointerEvents = 'none'
-      document.documentElement.style.cursor = 'grabbing'
-      document.addEventListener('pointermove', move, { capture: true, passive: false })
-      document.addEventListener('pointerup', finishPanelDrag, true)
-      document.addEventListener('pointercancel', finishPanelDrag, true)
-      window.addEventListener('blur', finishPanelDrag, true)
-    }
-
-    panelDrag = startPanelDrag
-    cancelPanelDrag = finishPanelDrag
     ;(document.documentElement ?? document.body).append(host)
     panel = host
     panelTabId = tabId
@@ -194,14 +156,7 @@ if (!scope.__zettDOMBridgeInstalled) {
       respond({ ok: true })
       return
     }
-    if (message.type === 'panel-drag-start' && panel && panelDrag && message.panelNonce === panelNonce
-      && sender.url?.startsWith(chrome.runtime.getURL('sidepanel.html'))
-      && Number.isFinite(message.x) && Number.isFinite(message.y)) {
-      panelDrag(Number(message.x), Number(message.y))
-      respond({ ok: true })
-      return
-    }
-    if (message.type === 'close-panel' || message.type === 'panel-hello' || message.type === 'panel-drag-start') return
+    if (message.type === 'close-panel' || message.type === 'panel-hello') return
     if (!sender.url?.startsWith(chrome.runtime.getURL('sidepanel.html'))) return
     if (typeof message.nonce !== 'string' || !/^[a-f0-9-]{36}$/.test(message.nonce)) return
     try {
