@@ -3,6 +3,7 @@ backend/__pycache__/
 **/__pycache__/
 *.py[cod]
 frontend/node_modules/
+zett3rd/chrome-extension/node_modules/
 frontend/dist/
 dist/
 backend/zett/static/

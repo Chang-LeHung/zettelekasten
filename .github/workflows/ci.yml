@@ -90,7 +90,9 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: |
+            frontend/package-lock.json
+            zett3rd/chrome-extension/package-lock.json
 
       - name: Install dependencies
         run: npm ci --prefix frontend
@@ -103,3 +105,17 @@ jobs:
 
       - name: Build
         run: npm --prefix frontend run build
+
+      # The side panel ships beside Zett rather than inside it, and loads the
+      # built directory, so its own project is installed, checked, and built here.
+      - name: Install side-panel dependencies
+        run: npm ci --prefix zett3rd/chrome-extension
+
+      - name: Test the Chrome side panel
+        run: npm --prefix zett3rd/chrome-extension run test
+
+      - name: Typecheck the Chrome side panel
+        run: npm --prefix zett3rd/chrome-extension run typecheck
+
+      - name: Build the Chrome side panel
+        run: npm --prefix zett3rd/chrome-extension run build
