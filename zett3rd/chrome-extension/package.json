@@ -1,0 +1,29 @@
+{
+  "name": "zettelekasten-side-panel",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Embedded per-page Chrome conversation for the local Zett server",
+  "scripts": {
+    "build": "vite build && vite build --config vite.content.config.ts",
+    "typecheck": "vue-tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "dompurify": "^3.4.16",
+    "highlight.js": "^11.12.0",
+    "markdown-it": "^15.0.2",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.3.0",
+    "@types/markdown-it": "^14.2.0",
+    "@types/node": "^24.3.0",
+    "@vitejs/plugin-vue": "^6.0.1",
+    "jsdom": "^29.1.1",
+    "typescript": "~5.8.2",
+    "vite": "^8.0.0",
+    "vitest": "^3.2.7",
+    "vue-tsc": "~2.2.10"
+  }
+}
