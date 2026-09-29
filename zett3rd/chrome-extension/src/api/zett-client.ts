@@ -7,7 +7,13 @@
  */
 
 import { parseSseChunk } from './sse'
-import type { AgentTimelineEntry, AgentModelUsage, AgentContextComposition } from '../../../../frontend/src/api/types'
+import type {
+  AgentContextComposition,
+  AgentCustomEvent,
+  AgentModelUsage,
+  AgentSteeringMessage,
+  AgentTimelineEntry,
+} from '../../../../frontend/src/api/types'
 import type { AgentPersistedMessage } from '../../../../frontend/src/api/types'
 import { asContextComposition } from '../../../../frontend/src/utils/contextComposition'
 import type {
@@ -42,6 +48,8 @@ export interface StreamTurnOptions {
   onEvent?: (entry: AgentTimelineEntry) => void
   onUsage?: (usage: AgentModelUsage) => void
   onComposition?: (composition: AgentContextComposition) => void
+  onSteering?: (message: AgentSteeringMessage) => void
+  onCustom?: (event: AgentCustomEvent) => void
   browserToken?: string
   signal?: AbortSignal
 }
@@ -72,8 +80,28 @@ export class ZettClient {
     return await this.request<HealthResponse>('/api/health')
   }
 
-  async runtimeSettings(): Promise<{ compaction_max_tokens: number }> {
+  async runtimeSettings(): Promise<{ compaction_max_tokens: number; max_message_images: number }> {
     return await this.request('/api/settings')
+  }
+
+  /** Inject one urgent message into the turn that is already running. */
+  async steerAgent(conversationId: string, rawContent: string): Promise<{ accepted: boolean }> {
+    return await this.request(`/api/agent/${encodeURIComponent(conversationId)}/steer`, {
+      method: 'POST',
+      body: JSON.stringify({ raw_content: rawContent, parts: [] }),
+    })
+  }
+
+  /** Answer one extension request, such as an Agent question or an approval. */
+  async emitAgentEvent(
+    conversationId: string,
+    name: string,
+    payload: Record<string, unknown>,
+  ): Promise<{ accepted: boolean }> {
+    return await this.request(`/api/agent/${encodeURIComponent(conversationId)}/events`, {
+      method: 'POST',
+      body: JSON.stringify({ name, payload }),
+    })
   }
 
   browserSocketUrl(sessionId: string): string {
@@ -160,14 +188,26 @@ export class ZettClient {
               options.onUsage?.(Object.fromEntries(keys.map(key => [key, usage[key]])) as unknown as AgentModelUsage)
             }
           }
-          if (event === 'custom' && payload.name === 'context_composition') {
-            const composition = asContextComposition(asRecord(payload.payload))
-            if (composition) options.onComposition?.(composition)
+          if (event === 'custom') {
+            if (payload.name === 'context_composition') {
+              const composition = asContextComposition(asRecord(payload.payload))
+              if (composition) options.onComposition?.(composition)
+            }
+            options.onCustom?.({ name: String(payload.name || ''), payload: asRecord(payload.payload) })
           }
           if (event === 'text_delta' && typeof payload.delta === 'string') {
             answer += payload.delta
             onDelta?.(payload.delta)
             onEvent?.({ id: `message-${++sequence}`, type: 'message', content: payload.delta })
+          }
+          if (event === 'steering_started') {
+            const steering = asRecord(payload.steering_message)
+            if (typeof steering.text === 'string') {
+              options.onSteering?.({
+                content: steering.text,
+                parts: Array.isArray(steering.parts) ? steering.parts as AgentSteeringMessage['parts'] : [],
+              })
+            }
           }
           if (event === 'reasoning_delta' && typeof payload.delta === 'string') {
             onEvent?.({ id: `reasoning-${++sequence}`, type: 'reasoning', content: payload.delta })

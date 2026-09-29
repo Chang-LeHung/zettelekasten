@@ -89,6 +89,8 @@ export interface TranscriptEntry {
   id: number
   role: 'user' | 'assistant' | 'artifact'
   text: string
+  /** Set on a steering message: waiting for the run to answer it, or answered. */
+  steering?: 'waiting' | 'responded'
   pending?: boolean
   stopped?: boolean
   timeline?: AgentTimelineEntry[]

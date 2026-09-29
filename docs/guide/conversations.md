@@ -127,12 +127,21 @@ streams, the chat follows the newest output. `fill` also supports
 nested paragraphs), using the browser's text-editing path; it does not submit
 the prompt or overwrite HTML.
 
-While the extension is generating, the Send button becomes **Stop**. It cancels
-the current turn and pending webpage approvals while preserving partial output
-and your next-message draft. Send another message to continue the conversation;
-Stop is cancellation, not suspension of an executing tool. Edits already applied
-to a page are not undone, and page control must be explicitly reconnected after
-Stop.
+While the extension is generating, the Send button becomes **Stop**. Enter
+queues a follow-up above the composer instead: **Steer** injects it into the
+running turn — the thread shows it and marks it until the run answers — and
+**×** drops it, while whatever stays queued is sent one by one as the next
+turns. Stop cancels the current turn, drops the queue and clears pending
+webpage approvals while preserving partial output and your next-message draft;
+Stop is cancellation, not suspension of an executing tool. Edits already
+applied to a page are not undone, and page control must be explicitly
+reconnected after Stop.
+
+When the Agent asks a question (`ask_user`), the turn suspends until the panel
+answers it: the card offers the question's options, an **Other** text field and
+image attachments, and **Continue** resumes the run with that answer. Further
+questions wait behind the current one, and only **Stop** ends the run without
+an answer.
 
 ### Application tools
 
