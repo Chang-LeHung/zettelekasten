@@ -119,8 +119,11 @@ Ordinary web conversations do not receive these browser tools.
 The webpage panel is a movable, resizable floating window rather than a
 full-height overlay: drag its top strip to reposition it, or any corner to
 resize it. Its pickers and `•••` menu close as soon as the pointer leaves the
-trigger or the menu. The composer keeps model and effort visible; the menu
-holds browser connection, Save all and token statistics. When a page
+trigger or the menu, and hovering `•••` shows it. The composer keeps model and
+effort visible; the menu holds browser connection, Save all and token
+statistics (cache, tokens, generation speed, and the context share of the
+compaction threshold). Answers render with the web thread's Markdown, including
+the same fenced-code toolbar, copy button and language set. When a page
 conversation is restored or an answer
 streams, the chat follows the newest output. `fill` also supports
 `contenteditable="true"` editors (including ProseMirror-style editors with

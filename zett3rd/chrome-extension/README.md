@@ -51,7 +51,7 @@ the server address you configured, and only when you send a message.
 | --- | --- |
 | Page context | Reads the page that owns this panel (bounded to 20 000 characters). Each tab and URL has its own conversation; navigating to a new page switches to that page's conversation, and returning restores its previous chat. |
 | Composer picks | Compact connection/model and thinking controls stay under the input. Both choices stick across turns, and their menus close as soon as the pointer leaves the trigger or the menu. |
-| More options | The `•••` button holds connection retry/disconnect, Save all and usage metrics (cache, tokens, context percentage), leaving the composer uncluttered. Hovering or clicking it shows the menu, and leaving the trigger or the menu closes it. |
+| More options | The `•••` button holds connection retry/disconnect, Save all and usage metrics (cache, tokens, generation speed in tok/s, context percentage), leaving the composer uncluttered. Hovering or clicking it shows the menu, and leaving the trigger or the menu closes it. |
 | **Send** | Enter sends and clears the input immediately; Shift + Enter starts a new line. While a turn is running, Enter queues the message above the composer instead of interrupting it. The answer streams in and renders as Markdown. When the browser bridge is connected, the Agent can read the page through `get_browser_page`; otherwise a bounded page excerpt accompanies the message. |
 | **Queued follow-ups** | Messages queued during a run list above the composer. **Steer** injects one into the running turn now — the thread shows it and marks it until the run answers — while **×** drops it. Anything left queued is sent one by one as the next turns when the current one ends. |
 | **Agent question** | When the Agent calls `ask_user`, the run suspends until the panel answers it. The card shows the question, its options (one or several), an **Other** text field and image attachments; **Continue** posts the matching `ask_user_response`, and further questions wait their turn. Only Stop ends the run without an answer. |
@@ -90,10 +90,13 @@ agent knows which one it is writing to.
 | `POST /api/agent/{id}/artifacts/{artifact_id}/save` | Publish one artifact's pending draft: the card's **Save**, and each of **Save all** |
 | `WS /api/agent/{id}/browser` | Ephemeral session-bound browser commands and results |
 
-Answers are rendered with the same pieces the app uses — `markdown-it`,
-`highlight.js` for fenced code — and the result is sanitized with DOMPurify
-before it touches the DOM: a model answer is untrusted text, and this page holds
-`chrome.*` APIs.
+Answers are rendered with the same pieces the app uses — `markdown-it`, and one
+shared `highlight.js` registry (`frontend/src/utils/markdownCode.ts`) — and the
+result is sanitized with DOMPurify before it touches the DOM: a model answer is
+untrusted text, and this page holds `chrome.*` APIs. A fenced block therefore
+looks and names itself exactly like the web thread: the language toolbar, the
+copy button, and the same language set, including LaTeX/TeX, GraphQL, SCSS,
+Dart, R, Scala, Objective-C, Perl, Nginx, Less and plain text.
 
 The panel imports presentation components and timeline types from `frontend/src`;
 they are bundled into the extension, not fetched from the running web app. Both
