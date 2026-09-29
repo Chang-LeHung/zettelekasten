@@ -62,7 +62,7 @@ the server address you configured, and only when you send a message.
 | **New chat** | Starts a fresh conversation for this page only, leaving the conversations of other tabs and pages unchanged. |
 | Floating panel | Starts at 520px wide and up to 90% of the viewport height. Drag the top strip to move it; drag any corner to resize it. Invisible corner zones keep the page's own content unobstructed. |
 | Page connection | Connects automatically when the page's conversation opens. **Disconnect page** turns off browser tools for this panel; **Connect page** retries a failed or deliberately disconnected connection. |
-| **Allow once / Reject** | Reviews each DOM edit's selector, action and value before applying it. No model-authored code executes. |
+| **Allow once / Always allow in this session / Reject** | Reviews each DOM edit's selector, action and value before applying it. **Always allow** approves this edit and stops asking for the rest of the conversation; **Ask before page edits again** in the `•••` menu turns that back on. No model-authored code executes. |
 
 The server address and each tab/URL-to-session mapping persist in
 `chrome.storage.local`; the panel loads messages from the server when reopened.

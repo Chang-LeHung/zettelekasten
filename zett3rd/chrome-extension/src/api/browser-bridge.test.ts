@@ -66,6 +66,15 @@ it('denial returns an error without touching the page', async () => {
   expect(socket.sent).toContainEqual(expect.objectContaining({ id: command.id, ok: false }))
 })
 
+it('applies page edits without consent once the session always allows them', async () => {
+  bridge.autoApprove = true
+  socket.emit(command)
+  await flush()
+  expect(consent).toBeNull()
+  expect(execute).toHaveBeenCalledTimes(1)
+  expect(socket.sent).toContainEqual({ type: 'result', id: command.id, ok: true, result: '1' })
+})
+
 it('a disconnect cancels consent and prevents stale approval execution', async () => {
   socket.emit(command)
   const old = consent!

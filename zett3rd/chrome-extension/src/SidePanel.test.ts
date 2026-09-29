@@ -360,6 +360,24 @@ it('restores the context pie for a conversation the panel reopens', async () => 
   expect(host.querySelector('.usage-context .context-popover')?.textContent).toContain('35.0%')
 })
 
+it('keeps an always-allow page-edit choice per conversation and can revoke it', async () => {
+  stored['browserApproval:test-session-1'] = true
+  const host = await mount()
+  host.querySelector<HTMLButtonElement>('.more-trigger')!.click()
+  await nextTick()
+  const revoke = [...host.querySelectorAll<HTMLButtonElement>('.more-popover button')]
+    .find(button => button.textContent?.includes('Ask before page edits again'))
+  expect(revoke).not.toBeUndefined()
+  revoke!.click()
+  await flush()
+  expect(vi.mocked(chrome.storage.local.remove)).toHaveBeenCalledWith('browserApproval:test-session-1')
+  expect(stored['browserApproval:test-session-1']).toBeUndefined()
+  expect(host.textContent).toContain('Page edits will ask for review again.')
+  host.querySelector<HTMLButtonElement>('.more-trigger')!.click()
+  await nextTick()
+  expect(host.textContent).not.toContain('Ask before page edits again')
+})
+
 it('removes the page bar, retains automatic page context, and clears on Enter before the response', async () => {
   const host = await mount()
   expect(host.querySelector('.page-strip')).toBeNull()

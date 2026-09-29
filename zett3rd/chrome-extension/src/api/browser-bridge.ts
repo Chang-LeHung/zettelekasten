@@ -20,6 +20,8 @@ export class BrowserBridgeClient {
   private generation = 0
   token?: string
   tabId?: number
+  /** Set while the panel's session-level "always allow page edits" choice is on. */
+  autoApprove = false
 
   constructor(private onConsent: (consent: BrowserConsent | null) => void, private onClose: (reason: string) => void) {}
 
@@ -94,7 +96,7 @@ export class BrowserBridgeClient {
     this.seen.add(command.id)
     this.activeId = command.id
     try {
-      if (command.operation !== 'snapshot') {
+      if (command.operation !== 'snapshot' && !this.autoApprove) {
         const approved = await new Promise<boolean>(resolve => {
           this.consent = resolve
           this.consentTimer = setTimeout(() => resolve(false), 90000)
