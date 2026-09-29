@@ -91,12 +91,14 @@ it('still forwards artifact receipts for the Save cards', async () => {
 it('reads real usage/composition counters and sends a browser capability only when supplied', async () => {
   const usage = { input_tokens: 100, output_tokens: 10, cache_read_tokens: 75, cache_write_tokens: 0, reasoning_tokens: 2 }
   const composition = { system_prompt: .2, tool_prompt: .2, tool_output: .2, user: .2, assistant: .2 }
-  mockStream([['model_completed', { usage }], ['custom', { name: 'context_composition', payload: composition }]])
+  mockStream([['model_started', {}], ['model_completed', { usage }], ['custom', { name: 'context_composition', payload: composition }]])
   const onUsage = vi.fn()
   const onComposition = vi.fn()
-  await new ZettClient().streamTurn({ ...request, browserToken: 't'.repeat(43), onUsage, onComposition })
+  const onModelStarted = vi.fn()
+  await new ZettClient().streamTurn({ ...request, browserToken: 't'.repeat(43), onUsage, onComposition, onModelStarted })
   expect(onUsage).toHaveBeenCalledWith(usage)
   expect(onComposition).toHaveBeenCalledWith(composition)
+  expect(onModelStarted).toHaveBeenCalledTimes(1)
   expect(JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string).browser_token).toBe('t'.repeat(43))
 })
 

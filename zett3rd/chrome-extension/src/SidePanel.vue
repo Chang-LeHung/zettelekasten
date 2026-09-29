@@ -100,7 +100,15 @@ const browserBridge = new BrowserBridgeClient(
 )
 const usage = computed(() => summarizeAgentUsage(transcript.value
   .filter(entry => entry.role === 'assistant')
-  .map(entry => ({ role: 'assistant', content: '', usage: entry.usage }))))
+  .map(entry => ({
+    role: 'assistant',
+    content: '',
+    usage: entry.usage,
+    generation_duration_ms: entry.generationDurationMs,
+  }))))
+
+/** When the provider started answering; the usage event closes the window. */
+let generationStartedAt = 0
 const clock = ref(Date.now())
 let clockTimer: ReturnType<typeof setInterval> | undefined
 const savingIds = ref<string[]>([])
@@ -718,8 +726,15 @@ async function sendTurn(text: string): Promise<void> {
         if (controller.signal.aborted) return
         currentUsage.value = next
         const entry = activeEntry()
-        if (entry) updateEntry(entry.id, { usage: addAgentUsage(entry.usage ?? null, next) })
+        if (entry) {
+          updateEntry(entry.id, {
+            usage: addAgentUsage(entry.usage ?? null, next),
+            generationDurationMs: (entry.generationDurationMs ?? 0) + (generationStartedAt ? performance.now() - generationStartedAt : 0),
+          })
+        }
+        generationStartedAt = 0
       },
+      onModelStarted: () => { generationStartedAt = performance.now() },
       onComposition: (composition) => {
         if (!controller.signal.aborted) contextComposition.value = composition
       },
@@ -1090,6 +1105,7 @@ watch([selectedProviderId, effort], () => {
           <div v-if="usage" class="usage-details">
             <span>Cache <strong>{{ usage.cache_hit_rate === null ? '—' : `${(usage.cache_hit_rate * 100).toFixed(1)}%` }}</strong></span>
             <span>Tokens <strong>{{ formatTokenCount(usage.input_tokens + usage.output_tokens) }}</strong></span>
+            <span title="Output tokens per second of model generation">Speed <strong>{{ usage.tokens_per_second === null ? '—' : `${usage.tokens_per_second.toFixed(1)} tok/s` }}</strong></span>
             <span v-if="currentUsage && compactionMaxTokens > 0">Context <strong>{{ Math.round((currentUsage.input_tokens + currentUsage.output_tokens) / compactionMaxTokens * 100) }}%</strong></span>
           </div>
           <button v-if="!browserConnected" type="button" :disabled="browserConnecting || !conversationId" @click="connectBrowser(); moreOpen = false">{{ browserConnecting ? 'Connecting…' : 'Connect page' }}</button>

@@ -287,6 +287,20 @@ it('drops a pending ask_user question when the turn is stopped', async () => {
   await flush()
 })
 
+it('reports generation speed from the timed model step', async () => {
+  const host = await mount()
+  await send(host)
+  vi.spyOn(performance, 'now').mockReturnValueOnce(1_000).mockReturnValueOnce(3_000)
+  options.onModelStarted?.()
+  options.onUsage?.({ input_tokens: 100, output_tokens: 40, cache_read_tokens: 0, cache_write_tokens: 0, reasoning_tokens: 0 })
+  await nextTick()
+  host.querySelector<HTMLButtonElement>('.more-trigger')!.click()
+  await nextTick()
+  expect(host.querySelector('.usage-details')?.textContent).toContain('Speed 20.0 tok/s')
+  finish('')
+  await flush()
+})
+
 it('removes the page bar, retains automatic page context, and clears on Enter before the response', async () => {
   const host = await mount()
   expect(host.querySelector('.page-strip')).toBeNull()
