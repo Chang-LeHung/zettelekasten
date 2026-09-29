@@ -50,7 +50,9 @@ export function turnTask(timeline: readonly AgentTimelineEntry[]): string {
     && (entry.activity.state === 'started' || entry.activity.state === 'streaming'),
   )
   if (active?.type === 'tool' || active?.type === 'server_tool') return `Using ${active.activity.name.replaceAll('_', ' ')}`
-  return timeline.at(-1)?.type === 'message' ? 'Writing the response' : 'Thinking through your request'
+  const last = timeline.at(-1)
+  if (last?.type === 'compaction' && last.activity.state !== 'completed') return 'Organizing conversation context'
+  return last?.type === 'message' ? 'Writing the response' : 'Thinking through your request'
 }
 
 /** Keep interrupted tools inspectable, but do not leave their status running. */

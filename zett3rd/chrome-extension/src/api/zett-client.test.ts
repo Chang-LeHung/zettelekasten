@@ -100,6 +100,49 @@ it('reads real usage/composition counters and sends a browser capability only wh
   expect(JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string).browser_token).toBe('t'.repeat(43))
 })
 
+it('delivers steering echoes and posts steering through the urgent endpoint', async () => {
+  mockStream([['steering_started', {
+    steering_message: { text: 'Use the short version', parts: [{ type: 'text', text: 'Use the short version' }] },
+  }]])
+  const onSteering = vi.fn()
+  await new ZettClient().streamTurn({ ...request, onSteering })
+  expect(onSteering).toHaveBeenCalledWith({
+    content: 'Use the short version',
+    parts: [{ type: 'text', text: 'Use the short version' }],
+  })
+
+  vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ accepted: true, accepted_by: 's' })))
+  await new ZettClient().steerAgent('session-id', 'Use the short version')
+  const [url, init] = vi.mocked(fetch).mock.calls.at(-1)!
+  expect(String(url)).toContain('/api/agent/session-id/steer')
+  expect(init?.method).toBe('POST')
+  expect(JSON.parse(init?.body as string)).toEqual({ raw_content: 'Use the short version', parts: [] })
+})
+
+it('forwards ask_user custom events and posts the answer as an extension event', async () => {
+  const ask = {
+    tool_call_id: 'call-7',
+    question: 'Which reply should I post?',
+    options: ['Short', 'Long'],
+    allow_multiple: false,
+    response_event: 'ask_user_response',
+  }
+  mockStream([['custom', { name: 'ask_user', payload: ask }]])
+  const onCustom = vi.fn()
+  await new ZettClient().streamTurn({ ...request, onCustom })
+  expect(onCustom).toHaveBeenCalledWith({ name: 'ask_user', payload: ask })
+
+  vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ accepted: true, accepted_by: 's' })))
+  await new ZettClient().emitAgentEvent('session-id', 'ask_user_response', { tool_call_id: 'call-7', answer: 'Short' })
+  const [url, init] = vi.mocked(fetch).mock.calls.at(-1)!
+  expect(String(url)).toContain('/api/agent/session-id/events')
+  expect(init?.method).toBe('POST')
+  expect(JSON.parse(init?.body as string)).toEqual({
+    name: 'ask_user_response',
+    payload: { tool_call_id: 'call-7', answer: 'Short' },
+  })
+})
+
 it('aborts the actual response reader and preserves only deltas received before Stop', async () => {
   const controller = new AbortController()
   let streamController: ReadableStreamDefaultController<Uint8Array>

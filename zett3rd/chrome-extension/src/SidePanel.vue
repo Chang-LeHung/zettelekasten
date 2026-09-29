@@ -19,8 +19,9 @@ import { ARTIFACT_TOOLS, type AgentArtifact, type ArtifactReceipt, type Provider
 import MarkdownBody from './chat/MarkdownBody.vue'
 import AgentExecution from '../../../frontend/src/components/AgentExecution.vue'
 import CacheHitRate from '../../../frontend/src/components/CacheHitRate.vue'
-import type { AgentContextComposition, AgentModelUsage } from '../../../frontend/src/api/types'
+import type { AgentContextComposition, AgentCustomEvent, AgentModelUsage } from '../../../frontend/src/api/types'
 import { addAgentUsage, formatTokenCount, summarizeAgentUsage } from '../../../frontend/src/utils/agentUsage'
+import { buildMessageParts, readMessageImage, type PositionedMessageImage } from '../../../frontend/src/utils/messageParts'
 import { BrowserBridgeClient, type BrowserConsent } from './api/browser-bridge'
 import { formatTurnDuration, splitTurnTimeline } from '../../../frontend/src/utils/conversationTurns'
 import { settleTimeline, turnTask, updateTimeline } from './chat/timeline'
@@ -58,6 +59,31 @@ const page = ref<Awaited<ReturnType<typeof readActivePage>> | null>(null)
 const transcript = ref<TranscriptEntry[]>([])
 const thread = ref<HTMLElement | null>(null)
 const composer = ref<HTMLFormElement | null>(null)
+interface QueuedFollowUp { id: number; text: string }
+/** One `ask_user` request the run is suspended on until the panel answers it. */
+interface AskUserQuestion {
+  toolCallId: string
+  question: string
+  options: string[]
+  allowMultiple: boolean
+  responseEvent: string
+}
+const queuedFollowUps = ref<QueuedFollowUp[]>([])
+const steeringQueuedId = ref<number | null>(null)
+const pendingQuestion = ref<AskUserQuestion | null>(null)
+const queuedQuestions = ref<AskUserQuestion[]>([])
+const askAnswer = ref('')
+const askImages = ref<PositionedMessageImage[]>([])
+const selectedAskOptions = ref<string[]>([])
+const answeringQuestion = ref(false)
+const askImageInput = ref<HTMLInputElement | null>(null)
+const maxMessageImages = ref(1)
+let nextQueuedFollowUpId = 0
+/** The assistant entry the stream is currently writing into; steering closes it. */
+let activeAnswerId: number | null = null
+/** Steering texts whose streamed echo has not arrived yet. */
+const pendingSteeringTexts: string[] = []
+let steeringResponseStarted = false
 const prompt = ref('')
 const busy = ref(false)
 const stopping = ref(false)
@@ -170,6 +196,10 @@ function closePanel(): void {
 function stopGeneration(): void {
   if (!busy.value || stopping.value) return
   stopping.value = true
+  // Stop discards what has not been injected yet, like the web composer.
+  queuedFollowUps.value = []
+  pendingSteeringTexts.length = 0
+  clearQuestions()
   // Like the web composer, abort the HTTP stream so the backend unwinds the
   // active Agent request. Revoke the browser peer too: pending DOM consent
   // must not remain executable after Stop, even if the SSE disconnect is late.
@@ -191,6 +221,10 @@ function followOutput(): void {
 
 function updateEntry(id: number, changes: Partial<TranscriptEntry>): void {
   transcript.value = transcript.value.map((entry) => (entry.id === id ? { ...entry, ...changes } : entry))
+}
+
+function activeEntry(): TranscriptEntry | undefined {
+  return activeAnswerId === null ? undefined : transcript.value.find(entry => entry.id === activeAnswerId)
 }
 
 watch(transcript, followOutput, { deep: true })
@@ -276,6 +310,9 @@ async function connect(): Promise<void> {
     if (Number.isFinite(settings.compaction_max_tokens) && settings.compaction_max_tokens > 0) {
       compactionMaxTokens.value = settings.compaction_max_tokens
     }
+    if (Number.isFinite(settings.max_message_images) && settings.max_message_images > 0) {
+      maxMessageImages.value = settings.max_message_images
+    }
   } catch (error) {
     notify((error as Error).message, 'error')
   }
@@ -302,6 +339,11 @@ async function openPage(): Promise<void> {
   pageIdentity.value = nextKey
   conversationId.value = null
   transcript.value = []
+  queuedFollowUps.value = []
+  pendingSteeringTexts.length = 0
+  activeAnswerId = null
+  steeringResponseStarted = false
+  clearQuestions()
   prompt.value = ''
   currentUsage.value = null
   contextComposition.value = null
@@ -346,6 +388,11 @@ async function saveSettings(): Promise<void> {
   pageIdentity.value = null
   conversationId.value = null
   transcript.value = []
+  queuedFollowUps.value = []
+  pendingSteeringTexts.length = 0
+  activeAnswerId = null
+  steeringResponseStarted = false
+  clearQuestions()
   currentUsage.value = null
   contextComposition.value = null
   compactionMaxTokens.value = 0
@@ -369,6 +416,11 @@ async function newChat(): Promise<void> {
     await disconnectBrowser()
     await startConversation()
     transcript.value = []
+    queuedFollowUps.value = []
+    pendingSteeringTexts.length = 0
+    activeAnswerId = null
+    steeringResponseStarted = false
+    clearQuestions()
     currentUsage.value = null
     contextComposition.value = null
     entryId = 0
@@ -406,9 +458,224 @@ function onTool(outcome: ToolOutcome): void {
   }
 }
 
+/** Enter queues while a turn runs and starts the next turn otherwise, exactly
+ * like the web conversation's composer. */
 async function send(): Promise<void> {
   const text = prompt.value.trim()
-  if (!text || busy.value) return
+  if (!text) return
+  if (busy.value) {
+    queueFollowUp(text)
+    return
+  }
+  await sendTurn(text)
+}
+
+function queueFollowUp(text: string): void {
+  queuedFollowUps.value = [...queuedFollowUps.value, { id: nextQueuedFollowUpId++, text }]
+  prompt.value = ''
+}
+
+function removeQueuedFollowUp(id: number): void {
+  queuedFollowUps.value = queuedFollowUps.value.filter(item => item.id !== id)
+}
+
+function drainQueuedFollowUps(): void {
+  if (busy.value || !queuedFollowUps.value.length) return
+  const [next, ...remaining] = queuedFollowUps.value
+  queuedFollowUps.value = remaining
+  if (next) void sendTurn(next.text)
+}
+
+/** Steering is published as its own user message, so close the answer that was
+ * streaming and let the continuation land after the injected prompt. */
+function checkpointAnswerForSteering(): void {
+  const id = activeAnswerId
+  if (id === null) return
+  const entry = transcript.value.find(item => item.id === id)
+  if (!entry) return
+  updateEntry(id, {
+    timeline: settleTimeline(entry.timeline ?? []),
+    pending: false,
+    durationMs: Date.now() - (entry.startedAt ?? Date.now()),
+  })
+  activeAnswerId = null
+}
+
+function appendSteeringMessage(text: string): void {
+  checkpointAnswerForSteering()
+  appendEntry('user', text, { steering: 'waiting' })
+  activeAnswerId = appendEntry('assistant', '', { pending: true, timeline: [], startedAt: Date.now() }).id
+}
+
+function settleSteeringMessages(): void {
+  transcript.value = transcript.value.map(entry => (
+    entry.steering === 'waiting' ? { ...entry, steering: 'responded' as const } : entry
+  ))
+}
+
+/** The runtime echoes an injected steering message; a steer sent from another
+ * client reaches the panel only here. */
+function applyStreamedSteering(text: string): void {
+  const index = pendingSteeringTexts.indexOf(text)
+  if (index >= 0) pendingSteeringTexts.splice(index, 1)
+  else appendSteeringMessage(text)
+  steeringResponseStarted = true
+}
+
+async function steerQueuedFollowUp(item: QueuedFollowUp): Promise<void> {
+  if (!conversationId.value || !busy.value || steeringQueuedId.value !== null) return
+  steeringQueuedId.value = item.id
+  try {
+    const result = await client.value.steerAgent(conversationId.value, item.text)
+    if (!result.accepted) {
+      notify('The agent is not accepting steering right now', 'error')
+      return
+    }
+    pendingSteeringTexts.push(item.text)
+    appendSteeringMessage(item.text)
+    queuedFollowUps.value = queuedFollowUps.value.filter(queued => queued.id !== item.id)
+  } catch (error) {
+    notify((error as Error).message, 'error')
+  } finally {
+    if (steeringQueuedId.value === item.id) steeringQueuedId.value = null
+  }
+}
+
+function askOptionLetter(index: number): string {
+  return String.fromCharCode('A'.charCodeAt(0) + index)
+}
+
+function resetAskState(): void {
+  askAnswer.value = ''
+  askImages.value = []
+  selectedAskOptions.value = []
+}
+
+/** `ask_user` suspends the run until the matching response event arrives, so
+ * the panel must answer it or the turn never finishes. */
+function handleAskUserEvent(event: AgentCustomEvent): void {
+  if (event.name !== 'ask_user') return
+  const payload = event.payload
+  if (typeof payload.tool_call_id !== 'string' || typeof payload.question !== 'string') return
+  const question: AskUserQuestion = {
+    toolCallId: payload.tool_call_id,
+    question: payload.question,
+    options: Array.isArray(payload.options)
+      ? payload.options.filter((item): item is string => typeof item === 'string')
+      : [],
+    allowMultiple: payload.allow_multiple === true,
+    responseEvent: typeof payload.response_event === 'string' ? payload.response_event : 'ask_user_response',
+  }
+  if (pendingQuestion.value?.toolCallId === question.toolCallId) return
+  if (pendingQuestion.value) {
+    queuedQuestions.value.push(question)
+    return
+  }
+  pendingQuestion.value = question
+  resetAskState()
+}
+
+function showNextAskQuestion(): void {
+  pendingQuestion.value = queuedQuestions.value.shift() || null
+  resetAskState()
+}
+
+function toggleAskOption(option: string): void {
+  const question = pendingQuestion.value
+  if (!question) return
+  if (!question.allowMultiple) {
+    selectedAskOptions.value = [option]
+    askAnswer.value = ''
+    return
+  }
+  selectedAskOptions.value = selectedAskOptions.value.includes(option)
+    ? selectedAskOptions.value.filter(item => item !== option)
+    : [...selectedAskOptions.value, option]
+}
+
+function updateAskAnswer(value: string): void {
+  askAnswer.value = value
+  if (value.trim() && !pendingQuestion.value?.allowMultiple) selectedAskOptions.value = []
+}
+
+async function attachAskImages(files: File[]): Promise<void> {
+  const images = files.filter(file => file.type.startsWith('image/'))
+  const accepted = images.slice(0, Math.max(0, maxMessageImages.value - askImages.value.length))
+  if (!accepted.length) return
+  try {
+    askImages.value = [
+      ...askImages.value,
+      ...await Promise.all(accepted.map(file => readMessageImage(file, askAnswer.value.length))),
+    ]
+    if (accepted.length < images.length) {
+      notify(`An answer can contain up to ${maxMessageImages.value} images`, 'error')
+    }
+  } catch (error) {
+    notify((error as Error).message, 'error')
+  }
+}
+
+function onAskImagePick(event: Event): void {
+  const input = event.target as HTMLInputElement
+  void attachAskImages(Array.from(input.files || []))
+  input.value = ''
+}
+
+function onAskPaste(event: ClipboardEvent): void {
+  const files = Array.from(event.clipboardData?.items || [])
+    .filter(item => item.kind === 'file' && item.type.startsWith('image/'))
+    .map(item => item.getAsFile())
+    .filter((file): file is File => file !== null)
+  if (!files.length) return
+  event.preventDefault()
+  void attachAskImages(files)
+}
+
+function removeAskImage(id: string): void {
+  askImages.value = askImages.value.filter(image => image.id !== id)
+}
+
+async function answerQuestion(): Promise<void> {
+  const question = pendingQuestion.value
+  const activeId = conversationId.value
+  if (!question || !activeId || answeringQuestion.value) return
+  const typed = askAnswer.value.trim()
+  const answer = question.allowMultiple
+    ? [...selectedAskOptions.value, ...(typed ? [typed] : [])]
+    : typed || selectedAskOptions.value[0]
+  if ((!answer || (Array.isArray(answer) && !answer.length)) && !askImages.value.length) return
+  const answerText = Array.isArray(answer) ? answer.join('\n') : answer || ''
+  const parts = askImages.value.length ? buildMessageParts(answerText, askImages.value) : []
+  answeringQuestion.value = true
+  try {
+    await client.value.emitAgentEvent(activeId, question.responseEvent, {
+      session_id: activeId,
+      tool_call_id: question.toolCallId,
+      answer,
+      parts,
+    })
+    askImages.value = []
+    showNextAskQuestion()
+  } catch (error) {
+    notify((error as Error).message, 'error')
+  } finally {
+    answeringQuestion.value = false
+  }
+}
+
+function clearQuestions(): void {
+  pendingQuestion.value = null
+  queuedQuestions.value = []
+  resetAskState()
+}
+
+/** Say why a running turn has no execution details instead of looking stuck. */
+function turnLabel(entry: TranscriptEntry): string {
+  if (entry.pending && pendingQuestion.value) return 'Waiting for your answer'
+  return turnTask(entry.timeline ?? [])
+}
+
+async function sendTurn(text: string): Promise<void> {
   if (owningTabId !== null) {
     const tab = await chrome.tabs.get(owningTabId)
     if (pageKey(serverUrl.value, owningTabId, tab.url ?? '') !== pageIdentity.value) {
@@ -434,7 +701,7 @@ async function send(): Promise<void> {
   const startedAt = Date.now()
   clock.value = startedAt
   clockTimer = setInterval(() => { clock.value = Date.now() }, 200)
-  const answer = appendEntry('assistant', '', { pending: true, timeline: [], startedAt })
+  activeAnswerId = appendEntry('assistant', '', { pending: true, timeline: [], startedAt }).id
   // Clear the composer the moment the turn is sent, not when it finishes: the
   // prompt is already part of the thread, and a failed or slow turn must not
   // leave the user's text stuck in the box.
@@ -450,7 +717,7 @@ async function send(): Promise<void> {
       onUsage: (next) => {
         if (controller.signal.aborted) return
         currentUsage.value = next
-        const entry = transcript.value.find(item => item.id === answer.id)
+        const entry = activeEntry()
         if (entry) updateEntry(entry.id, { usage: addAgentUsage(entry.usage ?? null, next) })
       },
       onComposition: (composition) => {
@@ -458,30 +725,44 @@ async function send(): Promise<void> {
       },
       onEvent: (event) => {
         if (controller.signal.aborted) return
-        const current = transcript.value.find((entry) => entry.id === answer.id)
-        if (current) updateEntry(answer.id, { timeline: updateTimeline(current.timeline ?? [], event) })
+        // A message after a steering echo means the run consumed the steer.
+        if (event.type === 'message' && steeringResponseStarted) {
+          settleSteeringMessages()
+          steeringResponseStarted = false
+        }
+        const current = activeEntry()
+        if (current) updateEntry(current.id, { timeline: updateTimeline(current.timeline ?? [], event) })
       },
+      onSteering: (message) => { if (!controller.signal.aborted) applyStreamedSteering(message.content) },
+      onCustom: (event) => { if (!controller.signal.aborted) handleAskUserEvent(event) },
       onTool: (outcome) => { if (!controller.signal.aborted) onTool(outcome) },
     })
   } catch (error) {
     // Keep partial text and tool results available to expand even after failure.
     if (!controller.signal.aborted) {
-      updateEntry(answer.id, { error: (error as Error).message })
+      const entry = activeEntry()
+      if (entry) updateEntry(entry.id, { error: (error as Error).message })
       notify((error as Error).message, 'error')
     }
   } finally {
     clearInterval(clockTimer)
     clockTimer = undefined
-    const current = transcript.value.find((entry) => entry.id === answer.id)
-    updateEntry(answer.id, {
-      timeline: settleTimeline(current?.timeline ?? []),
-      pending: false,
-      stopped: controller.signal.aborted,
-      durationMs: Date.now() - startedAt,
-    })
+    const current = activeEntry()
+    if (current) {
+      updateEntry(current.id, {
+        timeline: settleTimeline(current.timeline ?? []),
+        pending: false,
+        stopped: controller.signal.aborted,
+        durationMs: Date.now() - startedAt,
+      })
+    }
+    settleSteeringMessages()
+    steeringResponseStarted = false
+    activeAnswerId = null
     busy.value = false
     stopping.value = false
     if (activeStreamController === controller) activeStreamController = null
+    drainQueuedFollowUps()
   }
 }
 
@@ -557,6 +838,10 @@ onBeforeUnmount(() => {
   clearInterval(clockTimer)
   chrome.tabs.onUpdated.removeListener(onTabUpdated)
   document.removeEventListener('pointerdown', onDocumentPointerDown)
+  // A closing panel must not drain what was queued for it.
+  queuedFollowUps.value = []
+  pendingSteeringTexts.length = 0
+  clearQuestions()
   void disconnectBrowser()
 })
 
@@ -615,7 +900,10 @@ watch([selectedProviderId, effort], () => {
       </div>
     </div>
     <div v-for="entry in transcript" :key="entry.id" class="turn" :class="entry.role">
-      <div v-if="entry.role === 'user'" class="prompt-bubble">{{ entry.text }}</div>
+      <div v-if="entry.role === 'user'" class="user-entry">
+        <div class="prompt-bubble">{{ entry.text }}</div>
+        <p v-if="entry.steering === 'waiting'" class="steering-pending">Will respond after the current tool call or turn finishes.</p>
+      </div>
       <article v-else-if="entry.role === 'artifact' && entry.artifact" class="artifact-card" :class="{ saved: !entry.artifact.needsSave }">
         <div class="artifact-copy">
           <strong>{{ entry.artifact.title }}</strong>
@@ -638,7 +926,7 @@ watch([selectedProviderId, effort], () => {
           :timeline="splitTurnTimeline(entry.timeline ?? []).execution"
           :running="Boolean(entry.pending)"
           :open="entry.detailsOpen ?? Boolean(entry.pending)"
-          :task="turnTask(entry.timeline ?? [])"
+          :task="turnLabel(entry)"
           :duration="duration(entry)"
           @toggle="toggleExecution(entry, $event)"
           @preview-image="previewImage"
@@ -667,6 +955,89 @@ watch([selectedProviderId, effort], () => {
     <p class="consent-warning">This may trigger changes on the website. Review before allowing.</p>
     <div class="consent-actions"><button type="button" @click="browserConsent.reject">Reject</button><button class="allow" type="button" @click="browserConsent.approve">Allow once</button></div>
   </section>
+
+  <section v-if="pendingQuestion" class="ask-user" aria-live="polite" @paste="onAskPaste">
+    <header>
+      <div>
+        <span>Agent question</span>
+        <small>
+          {{ pendingQuestion.allowMultiple ? 'Select one or more options' : 'Select one option' }}
+          <template v-if="queuedQuestions.length"> · {{ queuedQuestions.length }} more waiting</template>
+        </small>
+      </div>
+      <span class="ask-waiting"><i />Waiting for you</span>
+    </header>
+    <h3>{{ pendingQuestion.question }}</h3>
+    <form @submit.prevent="answerQuestion">
+      <div v-if="askImages.length" class="ask-images">
+        <figure v-for="image in askImages" :key="image.id">
+          <img :src="image.content_url" :alt="image.name" />
+          <button type="button" :aria-label="`Remove ${image.name}`" @click="removeAskImage(image.id)">×</button>
+        </figure>
+      </div>
+      <div class="ask-choices">
+        <label
+          v-for="(option, index) in pendingQuestion.options"
+          :key="`${index}-${option}`"
+          class="ask-choice"
+          :class="{ selected: selectedAskOptions.includes(option) }"
+        >
+          <input
+            :type="pendingQuestion.allowMultiple ? 'checkbox' : 'radio'"
+            name="agent-question"
+            :checked="selectedAskOptions.includes(option)"
+            @change="toggleAskOption(option)"
+          />
+          <span class="ask-letter">{{ askOptionLetter(index) }}</span>
+          <span class="ask-text">{{ option }}</span>
+        </label>
+        <label class="ask-choice custom" :class="{ selected: Boolean(askAnswer.trim()) }">
+          <span class="ask-letter">{{ askOptionLetter(pendingQuestion.options.length) }}</span>
+          <span class="ask-text">
+            <strong>Other</strong>
+            <input
+              :value="askAnswer"
+              type="text"
+              :placeholder="pendingQuestion.options.length ? 'Enter a different answer…' : 'Type your answer…'"
+              aria-label="Custom answer"
+              @input="updateAskAnswer(($event.target as HTMLInputElement).value)"
+            />
+          </span>
+        </label>
+      </div>
+      <footer>
+        <div class="ask-attach">
+          <button type="button" title="Attach images" aria-label="Attach images" @click="askImageInput?.click()">Image</button>
+          <small>{{ pendingQuestion.allowMultiple ? 'You may combine choices, text, and images.' : 'Choose an option, type an answer, or attach images.' }}</small>
+          <input ref="askImageInput" type="file" accept="image/*" multiple hidden @change="onAskImagePick" />
+        </div>
+        <button
+          class="ask-submit"
+          type="submit"
+          :disabled="answeringQuestion || (!askAnswer.trim() && !selectedAskOptions.length && !askImages.length)"
+        >
+          {{ answeringQuestion ? 'Sending…' : 'Continue' }}
+        </button>
+      </footer>
+    </form>
+  </section>
+
+  <div v-if="queuedFollowUps.length" class="queued-followups" aria-label="Queued follow-up messages" aria-live="polite">
+    <article v-for="item in queuedFollowUps" :key="item.id" class="queued-followup">
+      <p>{{ item.text }}</p>
+      <button
+        class="queued-followup-steer"
+        type="button"
+        :disabled="steeringQueuedId === item.id || !busy"
+        :aria-label="`Steer with ${item.text}`"
+        title="Inject this follow-up into the running turn"
+        @click="steerQueuedFollowUp(item)"
+      >
+        {{ steeringQueuedId === item.id ? 'Sending…' : 'Steer' }}
+      </button>
+      <button class="queued-followup-remove" type="button" aria-label="Remove queued message" @click="removeQueuedFollowUp(item.id)">×</button>
+    </article>
+  </div>
 
   <form ref="composer" class="agent-input" @submit.prevent="send">
     <div class="composer-wrap">
@@ -713,7 +1084,7 @@ watch([selectedProviderId, effort], () => {
           </div>
         </div>
       </div>
-      <div class="more-menu" @pointerleave="moreOpen = false">
+      <div class="more-menu" @pointerenter="moreOpen = true" @pointerleave="moreOpen = false">
         <button class="more-trigger" type="button" :aria-expanded="moreOpen" aria-label="More options" title="More options" @click="moreOpen = !moreOpen; modelOpen = false; effortOpen = false">•••</button>
         <div v-if="moreOpen" class="more-popover">
           <div v-if="usage" class="usage-details">
@@ -806,6 +1177,8 @@ button svg { width: .9rem; height: .9rem; fill: none; stroke: currentColor; stro
 .turn + .turn { margin-top: .8rem; }
 .turn.user { display: flex; justify-content: flex-end; padding-left: 12%; }
 .prompt-bubble { width: fit-content; max-width: 100%; padding: .6rem .85rem; border-radius: 1rem 1rem .3rem 1rem; color: #34483d; background: #eef1ef; white-space: pre-wrap; }
+.user-entry { min-width: 0; display: grid; justify-items: end; gap: .18rem; }
+.steering-pending { margin: 0; color: #5f7d69; font-size: .6rem; }
 .pending-note { margin: 0; color: var(--tertiary); font-size: .72rem; }
 .turn-response { min-width: 0; padding-top: .68rem; }
 .streaming-dots { display: inline-flex; gap: .2rem; margin-top: .45rem; }
@@ -831,6 +1204,53 @@ button svg { width: .9rem; height: .9rem; fill: none; stroke: currentColor; stro
 .welcome p { max-width: 20rem; margin: 0; color: var(--secondary); font-size: .72rem; line-height: 1.6; }
 .prompt-hints { display: flex; flex-wrap: wrap; justify-content: center; gap: .4rem; margin-top: 1rem; }
 .prompt-hints button { padding: .42rem .6rem; border-radius: .58rem; color: #606065; background: rgba(247, 247, 248, .9); font-size: .62rem; }
+
+/* Ask-user card: the running turn is suspended until this is answered, so it
+   carries the same choices, free text and images the web composer offers. */
+.ask-user { margin: .55rem .8rem 0; padding: .8rem; border: 1px solid rgba(71,105,87,.16); border-radius: .9rem; background: #f8faf8; box-shadow: 0 3px 14px rgba(42,65,51,.045); }
+.ask-user header { display: flex; align-items: center; justify-content: space-between; gap: .6rem; }
+.ask-user header > div { min-width: 0; display: flex; align-items: baseline; gap: .4rem; }
+.ask-user header div > span { color: #3f624e; font-size: .66rem; font-weight: 740; letter-spacing: .025em; }
+.ask-user header small { color: #858e88; font-size: .58rem; }
+.ask-waiting { display: inline-flex; align-items: center; gap: .3rem; color: #738078; font-size: .58rem; white-space: nowrap; }
+.ask-waiting i { width: .36rem; height: .36rem; border-radius: 50%; background: #65a67d; box-shadow: 0 0 0 3px rgba(101,166,125,.1); }
+.ask-user h3 { margin: .55rem 0 .65rem; color: #252a27; font-size: .82rem; font-weight: 650; line-height: 1.5; }
+.ask-choices { display: grid; gap: .3rem; min-width: 0; }
+.ask-choice { min-width: 0; min-height: 2.4rem; display: grid; grid-template-columns: 1.5rem minmax(0,1fr); align-items: center; gap: .5rem; padding: .3rem .6rem .3rem .4rem; border: 1px solid #e0e6e2; border-radius: .68rem; color: #505b54; background: rgba(255,255,255,.88); cursor: pointer; font-size: .7rem; }
+.ask-choice:hover { border-color: #b9c9bf; background: #fff; }
+.ask-choice.selected { border-color: #87a593; color: #294d39; background: #edf4ef; }
+.ask-choice > input[type='radio'], .ask-choice > input[type='checkbox'] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.ask-letter { width: 1.5rem; height: 1.5rem; display: grid; place-items: center; border: 1px solid #d8e0db; border-radius: .45rem; color: #657269; background: #f4f7f5; font-size: .6rem; font-weight: 750; }
+.ask-choice.selected .ask-letter { border-color: #88a593; color: #315541; background: #fff; }
+.ask-text { min-width: 0; line-height: 1.4; }
+.ask-choice.custom { align-items: start; }
+.ask-choice.custom .ask-letter { margin-top: .1rem; }
+.ask-text strong { display: block; margin-bottom: .15rem; color: #56625a; font-size: .64rem; }
+.ask-choice.custom input[type='text'] { width: 100%; padding: 0; border: 0; outline: 0; color: #252a27; background: transparent; font: inherit; font-size: .74rem; }
+.ask-choice.custom input::placeholder { color: #a1a8a3; }
+.ask-user footer { display: flex; align-items: center; justify-content: space-between; gap: .6rem; margin-top: .6rem; }
+.ask-images { display: flex; gap: .4rem; margin-bottom: .55rem; overflow-x: auto; scrollbar-width: thin; }
+.ask-images figure { position: relative; width: 3.2rem; height: 3.2rem; flex: 0 0 auto; margin: 0; }
+.ask-images img { width: 100%; height: 100%; display: block; border: 1px solid #dbe3dd; border-radius: .55rem; object-fit: cover; background: #eef1ef; }
+.ask-images button { position: absolute; top: -.28rem; right: -.28rem; width: 1rem; height: 1rem; display: grid; place-items: center; padding: 0; border: 2px solid #fff; border-radius: 50%; color: #fff; background: #59645d; font-size: .67rem; line-height: 1; }
+.ask-attach { min-width: 0; display: flex; align-items: center; gap: .45rem; }
+.ask-attach > button { min-height: 1.9rem; padding: 0 .55rem; border: 1px solid #d6e0d9; border-radius: .55rem; color: #557062; background: #fff; font-size: .63rem; font-weight: 650; }
+.ask-attach > button:hover { border-color: #9db4a5; color: #315541; background: #edf4ef; }
+.ask-attach small { min-width: 0; overflow: hidden; color: #858e88; font-size: .58rem; text-overflow: ellipsis; white-space: nowrap; }
+.ask-submit { min-height: 1.9rem; padding: 0 .8rem; border: 0; border-radius: .6rem; color: #fff; background: #476957; font-size: .68rem; font-weight: 680; }
+.ask-submit:hover:not(:disabled) { background: #395b48; }
+.ask-submit:disabled { opacity: .42; }
+
+/* Queued follow-ups mirror the web composer: Enter queues while a turn runs,
+   and each item can be injected into that turn or dropped. */
+.queued-followups { max-height: 8rem; margin: .45rem .8rem 0; padding: .2rem .3rem; overflow-y: auto; border: 1px solid rgba(29,29,31,.08); border-radius: .8rem; background: #f3f6f4; }
+.queued-followup { min-width: 0; display: flex; align-items: center; gap: .4rem; padding: .3rem .25rem; }
+.queued-followup + .queued-followup { border-top: 1px solid rgba(54,73,61,.1); }
+.queued-followup p { min-width: 0; flex: 1 1 auto; margin: 0; overflow: hidden; color: #59635d; font-size: .68rem; text-overflow: ellipsis; white-space: nowrap; }
+.queued-followup button { flex: 0 0 auto; }
+.queued-followup-steer { padding: .28rem .5rem; border-color: rgba(71,105,87,.28); color: #3f5b4a; background: #eef4f0; }
+.queued-followup-remove { width: 1.5rem; height: 1.5rem; padding: 0; border: 0; background: transparent; color: #93a096; font-size: .9rem; line-height: 1; }
+.queued-followups + .agent-input { margin-top: .35rem; }
 
 /* Composer: the app's `.agent-input`, with its model and effort picks. */
 .agent-input { position: relative; container-type: inline-size; container-name: composer-footer; margin: .45rem .8rem .85rem; padding: .35rem; border: 1px solid #e3e8e4; border-radius: 1.15rem; background: #fff; box-shadow: 0 6px 24px rgba(37, 51, 42, .055); }

@@ -47,7 +47,9 @@ beforeEach(() => {
   vi.spyOn(ZettClient.prototype, 'session').mockResolvedValue({ messages: [] })
   vi.spyOn(ZettClient.prototype, 'listProviders').mockResolvedValue([{ id: 'p', name: 'Test', provider: 'test', model: 'test-model', enabled: true }])
   vi.spyOn(ZettClient.prototype, 'listArtifacts').mockResolvedValue([])
-  vi.spyOn(ZettClient.prototype, 'runtimeSettings').mockResolvedValue({ compaction_max_tokens: 200000 })
+  vi.spyOn(ZettClient.prototype, 'runtimeSettings').mockResolvedValue({ compaction_max_tokens: 200000, max_message_images: 4 })
+  vi.spyOn(ZettClient.prototype, 'steerAgent').mockResolvedValue({ accepted: true })
+  vi.spyOn(ZettClient.prototype, 'emitAgentEvent').mockResolvedValue({ accepted: true })
   vi.spyOn(BrowserBridgeClient.prototype, 'connect').mockImplementation(async function (this: BrowserBridgeClient, _url: string, tabId: number) {
     this.tabId = tabId
     this.token = 't'.repeat(43)
@@ -105,7 +107,7 @@ async function send(host: HTMLElement): Promise<void> {
   await nextTick()
 }
 
-it('closes a composer menu as soon as the pointer leaves it or presses outside', async () => {
+it('opens the More menu on hover and closes composer menus on leave or outside press', async () => {
   const host = await mount()
   const modelPicker = host.querySelector<HTMLElement>('.picker')!
   host.querySelector<HTMLButtonElement>('.model-trigger')!.click()
@@ -118,10 +120,12 @@ it('closes a composer menu as soon as the pointer leaves it or presses outside',
   modelPicker.dispatchEvent(new Event('pointerleave'))
   await nextTick()
   expect(host.querySelector('.model-popover')).toBeNull()
-  host.querySelector<HTMLButtonElement>('.more-trigger')!.click()
+  // Hovering the trigger shows what a click shows; leaving closes it again.
+  const moreMenu = host.querySelector<HTMLElement>('.more-menu')!
+  moreMenu.dispatchEvent(new Event('pointerenter'))
   await nextTick()
   expect(host.querySelector('.more-popover')).not.toBeNull()
-  host.querySelector('.more-menu')!.dispatchEvent(new Event('pointerleave'))
+  moreMenu.dispatchEvent(new Event('pointerleave'))
   await nextTick()
   expect(host.querySelector('.more-popover')).toBeNull()
   host.querySelector<HTMLButtonElement>('.more-trigger')!.click()
@@ -130,6 +134,157 @@ it('closes a composer menu as soon as the pointer leaves it or presses outside',
   host.querySelector('.chat-title strong')!.dispatchEvent(new Event('pointerdown', { bubbles: true, cancelable: true }))
   await nextTick()
   expect(host.querySelector('.more-popover')).toBeNull()
+})
+
+it('reports context compaction while the run organizes its history', async () => {
+  const host = await mount()
+  await send(host)
+  options.onEvent?.({ id: 'compaction-1', type: 'compaction', activity: { state: 'started', content: '', reasoning: '' } })
+  await nextTick()
+  expect(host.querySelector('.turn-execution-copy strong')?.textContent).toBe('Organizing conversation context')
+  options.onEvent?.({ id: 'compaction-2', type: 'compaction', activity: { state: 'completed', applied: true, content: 'Summary', reasoning: '' } })
+  await nextTick()
+  expect(host.querySelector('.turn-execution-copy strong')?.textContent).toBe('Thinking through your request')
+  expect(host.textContent).toContain('Context compaction')
+  finish('')
+  await flush()
+})
+
+/** Type into the composer and press Enter, whatever the turn state is. */
+async function enter(host: HTMLElement, text: string): Promise<void> {
+  const input = host.querySelector('textarea')!
+  input.value = text
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+  await nextTick()
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+  await nextTick()
+}
+
+it('queues a follow-up while the turn runs and sends it when the turn ends', async () => {
+  const host = await mount()
+  await send(host)
+  await enter(host, 'Then check the second page')
+  expect(host.querySelector('.queued-followup p')?.textContent).toBe('Then check the second page')
+  expect(host.querySelector('textarea')!.value).toBe('')
+  const firstTurn = options
+  finish('Answer')
+  await flush()
+  expect(options).not.toBe(firstTurn)
+  expect(options.text).toBe('Then check the second page')
+  expect(host.querySelector('.queued-followup')).toBeNull()
+  finish('')
+  await flush()
+})
+
+it('steers the running turn with a queued follow-up and marks it waiting', async () => {
+  const host = await mount()
+  await send(host)
+  await enter(host, 'Use the short version')
+  host.querySelector<HTMLButtonElement>('.queued-followup-steer')!.click()
+  await flush()
+  expect(vi.mocked(ZettClient.prototype.steerAgent)).toHaveBeenCalledWith('test-session-1', 'Use the short version')
+  expect(host.querySelector('.queued-followup')).toBeNull()
+  const prompts = [...host.querySelectorAll('.turn.user')]
+  expect(prompts.at(-1)?.textContent).toContain('Use the short version')
+  expect(prompts.at(-1)?.textContent).toContain('Will respond after the current tool call or turn finishes.')
+  finish('')
+  await flush()
+  expect(host.querySelector('.steering-pending')).toBeNull()
+})
+
+it('shows a steering message another client injected into the running turn', async () => {
+  const host = await mount()
+  await send(host)
+  options.onSteering?.({ content: 'Stop and explain first', parts: [] })
+  await nextTick()
+  expect(host.textContent).toContain('Stop and explain first')
+  finish('')
+  await flush()
+})
+
+it('drops queued follow-ups when the running turn is stopped', async () => {
+  const host = await mount()
+  await send(host)
+  await enter(host, 'Never sent')
+  host.querySelector<HTMLButtonElement>('[aria-label="Stop generation"]')!.click()
+  await nextTick()
+  expect(host.querySelector('.queued-followup')).toBeNull()
+  fail(new DOMException('Aborted', 'AbortError'))
+  await flush()
+  expect(vi.mocked(ZettClient.prototype.streamTurn)).toHaveBeenCalledTimes(1)
+})
+
+it('answers an ask_user question so a suspended turn can continue', async () => {
+  const host = await mount()
+  await send(host)
+  options.onCustom?.({ name: 'ask_user', payload: {
+    tool_call_id: 'call-7',
+    question: 'Which reply should I post?',
+    options: ['Short', 'Long'],
+    allow_multiple: false,
+    response_event: 'ask_user_response',
+  } })
+  await nextTick()
+  expect(host.querySelector('.ask-user h3')?.textContent).toBe('Which reply should I post?')
+  expect(host.querySelector('.turn-execution-copy strong')?.textContent).toBe('Waiting for your answer')
+  const choices = [...host.querySelectorAll<HTMLInputElement>('.ask-choice input[type="radio"]')]
+  choices[0].dispatchEvent(new Event('change', { bubbles: true }))
+  await nextTick()
+  expect(host.querySelectorAll('.ask-choice.selected')).toHaveLength(1)
+  host.querySelector<HTMLButtonElement>('.ask-submit')!.click()
+  await flush()
+  expect(vi.mocked(ZettClient.prototype.emitAgentEvent)).toHaveBeenCalledWith('test-session-1', 'ask_user_response', {
+    session_id: 'test-session-1',
+    tool_call_id: 'call-7',
+    answer: 'Short',
+    parts: [],
+  })
+  expect(host.querySelector('.ask-user')).toBeNull()
+  finish('')
+  await flush()
+})
+
+it('takes a typed ask_user answer and keeps later questions queued', async () => {
+  const host = await mount()
+  await send(host)
+  options.onCustom?.({ name: 'ask_user', payload: {
+    tool_call_id: 'first', question: 'First?', options: [], allow_multiple: false, response_event: 'ask_user_response',
+  } })
+  options.onCustom?.({ name: 'ask_user', payload: {
+    tool_call_id: 'second', question: 'Second?', options: ['Yes'], allow_multiple: true, response_event: 'ask_user_response',
+  } })
+  await nextTick()
+  expect(host.querySelector('.ask-user header small')?.textContent).toContain('1 more waiting')
+  const input = host.querySelector<HTMLInputElement>('.ask-choice.custom input')!
+  input.value = 'Drafted answer'
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+  await nextTick()
+  host.querySelector<HTMLButtonElement>('.ask-submit')!.click()
+  await flush()
+  expect(vi.mocked(ZettClient.prototype.emitAgentEvent)).toHaveBeenCalledWith('test-session-1', 'ask_user_response', {
+    session_id: 'test-session-1',
+    tool_call_id: 'first',
+    answer: 'Drafted answer',
+    parts: [],
+  })
+  expect(host.querySelector('.ask-user h3')?.textContent).toBe('Second?')
+  finish('')
+  await flush()
+})
+
+it('drops a pending ask_user question when the turn is stopped', async () => {
+  const host = await mount()
+  await send(host)
+  options.onCustom?.({ name: 'ask_user', payload: {
+    tool_call_id: 'call-7', question: 'Still there?', options: [], allow_multiple: false, response_event: 'ask_user_response',
+  } })
+  await nextTick()
+  expect(host.querySelector('.ask-user')).not.toBeNull()
+  host.querySelector<HTMLButtonElement>('[aria-label="Stop generation"]')!.click()
+  await nextTick()
+  expect(host.querySelector('.ask-user')).toBeNull()
+  fail(new DOMException('Aborted', 'AbortError'))
+  await flush()
 })
 
 it('removes the page bar, retains automatic page context, and clears on Enter before the response', async () => {
