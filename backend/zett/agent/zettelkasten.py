@@ -142,6 +142,10 @@ class ZettelkastenAgent(ZettelkastenContainer):
             extensions.append(CodingExtension())
         if config.interactive:
             extensions.append(AskUserExtension())
+        if config.browser_connection is not None:
+            from .extensions.browser import BrowserExtension
+
+            extensions.append(BrowserExtension(config.browser_connection))
         if config.usage_activity_storage is not None:
             extensions.append(UsageActivityExtension(config.usage_activity_storage))
         # One adapter, appended last: plugins run inside every built-in

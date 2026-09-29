@@ -267,6 +267,9 @@ class AnalyzeRequest(UserMessageIn):
     provider_id: str = Field(min_length=1, max_length=36)
     reasoning_effort: Literal["off", "minimal", "low", "medium", "high", "xhigh"] = "medium"
     shell_approval_mode: Literal["review", "allow_all"] = "review"
+    browser_token: str | None = Field(
+        default=None, min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]+$", repr=False
+    )
     messages: list[dict[str, Any]] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
     tags: dict[str, Any] = Field(default_factory=dict)

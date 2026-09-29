@@ -3,6 +3,7 @@
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from zett_agent.extensions.mcp import (
     DEFAULT_MCP_SERVER_KEYS,
@@ -22,6 +23,9 @@ from ..config import settings
 from ..plugins import AgentPlugin
 from .container import ZettelkastenExt
 from .plugins import SkillSlashCommandExtension
+
+if TYPE_CHECKING:
+    from ..application.agent.browser import BrowserConnection
 
 DEFAULT_ZETT_MCP_CONFIG_PATH = Path("~/.zettelekasten/mcp.json")
 DEFAULT_ZETT_SKILL_ROOTS = ("~/.zettelekasten/skills",)
@@ -73,6 +77,7 @@ class ZettelkastenAgentConfig:
     interactive: bool = True
     coding_enabled: bool = True
     allow_direct_artifact_edits: bool = False
+    browser_connection: "BrowserConnection | None" = field(default=None, repr=False, compare=False)
     #: Agent plugins to load, or None to use the installed ones.
     #:
     #: Callers inject this in tests; production resolves it through the plugin
