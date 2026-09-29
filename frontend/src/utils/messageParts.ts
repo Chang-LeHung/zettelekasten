@@ -5,6 +5,31 @@ export interface PositionedMessageImage extends MessageImagePart {
   position: number
 }
 
+/** Read one picked or pasted image into the data URL a message part carries. */
+export function readMessageImage(file: File, position: number): Promise<PositionedMessageImage> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(reader.error || new Error(`Unable to read ${file.name}`))
+    reader.onload = () => {
+      const contentUrl = typeof reader.result === 'string' ? reader.result : ''
+      const separator = contentUrl.indexOf(',')
+      if (separator < 0) {
+        reject(new Error(`Unable to encode ${file.name}`))
+        return
+      }
+      resolve({
+        id: crypto.randomUUID(),
+        type: 'image',
+        name: file.name || 'Pasted image',
+        mime_type: file.type,
+        content_url: contentUrl,
+        position,
+      })
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
 /** Interleave pasted images with text using their textarea caret offsets. */
 export function buildMessageParts(
   text: string,

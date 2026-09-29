@@ -25,7 +25,7 @@ import { AtCommandInput, type AtCommandMatch } from './utils/atCommand'
 import { SlashCommandInput, type SlashCommandMatch } from './utils/slashCommand'
 import { buildConversationTurns, formatTurnDuration, splitTurnTimeline, type ConversationTurn } from './utils/conversationTurns'
 import { jsonSnapshot } from './utils/jsonSnapshot'
-import { buildMessageParts, rebaseImagePositions, type PositionedMessageImage } from './utils/messageParts'
+import { buildMessageParts, readMessageImage, rebaseImagePositions, type PositionedMessageImage } from './utils/messageParts'
 import { restorePersistedConversation } from './utils/persistedConversation'
 import { moveItemBeforeOrAfter } from './utils/reorder'
 import { readPaneHidden, writePaneHidden } from './utils/paneVisibility'
@@ -2496,30 +2496,6 @@ async function uploadAssetFiles(files: File[]): Promise<void> {
 async function dropAssets(event: DragEvent): Promise<void> {
   assetDragging.value = false
   await uploadAssetFiles(Array.from(event.dataTransfer?.files || []))
-}
-
-function readMessageImage(file: File, position: number): Promise<PositionedMessageImage> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onerror = () => reject(reader.error || new Error(`Unable to read ${file.name}`))
-    reader.onload = () => {
-      const contentUrl = typeof reader.result === 'string' ? reader.result : ''
-      const separator = contentUrl.indexOf(',')
-      if (separator < 0) {
-        reject(new Error(`Unable to encode ${file.name}`))
-        return
-      }
-      resolve({
-        id: crypto.randomUUID(),
-        type: 'image',
-        name: file.name || 'Pasted image',
-        mime_type: file.type,
-        content_url: contentUrl,
-        position,
-      })
-    }
-    reader.readAsDataURL(file)
-  })
 }
 
 async function attachPastedImages(files: File[], position: number): Promise<void> {
