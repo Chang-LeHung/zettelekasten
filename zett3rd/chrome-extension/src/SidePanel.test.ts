@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { createApp, nextTick } from 'vue'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import type { AgentPersistedMessage } from '../../../frontend/src/api/types'
 import SidePanel from './SidePanel.vue'
 import { ZettClient, type StreamTurnOptions } from './api/zett-client'
 import { BrowserBridgeClient } from './api/browser-bridge'
@@ -45,6 +46,9 @@ beforeEach(() => {
   vi.spyOn(ZettClient.prototype, 'health').mockResolvedValue({ ok: true })
   vi.spyOn(ZettClient.prototype, 'startSession').mockImplementation(async () => ({ conversation_id: `test-session-${++sessionSequence}` }))
   vi.spyOn(ZettClient.prototype, 'session').mockResolvedValue({ messages: [] })
+  vi.spyOn(ZettClient.prototype, 'sessionContextComposition').mockResolvedValue({
+    system_prompt: .32, tool_prompt: .05, tool_output: .08, user: .35, assistant: .2,
+  })
   vi.spyOn(ZettClient.prototype, 'listProviders').mockResolvedValue([{ id: 'p', name: 'Test', provider: 'test', model: 'test-model', enabled: true }])
   vi.spyOn(ZettClient.prototype, 'listArtifacts').mockResolvedValue([])
   vi.spyOn(ZettClient.prototype, 'runtimeSettings').mockResolvedValue({ compaction_max_tokens: 200000, max_message_images: 4 })
@@ -299,6 +303,61 @@ it('reports generation speed from the timed model step', async () => {
   expect(host.querySelector('.usage-details')?.textContent).toContain('Speed 20.0 tok/s')
   finish('')
   await flush()
+})
+
+it('shows the context pie while the pointer rests on the Context row', async () => {
+  const host = await mount()
+  await send(host)
+  options.onUsage?.({ input_tokens: 4_000, output_tokens: 1_000, cache_read_tokens: 0, cache_write_tokens: 0, reasoning_tokens: 0 })
+  options.onComposition?.({ system_prompt: .3, tool_prompt: .1, tool_output: .1, user: .3, assistant: .2 })
+  await nextTick()
+  host.querySelector<HTMLButtonElement>('.more-trigger')!.click()
+  await nextTick()
+  expect(host.querySelector('.usage-context .context-ring')).toBeNull()
+  const row = host.querySelector<HTMLElement>('.usage-context')!
+  row.dispatchEvent(new Event('pointerenter'))
+  await nextTick()
+  expect(host.querySelector('.usage-context .context-ring')).not.toBeNull()
+  const popover = host.querySelector<HTMLElement>('.usage-context .context-popover')!
+  expect(popover.closest('.context-ring-control')?.classList.contains('always-open')).toBe(true)
+  expect(popover.textContent).toContain('Context composition')
+  expect(popover.textContent).toContain('User')
+  expect(popover.textContent).toContain('30.0%')
+  row.dispatchEvent(new Event('pointerleave'))
+  await nextTick()
+  expect(host.querySelector('.usage-context .context-ring')).toBeNull()
+  finish('')
+  await flush()
+})
+
+it('restores the context pie for a conversation the panel reopens', async () => {
+  stored[pageKey('http://127.0.0.1:6280', 7, 'https://example.com/')!] = 'restored-session'
+  const persisted = (role: 'user' | 'assistant', sequence: number, changes: Partial<AgentPersistedMessage>): AgentPersistedMessage => ({
+    id: `message-${sequence}`, session_id: 'restored-session', request_id: 'turn', sequence, role,
+    content: '', parts: [], reasoning_content: null, model: null, provider: null, tool_calls: [],
+    tool_call_id: null, tool_name: null, tool_success: null, attributes: {}, metadata: {}, tags: {},
+    input_tokens: null, output_tokens: null, cache_read_tokens: null, cache_write_tokens: null,
+    reasoning_tokens: null, total_tokens: null, cache_hit_rate: null, duration_ns: 1_000_000,
+    started_at: '2026-01-01T00:00:00Z', completed_at: '2026-01-01T00:00:00Z',
+    created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
+    ...changes,
+  })
+  vi.mocked(ZettClient.prototype.session).mockResolvedValue({ messages: [
+    persisted('user', 1, { content: 'Summarize this page' }),
+    persisted('assistant', 2, {
+      content: 'Summary',
+      input_tokens: 120_000, output_tokens: 20_000, cache_read_tokens: 60_000,
+      cache_write_tokens: 0, reasoning_tokens: 0,
+    }),
+  ] })
+  const host = await mount()
+  expect(vi.mocked(ZettClient.prototype.sessionContextComposition)).toHaveBeenCalledWith('restored-session')
+  host.querySelector<HTMLButtonElement>('.more-trigger')!.click()
+  await nextTick()
+  expect(host.querySelector('.usage-context')?.textContent).toContain('70%')
+  host.querySelector<HTMLElement>('.usage-context')!.dispatchEvent(new Event('pointerenter'))
+  await nextTick()
+  expect(host.querySelector('.usage-context .context-popover')?.textContent).toContain('35.0%')
 })
 
 it('removes the page bar, retains automatic page context, and clears on Enter before the response', async () => {

@@ -145,6 +145,13 @@ it('forwards ask_user custom events and posts the answer as an extension event',
   })
 })
 
+it('reads the stored context composition a reopened panel shows', async () => {
+  const composition = { system_prompt: .3, tool_prompt: .1, tool_output: .1, user: .3, assistant: .2 }
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(composition))))
+  await expect(new ZettClient().sessionContextComposition('session-id')).resolves.toEqual(composition)
+  expect(String(vi.mocked(fetch).mock.calls[0][0])).toContain('/api/agent/sessions/session-id/context-composition')
+})
+
 it('aborts the actual response reader and preserves only deltas received before Stop', async () => {
   const controller = new AbortController()
   let streamController: ReadableStreamDefaultController<Uint8Array>

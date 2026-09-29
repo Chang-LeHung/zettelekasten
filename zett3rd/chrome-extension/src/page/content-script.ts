@@ -18,6 +18,8 @@ if (!scope.__zettDOMBridgeInstalled) {
   const MIN_PANEL_WIDTH = 300
   const MIN_PANEL_HEIGHT = 360
   const CORNER_SIZE = 16
+  /** Wide enough for the composer's `•••` menu and the context pie beside it. */
+  const DEFAULT_PANEL_WIDTH = 520
 
   function removePanel(): void {
     panel?.remove()
@@ -34,7 +36,7 @@ if (!scope.__zettDOMBridgeInstalled) {
     const host = document.createElement('div')
     host.id = 'zettelekasten-panel-host'
     // Shadow DOM isolates the panel's chrome from the page's CSS/selectors.
-    host.style.cssText = `position:fixed!important;top:3vh;right:16px;width:min(440px,calc(100vw - 32px));height:min(90vh,920px);min-width:min(${MIN_PANEL_WIDTH}px,100vw);min-height:min(${MIN_PANEL_HEIGHT}px,100dvh);z-index:2147483647!important;`
+    host.style.cssText = `position:fixed!important;top:3vh;right:16px;width:min(${DEFAULT_PANEL_WIDTH}px,calc(100vw - 32px));height:min(90vh,920px);min-width:min(${MIN_PANEL_WIDTH}px,100vw);min-height:min(${MIN_PANEL_HEIGHT}px,100dvh);z-index:2147483647!important;`
     const shadow = host.attachShadow({ mode: 'closed' })
     const shell = document.createElement('div')
     shell.style.cssText = 'position:relative;display:flex;flex-direction:column;width:100%;height:100%;overflow:hidden;border:1px solid rgba(32,46,37,.12);border-radius:20px;background:#fff;box-shadow:0 22px 70px rgba(22,31,26,.16),0 3px 16px rgba(22,31,26,.06);'

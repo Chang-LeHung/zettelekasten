@@ -19,8 +19,9 @@ import { ARTIFACT_TOOLS, type AgentArtifact, type ArtifactReceipt, type Provider
 import MarkdownBody from './chat/MarkdownBody.vue'
 import AgentExecution from '../../../frontend/src/components/AgentExecution.vue'
 import CacheHitRate from '../../../frontend/src/components/CacheHitRate.vue'
+import ContextCompositionRing from '../../../frontend/src/components/ContextCompositionRing.vue'
 import type { AgentContextComposition, AgentCustomEvent, AgentModelUsage } from '../../../frontend/src/api/types'
-import { addAgentUsage, formatTokenCount, summarizeAgentUsage } from '../../../frontend/src/utils/agentUsage'
+import { addAgentUsage, formatTokenCount, latestAgentUsage, summarizeAgentUsage } from '../../../frontend/src/utils/agentUsage'
 import { buildMessageParts, readMessageImage, type PositionedMessageImage } from '../../../frontend/src/utils/messageParts'
 import { BrowserBridgeClient, type BrowserConsent } from './api/browser-bridge'
 import { formatTurnDuration, splitTurnTimeline } from '../../../frontend/src/utils/conversationTurns'
@@ -78,6 +79,8 @@ const selectedAskOptions = ref<string[]>([])
 const answeringQuestion = ref(false)
 const askImageInput = ref<HTMLInputElement | null>(null)
 const maxMessageImages = ref(1)
+/** The `•••` menu's Context row owns the ring: hovering it shows the pie. */
+const contextOpen = ref(false)
 let nextQueuedFollowUpId = 0
 /** The assistant entry the stream is currently writing into; steering closes it. */
 let activeAnswerId: number | null = null
@@ -109,6 +112,10 @@ const usage = computed(() => summarizeAgentUsage(transcript.value
 
 /** When the provider started answering; the usage event closes the window. */
 let generationStartedAt = 0
+/** The live step's counters, or the last stored ones after a panel reopen. */
+const contextUsage = computed(() => currentUsage.value ?? latestAgentUsage(transcript.value
+  .filter(entry => entry.role === 'assistant')
+  .map(entry => ({ role: 'assistant', content: '', usage: entry.usage }))))
 const clock = ref(Date.now())
 let clockTimer: ReturnType<typeof setInterval> | undefined
 const savingIds = ref<string[]>([])
@@ -154,6 +161,7 @@ function closeMenus(): void {
   modelOpen.value = false
   effortOpen.value = false
   moreOpen.value = false
+  contextOpen.value = false
 }
 
 function onDocumentPointerDown(event: PointerEvent): void {
@@ -367,6 +375,7 @@ async function openPage(): Promise<void> {
       transcript.value = restoreTranscript(previous.messages)
       followOutput()
       entryId = transcript.value.length
+      void restoreContextComposition(sessionValue)
       await showPendingArtifacts()
     } catch (error) {
       if (switchId !== pageSwitch) return
@@ -455,6 +464,16 @@ async function showPendingArtifacts(): Promise<void> {
   if (!conversationId.value) return
   const artifacts = await client.value.listArtifacts(conversationId.value)
   for (const artifact of artifacts.filter(needsSave)) upsertArtifactEntry(artifactCard(artifact))
+}
+
+/** A reopened panel keeps the stored composition, not only a live one. */
+async function restoreContextComposition(sessionId: string): Promise<void> {
+  try {
+    const composition = await client.value.sessionContextComposition(sessionId)
+    if (conversationId.value === sessionId) contextComposition.value = composition
+  } catch {
+    if (conversationId.value === sessionId) contextComposition.value = null
+  }
 }
 
 /** Artifact receipts also surface a Save card; execution details keep the tool. */
@@ -1099,14 +1118,30 @@ watch([selectedProviderId, effort], () => {
           </div>
         </div>
       </div>
-      <div class="more-menu" @pointerenter="moreOpen = true" @pointerleave="moreOpen = false">
+      <div class="more-menu" @pointerenter="moreOpen = true" @pointerleave="closeMenus()">
         <button class="more-trigger" type="button" :aria-expanded="moreOpen" aria-label="More options" title="More options" @click="moreOpen = !moreOpen; modelOpen = false; effortOpen = false">•••</button>
         <div v-if="moreOpen" class="more-popover">
           <div v-if="usage" class="usage-details">
             <span>Cache <strong>{{ usage.cache_hit_rate === null ? '—' : `${(usage.cache_hit_rate * 100).toFixed(1)}%` }}</strong></span>
             <span>Tokens <strong>{{ formatTokenCount(usage.input_tokens + usage.output_tokens) }}</strong></span>
             <span title="Output tokens per second of model generation">Speed <strong>{{ usage.tokens_per_second === null ? '—' : `${usage.tokens_per_second.toFixed(1)} tok/s` }}</strong></span>
-            <span v-if="currentUsage && compactionMaxTokens > 0">Context <strong>{{ Math.round((currentUsage.input_tokens + currentUsage.output_tokens) / compactionMaxTokens * 100) }}%</strong></span>
+            <span
+              v-if="contextUsage && compactionMaxTokens > 0"
+              class="usage-context"
+              @pointerenter="contextOpen = true"
+              @pointerleave="contextOpen = false"
+              @focusin="contextOpen = true"
+              @focusout="contextOpen = false"
+            >
+              <span>Context <strong>{{ Math.round((contextUsage.input_tokens + contextUsage.output_tokens) / compactionMaxTokens * 100) }}%</strong></span>
+              <ContextCompositionRing
+                v-if="contextOpen"
+                :composition="contextComposition"
+                :current-tokens="contextUsage.input_tokens + contextUsage.output_tokens"
+                :max-tokens="compactionMaxTokens"
+                always-open
+              />
+            </span>
           </div>
           <button v-if="!browserConnected" type="button" :disabled="browserConnecting || !conversationId" @click="connectBrowser(); moreOpen = false">{{ browserConnecting ? 'Connecting…' : 'Connect page' }}</button>
           <button v-else type="button" @click="disconnectBrowser(); moreOpen = false">Disconnect page</button>
@@ -1306,6 +1341,19 @@ button svg { width: .9rem; height: .9rem; fill: none; stroke: currentColor; stro
 .usage-details { display: grid; gap: .35rem; padding: .5rem .65rem; color: #8b978e; font-size: .64rem; }
 .usage-details span { display: flex; justify-content: space-between; gap: .5rem; }
 .usage-details strong { color: #425748; }
+/* The Context row owns the pie: hovering it shows the shared ring plus its
+   breakdown beside the menu instead of covering the menu's own actions. */
+.usage-details .usage-context { align-items: center; }
+.usage-details .usage-context .context-ring-control { position: static; margin: 0; padding: 0; cursor: pointer; }
+.usage-details .usage-context .context-ring { width: 1.35rem; height: 1.35rem; }
+/* The ring's own popover is positioned against the menu, so the pie and its
+   breakdown sit beside the `•••` menu instead of covering its metrics. */
+.usage-details .usage-context .context-popover { right: calc(100% + .4rem); bottom: 0; }
+/* A panel too narrow for that room puts the pie above the menu instead, so
+   neither the percentages nor the legend are clipped. */
+@container composer-footer (max-width: 430px) {
+  .usage-details .usage-context .context-popover { right: -.35rem; bottom: calc(100% + .35rem); }
+}
 .browser-consent { margin: 0 .8rem .25rem; padding: .85rem; max-height: 40dvh; overflow: auto; border: 1px solid #e4ebe6; border-radius: 1rem; background: #fff; box-shadow: 0 10px 35px rgba(30,45,34,.09); font-size: .75rem; }
 .browser-consent header { display: flex; gap: .55rem; align-items: center; }
 .browser-consent header > div { min-width: 0; display: grid; gap: .1rem; }

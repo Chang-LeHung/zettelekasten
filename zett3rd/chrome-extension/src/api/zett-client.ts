@@ -120,6 +120,11 @@ export class ZettClient {
     return await this.request(`/api/agent/sessions/${encodeURIComponent(sessionId)}`)
   }
 
+  /** The stored composition of the latest model context, for a reopened panel. */
+  async sessionContextComposition(sessionId: string): Promise<AgentContextComposition> {
+    return await this.request(`/api/agent/sessions/${encodeURIComponent(sessionId)}/context-composition`)
+  }
+
   /** List configured models, of which a turn needs one enabled provider. */
   async listProviders(): Promise<Provider[]> {
     return await this.request<Provider[]>('/api/ai/providers')

@@ -6,11 +6,13 @@ import { formatTokenCount } from '../utils/agentUsage'
 const MIN_VISIBLE_SHARE = 0.035
 const SEGMENT_GAP = 0.8
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   composition: AgentContextComposition | null
   currentTokens: number | null
   maxTokens: number
-}>()
+  /** A host that owns the hover state (the Chrome panel) forces the popover open. */
+  alwaysOpen?: boolean
+}>(), { alwaysOpen: false })
 
 const parts = computed(() => [
   { key: 'system_prompt', label: 'System', color: '#008f5d', value: props.composition?.system_prompt || 0 },
@@ -40,7 +42,7 @@ const fullness = computed(() => {
 <template>
   <div
     class="context-ring-control"
-    :class="{ empty: !composition }"
+    :class="{ empty: !composition, 'always-open': alwaysOpen }"
     tabindex="0"
     :aria-label="composition ? 'Current context composition' : 'Context composition is not available yet'"
   >
@@ -89,6 +91,7 @@ const fullness = computed(() => {
 .context-ring-control.empty .context-ring { opacity: .72; }
 .context-popover { position: absolute; right: -.25rem; bottom: calc(100% - .1rem); z-index: 32; width: 13.5rem; padding: .68rem; border: 1px solid rgba(52, 70, 60, .12); border-radius: .8rem; background: rgba(255, 255, 255, .98); box-shadow: 0 14px 38px rgba(35, 49, 41, .14); opacity: 0; visibility: hidden; transform: translateY(.25rem); transition: 140ms ease; pointer-events: none; }
 .context-ring-control:hover .context-popover, .context-ring-control:focus-within .context-popover { opacity: 1; visibility: visible; transform: none; pointer-events: auto; }
+.context-ring-control.always-open .context-popover { opacity: 1; visibility: visible; transform: none; pointer-events: auto; }
 .context-popover header { display: flex; align-items: flex-start; justify-content: space-between; gap: .6rem; margin-bottom: .55rem; color: #465149; font-size: .62rem; }
 .context-popover header > div, .context-popover header > span { display: grid; gap: .08rem; }
 .context-popover header > span { color: #67726b; text-align: right; font-variant-numeric: tabular-nums; }
