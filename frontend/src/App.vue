@@ -12,7 +12,7 @@ import AssetPreviewDialog from './components/AssetPreviewDialog.vue'
 import AssetRename from './components/AssetRename.vue'
 import AskUserPrompt from './components/AskUserPrompt.vue'
 import ShellApprovalPrompt from './components/ShellApprovalPrompt.vue'
-import ToolResult from './components/ToolResult.vue'
+import AgentExecution from './components/AgentExecution.vue'
 import UsageActivityGraph from './components/UsageActivityGraph.vue'
 import { addAgentUsage, latestAgentUsage, summarizeAgentUsage } from './utils/agentUsage'
 import { artifactContentFromLibraryUpdate, artifactEditableContent, hasPendingDraft, libraryItemFromArtifact } from './utils/artifactEditor'
@@ -815,16 +815,6 @@ function historicalTimeline(message: AnalysisMessage): AgentTimelineEntry[] {
   }
   if (message.content) entries.push({ id: 'message', type: 'message', content: message.content })
   return entries
-}
-
-function formatToolValue(value: unknown): string {
-  if (value === undefined) return 'Waiting for result…'
-  if (typeof value === 'string') return value
-  try {
-    return JSON.stringify(value, null, 2)
-  } catch {
-    return String(value)
-  }
 }
 
 function sameSteeringMessage(left: AgentSteeringMessage, right: AgentSteeringMessage): boolean {
@@ -3738,19 +3728,19 @@ onBeforeUnmount(() => {
                     </section>
 
                     <div class="turn-content">
-                      <details class="turn-execution" :open="isTurnDetailsOpen(turn, index)">
-                        <summary @click="toggleTurnExecution(turn, $event)">
-                          <span class="turn-state-icon" aria-hidden="true"><i /></span>
-                          <span class="turn-execution-copy">
-                            <strong>{{ isRunningTurn(index) ? turnTask(index) : `Processed in ${turnDuration(turn, index)}` }}</strong>
-                            <small>{{ isRunningTurn(index) ? `Running · ${turnDuration(turn, index)}` : 'Show thinking, tools, and task details' }}</small>
-                          </span>
-                          <span class="turn-execution-metrics">
-                            <CacheHitRate class="turn-execution-cache" label="Cache" :rate="turnCacheHitRate(turn, index)" />
-                          </span>
-                          <span class="turn-chevron" aria-hidden="true">›</span>
-                        </summary>
-                        <div class="turn-execution-details">
+                      <AgentExecution
+                        :timeline="turnExecutionTimeline(turn, index)"
+                        :running="isRunningTurn(index)"
+                        :open="isTurnDetailsOpen(turn, index)"
+                        :task="turnTask(index)"
+                        :duration="turnDuration(turn, index)"
+                        @toggle="toggleTurnExecution(turn, $event)"
+                        @preview-image="openImagePreview"
+                      >
+                        <template #metrics>
+                          <CacheHitRate class="turn-execution-cache" label="Cache" :rate="turnCacheHitRate(turn, index)" />
+                        </template>
+                        <template #tasks>
                           <div v-if="isRunningTurn(index) && activeTodos?.todos.length" class="turn-task-list">
                             <div><strong>Task progress</strong><small>{{ activeTodos.completed ? 'Completed' : `${(activeTodos.processing_index ?? 0) + 1} of ${activeTodos.todos.length}` }}</small></div>
                             <ol>
@@ -3760,40 +3750,9 @@ onBeforeUnmount(() => {
                               </li>
                             </ol>
                           </div>
-                          <div v-if="turnExecutionTimeline(turn, index).length" class="agent-event-timeline">
-                            <template v-for="entry in turnExecutionTimeline(turn, index)" :key="entry.id">
-                            <details v-if="entry.type === 'reasoning'" class="reasoning-panel" :class="{ 'streaming-reasoning': isRunningTurn(index) }">
-                              <summary><i aria-hidden="true" /><span>Thinking</span><small>{{ isRunningTurn(index) ? 'Live' : 'Completed' }}</small></summary>
-                              <MarkdownContent class="reasoning-content" :content="entry.content" />
-                            </details>
-                            <MarkdownContent v-else-if="entry.type === 'message'" class="intermediate-response" :content="entry.content" />
-                            <details v-else-if="entry.type === 'compaction'" class="reasoning-panel compaction-panel">
-                              <summary><span>Context compaction</span><small>{{ entry.activity.state }}</small></summary>
-                              <div class="compaction-content">
-                                <MarkdownContent v-if="entry.activity.reasoning" class="reasoning-content" :content="entry.activity.reasoning" />
-                                <MarkdownContent v-if="entry.activity.content" class="reasoning-content" :content="entry.activity.content" />
-                                <small v-if="entry.activity.compressed_from">Compressed {{ entry.activity.compressed_from }}–{{ entry.activity.compressed_to }} · kept {{ entry.activity.kept_from }}–{{ entry.activity.kept_to }}</small>
-                              </div>
-                            </details>
-                            <details v-else-if="entry.type === 'tool'" class="tool-activity" :class="entry.activity.state">
-                              <summary><i /><span>{{ entry.activity.name.replaceAll('_', ' ') }}</span><small v-if="entry.activity.duration_ms">{{ Math.round(entry.activity.duration_ms) }} ms</small></summary>
-                              <div class="tool-activity-details">
-                                <div><strong>Arguments</strong><pre>{{ formatToolValue(entry.activity.arguments || {}) }}</pre></div>
-                                <div><strong>{{ entry.activity.error_message ? 'Error' : 'Result' }}</strong><ToolResult :output="entry.activity.output" :error="entry.activity.error_message" @preview-image="openImagePreview" /></div>
-                              </div>
-                            </details>
-                            <details v-else-if="entry.type === 'server_tool'" class="tool-activity server-tool-activity" :class="entry.activity.state">
-                              <summary><i /><span>{{ entry.activity.name.replaceAll('_', ' ') }}</span><small>Provider tool · {{ entry.activity.state }}</small></summary>
-                              <div class="tool-activity-details">
-                                <div><strong>Input</strong><pre>{{ entry.activity.input_delta || (entry.activity.input === null ? 'Waiting for streamed input…' : formatToolValue(entry.activity.input)) }}</pre></div>
-                                <div v-if="entry.activity.output !== undefined || entry.activity.error_code"><strong>{{ entry.activity.error_code ? 'Error' : 'Result' }}</strong><pre :class="{ error: entry.activity.error_code }">{{ entry.activity.error_code || formatToolValue(entry.activity.output) }}</pre></div>
-                              </div>
-                            </details>
-                            </template>
-                          </div>
-                          <p v-else-if="isRunningTurn(index)" class="turn-empty-detail">Waiting for execution details…</p>
-                        </div>
-                      </details>
+                        </template>
+                        <template #markdown="{ content }"><MarkdownContent :content="content" /></template>
+                      </AgentExecution>
 
                       <section class="turn-response" aria-label="Agent response">
                         <div class="agent-response-content">
@@ -4560,23 +4519,7 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .turn-prompt-image-button:hover .turn-prompt-image { box-shadow: 0 0 0 2px rgba(71,105,87,.22); }
 .turn-prompt-image-button:focus-visible { outline: 3px solid rgba(71,105,87,.24); outline-offset: 2px; }
 .turn-prompt-image { display: block; width: min(100%, 22rem); max-height: 18rem; margin: 0; border-radius: .75rem; object-fit: contain; background: #e2e7e4; }
-.turn-execution { margin-right: 7%; }
-.turn-execution > summary { min-height: 3.1rem; display: grid; grid-template-columns: auto minmax(0,1fr) auto auto; align-items: center; gap: .62rem; padding: .55rem .1rem; border-bottom: 1px solid #e7ebe8; cursor: pointer; list-style: none; user-select: none; }
-.turn-execution > summary::-webkit-details-marker { display: none; }
-.turn-state-icon { width: 1.55rem; height: 1.55rem; display: grid; place-items: center; border: 1px solid #d9e1dc; border-radius: 50%; background: #f5f8f6; }
-.turn-state-icon i { width: .43rem; height: .43rem; border-radius: 50%; background: #72907d; }
-.conversation-turn.running .turn-state-icon { border-color: #b8ccbf; background: #edf4ef; box-shadow: 0 0 0 .22rem rgba(96,139,112,.07); }
-.conversation-turn.running .turn-state-icon i { animation: activity-pulse 1.15s ease-in-out infinite; }
-.turn-execution-copy { min-width: 0; display: grid; gap: .16rem; }
-.turn-execution-copy strong { overflow: hidden; color: #59635d; font-size: .68rem; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
-.conversation-turn.running .turn-execution-copy strong { color: #355b45; }
-.turn-execution-copy small { color: #929995; font-size: .56rem; font-variant-numeric: tabular-nums; }
-.turn-execution-metrics { min-width: 0; display: flex; align-items: center; justify-content: flex-end; }
 .turn-execution-cache { opacity: .72; font-size: .58rem; }
-.turn-chevron { color: #8e9892; font-size: 1.05rem; line-height: 1; transition: transform 160ms ease; }
-.turn-execution[open] > summary .turn-chevron { transform: rotate(90deg); }
-.turn-execution-details { display: grid; gap: .28rem; padding: .48rem 0 .2rem; animation: turn-reveal 160ms ease-out; }
-.turn-empty-detail { margin: 0; color: #979e99; font-size: .62rem; }
 .turn-response { min-width: 0; max-width: 100%; padding-right: 7%; }
 .agent-response-content { min-width: 0; max-width: 100%; padding-top: .1rem; }
 .turn-prompt .message-content, .agent-response-content { font-size: var(--conversation-font-size); line-height: 1.65; }
@@ -4717,38 +4660,6 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .message-content { margin: 0; padding: .78rem .9rem; border: 1px solid rgba(29,29,31,.035); border-radius: .88rem; color: #303431; background: #f0f1f2; font-size: .76rem; line-height: 1.58; overflow-wrap: anywhere; }
 .live-agent-state { display: inline-flex; align-items: center; gap: .3rem; text-transform: capitalize; }
 .live-agent-state i { width: .36rem; height: .36rem; border-radius: 50%; background: #4b9867; box-shadow: 0 0 0 .18rem rgba(75,152,103,.12); animation: activity-pulse 1.1s ease-in-out infinite; }
-.agent-event-timeline { width: 100%; display: grid; gap: .12rem; }
-.agent-event-timeline > .reasoning-panel, .agent-event-timeline > .tool-activity { margin: 0; }
-.intermediate-response { margin: .18rem 0 .3rem; padding: .12rem 0; color: #4f5b54; font-size: .68rem; line-height: 1.58; }
-.tool-activity-list { display: grid; gap: .32rem; margin: 0 0 .48rem; }
-.tool-activity { min-width: 0; color: #657068; font-size: .64rem; }
-.tool-activity summary { display: flex; align-items: center; gap: .42rem; min-height: 1.7rem; padding: .12rem .08rem; cursor: pointer; list-style: none; text-transform: capitalize; user-select: none; }
-.tool-activity summary::-webkit-details-marker { display: none; }
-.tool-activity summary::after { content: '›'; margin-left: .12rem; color: #8b948f; font-size: .82rem; transition: transform 150ms ease; }
-.tool-activity[open] summary::after { transform: rotate(90deg); }
-.tool-activity summary i { width: .38rem; height: .38rem; flex: 0 0 auto; border-radius: 50%; background: #d59b45; animation: activity-pulse 1.1s ease-in-out infinite; }
-.tool-activity.succeeded summary i { background: #4b9867; animation: none; }
-.tool-activity.failed { color: #914d4d; }
-.tool-activity.failed summary i { background: #bd5656; animation: none; }
-.tool-activity summary small { margin-left: auto; color: var(--tertiary); font-size: .58rem; text-transform: none; }
-.tool-activity-details { display: grid; gap: .55rem; margin: .08rem 0 .55rem; padding: .2rem 0 .12rem; }
-.tool-activity-details strong { display: block; margin-bottom: .28rem; color: #78827c; font-size: .56rem; letter-spacing: .055em; text-transform: uppercase; }
-.tool-activity-details pre { max-height: 11rem; margin: 0; padding: .32rem 0; overflow: auto; border: 0; color: #465049; background: transparent; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: .62rem; line-height: 1.48; text-transform: none; white-space: pre-wrap; overflow-wrap: anywhere; }
-.tool-activity-details pre.error { color: #8d4040; }
-.reasoning-panel { width: 100%; margin: 0; color: #5d6961; background: transparent; }
-.reasoning-panel summary { display: flex; align-items: center; gap: .42rem; min-height: 1.7rem; padding: .12rem .08rem; cursor: pointer; list-style: none; font-size: .68rem; font-weight: 630; user-select: none; }
-.reasoning-panel summary::-webkit-details-marker { display: none; }
-.reasoning-panel summary::after { content: '›'; margin-left: .12rem; color: #8b948f; font-size: .82rem; transition: transform 150ms ease; }
-.reasoning-panel[open] summary::after { transform: rotate(90deg); }
-.reasoning-panel summary > i { width: .38rem; height: .38rem; flex: 0 0 auto; border-radius: 50%; background: #789383; }
-.reasoning-panel summary small { margin-left: auto; color: var(--tertiary); font-size: .58rem; font-weight: 500; }
-.reasoning-content { max-height: 14rem; margin: .08rem 0 .55rem; padding: .25rem 0; overflow: auto; color: #657068; font-size: .68rem; line-height: 1.58; }
-.compaction-panel { color: #6d658b; }
-.compaction-content { margin-left: 0; padding-left: 0; }
-.compaction-content .reasoning-content { margin-left: 0; padding-left: 0; border-left: 0; }
-.compaction-content > small { display: block; padding: .32rem 0 .45rem; color: var(--tertiary); font-size: .61rem; }
-.streaming-reasoning > summary { color: #466554; }
-.streaming-reasoning > summary > i { animation: activity-pulse 1.1s ease-in-out infinite; }
 .stream-waiting { display: flex; gap: .25rem; padding: .8rem 1rem !important; }
 .stream-waiting i { width: .32rem; height: .32rem; border-radius: 50%; background: #929298; animation: typing-pulse 1s ease-in-out infinite; }
 .stream-waiting i:nth-child(2) { animation-delay: 140ms; }
