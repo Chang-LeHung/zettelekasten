@@ -19,11 +19,23 @@ import { ARTIFACT_TOOLS, type AgentArtifact, type ArtifactReceipt, type Provider
 import MarkdownBody from './chat/MarkdownBody.vue'
 import AgentExecution from '../../../frontend/src/components/AgentExecution.vue'
 import CacheHitRate from '../../../frontend/src/components/CacheHitRate.vue'
+import ComposerCommandMenu from '../../../frontend/src/components/ComposerCommandMenu.vue'
 import ContextCompositionRing from '../../../frontend/src/components/ContextCompositionRing.vue'
-import type { AgentContextComposition, AgentCustomEvent, AgentModelUsage } from '../../../frontend/src/api/types'
+import type {
+  AgentAtCommand,
+  AgentContextComposition,
+  AgentCustomEvent,
+  AgentModelUsage,
+  AgentSlashCommand,
+  MessageImagePart,
+  MessagePart,
+} from '../../../frontend/src/api/types'
 import { addAgentUsage, formatTokenCount, latestAgentUsage, summarizeAgentUsage } from '../../../frontend/src/utils/agentUsage'
 import { buildMessageParts, readMessageImage, type PositionedMessageImage } from '../../../frontend/src/utils/messageParts'
 import { parseUtcTimestamp } from '../../../frontend/src/utils/timestamps'
+import { SlashCommandInput } from '../../../frontend/src/utils/slashCommand'
+import { AtCommandInput } from '../../../frontend/src/utils/atCommand'
+import type { CommandTokenMatch } from '../../../frontend/src/utils/commandToken'
 import { BrowserBridgeClient, type BrowserConsent } from './api/browser-bridge'
 import { formatTurnDuration, splitTurnTimeline } from '../../../frontend/src/utils/conversationTurns'
 import { settleTimeline, turnTask, updateTimeline } from './chat/timeline'
@@ -65,7 +77,11 @@ const page = ref<Awaited<ReturnType<typeof readActivePage>> | null>(null)
 const transcript = ref<TranscriptEntry[]>([])
 const thread = ref<HTMLElement | null>(null)
 const composer = ref<HTMLFormElement | null>(null)
-interface QueuedFollowUp { id: number; text: string }
+interface QueuedFollowUp {
+  id: number
+  text: string
+  parts: MessagePart[]
+}
 /** One `ask_user` request the run is suspended on until the panel answers it. */
 interface AskUserQuestion {
   toolCallId: string
@@ -93,6 +109,19 @@ let activeAnswerId: number | null = null
 const pendingSteeringTexts: string[] = []
 let steeringResponseStarted = false
 const prompt = ref('')
+const composerInput = ref<HTMLTextAreaElement | null>(null)
+const messageImageInput = ref<HTMLInputElement | null>(null)
+const pendingImages = ref<PositionedMessageImage[]>([])
+const slashCommands = ref<AgentSlashCommand[]>([])
+const slashCommandsLoaded = ref(false)
+const slashCommandsLoading = ref(false)
+const slashMenu = ref<CommandTokenMatch | null>(null)
+const slashMenuIndex = ref(0)
+const atCommands = ref<AgentAtCommand[]>([])
+const atCommandsLoaded = ref(false)
+const atCommandsLoading = ref(false)
+const atMenu = ref<CommandTokenMatch | null>(null)
+const atMenuIndex = ref(0)
 const busy = ref(false)
 const stopping = ref(false)
 let activeStreamController: AbortController | null = null
@@ -397,6 +426,11 @@ async function openPage(): Promise<void> {
   activeAnswerId = null
   steeringResponseStarted = false
   clearQuestions()
+  clearComposerCapabilities()
+  slashCommands.value = []
+  slashCommandsLoaded.value = false
+  atCommands.value = []
+  atCommandsLoaded.value = false
   prompt.value = ''
   currentUsage.value = null
   contextComposition.value = null
@@ -447,6 +481,11 @@ async function saveSettings(): Promise<void> {
   activeAnswerId = null
   steeringResponseStarted = false
   clearQuestions()
+  clearComposerCapabilities()
+  slashCommands.value = []
+  slashCommandsLoaded.value = false
+  atCommands.value = []
+  atCommandsLoaded.value = false
   currentUsage.value = null
   contextComposition.value = null
   compactionMaxTokens.value = 0
@@ -527,6 +566,11 @@ async function newChat(): Promise<void> {
     activeAnswerId = null
     steeringResponseStarted = false
     clearQuestions()
+    clearComposerCapabilities()
+    slashCommands.value = []
+    slashCommandsLoaded.value = false
+    atCommands.value = []
+    atCommandsLoaded.value = false
     currentUsage.value = null
     contextComposition.value = null
     entryId = 0
@@ -574,21 +618,251 @@ function onTool(outcome: ToolOutcome): void {
   }
 }
 
+/** The `/` and `@` menus share the web composer's token grammar and list. */
+const slashMenuCommands = computed(() => {
+  const query = slashMenu.value?.query.trim().toLowerCase()
+  if (!query) return slashCommands.value
+  return slashCommands.value.filter(command => (
+    command.name.toLowerCase().includes(query)
+    || command.description.toLowerCase().includes(query)
+    || command.type.toLowerCase().includes(query)
+  ))
+})
+const slashMenuItems = computed(() => slashMenuCommands.value.map(command => ({
+  id: command.id,
+  name: command.name,
+  description: command.description,
+  badge: command.type,
+})))
+const atMenuCommands = computed(() => {
+  const query = atMenu.value?.query.trim().toLowerCase()
+  if (!query) return atCommands.value
+  return atCommands.value.filter(item => (
+    item.name.toLowerCase().includes(query)
+    || item.label.toLowerCase().includes(query)
+    || item.kind.toLowerCase().includes(query)
+  ))
+})
+const atMenuItems = computed(() => atMenuCommands.value.map(item => ({
+  id: item.id,
+  name: item.name,
+  description: `${item.label} · ${item.description}`,
+  badge: item.kind,
+})))
+
+async function loadSlashCommands(force = false): Promise<void> {
+  const sessionId = conversationId.value
+  if (!sessionId) {
+    slashCommands.value = []
+    slashCommandsLoaded.value = true
+    return
+  }
+  if (slashCommandsLoaded.value && !force) return
+  slashCommandsLoading.value = true
+  try {
+    const commands = await client.value.listSlashCommands(sessionId)
+    if (conversationId.value === sessionId) {
+      slashCommands.value = commands
+      slashCommandsLoaded.value = true
+    }
+  } catch (error) {
+    notify((error as Error).message, 'error')
+  } finally {
+    if (conversationId.value === sessionId) slashCommandsLoading.value = false
+  }
+}
+
+async function loadAtCommands(force = false): Promise<void> {
+  const sessionId = conversationId.value
+  if (!sessionId) {
+    atCommands.value = []
+    atCommandsLoaded.value = true
+    return
+  }
+  if (atCommandsLoaded.value && !force) return
+  atCommandsLoading.value = true
+  try {
+    const commands = await client.value.listAtCommands(sessionId)
+    if (conversationId.value === sessionId) {
+      atCommands.value = commands
+      atCommandsLoaded.value = true
+    }
+  } catch (error) {
+    notify((error as Error).message, 'error')
+  } finally {
+    if (conversationId.value === sessionId) atCommandsLoading.value = false
+  }
+}
+
+/** Open or close the menus for the token under the caret. */
+function refreshCommandMenus(value: string, caret: number): void {
+  const slash = SlashCommandInput.match(value, caret)
+  if (slash) {
+    if (!slashCommandsLoaded.value && !slashCommandsLoading.value) void loadSlashCommands()
+    if (slashMenu.value?.start !== slash.start) slashMenuIndex.value = 0
+    slashMenu.value = slash
+  } else {
+    slashMenu.value = null
+  }
+  const at = AtCommandInput.match(value, caret)
+  if (at) {
+    // References change during a session, so a new token refreshes the list.
+    const sameRange = atMenu.value?.start === at.start
+    if (!atCommandsLoading.value) void loadAtCommands(!sameRange)
+    if (!sameRange) atMenuIndex.value = 0
+    atMenu.value = at
+  } else {
+    atMenu.value = null
+  }
+}
+
+function selectSlashCommand(index: number): void {
+  const menu = slashMenu.value
+  const command = slashMenuCommands.value[index]
+  if (!menu || !command) return
+  const insertion = SlashCommandInput.insert(prompt.value, menu, command.name)
+  prompt.value = insertion.value
+  slashMenu.value = null
+  void nextTick(() => {
+    composerInput.value?.focus()
+    composerInput.value?.setSelectionRange(insertion.caret, insertion.caret)
+  })
+}
+
+function selectAtCommand(index: number): void {
+  const menu = atMenu.value
+  const command = atMenuCommands.value[index]
+  if (!menu || !command) return
+  const insertion = AtCommandInput.insert(prompt.value, menu, command.name)
+  prompt.value = insertion.value
+  atMenu.value = null
+  void nextTick(() => {
+    composerInput.value?.focus()
+    composerInput.value?.setSelectionRange(insertion.caret, insertion.caret)
+  })
+}
+
+function onComposerInput(event: Event): void {
+  const textarea = event.target as HTMLTextAreaElement
+  refreshCommandMenus(textarea.value, textarea.selectionStart ?? textarea.value.length)
+}
+
+function onComposerKeydown(event: KeyboardEvent): void {
+  if (event.isComposing) return
+  const menu = slashMenu.value ? 'slash' : atMenu.value ? 'at' : null
+  const items = menu === 'slash' ? slashMenuCommands.value : menu === 'at' ? atMenuCommands.value : []
+  const activeIndex = menu === 'slash' ? slashMenuIndex.value : atMenuIndex.value
+  if (menu && items.length) {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      const delta = event.key === 'ArrowDown' ? 1 : -1
+      const next = (activeIndex + delta + items.length) % items.length
+      if (menu === 'slash') slashMenuIndex.value = next
+      else atMenuIndex.value = next
+      return
+    }
+    if (event.key === 'Enter' || event.key === 'Tab') {
+      event.preventDefault()
+      if (menu === 'slash') selectSlashCommand(activeIndex)
+      else selectAtCommand(activeIndex)
+      return
+    }
+  }
+  if (event.key === 'Escape' && menu) {
+    event.preventDefault()
+    slashMenu.value = null
+    atMenu.value = null
+    return
+  }
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault()
+    void send()
+  }
+}
+
+/** Images picked, pasted or dropped join the next message. */
+async function attachMessageImages(files: File[]): Promise<void> {
+  const images = files.filter(file => file.type.startsWith('image/'))
+  const accepted = images.slice(0, Math.max(0, maxMessageImages.value - pendingImages.value.length))
+  if (!accepted.length) return
+  try {
+    pendingImages.value = [
+      ...pendingImages.value,
+      ...await Promise.all(accepted.map(file => readMessageImage(file, prompt.value.length))),
+    ]
+    if (accepted.length < images.length) {
+      notify(`A message can contain up to ${maxMessageImages.value} images`, 'error')
+    }
+  } catch (error) {
+    notify((error as Error).message, 'error')
+  }
+}
+
+function onMessageImagePick(event: Event): void {
+  const input = event.target as HTMLInputElement
+  void attachMessageImages(Array.from(input.files || []))
+  input.value = ''
+}
+
+function onComposerPaste(event: ClipboardEvent): void {
+  const files = Array.from(event.clipboardData?.items || [])
+    .filter(item => item.kind === 'file' && item.type.startsWith('image/'))
+    .map(item => item.getAsFile())
+    .filter((file): file is File => file !== null)
+  if (!files.length) return
+  event.preventDefault()
+  void attachMessageImages(files)
+}
+
+function removePendingImage(id: string): void {
+  pendingImages.value = pendingImages.value.filter(image => image.id !== id)
+}
+
+/** The first listed `/command` or `@reference` token owns the turn, like the web. */
+function slashCommandIdFor(value: string): string | null {
+  for (const token of SlashCommandInput.tokens(value)) {
+    const command = slashCommands.value.find(item => item.name === token.name)
+    if (command) return command.id
+  }
+  return null
+}
+
+function atCommandIdFor(value: string): string | null {
+  for (const token of AtCommandInput.tokens(value)) {
+    const reference = atCommands.value.find(item => item.name === token.name)
+    if (reference) return reference.id
+  }
+  return null
+}
+
+function clearComposerCapabilities(): void {
+  slashMenu.value = null
+  atMenu.value = null
+  pendingImages.value = []
+}
+
+/** The image parts of one user entry, for the thread's thumbnails. */
+function imageParts(entry: TranscriptEntry): MessageImagePart[] {
+  return (entry.parts ?? []).filter((part): part is MessageImagePart => part.type === 'image')
+}
+
 /** Enter queues while a turn runs and starts the next turn otherwise, exactly
  * like the web conversation's composer. */
 async function send(): Promise<void> {
   const text = prompt.value.trim()
-  if (!text) return
+  if (!text && !pendingImages.value.length) return
+  const parts = pendingImages.value.length ? buildMessageParts(text, pendingImages.value) : []
   if (busy.value) {
-    queueFollowUp(text)
+    queueFollowUp(text, parts)
     return
   }
-  await sendTurn(text)
+  await sendTurn(text, parts)
 }
 
-function queueFollowUp(text: string): void {
-  queuedFollowUps.value = [...queuedFollowUps.value, { id: nextQueuedFollowUpId++, text }]
+function queueFollowUp(text: string, parts: MessagePart[] = []): void {
+  queuedFollowUps.value = [...queuedFollowUps.value, { id: nextQueuedFollowUpId++, text, parts }]
   prompt.value = ''
+  clearComposerCapabilities()
 }
 
 function removeQueuedFollowUp(id: number): void {
@@ -599,7 +873,7 @@ function drainQueuedFollowUps(): void {
   if (busy.value || !queuedFollowUps.value.length) return
   const [next, ...remaining] = queuedFollowUps.value
   queuedFollowUps.value = remaining
-  if (next) void sendTurn(next.text)
+  if (next) void sendTurn(next.text, next.parts)
 }
 
 /** Steering is published as its own user message, so close the answer that was
@@ -642,7 +916,7 @@ async function steerQueuedFollowUp(item: QueuedFollowUp): Promise<void> {
   if (!conversationId.value || !busy.value || steeringQueuedId.value !== null) return
   steeringQueuedId.value = item.id
   try {
-    const result = await client.value.steerAgent(conversationId.value, item.text)
+    const result = await client.value.steerAgent(conversationId.value, item.text, item.parts)
     if (!result.accepted) {
       notify('The agent is not accepting steering right now', 'error')
       return
@@ -791,7 +1065,7 @@ function turnLabel(entry: TranscriptEntry): string {
   return turnTask(entry.timeline ?? [])
 }
 
-async function sendTurn(text: string): Promise<void> {
+async function sendTurn(text: string, parts: MessagePart[] = []): Promise<void> {
   if (owningTabId !== null) {
     const tab = await chrome.tabs.get(owningTabId)
     if (pageKey(serverUrl.value, owningTabId, tab.url ?? '') !== pageIdentity.value) {
@@ -817,7 +1091,15 @@ async function sendTurn(text: string): Promise<void> {
   if (!browserConnected.value) {
     notify('Page tools are off, so the Agent only sees the page excerpt. Press “Connect page” in the ••• menu to let it read and edit the page.')
   }
-  appendEntry('user', text)
+  // Structured parts replace `raw_content`, so the excerpt travels as a part too.
+  const outgoingParts = parts.length
+    ? outgoing.length > text.length
+      ? [{ type: 'text' as const, text: outgoing.slice(0, outgoing.length - text.length) }, ...parts]
+      : parts
+    : []
+  const slashCommandId = slashCommandIdFor(text)
+  const atCommandId = slashCommandId ? null : atCommandIdFor(text)
+  appendEntry('user', text, { parts })
   const startedAt = Date.now()
   clock.value = startedAt
   clockTimer = setInterval(() => { clock.value = Date.now() }, 200)
@@ -826,12 +1108,16 @@ async function sendTurn(text: string): Promise<void> {
   // prompt is already part of the thread, and a failed or slow turn must not
   // leave the user's text stuck in the box.
   prompt.value = ''
+  clearComposerCapabilities()
   try {
     await client.value.streamTurn({
       conversationId: conversationId.value,
       providerId: selectedProviderId.value,
       reasoningEffort: effort.value,
       text: outgoing,
+      parts: outgoingParts,
+      commandKind: slashCommandId ? 'slash' : atCommandId ? 'at' : undefined,
+      commandId: slashCommandId ?? atCommandId ?? undefined,
       signal: controller.signal,
       browserToken: browserConnected.value ? browserBridge.token : undefined,
       onUsage: (next) => {
@@ -1064,7 +1350,10 @@ watch(conversationId, (sessionId) => { void loadBrowserApproval(sessionId) })
     </div>
     <div v-for="entry in transcript" :key="entry.id" class="turn" :class="entry.role">
       <div v-if="entry.role === 'user'" class="user-entry">
-        <div class="prompt-bubble">{{ entry.text }}</div>
+        <div v-if="imageParts(entry).length" class="turn-prompt-images">
+          <img v-for="part in imageParts(entry)" :key="part.name + part.content_url.slice(-16)" :src="part.content_url" :alt="part.name" />
+        </div>
+        <div v-if="entry.text" class="prompt-bubble">{{ entry.text }}</div>
         <p v-if="entry.steering === 'waiting'" class="steering-pending">Will respond after the current tool call or turn finishes.</p>
       </div>
       <article v-else-if="entry.role === 'artifact' && entry.artifact" class="artifact-card" :class="{ saved: !entry.artifact.needsSave }">
@@ -1208,17 +1497,49 @@ watch(conversationId, (sessionId) => { void loadBrowserApproval(sessionId) })
   </div>
 
   <form ref="composer" class="agent-input" @submit.prevent="send">
+    <ComposerCommandMenu
+      v-if="slashMenu"
+      :items="slashMenuItems"
+      :active-index="slashMenuIndex"
+      :loading="slashCommandsLoading && !slashCommandsLoaded"
+      heading="Slash commands"
+      hint="Select one command"
+      empty-label="No slash commands"
+      @select="selectSlashCommand"
+      @hover="slashMenuIndex = $event"
+    />
+    <ComposerCommandMenu
+      v-else-if="atMenu"
+      trigger="@"
+      :items="atMenuItems"
+      :active-index="atMenuIndex"
+      :loading="atCommandsLoading && !atCommandsLoaded"
+      heading="References"
+      hint="Select one reference"
+      empty-label="No references"
+      @select="selectAtCommand"
+      @hover="atMenuIndex = $event"
+    />
+    <div v-if="pendingImages.length" class="message-image-drafts" aria-label="Images attached to this message">
+      <figure v-for="image in pendingImages" :key="image.id">
+        <img :src="image.content_url" :alt="image.name" />
+        <button type="button" :aria-label="`Remove ${image.name}`" @click="removePendingImage(image.id)">×</button>
+      </figure>
+    </div>
     <div class="composer-wrap">
       <textarea
+        ref="composerInput"
         v-model="prompt"
         placeholder="Continue the conversation…"
-        @keydown.enter.exact.prevent="send"
+        @input="onComposerInput"
+        @keydown="onComposerKeydown"
+        @paste="onComposerPaste"
       />
       <button
         class="send-button"
         :class="{ stop: busy }"
         type="button"
-        :disabled="busy ? stopping : !prompt.trim()"
+        :disabled="busy ? stopping : (!prompt.trim() && !pendingImages.length)"
         :aria-label="busy ? (stopping ? 'Stopping generation' : 'Stop generation') : 'Send'"
         :title="busy ? (stopping ? 'Stopping…' : 'Stop generation') : 'Send'"
         @click="busy ? stopGeneration() : send()"
@@ -1252,7 +1573,18 @@ watch(conversationId, (sessionId) => { void loadBrowserApproval(sessionId) })
           </div>
         </div>
       </div>
-      <div class="more-menu" @pointerenter="moreOpen = true" @pointerleave="closeMenus()">
+      <div class="footer-actions">
+        <button
+          class="attach-trigger"
+          type="button"
+          title="Attach images"
+          aria-label="Attach images"
+          @click="messageImageInput?.click()"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /><circle cx="12" cy="12" r="9" /></svg>
+        </button>
+        <input ref="messageImageInput" type="file" accept="image/*" multiple hidden @change="onMessageImagePick" />
+        <div class="more-menu" @pointerenter="moreOpen = true" @pointerleave="closeMenus()">
         <button class="more-trigger" type="button" :aria-expanded="moreOpen" aria-label="More options" title="More options" @click="moreOpen = !moreOpen; modelOpen = false; effortOpen = false">•••</button>
         <div v-if="moreOpen" class="more-popover">
           <div v-if="usage" class="usage-details">
@@ -1282,6 +1614,7 @@ watch(conversationId, (sessionId) => { void loadBrowserApproval(sessionId) })
           <button v-if="browserAutoApprove" type="button" @click="rememberBrowserApproval(false); moreOpen = false">Ask before page edits again</button>
           <button type="button" :disabled="savingIds.length > 0 || busy" @click="saveAll(); moreOpen = false">Save all artifacts</button>
         </div>
+      </div>
       </div>
     </div>
     <p v-if="notice" class="notice" :class="noticeKind">{{ notice }}</p>
@@ -1454,6 +1787,17 @@ button svg { width: .9rem; height: .9rem; fill: none; stroke: currentColor; stro
 .agent-input:focus-within { border-color: rgba(71, 105, 87, .4); box-shadow: 0 0 0 3px rgba(71, 105, 87, .1), 0 5px 20px rgba(0, 0, 0, .06); }
 .composer-wrap { position: relative; z-index: 1; }
 .agent-input textarea { display: block; width: 100%; min-height: 4.3rem; max-height: 8rem; padding: .75rem 3.2rem .2rem .8rem; resize: vertical; border: 0; outline: 0; color: var(--text); caret-color: var(--text); background: transparent; font-family: inherit; font-size: .9rem; line-height: 1.5; }
+/* Composer attachments: the web app's drafts row, plus the thread's thumbnails. */
+.message-image-drafts { display: flex; gap: .42rem; padding: .45rem .55rem .1rem; overflow-x: auto; }
+.message-image-drafts figure { position: relative; width: 3.2rem; height: 3.2rem; flex: 0 0 auto; margin: 0; }
+.message-image-drafts img { display: block; width: 100%; height: 100%; border: 1px solid #dce3de; border-radius: .6rem; object-fit: cover; background: #f2f4f2; }
+.message-image-drafts button { position: absolute; top: -.28rem; right: -.28rem; width: 1rem; height: 1rem; display: grid; place-items: center; padding: 0; border: 2px solid #fff; border-radius: 50%; color: #fff; background: #59645d; font-size: .67rem; line-height: 1; }
+.turn-prompt-images { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .35rem; margin-bottom: .3rem; }
+.turn-prompt-images img { width: 6.5rem; max-height: 8rem; border: 1px solid #dce3de; border-radius: .6rem; object-fit: cover; background: #f2f4f2; }
+.footer-actions { flex: 0 0 auto; display: flex; align-items: center; gap: .15rem; }
+.attach-trigger { width: 2rem; height: 2rem; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; color: #7c8b80; background: transparent; }
+.attach-trigger:hover { color: #4c6a58; background: #eef3ef; }
+.attach-trigger svg { width: .95rem; height: .95rem; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .send-button { position: absolute; right: .35rem; top: .5rem; display: grid; place-items: center; width: 2.3rem; height: 2.3rem; padding: 0; border: 0; border-radius: .7rem; color: #fff; background: var(--accent); }
 .send-button svg { width: 1.1rem; height: 1.1rem; transform: rotate(-90deg); }
 .send-button:hover:not(:disabled) { color: #fff; background: var(--accent-dark); border-color: transparent; }

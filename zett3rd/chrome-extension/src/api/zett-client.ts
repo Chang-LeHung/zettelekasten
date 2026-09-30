@@ -8,11 +8,14 @@
 
 import { parseSseChunk } from './sse'
 import type {
+  AgentAtCommand,
   AgentContextComposition,
   AgentCustomEvent,
   AgentModelUsage,
+  AgentSlashCommand,
   AgentSteeringMessage,
   AgentTimelineEntry,
+  MessagePart,
 } from '../../../../frontend/src/api/types'
 import type { AgentPersistedMessage } from '../../../../frontend/src/api/types'
 import { asContextComposition } from '../../../../frontend/src/utils/contextComposition'
@@ -44,6 +47,11 @@ export interface StreamTurnOptions {
   providerId: string
   reasoningEffort: ReasoningEffort
   text: string
+  /** Ordered text/image body; empty means "just `text`". */
+  parts?: MessagePart[]
+  /** A slash command or `@` reference owns the turn when one is set. */
+  commandKind?: 'slash' | 'at'
+  commandId?: string
   onDelta?: (delta: string) => void
   onModelStarted?: () => void
   onTool?: (outcome: ToolOutcome) => void
@@ -87,11 +95,21 @@ export class ZettClient {
   }
 
   /** Inject one urgent message into the turn that is already running. */
-  async steerAgent(conversationId: string, rawContent: string): Promise<{ accepted: boolean }> {
+  async steerAgent(conversationId: string, rawContent: string, parts: MessagePart[] = []): Promise<{ accepted: boolean }> {
     return await this.request(`/api/agent/${encodeURIComponent(conversationId)}/steer`, {
       method: 'POST',
-      body: JSON.stringify({ raw_content: rawContent, parts: [] }),
+      body: JSON.stringify({ raw_content: rawContent, parts }),
     })
+  }
+
+  /** The container's `/` commands for one conversation. */
+  async listSlashCommands(sessionId: string): Promise<AgentSlashCommand[]> {
+    return await this.request(`/api/agent/${encodeURIComponent(sessionId)}/slash-commands`)
+  }
+
+  /** The conversation resources an `@` token can reference. */
+  async listAtCommands(sessionId: string): Promise<AgentAtCommand[]> {
+    return await this.request(`/api/agent/${encodeURIComponent(sessionId)}/at-commands`)
   }
 
   /** Answer one extension request, such as an Agent question or an approval. */
@@ -163,11 +181,18 @@ export class ZettClient {
    */
   async streamTurn(options: StreamTurnOptions): Promise<string> {
     const { conversationId, providerId, reasoningEffort, text, onDelta, onTool, onEvent, signal } = options
-    const response = await fetch(`${this.baseUrl}/api/agent/${conversationId}/messages`, {
+    const endpoint = options.commandKind === 'slash' ? 'slash-commands'
+      : options.commandKind === 'at' ? 'at-commands'
+        : 'messages'
+    const path = options.commandKind && options.commandId
+      ? `/api/agent/${conversationId}/${endpoint}/${encodeURIComponent(options.commandId)}`
+      : `/api/agent/${conversationId}/messages`
+    const response = await fetch(`${this.baseUrl}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         raw_content: text,
+        parts: options.parts ?? [],
         provider_id: providerId,
         reasoning_effort: reasoningEffort,
         shell_approval_mode: 'allow_all',

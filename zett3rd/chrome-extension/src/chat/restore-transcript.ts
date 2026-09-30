@@ -23,7 +23,12 @@ export function restoreTranscript(records: readonly AgentPersistedMessage[]): Tr
   const turns = buildConversationTurns(initialPrompt, messages)
   const entries: TranscriptEntry[] = []
   for (const turn of turns) {
-    entries.push({ id: entries.length + 1, role: 'user', text: visiblePrompt(turn.prompt.content) })
+    entries.push({
+      id: entries.length + 1,
+      role: 'user',
+      text: visiblePrompt(turn.prompt.content),
+      parts: turn.prompt.parts,
+    })
     let usage: AgentModelUsage | null = null
     for (const response of turn.responses) {
       if (response.usage) usage = addAgentUsage(usage, response.usage)

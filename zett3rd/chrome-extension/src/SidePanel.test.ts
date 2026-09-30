@@ -47,6 +47,8 @@ beforeEach(() => {
   vi.spyOn(ZettClient.prototype, 'startSession').mockImplementation(async () => ({ conversation_id: `test-session-${++sessionSequence}` }))
   vi.spyOn(ZettClient.prototype, 'session').mockResolvedValue({ messages: [] })
   vi.spyOn(ZettClient.prototype, 'listSessions').mockResolvedValue([])
+  vi.spyOn(ZettClient.prototype, 'listSlashCommands').mockResolvedValue([])
+  vi.spyOn(ZettClient.prototype, 'listAtCommands').mockResolvedValue([])
   vi.spyOn(ZettClient.prototype, 'sessionContextComposition').mockResolvedValue({
     system_prompt: .32, tool_prompt: .05, tool_output: .08, user: .35, assistant: .2,
   })
@@ -205,7 +207,7 @@ it('steers the running turn with a queued follow-up and marks it waiting', async
   await enter(host, 'Use the short version')
   host.querySelector<HTMLButtonElement>('.queued-followup-steer')!.click()
   await flush()
-  expect(vi.mocked(ZettClient.prototype.steerAgent)).toHaveBeenCalledWith('test-session-1', 'Use the short version')
+  expect(vi.mocked(ZettClient.prototype.steerAgent)).toHaveBeenCalledWith('test-session-1', 'Use the short version', [])
   expect(host.querySelector('.queued-followup')).toBeNull()
   const prompts = [...host.querySelectorAll('.turn.user')]
   expect(prompts.at(-1)?.textContent).toContain('Use the short version')
@@ -385,6 +387,70 @@ it('keeps an always-allow page-edit choice per conversation and can revoke it', 
   host.querySelector<HTMLButtonElement>('.more-trigger')!.click()
   await nextTick()
   expect(host.textContent).not.toContain('Ask before page edits again')
+})
+
+it('picks a slash command from the composer menu and runs it', async () => {
+  vi.mocked(ZettClient.prototype.listSlashCommands).mockResolvedValue([
+    { id: 'cmd-1', name: 'summarize', description: 'Summarize the page', type: 'skill' },
+  ])
+  const host = await mount()
+  const input = host.querySelector('textarea')!
+  input.value = '/sum'
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+  await flush()
+  expect(host.querySelector('.command-menu code')?.textContent).toBe('/summarize')
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+  await nextTick()
+  expect(input.value).toBe('/summarize ')
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+  await nextTick()
+  expect(options.commandKind).toBe('slash')
+  expect(options.commandId).toBe('cmd-1')
+  expect(options.text).toBe('/summarize')
+  finish('')
+  await flush()
+})
+
+it('picks a conversation reference from the @ menu and runs it', async () => {
+  vi.mocked(ZettClient.prototype.listAtCommands).mockResolvedValue([
+    { id: 'asset-1', kind: 'asset', name: 'shot', label: 'Screenshot', description: 'Session asset' },
+  ])
+  const host = await mount()
+  const input = host.querySelector('textarea')!
+  input.value = '@sho'
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+  await flush()
+  expect(host.querySelector('.command-menu code')?.textContent).toBe('@shot')
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+  await nextTick()
+  expect(input.value).toBe('@shot ')
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+  await nextTick()
+  expect(options.commandKind).toBe('at')
+  expect(options.commandId).toBe('asset-1')
+  finish('')
+  await flush()
+})
+
+it('sends picked images as message parts and shows them in the thread', async () => {
+  const host = await mount()
+  const picker = host.querySelector<HTMLInputElement>('input[type="file"]')!
+  const file = new File([new Uint8Array([1, 2, 3])], 'shot.png', { type: 'image/png' })
+  Object.defineProperty(picker, 'files', { value: [file], configurable: true })
+  picker.dispatchEvent(new Event('change'))
+  await vi.waitFor(() => { expect(host.querySelectorAll('.message-image-drafts img')).toHaveLength(1) })
+  const input = host.querySelector('textarea')!
+  input.value = 'What is this?'
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+  await nextTick()
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+  await flush()
+  expect(options.parts?.some(part => part.type === 'image')).toBe(true)
+  expect(options.parts?.some(part => part.type === 'text' && part.text === 'What is this?')).toBe(true)
+  expect(host.querySelectorAll('.turn-prompt-images img')).toHaveLength(1)
+  expect(host.querySelectorAll('.message-image-drafts img')).toHaveLength(0)
+  finish('')
+  await flush()
 })
 
 it('loads more conversations as the history list scrolls', async () => {
