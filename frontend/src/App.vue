@@ -15,6 +15,7 @@ import ShellApprovalPrompt from './components/ShellApprovalPrompt.vue'
 import AgentExecution from './components/AgentExecution.vue'
 import UsageActivityGraph from './components/UsageActivityGraph.vue'
 import { addAgentUsage, latestAgentUsage, summarizeAgentUsage } from './utils/agentUsage'
+import { parseUtcTimestamp } from './utils/timestamps'
 import { artifactContentFromLibraryUpdate, artifactEditableContent, hasPendingDraft, libraryItemFromArtifact } from './utils/artifactEditor'
 import { artifactListsEquivalent, sameArtifactRevision, stabilizeArtifactReferences } from './utils/artifactStability'
 import { diffArtifactContent } from './utils/artifactDiff'
@@ -3214,11 +3215,6 @@ function formatDateTime(value: string): string {
   }).format(parseUtcTimestamp(value))
 }
 
-function parseUtcTimestamp(value: string): Date {
-  const normalized = value.includes('T') ? value : value.replace(' ', 'T')
-  const includesTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(normalized)
-  return new Date(includesTimezone ? normalized : `${normalized}Z`)
-}
 
 async function initializeWorkspace(): Promise<void> {
   const persistedId = window.localStorage.getItem(activeSessionKey)

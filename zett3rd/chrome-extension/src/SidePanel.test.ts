@@ -46,6 +46,7 @@ beforeEach(() => {
   vi.spyOn(ZettClient.prototype, 'health').mockResolvedValue({ ok: true })
   vi.spyOn(ZettClient.prototype, 'startSession').mockImplementation(async () => ({ conversation_id: `test-session-${++sessionSequence}` }))
   vi.spyOn(ZettClient.prototype, 'session').mockResolvedValue({ messages: [] })
+  vi.spyOn(ZettClient.prototype, 'listSessions').mockResolvedValue([])
   vi.spyOn(ZettClient.prototype, 'sessionContextComposition').mockResolvedValue({
     system_prompt: .32, tool_prompt: .05, tool_output: .08, user: .35, assistant: .2,
   })
@@ -162,6 +163,24 @@ async function enter(host: HTMLElement, text: string): Promise<void> {
   await nextTick()
   input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
   await nextTick()
+}
+
+/** One stored message, shaped like the API returns it. */
+function persisted(
+  role: 'user' | 'assistant',
+  sequence: number,
+  changes: Partial<AgentPersistedMessage> = {},
+): AgentPersistedMessage {
+  return {
+    id: `message-${sequence}`, session_id: 'session', request_id: 'turn', sequence, role,
+    content: '', parts: [], reasoning_content: null, model: null, provider: null, tool_calls: [],
+    tool_call_id: null, tool_name: null, tool_success: null, attributes: {}, metadata: {}, tags: {},
+    input_tokens: null, output_tokens: null, cache_read_tokens: null, cache_write_tokens: null,
+    reasoning_tokens: null, total_tokens: null, cache_hit_rate: null, duration_ns: 1_000_000,
+    started_at: '2026-01-01T00:00:00Z', completed_at: '2026-01-01T00:00:00Z',
+    created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
+    ...changes,
+  }
 }
 
 it('queues a follow-up while the turn runs and sends it when the turn ends', async () => {
@@ -332,16 +351,6 @@ it('shows the context pie while the pointer rests on the Context row', async () 
 
 it('restores the context pie for a conversation the panel reopens', async () => {
   stored[pageKey('http://127.0.0.1:6280', 7, 'https://example.com/')!] = 'restored-session'
-  const persisted = (role: 'user' | 'assistant', sequence: number, changes: Partial<AgentPersistedMessage>): AgentPersistedMessage => ({
-    id: `message-${sequence}`, session_id: 'restored-session', request_id: 'turn', sequence, role,
-    content: '', parts: [], reasoning_content: null, model: null, provider: null, tool_calls: [],
-    tool_call_id: null, tool_name: null, tool_success: null, attributes: {}, metadata: {}, tags: {},
-    input_tokens: null, output_tokens: null, cache_read_tokens: null, cache_write_tokens: null,
-    reasoning_tokens: null, total_tokens: null, cache_hit_rate: null, duration_ns: 1_000_000,
-    started_at: '2026-01-01T00:00:00Z', completed_at: '2026-01-01T00:00:00Z',
-    created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
-    ...changes,
-  })
   vi.mocked(ZettClient.prototype.session).mockResolvedValue({ messages: [
     persisted('user', 1, { content: 'Summarize this page' }),
     persisted('assistant', 2, {
@@ -376,6 +385,62 @@ it('keeps an always-allow page-edit choice per conversation and can revoke it', 
   host.querySelector<HTMLButtonElement>('.more-trigger')!.click()
   await nextTick()
   expect(host.textContent).not.toContain('Ask before page edits again')
+})
+
+it('loads more conversations as the history list scrolls', async () => {
+  const page = (start: number, count: number) => Array.from({ length: count }, (_, index) => ({
+    id: `session-${start + index}`,
+    title: `Chat ${start + index}`,
+    updated_at: '2026-01-01T00:00:00Z',
+    message_count: 3,
+  }))
+  const listSessions = vi.mocked(ZettClient.prototype.listSessions)
+  listSessions.mockImplementation(async (_limit = 20, offset = 0) => page(offset, offset === 0 ? 20 : 3))
+  const host = await mount()
+  host.querySelector<HTMLButtonElement>('[aria-label="Previous conversations"]')!.click()
+  await flush()
+  expect(host.querySelectorAll('.session-history-item')).toHaveLength(20)
+  const section = host.querySelector<HTMLElement>('.session-history')!
+  section.dispatchEvent(new Event('scroll'))
+  await flush()
+  expect(host.querySelectorAll('.session-history-item')).toHaveLength(23)
+  expect(section.textContent).toContain("That's every conversation.")
+  section.dispatchEvent(new Event('scroll'))
+  await flush()
+  expect(listSessions).toHaveBeenCalledTimes(2)
+})
+
+it('reopens an older conversation from the history list and rebinds the page', async () => {
+  vi.mocked(ZettClient.prototype.listSessions).mockResolvedValue([
+    { id: 'older-session', title: 'Older chat', updated_at: '2026-01-01T00:00:00Z', message_count: 4 },
+  ])
+  vi.mocked(ZettClient.prototype.session).mockImplementation(async (sessionId: string) => (
+    sessionId === 'older-session'
+      ? { messages: [persisted('user', 1, { content: 'Earlier question' }), persisted('assistant', 2, { content: 'Earlier answer' })] }
+      : { messages: [] }
+  ))
+  const host = await mount()
+  host.querySelector<HTMLButtonElement>('[aria-label="Previous conversations"]')!.click()
+  await flush()
+  expect(host.querySelector('.session-history-item')?.textContent).toContain('Older chat')
+  host.querySelector<HTMLButtonElement>('.session-history-item')!.click()
+  await flush()
+  expect(stored[pageKey('http://127.0.0.1:6280', 7, 'https://example.com/')!]).toBe('older-session')
+  expect(host.textContent).toContain('Earlier question')
+  await vi.waitFor(() => { expect(host.querySelector('.notice')?.textContent).toBe('Conversation restored') })
+})
+
+it('tells the model why a turn has no live browser tools', async () => {
+  vi.mocked(BrowserBridgeClient.prototype.connect).mockRejectedValue(new Error('Page cannot be connected'))
+  const host = await mount()
+  await send(host)
+  expect(options.text).toContain('this turn has no live browser tools')
+  expect(options.text).toContain('Connect page')
+  expect(options.text).toContain('Example page')
+  expect(options.text).toContain('Read this page')
+  expect(host.querySelector('.notice')?.textContent).toContain('Page tools are off')
+  finish('')
+  await flush()
 })
 
 it('removes the page bar, retains automatic page context, and clears on Enter before the response', async () => {

@@ -21,6 +21,14 @@ export interface SessionStart {
   conversation_id: string
 }
 
+/** One conversation the panel's history picker can reopen. */
+export interface SessionSummary {
+  id: string
+  title: string | null
+  updated_at: string
+  message_count: number
+}
+
 export interface Provider {
   id: string
   name: string

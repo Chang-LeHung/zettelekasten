@@ -152,6 +152,17 @@ it('reads the stored context composition a reopened panel shows', async () => {
   expect(String(vi.mocked(fetch).mock.calls[0][0])).toContain('/api/agent/sessions/session-id/context-composition')
 })
 
+it('lists the recent conversations the panel can reopen', async () => {
+  const sessions = [{ id: 'one', title: 'First', updated_at: '2026-01-01T00:00:00Z', message_count: 2 }]
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(sessions))))
+  await expect(new ZettClient().listSessions(20, 40)).resolves.toEqual(sessions)
+  const url = String(vi.mocked(fetch).mock.calls[0][0])
+  expect(url).toContain('/api/agent/sessions?')
+  expect(url).toContain('limit=20')
+  expect(url).toContain('offset=40')
+  expect(url).toContain('types=normal')
+})
+
 it('aborts the actual response reader and preserves only deltas received before Stop', async () => {
   const controller = new AbortController()
   let streamController: ReadableStreamDefaultController<Uint8Array>

@@ -21,6 +21,7 @@ import type {
   HealthResponse,
   Provider,
   ReasoningEffort,
+  SessionSummary,
   SessionStart,
   ToolOutcome,
 } from './types'
@@ -114,6 +115,12 @@ export class ZettClient {
   /** Create a conversation for the current tab/page, not the whole extension. */
   async startSession(): Promise<SessionStart> {
     return await this.request<SessionStart>('/api/agent/start', { method: 'POST' })
+  }
+
+  /** One page of recent conversations, newest first, for the history picker. */
+  async listSessions(limit = 20, offset = 0): Promise<SessionSummary[]> {
+    const params = new URLSearchParams({ limit: String(limit), offset: String(offset), types: 'normal' })
+    return await this.request<SessionSummary[]>(`/api/agent/sessions?${params}`)
   }
 
   async session(sessionId: string): Promise<{ messages: AgentPersistedMessage[] }> {
