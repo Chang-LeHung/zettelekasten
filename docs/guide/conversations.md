@@ -132,7 +132,10 @@ effort visible; the menu holds browser connection, Save all and token
 statistics (cache, tokens, generation speed, and the context share of the
 compaction threshold). Hovering the **Context** row there shows the composition
 pie and the share each part takes (system, tool prompt, tool output, user,
-assistant). Answers render with the web thread's Markdown, including
+assistant). The composer also takes images — the paperclip button, a paste, or a
+drag — and typing `/` or `@` opens the same slash command and reference menus
+the web app offers, so a turn runs through that command or resource. Answers
+render with the web thread's Markdown, including
 the same fenced-code toolbar, copy button and language set. When a page
 conversation is restored or an answer
 streams, the chat follows the newest output. `fill` also supports

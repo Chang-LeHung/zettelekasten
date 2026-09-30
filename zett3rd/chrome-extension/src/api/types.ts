@@ -7,7 +7,7 @@
  * it, so a shape change surfaces as a type error at the call site.
  */
 
-import type { AgentTimelineEntry, AgentToolActivity, AIProvider, AgentModelUsage } from '../../../../frontend/src/api/types'
+import type { AgentTimelineEntry, AgentToolActivity, AIProvider, AgentModelUsage, MessagePart } from '../../../../frontend/src/api/types'
 
 export type ArtifactType = 'card' | 'article' | 'slides'
 
@@ -97,6 +97,8 @@ export interface TranscriptEntry {
   id: number
   role: 'user' | 'assistant' | 'artifact'
   text: string
+  /** Set on a user entry: the ordered text/image body that was sent. */
+  parts?: MessagePart[]
   /** Set on a steering message: waiting for the run to answer it, or answered. */
   steering?: 'waiting' | 'responded'
   pending?: boolean

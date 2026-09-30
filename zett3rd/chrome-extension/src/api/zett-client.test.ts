@@ -163,6 +163,28 @@ it('lists the recent conversations the panel can reopen', async () => {
   expect(url).toContain('types=normal')
 })
 
+it('sends ordered message parts and routes commands to their own endpoints', async () => {
+  mockStream([['text_delta', { delta: 'ok' }]])
+  await new ZettClient().streamTurn({ ...request, parts: [{ type: 'text', text: 'hi' }] })
+  expect(JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string).parts).toEqual([{ type: 'text', text: 'hi' }])
+
+  mockStream([['text_delta', { delta: 'ok' }]])
+  await new ZettClient().streamTurn({ ...request, commandKind: 'slash', commandId: 'cmd-1' })
+  expect(String(vi.mocked(fetch).mock.calls[0][0])).toContain('/api/agent/s/slash-commands/cmd-1')
+
+  mockStream([['text_delta', { delta: 'ok' }]])
+  await new ZettClient().streamTurn({ ...request, commandKind: 'at', commandId: 'asset-1' })
+  expect(String(vi.mocked(fetch).mock.calls[0][0])).toContain('/api/agent/s/at-commands/asset-1')
+})
+
+it('lists the slash commands and references a conversation offers', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify([]))))
+  await new ZettClient().listSlashCommands('session-id')
+  expect(String(vi.mocked(fetch).mock.calls[0][0])).toContain('/api/agent/session-id/slash-commands')
+  await new ZettClient().listAtCommands('session-id')
+  expect(String(vi.mocked(fetch).mock.calls[1][0])).toContain('/api/agent/session-id/at-commands')
+})
+
 it('aborts the actual response reader and preserves only deltas received before Stop', async () => {
   const controller = new AbortController()
   let streamController: ReadableStreamDefaultController<Uint8Array>
