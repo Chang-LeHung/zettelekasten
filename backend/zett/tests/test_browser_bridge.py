@@ -71,6 +71,12 @@ async def test_correlated_reply_parallel_rejection_and_disconnect() -> None:
 
 
 async def test_cancellation_cleans_pending_calls_without_replay() -> None:
+    """A cancelled turn stays cancelled and still tells the panel to drop consent.
+
+    The command is already queued when the cancel lands, which is the timing
+    Python 3.10/3.11 `asyncio.wait_for` can answer with a result instead of the
+    cancellation.
+    """
     queue = asyncio.Queue()
     peer = BrowserConnection("session", "token", queue.put)
     task = asyncio.create_task(peer.call("snapshot"))

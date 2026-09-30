@@ -13,7 +13,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from ..._compat import Self
+from ..._compat import Self, timeout
 from ...infra.log import get_logger
 from ...infra.persistence.dao import session_storage
 
@@ -192,8 +192,14 @@ class BrowserConnection:
             "Browser command started; session_id=%s command_id=%s operation=%s", self.session_id, command.id, operation
         )
         try:
-            await asyncio.wait_for(self.send(command.model_dump(mode="json")), timeout=5)
-            result = await asyncio.wait_for(future, timeout=120)
+            # A deadline must never turn a cancelled turn into a long wait:
+            # `asyncio.wait_for` on Python 3.10/3.11 returns the inner result when
+            # the cancellation lands after that awaitable finished, so it can
+            # swallow the CancelledError and keep waiting for the reply.
+            async with timeout(5):
+                await self.send(command.model_dump(mode="json"))
+            async with timeout(120):
+                result = await future
             completed = True
             return result
         except asyncio.TimeoutError as error:
