@@ -1,5 +1,10 @@
 # Settings and local data
 
+Click **Settings** in the sidebar to open a dialog over your current workspace.
+The Usage, Provider, and Limit submenus show model activity, connection
+configuration, and conversation limits separately. Close with ×, Escape, or the
+backdrop to return to the same workspace without losing its place.
+
 ## Preferences
 
 The language switch (English / 中文) is stored in your browser, not in the

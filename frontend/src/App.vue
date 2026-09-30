@@ -59,7 +59,7 @@ type SessionScope = Extract<SessionType, 'normal' | 'scheduled' | 'channel'>
 type NoticeKind = 'success' | 'error'
 type AssetEditorMode = 'closed' | 'text' | 'link'
 type AssetFilter = 'all' | 'documents' | 'images' | 'links' | 'notes' | 'code'
-type SettingsSection = 'usage' | 'providers'
+type SettingsSection = 'usage' | 'providers' | 'limits'
 type ComposerTarget = 'initial' | 'follow-up'
 const DEFAULT_SESSION_TITLE = '新会话'
 const { locale, setLocale, t } = useI18n()
@@ -320,6 +320,8 @@ const usageActivity = ref<AgentUsageActivityDay[]>([])
 const modelUsageActivity = ref<AgentModelUsageActivitySeries[]>([])
 const usageActivityLoading = ref(false)
 const settingsSection = ref<SettingsSection>('providers')
+const settingsOpen = ref(false)
+const settingsDialog = ref<HTMLElement | null>(null)
 const searchInput = ref<HTMLInputElement | null>(null)
 const agentThread = ref<HTMLElement | null>(null)
 const agentTurnStack = ref<HTMLElement | null>(null)
@@ -1357,6 +1359,13 @@ async function selectSettingsSection(section: SettingsSection): Promise<void> {
 }
 
 function navigate(nextView: View): void {
+  if (nextView === 'settings') {
+    settingsOpen.value = true
+    settingsSection.value = 'usage'
+    void nextTick(() => settingsDialog.value?.focus())
+    return
+  }
+  settingsOpen.value = false
   view.value = nextView
   notice.value = ''
   if (nextView !== 'new') clearTraceHash()
@@ -1380,12 +1389,21 @@ function navigate(nextView: View): void {
   }
 }
 
+function closeSettings(): void {
+  settingsOpen.value = false
+}
+
 function openSearch(): void {
   view.value = 'search'
   void nextTick(() => searchInput.value?.focus())
 }
 
 function handleShortcut(event: KeyboardEvent): void {
+  if (event.key === 'Escape' && settingsOpen.value) {
+    event.preventDefault()
+    closeSettings()
+    return
+  }
   if (event.key === 'Escape' && fullscreenSlidesItem.value) {
     void closeSlidesFullscreen()
     return
@@ -1644,7 +1662,8 @@ async function analyze(): Promise<void> {
   if (!raw.value.trim() && !pendingMessageImages.value.length) return
   if (selectedProviderId.value === null) {
     showNotice('Add and select an AI provider first', 'error')
-    view.value = 'settings'
+    navigate('settings')
+    settingsSection.value = 'providers'
     return
   }
   loading.value = true
@@ -3398,7 +3417,7 @@ onBeforeUnmount(() => {
             <option value="zh">{{ $t('settings.chinese') }}</option>
           </select>
         </label>
-        <button :class="{ active: view === 'settings' }" type="button" @click="navigate('settings')">
+        <button :class="{ active: settingsOpen }" type="button" @click="navigate('settings')">
           <svg><use href="#icon-settings" /></svg><span>{{ $t('nav.settings') }}</span>
           <span class="status-dot" :class="{ online: providers.some((provider) => provider.enabled) }" />
         </button>
@@ -4045,13 +4064,20 @@ onBeforeUnmount(() => {
         <ChannelsView />
       </template>
 
-      <template v-else>
-        <header class="topbar compact"><div><p class="eyebrow">{{ $t('Preferences') }}</p><h1>{{ $t('Settings') }}</h1></div></header>
-        <section class="content settings-view">
+      <Teleport to="body">
+        <div v-if="settingsOpen" class="settings-backdrop" @click.self="closeSettings">
+        <section ref="settingsDialog" class="settings-dialog" role="dialog" aria-modal="true" :aria-label="$t('Settings')" tabindex="-1">
+          <header class="settings-dialog-header">
+            <div><p class="eyebrow">{{ $t('Preferences') }}</p><h1>{{ $t('Settings') }}</h1></div>
+            <button class="close-button" type="button" :aria-label="$t('Close')" @click="closeSettings">×</button>
+          </header>
+          <div class="settings-dialog-body">
           <nav class="settings-tabs" role="tablist" aria-label="Settings sections">
             <button :class="{ active: settingsSection === 'usage' }" type="button" role="tab" :aria-selected="settingsSection === 'usage'" @click="selectSettingsSection('usage')">{{ $t('settings.usage') }}</button>
-            <button :class="{ active: settingsSection === 'providers' }" type="button" role="tab" :aria-selected="settingsSection === 'providers'" @click="selectSettingsSection('providers')">{{ $t('settings.providersLimits') }}</button>
+            <button :class="{ active: settingsSection === 'providers' }" type="button" role="tab" :aria-selected="settingsSection === 'providers'" @click="selectSettingsSection('providers')">{{ $t('settings.providers') }}</button>
+            <button :class="{ active: settingsSection === 'limits' }" type="button" role="tab" :aria-selected="settingsSection === 'limits'" @click="selectSettingsSection('limits')">{{ $t('settings.limits') }}</button>
           </nav>
+          <section class="content settings-view">
           <div v-if="settingsSection === 'providers'" class="settings-section">
           <div class="settings-intro"><div><h2>{{ $t('AI providers') }}</h2><p>{{ $t('Keep multiple model connections and choose one for each conversation.') }}</p></div></div>
           <div class="provider-toolbar">
@@ -4073,7 +4099,8 @@ onBeforeUnmount(() => {
             </div>
             <div class="settings-actions"><button v-if="editingProviderId !== null" class="danger-button" type="button" @click="removeProvider">Delete provider</button><span v-else>Credentials are encrypted in your local database.</span><div><label class="switch"><input v-model="ai.enabled" type="checkbox" /><span /><small>{{ ai.enabled ? 'Enabled' : 'Disabled' }}</small></label><button class="primary-action" :disabled="providerSaving || providerLoading || !ai.name || !ai.model" :aria-busy="providerSaving" type="submit"><span v-if="providerSaving" class="button-spinner" aria-hidden="true" /><span>{{ providerSaving ? 'Testing…' : editingProviderId === null ? 'Add provider' : 'Save provider' }}</span></button></div></div>
           </form>
-
+          </div>
+          <div v-else-if="settingsSection === 'limits'" class="settings-section">
           <div class="settings-intro runtime-settings-heading">
             <div><h2>{{ $t('Conversation limits') }}</h2><p>{{ $t('Control local limits applied to new Agent requests.') }}</p></div>
           </div>
@@ -4135,8 +4162,11 @@ onBeforeUnmount(() => {
             />
           </div>
           </div>
+          </section>
+          </div>
         </section>
-      </template>
+        </div>
+      </Teleport>
 
       <Teleport to="body">
         <section v-if="fullscreenSlidesItem" ref="librarySlidesStage" class="library-slides-fullscreen" role="dialog" aria-modal="true" :aria-label="fullscreenSlidesItem.title" tabindex="-1">
@@ -4733,11 +4763,23 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .suggestion-list small { opacity: .65; font-size: .58rem; }
 .panel-actions { display: flex; justify-content: flex-end; gap: .6rem; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--line); }
 
-.settings-view { max-width: 64rem; }
-.settings-tabs { width: fit-content; display: flex; gap: .18rem; margin: .25rem 0 1.15rem; padding: .2rem; border: 1px solid rgba(60,78,67,.1); border-radius: .72rem; background: rgba(235,239,236,.82); }
-.settings-tabs button { min-height: 2rem; padding: 0 .78rem; border: 0; border-radius: .54rem; color: #69746d; background: transparent; cursor: pointer; font-size: .68rem; font-weight: 650; }
+.settings-backdrop { position: fixed; inset: 0; z-index: 1100; display: grid; place-items: center; padding: clamp(.7rem, 3vw, 2rem); background: rgba(28,39,32,.36); backdrop-filter: blur(10px); }
+.settings-dialog { width: min(100%, 68rem); height: min(88dvh, 58rem); min-height: 0; display: grid; grid-template-rows: auto minmax(0,1fr); overflow: hidden; border: 1px solid rgba(255,255,255,.7); border-radius: 1.15rem; outline: 0; background: #fdfefd; box-shadow: 0 30px 85px rgba(20,37,25,.22); }
+.settings-dialog-header { display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.35rem; border-bottom: 1px solid rgba(29,29,31,.075); }
+.settings-dialog-header h1 { margin: .2rem 0 0; font-size: 1.3rem; }
+.settings-dialog-body { min-height: 0; display: grid; grid-template-columns: 11.5rem minmax(0,1fr); }
+.settings-view { width: 100%; max-width: none; min-height: 0; overflow-y: auto; padding: 1.3rem clamp(1rem, 3vw, 2.25rem) 2.5rem; }
+.settings-tabs { min-width: 0; display: flex; flex-direction: column; gap: .25rem; padding: 1.1rem .7rem; border-right: 1px solid rgba(60,78,67,.09); background: #f5f8f5; }
+.settings-tabs button { min-height: 2.45rem; padding: 0 .8rem; border: 0; border-radius: .62rem; color: #69746d; background: transparent; cursor: pointer; font-size: .76rem; font-weight: 650; text-align: left; }
 .settings-tabs button:hover { color: #355442; }
 .settings-tabs button.active { color: #31523f; background: #fff; box-shadow: 0 1px 4px rgba(38,57,46,.1); }
+.settings-view .runtime-settings-heading { margin-top: .5rem; }
+@media (max-width: 700px) {
+  .settings-dialog { height: min(94dvh, 58rem); }
+  .settings-dialog-body { grid-template-columns: minmax(0,1fr); grid-template-rows: auto minmax(0,1fr); }
+  .settings-tabs { flex-direction: row; padding: .55rem .8rem; overflow-x: auto; border-right: 0; border-bottom: 1px solid rgba(60,78,67,.09); }
+  .settings-tabs button { flex: 1 0 auto; min-height: 2.2rem; text-align: center; }
+}
 .settings-section { animation: settings-section-in 180ms ease-out both; }
 @keyframes settings-section-in { from { opacity: 0; transform: translateY(5px); } }
 .model-usage-list { display: grid; gap: 1.15rem; }
