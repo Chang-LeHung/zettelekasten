@@ -260,21 +260,24 @@ onBeforeUnmount(() => {
 <template>
   <div ref="markdownRoot" class="markdown-body" :class="{ 'presentation-markdown': presentation }" @click="handleMarkdownClick" v-html="html" />
   <Teleport to="body">
-    <div v-if="imagePreview" class="markdown-image-preview-backdrop" @click.self="closeImagePreview">
-      <section class="markdown-image-preview-dialog" role="dialog" aria-modal="true" :aria-label="`Preview ${imagePreview.name}`">
-        <header class="markdown-image-preview-header">
-          <strong>{{ imagePreview.name }}</strong>
-          <button ref="imageDialogClose" type="button" aria-label="Close image preview" title="Close" @click="closeImagePreview">×</button>
+    <Transition name="zett-preview">
+    <div v-if="imagePreview" class="zett-preview-backdrop" @click.self="closeImagePreview">
+      <section class="zett-preview-dialog" role="dialog" aria-modal="true" :aria-label="`Preview ${imagePreview.name}`">
+        <header class="zett-preview-header">
+          <div class="zett-preview-title"><strong>{{ imagePreview.name }}</strong><small>Image preview</small></div>
+          <button ref="imageDialogClose" class="zett-preview-close" type="button" aria-label="Close image preview" title="Close" @click="closeImagePreview">×</button>
         </header>
-        <div class="markdown-image-preview-stage">
+        <div class="zett-preview-stage">
           <img :src="imagePreview.url" :alt="imagePreview.name" />
         </div>
       </section>
     </div>
-    <div v-if="mermaidPreview" class="mermaid-preview-backdrop" @click.self="closeMermaidPreview">
-      <section class="mermaid-preview-dialog" role="dialog" aria-modal="true" aria-label="Mermaid diagram preview">
-        <header class="mermaid-preview-header">
-          <div>
+    </Transition>
+    <Transition name="zett-preview">
+    <div v-if="mermaidPreview" class="zett-preview-backdrop mermaid-preview-backdrop" @click.self="closeMermaidPreview">
+      <section class="zett-preview-dialog mermaid-preview-dialog" role="dialog" aria-modal="true" aria-label="Mermaid diagram preview">
+        <header class="zett-preview-header mermaid-preview-header">
+          <div class="zett-preview-title">
             <strong>Diagram preview</strong>
             <span>Ctrl/⌘ + scroll to zoom</span>
           </div>
@@ -284,7 +287,7 @@ onBeforeUnmount(() => {
               {{ Math.round(mermaidZoom * 100) }}%
             </button>
             <button type="button" aria-label="Zoom in" @click="zoomMermaid(1)">+</button>
-            <button ref="mermaidDialogClose" type="button" class="mermaid-preview-close" aria-label="Close diagram preview" @click="closeMermaidPreview">×</button>
+            <button ref="mermaidDialogClose" type="button" class="zett-preview-close mermaid-preview-close" aria-label="Close diagram preview" @click="closeMermaidPreview">×</button>
           </div>
         </header>
         <div class="mermaid-preview-stage" @wheel="handleMermaidWheel">
@@ -292,6 +295,7 @@ onBeforeUnmount(() => {
         </div>
       </section>
     </div>
+    </Transition>
   </Teleport>
 </template>
 
@@ -363,37 +367,19 @@ onBeforeUnmount(() => {
 .markdown-body :deep(img) { max-width: 100%; height: auto; border-radius: .65rem; cursor: zoom-in; }
 .markdown-body :deep(.katex-display) { max-width: 100%; margin: .8em 0; padding: .35em 0; overflow-x: auto; overflow-y: hidden; }
 
-.markdown-image-preview-backdrop { position: fixed; z-index: 1250; inset: 0; display: grid; place-items: center; padding: clamp(.75rem, 2.5vw, 2rem); background: rgba(29, 36, 32, .38); backdrop-filter: blur(12px) saturate(110%); }
-.markdown-image-preview-dialog { display: grid; grid-template-rows: auto minmax(0, 1fr); width: min(94vw, 92rem); height: min(92vh, 64rem); overflow: hidden; border: 1px solid rgba(55, 70, 61, .16); border-radius: 1.05rem; background: rgba(250, 251, 250, .98); box-shadow: 0 1.5rem 4rem rgba(25, 36, 29, .26); }
-.markdown-image-preview-header { display: flex; min-height: 3.65rem; padding: .65rem .75rem .65rem 1.1rem; align-items: center; justify-content: space-between; gap: 1rem; border-bottom: 1px solid #e1e6e3; background: rgba(255, 255, 255, .92); }
-.markdown-image-preview-header strong { min-width: 0; overflow: hidden; color: #2d3932; font-size: .82rem; font-weight: 660; text-overflow: ellipsis; white-space: nowrap; }
-.markdown-image-preview-header button { display: grid; width: 2.25rem; height: 2.25rem; flex: 0 0 auto; place-items: center; padding: 0; border: 0; border-radius: .62rem; color: #68716b; background: transparent; font: inherit; font-size: 1.35rem; font-weight: 300; line-height: 1; cursor: pointer; }
-.markdown-image-preview-header button:hover { color: #30483a; background: #edf2ef; }
-.markdown-image-preview-header button:focus-visible { outline: 3px solid rgba(71, 105, 87, .2); outline-offset: 2px; }
-.markdown-image-preview-stage { display: grid; min-width: 0; min-height: 0; padding: clamp(1rem, 3vw, 2.5rem); place-items: center; overflow: auto; background-color: #f1f3f1; background-image: linear-gradient(45deg, rgba(77, 96, 85, .035) 25%, transparent 25%), linear-gradient(-45deg, rgba(77, 96, 85, .035) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(77, 96, 85, .035) 75%), linear-gradient(-45deg, transparent 75%, rgba(77, 96, 85, .035) 75%); background-position: 0 0, 0 8px, 8px -8px, -8px 0; background-size: 16px 16px; }
-.markdown-image-preview-stage img { display: block; max-width: 100%; max-height: 100%; border-radius: .3rem; object-fit: contain; box-shadow: 0 12px 38px rgba(33, 42, 36, .12); }
-
-.mermaid-preview-backdrop { position: fixed; z-index: 1200; inset: 0; display: grid; place-items: center; padding: 2rem; background: rgba(35, 43, 38, .32); }
-.mermaid-preview-dialog { display: grid; grid-template-rows: auto minmax(0, 1fr); width: min(94vw, 92rem); height: min(90vh, 64rem); overflow: hidden; border: 1px solid #d9e0dc; border-radius: 1.1rem; background: #fbfcfb; box-shadow: 0 1.5rem 4rem rgba(35, 48, 40, .2); }
-.mermaid-preview-header { display: flex; min-height: 4.25rem; padding: .75rem 1rem .75rem 1.25rem; align-items: center; justify-content: space-between; gap: 1rem; border-bottom: 1px solid #e1e6e3; background: rgba(247, 249, 248, .96); }
-.mermaid-preview-header > div:first-child { display: grid; gap: .12rem; }
-.mermaid-preview-header strong { color: #2d3932; font-size: .95rem; font-weight: 680; }
+.mermaid-preview-header strong { font-size: .82rem; }
 .mermaid-preview-header span { color: #89928d; font-size: .75rem; }
 .mermaid-preview-controls { display: flex; align-items: center; gap: .35rem; }
-.mermaid-preview-controls button { display: grid; min-width: 2.25rem; height: 2.25rem; padding: 0 .55rem; place-items: center; border: 1px solid #d8dfdb; border-radius: .62rem; color: #45544c; background: #fff; font: inherit; font-size: 1rem; cursor: pointer; }
+.mermaid-preview-controls button { display: grid; min-width: 2.25rem; height: 2.25rem; padding: 0 .55rem; place-items: center; border: 0; border-radius: .62rem; color: #45544c; background: transparent; font: inherit; font-size: 1rem; cursor: pointer; }
 .mermaid-preview-controls button:hover { border-color: #b9c9c0; color: #28503b; background: #f5f8f6; }
 .mermaid-preview-controls button:focus-visible { outline: 2px solid #719681; outline-offset: 2px; }
 .mermaid-preview-controls .mermaid-zoom-value { min-width: 4.25rem; font-size: .78rem; font-variant-numeric: tabular-nums; }
 .mermaid-preview-controls .mermaid-preview-close { margin-left: .3rem; font-size: 1.35rem; font-weight: 300; }
-.mermaid-preview-stage { min-width: 0; min-height: 0; padding: 2rem; overflow: auto; overscroll-behavior: contain; background-color: #fff; background-image: radial-gradient(#dce4df 1px, transparent 1px); background-size: 22px 22px; }
-.mermaid-preview-diagram { min-width: 28rem; margin: 0 auto; padding: 1.5rem; border-radius: .9rem; background: rgba(255, 255, 255, .92); }
+.mermaid-preview-stage { min-width: 0; min-height: 0; padding: clamp(1rem, 3vw, 2.5rem); overflow: auto; overscroll-behavior: contain; background: #f4f5f1; }
+.mermaid-preview-diagram { min-width: min(100%, 28rem); margin: 0 auto; padding: clamp(1rem, 2vw, 2rem); border: 1px solid #e8ebe6; border-radius: .75rem; background: #fff; box-shadow: 0 8px 30px rgba(33, 42, 36, .06); }
 .mermaid-preview-diagram :deep(> svg) { display: block; width: 100% !important; max-width: none !important; height: auto !important; margin: auto; fill: initial; stroke: initial; stroke-width: initial; stroke-linecap: initial; stroke-linejoin: initial; user-select: text; }
 
 @media (max-width: 700px) {
-  .markdown-image-preview-backdrop { padding: .5rem; }
-  .markdown-image-preview-dialog { width: 100%; height: 96vh; border-radius: .85rem; }
-  .mermaid-preview-backdrop { padding: .65rem; }
-  .mermaid-preview-dialog { width: 100%; height: 94vh; border-radius: .85rem; }
   .mermaid-preview-header { padding: .65rem .7rem .65rem .9rem; }
   .mermaid-preview-header span { display: none; }
   .mermaid-preview-stage { padding: .75rem; }

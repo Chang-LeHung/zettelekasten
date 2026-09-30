@@ -1,0 +1,95 @@
+/* Shared reading surface for session assets, library images, and Markdown previews. */
+.zett-preview-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1250;
+  display: grid;
+  place-items: center;
+  padding: clamp(.65rem, 2.4vw, 2rem);
+  background: rgba(25, 33, 28, .45);
+  backdrop-filter: blur(10px);
+}
+.zett-preview-dialog {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(94vw, 88rem);
+  height: min(90dvh, 62rem);
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, .72);
+  border-radius: 1rem;
+  background: #fcfcfa;
+  box-shadow: 0 28px 90px rgba(16, 27, 19, .26), 0 3px 12px rgba(16, 27, 19, .08);
+}
+.zett-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 3.65rem;
+  padding: .6rem .8rem .6rem 1.2rem;
+  border-bottom: 1px solid #e8ebe6;
+  background: #fcfcfa;
+}
+.zett-preview-title { min-width: 0; }
+.zett-preview-title strong, .zett-preview-title small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.zett-preview-title strong { color: #26342b; font-size: .82rem; font-weight: 650; }
+.zett-preview-title small { margin-top: .15rem; color: #858e86; font-size: .68rem; }
+.zett-preview-close {
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  border-radius: .6rem;
+  color: #66726a;
+  background: transparent;
+  font: inherit;
+  font-size: 1.35rem;
+  font-weight: 300;
+  cursor: pointer;
+}
+.zett-preview-close:hover { color: #2c5039; background: #edf3ee; }
+.zett-preview-close:focus-visible { outline: 2px solid #719681; outline-offset: 2px; }
+.zett-preview-stage {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: clamp(1rem, 3vw, 2.5rem);
+  background: #f4f5f1;
+}
+.zett-preview-stage > img {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: .22rem;
+  box-shadow: 0 12px 42px rgba(33, 42, 36, .13);
+}
+.zett-preview-enter-active, .zett-preview-leave-active { transition: opacity 180ms ease; }
+.zett-preview-enter-active .zett-preview-dialog, .zett-preview-leave-active .zett-preview-dialog {
+  transition: transform 240ms cubic-bezier(.2, .8, .2, 1), opacity 180ms ease;
+}
+.zett-preview-enter-from, .zett-preview-leave-to { opacity: 0; }
+.zett-preview-enter-from .zett-preview-dialog, .zett-preview-leave-to .zett-preview-dialog {
+  opacity: 0;
+  transform: translateY(.55rem) scale(.985);
+}
+@media (max-width: 640px) {
+  .zett-preview-backdrop { padding: .4rem; }
+  .zett-preview-dialog { width: 100%; height: calc(100dvh - .8rem); border-radius: .8rem; }
+  .zett-preview-header { padding-left: .85rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .zett-preview-enter-active, .zett-preview-leave-active,
+  .zett-preview-enter-active .zett-preview-dialog, .zett-preview-leave-active .zett-preview-dialog { transition-duration: 1ms; }
+}

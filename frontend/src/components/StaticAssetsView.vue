@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { assetClient } from '../api/client'
 import type { StaticAsset } from '../api/types'
 import { useI18n } from '../i18n'
@@ -19,6 +19,8 @@ const dragging = ref(false)
 const query = ref('')
 const error = ref('')
 const preview = ref<StaticAsset | null>(null)
+const previewClose = ref<HTMLButtonElement | null>(null)
+let previewTrigger: HTMLElement | null = null
 const fileInput = ref<HTMLInputElement | null>(null)
 
 const visibleAssets = computed(() => {
@@ -89,10 +91,26 @@ async function deleteAsset(asset: StaticAsset): Promise<void> {
 
 function openAsset(asset: StaticAsset): void {
   if (isImage(asset)) {
+    previewTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
     preview.value = asset
+    void nextTick(() => previewClose.value?.focus())
     return
   }
   window.open(asset.content_url, '_blank', 'noopener,noreferrer')
+}
+
+function closePreview(): void {
+  const trigger = previewTrigger
+  preview.value = null
+  previewTrigger = null
+  void nextTick(() => trigger?.focus())
+}
+
+function handlePreviewKeydown(event: KeyboardEvent): void {
+  if (preview.value && event.key === 'Escape') {
+    event.preventDefault()
+    closePreview()
+  }
 }
 
 function downloadAsset(asset: StaticAsset): void {
@@ -151,6 +169,7 @@ function handleDragEnter(event: DragEvent): void {
 
 onMounted(() => {
   window.addEventListener('paste', pasteFiles)
+  window.addEventListener('keydown', handlePreviewKeydown)
   void loadAssets()
 })
 
@@ -159,6 +178,7 @@ watch(() => props.tagId, () => void loadAssets())
 
 onBeforeUnmount(() => {
   window.removeEventListener('paste', pasteFiles)
+  window.removeEventListener('keydown', handlePreviewKeydown)
 })
 
 defineExpose({ reload: loadAssets })
@@ -244,15 +264,17 @@ defineExpose({ reload: loadAssets })
   </section>
 
   <Teleport to="body">
-    <div v-if="preview" class="static-image-backdrop" @click.self="preview = null">
-      <section class="static-image-dialog" role="dialog" aria-modal="true" :aria-label="t('Preview {name}', { name: preview.name })">
-        <header>
-          <strong>{{ preview.name }}</strong>
-          <button type="button" :aria-label="t('Close')" @click="preview = null">×</button>
+    <Transition name="zett-preview">
+    <div v-if="preview" class="zett-preview-backdrop" @click.self="closePreview">
+      <section class="zett-preview-dialog" role="dialog" aria-modal="true" :aria-label="t('Preview {name}', { name: preview.name })">
+        <header class="zett-preview-header">
+          <div class="zett-preview-title"><strong>{{ preview.name }}</strong><small>{{ extension(preview) }} · {{ formatBytes(preview.size_bytes) }}</small></div>
+          <button ref="previewClose" class="zett-preview-close" type="button" :aria-label="t('Close')" @click="closePreview">×</button>
         </header>
-        <div class="static-image-stage"><img :src="preview.content_url" :alt="preview.name" /></div>
+        <div class="zett-preview-stage"><img :src="preview.content_url" :alt="preview.name" /></div>
       </section>
     </div>
+    </Transition>
   </Teleport>
 </template>
 
@@ -291,17 +313,8 @@ defineExpose({ reload: loadAssets })
 .static-asset-empty { min-height: 22rem; display: grid; place-items: center; align-content: center; gap: .7rem; border: 1px dashed #d9e1dc; border-radius: .9rem; color: #8a948e; background: rgba(249,251,249,.72); }
 .static-asset-empty > svg { width: 2rem; height: 2rem; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .static-asset-empty strong { color: #606b64; font-size: .8rem; }
-.static-image-backdrop { position: fixed; z-index: 1250; inset: 0; display: grid; place-items: center; padding: 1rem; background: rgba(29,36,32,.38); backdrop-filter: blur(12px); }
-.static-image-dialog { display: grid; grid-template-rows: auto minmax(0, 1fr); width: min(94vw, 74rem); height: min(90vh, 56rem); overflow: hidden; border: 1px solid rgba(55,70,61,.16); border-radius: 1rem; background: #fafbfa; box-shadow: 0 1.5rem 4rem rgba(25,36,29,.26); }
-.static-image-dialog header { min-height: 3.6rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .65rem .75rem .65rem 1rem; border-bottom: 1px solid #e1e6e3; background: #fff; }
-.static-image-dialog header strong { min-width: 0; overflow: hidden; color: #2d3932; font-size: .82rem; text-overflow: ellipsis; white-space: nowrap; }
-.static-image-dialog header button { width: 2.25rem; height: 2.25rem; border: 0; border-radius: .62rem; color: #68716b; background: transparent; cursor: pointer; font-size: 1.35rem; }
-.static-image-dialog header button:hover { color: #30483a; background: #edf2ef; }
-.static-image-stage { min-height: 0; display: grid; place-items: center; padding: 1rem; overflow: auto; background: #f1f3f1; }
-.static-image-stage img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; border-radius: .3rem; }
 @media (max-width: 700px) {
   .assets-toolbar { align-items: stretch; flex-direction: column; }
   .asset-search { width: 100%; }
-  .static-image-dialog { width: 100%; height: 94vh; }
 }
 </style>

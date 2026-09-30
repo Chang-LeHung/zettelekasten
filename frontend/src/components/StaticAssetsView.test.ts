@@ -104,6 +104,32 @@ it('renders a PDF first-page thumbnail and uses English dates', async () => {
   expect(host.textContent).toContain('Sep 19, 2026')
 })
 
+it('previews an image and returns focus to its card on Escape', async () => {
+  mocks.list.mockResolvedValue([{
+    id: 'image-1',
+    name: 'cover.png',
+    mime_type: 'image/png',
+    size_bytes: 2048,
+    sha256: 'hash',
+    content_url: '/api/files/assets/static/image-1.png',
+    metadata: {},
+    tags: [],
+    created_at: '2026-09-19T00:00:00Z',
+    updated_at: '2026-09-19T00:00:00Z',
+  }])
+  const host = await mountView()
+  const trigger = host.querySelector<HTMLButtonElement>('.static-asset-preview')
+  trigger?.focus()
+  trigger?.click()
+  await nextTick()
+  expect(document.body.querySelector('.zett-preview-dialog img')?.getAttribute('src')).toBe('/api/files/assets/static/image-1.png')
+  expect(document.activeElement?.getAttribute('aria-label')).toBe('Close')
+  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+  await nextTick()
+  await vi.waitFor(() => expect(document.body.querySelector('.zett-preview-dialog')).toBeNull())
+  expect(document.activeElement).toBe(trigger)
+})
+
 it('shows the tags a file carries and hands a dragged card to the sidebar', async () => {
   mocks.list.mockResolvedValue([{
     id: 'asset-tagged',
