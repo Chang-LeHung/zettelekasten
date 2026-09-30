@@ -3,6 +3,7 @@
 from fastapi import APIRouter, HTTPException, Query, status
 
 from ....infra.persistence.dao import artifact_storage, session_storage
+from ....infra.persistence.dao.artifact import ArtifactVersionConflictError
 from ....schemas import AgentArtifactEntity, AgentArtifactWrite, ArtifactListOptions, ArtifactStatus, ArtifactType
 from ...artifacts.library import library_session_service
 from ...artifacts.versioning import UncommittedLatexProjectError, artifact_versioning
@@ -28,6 +29,7 @@ async def list_all_artifacts(
     tag_ids: list[str] = Query(default=[]),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
+    published_only: bool = False,
 ) -> list[AgentArtifactEntity]:
     """Search artifacts across sessions for the library UI."""
     try:
@@ -41,6 +43,7 @@ async def list_all_artifacts(
         tag_ids=expanded_tag_ids,
         limit=limit,
         offset=offset,
+        published_only=published_only,
     )
     return await artifact_storage.list(options)
 
@@ -177,8 +180,15 @@ async def update_artifact(session_id: str, artifact_id: str, payload: ArtifactUp
         metadata=current.metadata,
     )
     try:
-        updated = await artifact_storage.update(artifact_id, entity)
+        updated = await artifact_storage.update(
+            artifact_id,
+            entity,
+            expected_version=payload.expected_version,
+            require_clean_draft=payload.expected_version is not None,
+        )
         return await tag_service.sync_confirmed_suggestions(updated, superseded_content=current.content)
+    except ArtifactVersionConflictError as error:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
     except (ValueError, FileNotFoundError) as error:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
 

@@ -224,6 +224,18 @@ it('sends selected artifact types to the library endpoint', async () => {
   expect(url.searchParams.getAll('statuses')).toEqual(['saved'])
 })
 
+it('can request published-only Artifact search without changing the default library request', async () => {
+  const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify([])))
+  vi.stubGlobal('fetch', fetchMock)
+
+  await libraryClient.list({ query: 'Python', publishedOnly: true })
+  await libraryClient.list({ query: 'Python' })
+  const published = new URL(String(fetchMock.mock.calls[0]?.[0]), 'http://localhost')
+  const ordinary = new URL(String(fetchMock.mock.calls[1]?.[0]), 'http://localhost')
+  expect(published.searchParams.get('published_only')).toBe('true')
+  expect(ordinary.searchParams.has('published_only')).toBe(false)
+})
+
 it('creates tags and explicitly requests recursive assignment cleanup when deleting', async () => {
   const created = {
     id: 'python', path: 'Engineering/Python', normalized_path: 'engineering/python', name: 'Python',
@@ -416,6 +428,29 @@ it('loads slide decks into the library and keeps their content type when editing
   expect(updated.item_type).toBe('slides')
   const body = JSON.parse(String((fetchMock.mock.calls[1]?.[1] as RequestInit).body))
   expect(body.content).toMatchObject({ artifact_type: 'slides', title: 'Updated deck' })
+})
+
+it('passes an optional version to the existing Artifact edit route', async () => {
+  const artifact = {
+    id: 'card-1', session_id: 'library-1', artifact_type: 'card', status: 'saved',
+    version: 3, content: {
+      artifact_type: 'card', title: 'Original', card_type: 'note',
+      summary: '', content: 'Body', keywords: [], suggested_tags: [],
+    },
+    draft_content: null, raw_content: null, tags: [], metadata: {},
+    content_url: null, created_at: '', updated_at: '',
+  }
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify([artifact])))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ ...artifact, version: 4 })))
+  vi.stubGlobal('fetch', fetchMock)
+  await libraryClient.list({ artifactTypes: ['card'] })
+  await libraryClient.update('card', artifact.id, {
+    title: 'Edited', subtitle: null, summary: null, content: 'Body', expectedVersion: 3,
+  })
+  expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/agent/library-1/artifacts/card-1')
+  const payload = JSON.parse(String((fetchMock.mock.calls[1]?.[1] as RequestInit).body))
+  expect(payload.expected_version).toBe(3)
 })
 
 it('awaits ordinary tool callbacks before delivering later text', async () => {

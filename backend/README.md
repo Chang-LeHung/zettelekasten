@@ -263,12 +263,13 @@ Everything is mounted under `/api`.
 | `/api/files/{key}` | The only binary content endpoint; streams one ObjectStore key |
 | `/api/agent/{id}/assets*` | Session asset CRUD, upload, rename, and Static Asset object references |
 | `/api/assets*` | Session-independent file listing, upload, metadata, and deletion |
-| `/api/agent/{id}/artifacts*`, `GET /api/artifacts` | Artifact CRUD, per-session listing, and library-wide search |
+| `/api/agent/{id}/artifacts*`, `GET /api/artifacts` | Artifact CRUD, per-session listing, and library-wide search; optional `published_only=true` searches only published content, not draft or raw-source text |
 | `POST /api/artifacts` | Create an artifact that belongs to no conversation, owned by the hidden library session; requires a non-blank `metadata.source` naming who creates it |
 | `GET /api/artifacts/{artifact_id}` | Read one artifact by id, whichever session owns it |
 | `DELETE /api/artifacts/{artifact_id}` | Delete one artifact, and only while the library session owns it: a conversation's artifact answers 403 and stays |
 | `/api/agent/{id}/artifacts/{artifact_id}/draft` | Stage edited content as the draft without touching published content |
 | `/api/agent/{id}/artifacts/{artifact_id}/save` | Publish the pending draft as the artifact's content (user action) |
+| `PUT /api/agent/{id}/artifacts/{artifact_id}` | Direct user edit; optional `expected_version` rejects a stale edit or an unpublished draft with 409 |
 | `/api/agent/{id}/artifacts/{artifact}` | Artifact metadata; `content_url` addresses its unified file key |
 | `/api/ai/providers*` | Model endpoint configuration |
 | `/api/channels*` | Channel management (list/update/delete), plugin listing at `/api/channels/plugins`, and QR login behind the installed channel plugins |

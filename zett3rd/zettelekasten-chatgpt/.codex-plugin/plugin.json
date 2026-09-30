@@ -1,0 +1,22 @@
+{
+  "name": "zettelekasten-chatgpt",
+  "version": "0.1.0",
+  "description": "Save, classify, retrieve, and edit Zettelekasten knowledge from a ChatGPT conversation.",
+  "author": {
+    "name": "Zettelekasten"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Zettelekasten",
+    "shortDescription": "Save and reuse ideas in your local Zettelekasten library.",
+    "longDescription": "Save a concise card or article, classify it, and later search, read, or edit it in a ChatGPT conversation. Uses your local Zettelekasten server; no ChatGPT conversation history is imported.",
+    "developerName": "Zettelekasten",
+    "category": "Productivity",
+    "capabilities": ["Save knowledge", "Search library", "Interactive editor"],
+    "defaultPrompt": [
+      "Save the key insight from our discussion as a Zettelekasten card.",
+      "Find my saved notes about this topic."
+    ]
+  },
+  "mcpServers": "./.mcp.json"
+}

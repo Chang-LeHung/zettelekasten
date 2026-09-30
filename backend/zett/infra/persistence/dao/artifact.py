@@ -7,6 +7,7 @@ from typing import TypeVar, cast
 from pydantic import TypeAdapter
 from sqlalchemy import Float, String, or_, select, text
 from sqlalchemy import delete as sql_delete
+from sqlalchemy import update as sql_update
 from zett_agent.ids import new_uuid7
 
 from ...._compat import UTC
@@ -47,6 +48,10 @@ from ..tables import (
 CONTENT_ADAPTER = TypeAdapter(ArtifactContent)
 
 JSONValueT = TypeVar("JSONValueT")
+
+
+class ArtifactVersionConflictError(ValueError):
+    """The row was changed since an external editor read it."""
 
 
 def _json_load(value: str | None, fallback: JSONValueT) -> JSONValueT:
@@ -195,7 +200,15 @@ class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifactEntity, str,
         artifact = await self.get(artifact_id)
         return artifact if artifact is not None and artifact.session_id == session_id else None
 
-    async def update(self, entity_id: str, entity: AgentArtifactWrite) -> AgentArtifactEntity:
+    async def update(
+        self,
+        entity_id: str,
+        entity: AgentArtifactWrite,
+        *,
+        expected_version: int | None = None,
+        require_clean_draft: bool = False,
+    ) -> AgentArtifactEntity:
+        """Replace content, optionally refusing a stale version."""
         content = _updated_content(entity.session_id, entity.content)
         draft_content = _updated_content(entity.session_id, entity.draft_content)
         described = content or draft_content
@@ -203,6 +216,22 @@ class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifactEntity, str,
             model = await session.get(SessionArtifactRow, entity_id)
             if model is None or model.session_id != entity.session_id:
                 raise KeyError(f"Artifact not found: {entity_id}")
+            if require_clean_draft and model.draft_content_json not in (None, "", model.content_json):
+                raise ArtifactVersionConflictError("Artifact has an unpublished draft; review it before editing")
+            if expected_version is not None:
+                claimed = await session.execute(
+                    sql_update(SessionArtifactRow)
+                    .where(
+                        SessionArtifactRow.id == entity_id,
+                        SessionArtifactRow.session_id == entity.session_id,
+                        SessionArtifactRow.version == expected_version,
+                    )
+                    .values(version=SessionArtifactRow.version + 1)
+                    .execution_options(synchronize_session=False)
+                )
+                if claimed.rowcount != 1:
+                    raise ArtifactVersionConflictError("Artifact changed; reload it before saving")
+                await session.refresh(model)
             model.artifact_type = int(TYPE_TO_CODE[described.artifact_type])
             model.status = int(STATUS_TO_CODE[entity.status])
             model.title = described.title
@@ -210,7 +239,8 @@ class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifactEntity, str,
             model.draft_content_json = _store_content(draft_content)
             model.raw_content = entity.raw_content
             model.metadata_value = json.dumps(entity.metadata, ensure_ascii=False)
-            model.version += 1
+            if expected_version is None:
+                model.version += 1
             model.updated_at = datetime.now(UTC)
             await session.flush()
             await upsert_artifact_search(
@@ -240,6 +270,11 @@ class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifactEntity, str,
         options = options or ArtifactListOptions()
         async with session_scope() as session:
             statement = select(SessionArtifactRow)
+            if options.published_only:
+                statement = statement.where(
+                    SessionArtifactRow.status == int(STATUS_TO_CODE[ArtifactStatus.SAVED]),
+                    SessionArtifactRow.content_json != "",
+                )
             if options.session_id:
                 statement = statement.where(SessionArtifactRow.session_id == options.session_id)
             if options.artifact_types:
@@ -259,17 +294,22 @@ class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifactEntity, str,
                 )
             rank = None
             if options.query:
-                fts_query = build_fts_query(options.query)
+                # The normal FTS document also indexes draft_content and raw_content.
+                # An external knowledge search must not reveal their matches.
+                fts_query = None if options.published_only else build_fts_query(options.query)
                 if fts_query is None:
                     pattern = f"%{options.query}%"
-                    statement = statement.where(
-                        or_(
-                            SessionArtifactRow.title.ilike(pattern),
-                            SessionArtifactRow.content_json.ilike(pattern),
-                            SessionArtifactRow.draft_content_json.ilike(pattern),
-                            SessionArtifactRow.raw_content.ilike(pattern),
+                    columns = (
+                        (SessionArtifactRow.content_json,)
+                        if options.published_only
+                        else (
+                            SessionArtifactRow.title,
+                            SessionArtifactRow.content_json,
+                            SessionArtifactRow.draft_content_json,
+                            SessionArtifactRow.raw_content,
                         )
                     )
+                    statement = statement.where(or_(*(column.ilike(pattern) for column in columns)))
                 else:
                     rank = (
                         text(

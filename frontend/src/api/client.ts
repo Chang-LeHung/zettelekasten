@@ -186,6 +186,7 @@ export const libraryClient = {
     }
     params.append('statuses', 'saved')
     if (options.tagId) params.append('tag_ids', options.tagId)
+    if (options.publishedOnly) params.set('published_only', 'true')
     const suffix = params.size ? `?${params}` : ''
     const artifacts = await request<AgentArtifact[]>(`/artifacts${suffix}`)
     artifacts.forEach((artifact) => artifactIndex.set(artifact.id, artifact))
@@ -231,7 +232,10 @@ export const libraryClient = {
         }
     const updated = await request<AgentArtifact>(`/agent/${artifact.session_id}/artifacts/${itemId}`, {
       method: 'PUT',
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({
+        content,
+        ...(payload.expectedVersion === undefined ? {} : { expected_version: payload.expectedVersion }),
+      }),
     })
     artifactIndex.set(updated.id, updated)
     return artifactToLibraryItem(updated)
