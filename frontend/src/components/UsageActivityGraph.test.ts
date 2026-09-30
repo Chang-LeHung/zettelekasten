@@ -83,3 +83,53 @@ it('renders English month labels when the month changes', async () => {
   expect(months).toContain('Sep')
   expect(months).toContain('Oct')
 })
+
+it('keeps the full year in a fluid grid without an internal scrollbar', async () => {
+  const host = document.createElement('div')
+  document.body.append(host)
+  const start = Date.UTC(2025, 9, 1)
+  const days = Array.from({ length: 365 }, (_, index) => ({
+    date: new Date(start + index * 86_400_000).toISOString().slice(0, 10),
+    requests: 0,
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_read_tokens: 0,
+    cache_write_tokens: 0,
+    reasoning_tokens: 0,
+    total_tokens: 0,
+  }))
+  const app = createApp(UsageActivityGraph, { days })
+  app.mount(host)
+  cleanups.push(() => { app.unmount(); host.remove() })
+  await nextTick()
+
+  expect(host.querySelectorAll('.activity-cell:not(.empty)')).toHaveLength(365)
+  expect(host.querySelector('.activity-scroll')).toBeNull()
+  expect(host.querySelector('.activity-calendar')).not.toBeNull()
+  expect(host.querySelectorAll('.activity-week').length).toBeGreaterThan(52)
+  expect(Array.from(host.querySelectorAll('.activity-week')).every(week => week.children.length === 7)).toBe(true)
+  expect(host.querySelector('.activity-week:last-child .activity-cell.level-0')).not.toBeNull()
+})
+
+it('pads the last week so active days cannot stretch when most of that week is absent', async () => {
+  const host = document.createElement('div')
+  document.body.append(host)
+  const app = createApp(UsageActivityGraph, { days: [{
+    date: '2026-09-27',
+    requests: 1,
+    input_tokens: 20,
+    output_tokens: 5,
+    cache_read_tokens: 0,
+    cache_write_tokens: 0,
+    reasoning_tokens: 0,
+    total_tokens: 25,
+  }] })
+  app.mount(host)
+  cleanups.push(() => { app.unmount(); host.remove() })
+  await nextTick()
+
+  const days = host.querySelectorAll('.activity-week:last-child .activity-cell')
+  expect(days).toHaveLength(7)
+  expect(days[0]?.classList.contains('level-4')).toBe(true)
+  expect(Array.from(days).slice(1).every(day => day.classList.contains('empty'))).toBe(true)
+})

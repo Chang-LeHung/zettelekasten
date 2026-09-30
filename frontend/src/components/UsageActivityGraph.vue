@@ -50,7 +50,12 @@ const cells = computed<Array<DayCell | null>>(() => {
 
 const weeks = computed(() => {
   const rows: Array<Array<DayCell | null>> = []
-  for (let index = 0; index < cells.value.length; index += 7) rows.push(cells.value.slice(index, index + 7))
+  for (let index = 0; index < cells.value.length; index += 7) {
+    const week = cells.value.slice(index, index + 7)
+    // The final week is usually incomplete. Empty slots must still occupy
+    // rows, otherwise CSS Grid stretches its few populated days vertically.
+    rows.push([...week, ...Array.from({ length: 7 - week.length }, () => null)])
+  }
   return rows
 })
 
@@ -119,10 +124,11 @@ function hideTooltip(): void {
       </div>
       <span>{{ t('{count} tokens', { count: formatTokenCount(totalTokens) }) }}</span>
     </header>
-    <div class="activity-scroll">
+    <div class="activity-calendar">
       <div class="activity-months" :style="{ gridTemplateColumns: `repeat(${weeks.length}, minmax(0, 1fr))` }" aria-hidden="true">
         <span v-for="(month, index) in monthLabels" :key="`${month}-${index}`" class="activity-month">
-          <span v-if="month">{{ month }}</span>
+          <span v-if="month" class="month-full">{{ month }}</span>
+          <span v-if="month" class="month-short">{{ month.slice(0, 1) }}</span>
         </span>
       </div>
       <div class="activity-grid" :style="{ gridTemplateColumns: `repeat(${weeks.length}, minmax(0, 1fr))` }" :aria-label="t('Daily model token activity')">
@@ -169,19 +175,20 @@ function hideTooltip(): void {
 </template>
 
 <style scoped>
-.usage-activity { --activity-gap: .2rem; position: relative; display: grid; gap: .9rem; }
+.usage-activity { --activity-gap: clamp(1px, .2vw, .2rem); position: relative; display: grid; gap: .9rem; min-width: 0; container-type: inline-size; }
 .usage-activity > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
 .usage-activity > header strong, .usage-activity > header small { display: block; }
 .usage-activity > header strong { color: #3c4740; font-size: .86rem; }
 .usage-activity > header small { margin-top: .16rem; color: #828c86; font-size: .64rem; }
 .usage-activity > header > span { color: #496353; font-size: .74rem; font-weight: 700; font-variant-numeric: tabular-nums; }
-.activity-scroll { overflow-x: auto; padding-bottom: .18rem; scrollbar-width: thin; }
-.activity-grid { display: grid; gap: var(--activity-gap); width: 100%; min-width: 36rem; }
-.activity-months { height: 1rem; display: grid; gap: var(--activity-gap); width: 100%; min-width: 36rem; margin-bottom: .02rem; }
+.activity-calendar { min-width: 0; width: 100%; }
+.activity-grid { display: grid; gap: var(--activity-gap); width: 100%; min-width: 0; }
+.activity-months { height: 1rem; display: grid; gap: var(--activity-gap); width: 100%; min-width: 0; margin-bottom: .02rem; }
 .activity-month { position: relative; min-width: 0; }
 .activity-month > span { position: absolute; left: 0; bottom: .2rem; color: #68756d; font-size: .58rem; font-weight: 640; line-height: 1; white-space: nowrap; }
-.activity-week { min-width: 0; display: grid; grid-template-rows: repeat(7, auto); gap: var(--activity-gap); }
-.activity-cell { width: 100%; height: auto; aspect-ratio: 1; border-radius: .2rem; background: #edf0ee; }
+.activity-month .month-short { display: none; }
+.activity-week { min-width: 0; display: grid; grid-template-rows: repeat(7, minmax(0, 1fr)); gap: var(--activity-gap); }
+.activity-cell { width: 100%; height: auto; aspect-ratio: 1; border-radius: clamp(1px, .18vw, .2rem); background: #edf0ee; }
 .activity-cell.empty { visibility: hidden; }
 .activity-cell.level-0, .usage-activity footer .level-0 { background: #edf0ee; }
 .activity-cell.level-1, .usage-activity footer .level-1 { background: #cce5d5; }
@@ -198,4 +205,8 @@ function hideTooltip(): void {
 .activity-tooltip dl > div { display: flex; align-items: center; justify-content: space-between; gap: .6rem; }
 .activity-tooltip dt { color: #b8c5bd; font-size: .51rem; font-weight: 500; }
 .activity-tooltip dd { margin: 0; color: #fff; font-size: .54rem; font-weight: 680; font-variant-numeric: tabular-nums; }
+@container (max-width: 42rem) {
+  .activity-month .month-full { display: none; }
+  .activity-month .month-short { display: inline; }
+}
 </style>
