@@ -15,7 +15,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { DEFAULT_SERVER_URL, ZettClient, ZettError } from './api/zett-client'
-import { ARTIFACT_TOOLS, type AgentArtifact, type ArtifactReceipt, type Provider, type ReasoningEffort, type ToolOutcome, type TranscriptEntry } from './api/types'
+import { ARTIFACT_TOOLS, type AgentArtifact, type ArtifactReceipt, type Provider, type ReasoningEffort, type SessionSummary, type ToolOutcome, type TranscriptEntry } from './api/types'
 import MarkdownBody from './chat/MarkdownBody.vue'
 import AgentExecution from '../../../frontend/src/components/AgentExecution.vue'
 import CacheHitRate from '../../../frontend/src/components/CacheHitRate.vue'
@@ -23,11 +23,12 @@ import ContextCompositionRing from '../../../frontend/src/components/ContextComp
 import type { AgentContextComposition, AgentCustomEvent, AgentModelUsage } from '../../../frontend/src/api/types'
 import { addAgentUsage, formatTokenCount, latestAgentUsage, summarizeAgentUsage } from '../../../frontend/src/utils/agentUsage'
 import { buildMessageParts, readMessageImage, type PositionedMessageImage } from '../../../frontend/src/utils/messageParts'
+import { parseUtcTimestamp } from '../../../frontend/src/utils/timestamps'
 import { BrowserBridgeClient, type BrowserConsent } from './api/browser-bridge'
 import { formatTurnDuration, splitTurnTimeline } from '../../../frontend/src/utils/conversationTurns'
 import { settleTimeline, turnTask, updateTimeline } from './chat/timeline'
 import { readActivePage } from './page/page-reader'
-import { MAX_PAGE_CHARS, pageContext } from './page/page-text'
+import { MAX_PAGE_CHARS, PAGE_TOOLS_UNAVAILABLE_NOTE, pageContext } from './page/page-text'
 import { browserApprovalKey, pageKey } from './chat/page-sessions'
 import { PAGE_PROMPT_MARKER, restoreTranscript } from './chat/restore-transcript'
 
@@ -45,6 +46,10 @@ const client = ref(new ZettClient(DEFAULT_SERVER_URL))
 const serverUrl = ref(DEFAULT_SERVER_URL)
 const serverStatus = ref('')
 const settingsOpen = ref(false)
+const historyOpen = ref(false)
+const historySessions = ref<SessionSummary[]>([])
+const historyLoading = ref(false)
+const historyExhausted = ref(false)
 const moreOpen = ref(false)
 const modelOpen = ref(false)
 const effortOpen = ref(false)
@@ -459,6 +464,58 @@ async function startConversation(): Promise<void> {
   await chrome.storage.local.set({ [key]: session.conversation_id })
 }
 
+function formatSessionTime(value: string): string {
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(parseUtcTimestamp(value))
+}
+
+/** One page of conversations per request; the list asks for the next on scroll. */
+const HISTORY_PAGE_SIZE = 20
+
+async function loadHistory(reset: boolean): Promise<void> {
+  if (historyLoading.value || (!reset && historyExhausted.value)) return
+  historyLoading.value = true
+  try {
+    const offset = reset ? 0 : historySessions.value.length
+    const page = await client.value.listSessions(HISTORY_PAGE_SIZE, offset)
+    historySessions.value = reset ? page : [...historySessions.value, ...page]
+    historyExhausted.value = page.length < HISTORY_PAGE_SIZE
+  } catch (error) {
+    if (reset) historySessions.value = []
+    notify((error as Error).message, 'error')
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+async function toggleHistory(): Promise<void> {
+  historyOpen.value = !historyOpen.value
+  settingsOpen.value = false
+  if (!historyOpen.value) return
+  historySessions.value = []
+  historyExhausted.value = false
+  await loadHistory(true)
+}
+
+function loadMoreHistory(event: Event): void {
+  const element = event.target as HTMLElement
+  if (element.scrollHeight - element.scrollTop - element.clientHeight > 48) return
+  void loadHistory(false)
+}
+
+/** Rebind this page to an older conversation and restore its transcript. */
+async function openSession(sessionId: string): Promise<void> {
+  const key = pageIdentity.value
+  if (!key) return
+  historyOpen.value = false
+  await chrome.storage.local.set({ [key]: sessionId })
+  // Clearing the identity makes openPage run its full switch path: stop any
+  // turn, drop the old browser peer, restore, and rebind the page connection.
+  pageIdentity.value = null
+  conversationId.value = null
+  await openPage()
+  notify('Conversation restored')
+}
+
 async function newChat(): Promise<void> {
   try {
     if (busy.value) return
@@ -753,9 +810,13 @@ async function sendTurn(text: string): Promise<void> {
   activeStreamController = controller
   notify('')
   // When connected, the Agent reads live page state through its tools. The
-  // bounded excerpt only helps if DOM bridge is temporarily unavailable.
+  // bounded excerpt only helps if DOM bridge is temporarily unavailable; the
+  // note keeps the model from probing tools this turn does not register.
   const outgoing = browserConnected.value ? text
-    : page.value ? `${pageContext(page.value)}${PAGE_PROMPT_MARKER}${text}` : text
+    : `${PAGE_TOOLS_UNAVAILABLE_NOTE}\n\n${page.value ? pageContext(page.value) : ''}${PAGE_PROMPT_MARKER}${text}`
+  if (!browserConnected.value) {
+    notify('Page tools are off, so the Agent only sees the page excerpt. Press “Connect page” in the ••• menu to let it read and edit the page.')
+  }
   appendEntry('user', text)
   const startedAt = Date.now()
   clock.value = startedAt
@@ -931,18 +992,51 @@ watch(conversationId, (sessionId) => { void loadBrowserApproval(sessionId) })
       </small>
     </div>
     <div class="header-actions">
+      <button type="button" title="Previous conversations" aria-label="Previous conversations" @click="toggleHistory">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 12a8 8 0 1 0 2.3-5.7M4 4v4h4" />
+          <path d="M12 8.5V12l2.5 1.5" />
+        </svg>
+      </button>
       <button type="button" title="Start a new conversation" aria-label="Start a new conversation" :disabled="busy" @click="newChat">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
       </button>
       <button type="button" title="Server settings" aria-label="Server settings" @click="settingsOpen = !settingsOpen">
         <svg viewBox="0 0 24 24" aria-hidden="true">
-          <circle cx="12" cy="12" r="3" />
-          <path d="M12 3v2m0 14v2M3 12h2m14 0h2M5.6 5.6l1.4 1.4m10 10 1.4 1.4m0-12.8-1.4 1.4m-10 10-1.4 1.4" />
+          <path d="M4 8h16M4 16h16" />
+          <circle cx="9" cy="8" r="2.2" />
+          <circle cx="15" cy="16" r="2.2" />
         </svg>
       </button>
       <button class="close-panel" type="button" title="Close panel" aria-label="Close panel" @click="closePanel">×</button>
     </div>
   </header>
+
+  <section
+    v-if="historyOpen"
+    class="session-history"
+    aria-label="Previous conversations"
+    @scroll="loadMoreHistory"
+  >
+    <header>
+      <strong>Previous conversations</strong>
+      <small v-if="historyLoading && !historySessions.length">Loading…</small>
+    </header>
+    <p v-if="!historyLoading && !historySessions.length" class="session-history-empty">No conversations yet.</p>
+    <button
+      v-for="session in historySessions"
+      :key="session.id"
+      class="session-history-item"
+      :class="{ current: session.id === conversationId }"
+      type="button"
+      @click="openSession(session.id)"
+    >
+      <strong>{{ session.title || 'Untitled conversation' }}</strong>
+      <small>{{ formatSessionTime(session.updated_at) }} · {{ session.message_count }} messages</small>
+    </button>
+    <p v-if="historySessions.length && historyLoading" class="session-history-empty">Loading more…</p>
+    <p v-else-if="historySessions.length && historyExhausted" class="session-history-empty">That's every conversation.</p>
+  </section>
 
   <section v-if="settingsOpen" class="settings">
     <label>
@@ -1256,6 +1350,17 @@ button svg { width: .9rem; height: .9rem; fill: none; stroke: currentColor; stro
 .header-actions button { display: grid; place-items: center; width: 1.9rem; height: 1.9rem; padding: 0; }
 
 .settings { display: grid; gap: .45rem; padding: .6rem .8rem; border-bottom: 1px solid var(--line); background: #f7f8f7; }
+/* Previous conversations: rebind this page to any recent session. */
+.session-history { display: grid; gap: .2rem; max-height: 12rem; padding: .5rem .6rem; overflow-y: auto; border-bottom: 1px solid var(--line); background: #f7f8f7; scrollbar-width: thin; }
+.session-history header { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; padding: 0 .25rem .15rem; }
+.session-history header strong { color: #3f624e; font-size: .66rem; font-weight: 740; letter-spacing: .025em; }
+.session-history header small { color: var(--tertiary); font-size: .58rem; }
+.session-history-empty { margin: 0; padding: .3rem .25rem; color: var(--tertiary); font-size: .62rem; }
+.session-history-item { display: grid; gap: .1rem; width: 100%; min-height: 2.5rem; padding: .4rem .55rem; border: 1px solid transparent; border-radius: .6rem; background: transparent; text-align: left; }
+.session-history-item:hover { border-color: #e0e6e2; background: #fff; }
+.session-history-item.current { border-color: #b9cdc1; background: #edf4ef; }
+.session-history-item strong { overflow: hidden; color: #45594b; font-size: .7rem; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
+.session-history-item small { overflow: hidden; color: var(--tertiary); font-size: .58rem; text-overflow: ellipsis; white-space: nowrap; }
 .settings label { display: grid; gap: .2rem; font-size: .68rem; color: var(--secondary); }
 .settings-row { display: flex; align-items: center; gap: .5rem; }
 .settings-row button { padding: .3rem .6rem; }

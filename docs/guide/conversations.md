@@ -87,8 +87,10 @@ The Chrome extension embeds a panel on the right edge of the webpage when you
 click its toolbar icon; it does not use Chrome's native side panel. Each tab
 and page URL owns a separate conversation. Closing and reopening the panel
 restores that page's messages and pending artifacts. The embedded panel reuses
-the web conversation's execution details and model
-controls. Model choices show the connection name so two providers with the same
+the web conversation's execution details and model controls; its header also
+lists recent conversations — 20 at a time, loaded as the list scrolls — so this
+page can be rebound to one of them and that transcript restored. Model choices
+show the connection name so two providers with the same
 model are distinguishable. Cache hit rate uses the real model usage counters;
 the context ring shows the latest input/output tokens relative to the configured
 compaction threshold, not the provider's advertised maximum context window.
@@ -114,7 +116,10 @@ Only the connected top-level document is controlled. Switching tabs keeps each
 tab's embedded panel independent. Navigating to a different URL opens that
 page's conversation; returning restores the earlier one. Closing the panel
 disconnects its live tools without deleting its history. A failed connection
-can be retried with **Connect page**; failed edits are not replayed. Field changes
+can be retried with **Connect page**; failed edits are not replayed. While the
+page is not connected a turn still carries a bounded text excerpt, and the
+message says the live page tools do not exist in that turn, so the Agent does
+not probe tools it was not given. Field changes
 send input/change events and may trigger the website's
 own autosave. A timeout cannot roll back edits that already happened.
 Ordinary web conversations do not receive these browser tools.
