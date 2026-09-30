@@ -63,10 +63,21 @@ use providers and prompts you are comfortable running unattended.
 
 ## Trace and usage
 
-The `Workspace` / `Trace` switch in the header changes how the same conversation
-is shown:
+The header icon toggles Workspace and Trace views of the same conversation:
 
-- `Workspace` is the chat itself, with artifact and asset panels beside it.
+- `Workspace` is the chat itself, with asset and artifact panels beside it.
+  Artifacts form a vertical list with a readable excerpt or image thumbnail;
+  selecting one shows its complete preview below the list without switching
+  away from the conversation. Drag the divider between the list and preview
+  to give either more space, or focus it and use the Up/Down arrow keys.
+  Both sections retain a usable minimum height. The panes use restrained
+  borders rather than raised card shadows. Artifact types have distinct,
+  restrained accent colors. **Save all** publishes every new or changed draft
+  in this conversation, including edits still open in the selected editor;
+  failures are reported individually and the remaining artifacts continue.
+  Images, PDFs, and diagrams open on a consistent reading surface; Escape
+  closes the preview, while PDF page/zoom controls and diagram zoom remain
+  available.
 - `Trace` renders every request and response of every turn: the model, reasoning
   effort, tool calls with arguments, tool results, durations, and token usage.
 

@@ -38,6 +38,10 @@ import { hasRunningTool, upsertToolActivity } from './utils/toolActivities'
 import { TurnDetailsVisibility } from './utils/turnDetails'
 import { presentationSections } from './utils/slides'
 import { libraryExcerptText } from './utils/libraryExcerpt'
+import { artifactListExcerpt, artifactListImage } from './utils/artifactListPresentation'
+import { pendingArtifactSaves } from './utils/artifactSaveAll'
+import { artifactTone } from './utils/artifactTone'
+import { clampArtifactListHeight, MIN_ARTIFACT_LIST_HEIGHT } from './utils/artifactSplit'
 import { asContextComposition } from './utils/contextComposition'
 import { visibleTagRows } from './utils/tagTree'
 import { useI18n, type Locale } from './i18n'
@@ -274,10 +278,27 @@ const scheduledSessionsHaveMore = ref(true)
 const channelSessionsHaveMore = ref(true)
 const sessionPageSize = 20
 const selectedArtifactId = ref<string | null>(null)
+const artifactPaneRef = ref<HTMLElement | null>(null)
+const artifactHeaderRef = ref<HTMLElement | null>(null)
+const artifactListHeight = ref<number | null>(null)
+let artifactSplitPointer: number | null = null
+let artifactSplitStartY = 0
+let artifactSplitStartHeight = 0
+let artifactPaneResizeObserver: ResizeObserver | null = null
 const loading = ref(false)
 //: True until the persisted conversation, including its artifacts, has loaded.
 const workspaceRestoring = ref(true)
 const saving = ref(false)
+const savingAllArtifacts = ref(false)
+const artifactsNeedingSave = computed(() => {
+  const pending = pendingArtifactSaves(artifacts.value)
+  const selected = selectedArtifact.value
+  if (selected && artifactContent.value && !pending.some(item => item.id === selected.id)
+    && JSON.stringify(artifactContent.value) !== JSON.stringify(artifactEditableContent(selected))) {
+    pending.push(selected)
+  }
+  return pending
+})
 const notice = ref('')
 const noticeKind = ref<NoticeKind>('success')
 const confirmation = ref<ConfirmationState>({ open: false, title: '', message: '', confirmLabel: 'Delete' })
@@ -462,6 +483,55 @@ function artifactTitle(content: ArtifactContent | null): string {
   if (!content) return 'Untitled artifact'
   return content.artifact_type === 'latex_pdf' ? content.pdf_name.replace(/\.pdf$/, '') : content.title
 }
+
+function setArtifactListHeight(height: number): void {
+  const pane = artifactPaneRef.value
+  const header = artifactHeaderRef.value
+  if (!pane || !header) return
+  const bounded = clampArtifactListHeight(height, pane.clientHeight, header.offsetHeight)
+  if (artifactListHeight.value !== bounded) artifactListHeight.value = bounded
+}
+
+function startArtifactSplit(event: PointerEvent): void {
+  if (event.button !== 0) return
+  const pane = artifactPaneRef.value
+  if (!pane) return
+  event.preventDefault()
+  artifactSplitPointer = event.pointerId
+  artifactSplitStartY = event.clientY
+  artifactSplitStartHeight = pane.querySelector('.artifact-list')?.getBoundingClientRect().height ?? MIN_ARTIFACT_LIST_HEIGHT
+  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+}
+
+function moveArtifactSplit(event: PointerEvent): void {
+  if (artifactSplitPointer !== event.pointerId) return
+  setArtifactListHeight(artifactSplitStartHeight + event.clientY - artifactSplitStartY)
+}
+
+function endArtifactSplit(event: PointerEvent): void {
+  if (artifactSplitPointer !== event.pointerId) return
+  artifactSplitPointer = null
+}
+
+function keyArtifactSplit(event: KeyboardEvent): void {
+  const list = artifactPaneRef.value?.querySelector('.artifact-list')
+  if (!list || !['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return
+  event.preventDefault()
+  const current = list.getBoundingClientRect().height
+  const desired = event.key === 'Home' ? 0 : event.key === 'End' ? Number.MAX_SAFE_INTEGER
+    : current + (event.key === 'ArrowDown' ? 32 : -32)
+  setArtifactListHeight(desired)
+}
+
+watch(artifactPaneRef, (pane) => {
+  artifactPaneResizeObserver?.disconnect()
+  artifactPaneResizeObserver = null
+  if (!pane) return
+  artifactPaneResizeObserver = new ResizeObserver(() => {
+    if (artifactListHeight.value !== null) setArtifactListHeight(artifactListHeight.value)
+  })
+  artifactPaneResizeObserver.observe(pane)
+})
 
 function libraryExcerpt(item: LibraryItem): string {
   const source = item.summary || (item.item_type === 'slides' ? item.subtitle : '') || item.content
@@ -3069,6 +3139,7 @@ function formatAssetDate(value: string): string {
 }
 
 async function saveSelectedArtifact(): Promise<boolean> {
+  if (savingAllArtifacts.value || saving.value) return false
   const artifactId = selectedArtifactId.value
   const activeConversationId = conversationId.value
   const content = artifactContent.value
@@ -3102,6 +3173,62 @@ async function saveSelectedArtifact(): Promise<boolean> {
     return false
   } finally {
     saving.value = false
+  }
+}
+
+async function saveAllArtifacts(): Promise<void> {
+  const sessionId = conversationId.value
+  if (!sessionId || saving.value || savingAllArtifacts.value) return
+  const pending = [...artifactsNeedingSave.value]
+  if (!pending.length) {
+    showNotice('All artifacts are already saved')
+    return
+  }
+  savingAllArtifacts.value = true
+  const selectedId = selectedArtifactId.value
+  const selectedDraft = selectedId && artifactContent.value ? jsonSnapshot(artifactContent.value) : null
+  let savedCount = 0
+  const failed: string[] = []
+  try {
+    for (const artifact of pending) {
+      if (conversationId.value !== sessionId) break
+      try {
+        // Save All must include an edit still open in the selected editor.
+        if (artifact.id === selectedId && selectedDraft) {
+          const updated = await aiClient.updateAgentArtifactDraft(sessionId, artifact.id, selectedDraft)
+          if (conversationId.value !== sessionId) break
+          const draftIndex = artifacts.value.findIndex(item => item.id === updated.id)
+          if (draftIndex >= 0) artifacts.value.splice(draftIndex, 1, updated)
+        }
+        if (conversationId.value !== sessionId) break
+        const saved = await aiClient.saveAgentArtifact(sessionId, artifact.id)
+        if (conversationId.value !== sessionId) break
+        const index = artifacts.value.findIndex(item => item.id === saved.id)
+        if (index >= 0) artifacts.value.splice(index, 1, saved)
+        // An edit typed during the request must remain in the editor for a later save.
+        if (selectedArtifactId.value === saved.id && selectedDraft
+          && JSON.stringify(artifactContent.value) === JSON.stringify(selectedDraft)) {
+          artifactContent.value = jsonSnapshot(saved.content)
+          artifactDiff.value = false
+        }
+        savedCount += 1
+      } catch (error) {
+        failed.push(`${artifactTitle(artifactEditableContent(artifact))}: ${errorMessage(error)}`)
+      }
+    }
+    if (savedCount && conversationId.value === sessionId) {
+      await loadLibrary()
+      await refreshTags()
+    }
+    if (conversationId.value !== sessionId) return
+    showNotice(
+      failed.length
+        ? `Saved ${savedCount} of ${pending.length}. Failed: ${failed.join('; ')}`
+        : `Saved ${savedCount} artifact${savedCount === 1 ? '' : 's'}`,
+      failed.length ? 'error' : 'success',
+    )
+  } finally {
+    savingAllArtifacts.value = false
   }
 }
 
@@ -3272,6 +3399,8 @@ onBeforeUnmount(() => {
   if (turnClock !== null) window.clearInterval(turnClock)
   agentContentResizeObserver?.disconnect()
   agentContentResizeObserver = null
+  artifactPaneResizeObserver?.disconnect()
+  artifactPaneResizeObserver = null
   window.removeEventListener('keydown', handleShortcut)
   clearSessionTitleRefresh()
 })
@@ -3565,11 +3694,10 @@ onBeforeUnmount(() => {
       <template v-else-if="view === 'new'">
         <header class="topbar compact chat-topbar">
           <div class="chat-topbar-title"><span class="status-dot online" /><span>{{ sessionScope === 'scheduled' ? $t('nav.scheduledConversation') : sessionScope === 'channel' ? $t('nav.channelConversation') : $t('nav.workspace') }}</span></div>
-          <div class="workspace-view-switch" role="group" aria-label="AI workspace view">
-            <button :class="{ active: workspaceView === 'workspace' }" type="button" @click="setWorkspaceView('workspace')">{{ $t('Workspace') }}</button>
-            <button :class="{ active: workspaceView === 'trace' }" type="button" @click="setWorkspaceView('trace')">{{ $t('Trace') }}</button>
-          </div>
-          <button class="close-button" type="button" aria-label="Close" @click="navigate('library')">×</button>
+          <button class="workspace-view-toggle" type="button" :aria-label="workspaceView === 'workspace' ? 'Show trace' : 'Show workspace'" :title="workspaceView === 'workspace' ? 'Show trace' : 'Show workspace'" @click="setWorkspaceView(workspaceView === 'workspace' ? 'trace' : 'workspace')">
+            <svg v-if="workspaceView === 'workspace'" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h4v4H4zM10 8h10M4 15h4v4H4zM10 17h10" /></svg>
+            <svg v-else viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v16H4zM14 4h6v16h-6z" /></svg>
+          </button>
         </header>
         <section class="content create-view">
           <div v-if="workspaceView === 'trace'" class="trace-workspace">
@@ -3958,22 +4086,42 @@ onBeforeUnmount(() => {
               </div>
             </section>
 
-            <aside class="artifact-pane artifact-workspace">
-              <header class="artifact-collection-header">
+            <aside ref="artifactPaneRef" class="artifact-pane artifact-workspace">
+              <header ref="artifactHeaderRef" class="artifact-collection-header">
                 <div><strong>{{ $t('Artifacts') }}</strong><small>{{ $t('{count} in this conversation', { count: artifacts.length }) }}</small></div>
                 <div class="artifact-collection-actions">
                   <span v-if="loading" class="artifact-syncing"><i />{{ $t('Updating') }}</span>
+                  <button class="artifact-save-all" type="button" :disabled="savingAllArtifacts || saving || !artifactsNeedingSave.length" @click="saveAllArtifacts">{{ savingAllArtifacts ? 'Saving…' : 'Save all' }}</button>
                   <button class="artifact-refresh" type="button" :title="$t('Refresh artifacts')" :aria-label="$t('Refresh artifacts')" :disabled="artifactRefreshing" @click="refreshSelectedArtifact">
                     <svg :class="{ spinning: artifactRefreshing }"><use href="#icon-refresh" /></svg>
                   </button>
                 </div>
               </header>
-              <div v-if="artifacts.length" class="artifact-list" aria-label="Conversation artifacts">
-                <button v-for="artifact in artifacts" :key="artifact.id" :class="{ active: artifact.id === selectedArtifactId }" type="button" @click="selectArtifact(artifact)">
-                  <span class="artifact-kind-icon">{{ artifact.artifact_type === 'card' ? '◇' : artifact.artifact_type === 'article' ? '¶' : artifact.artifact_type === 'slides' ? '▤' : '▧' }}</span>
-                  <span><strong>{{ artifactTitle(artifactEditableContent(artifact)) }}</strong><small>{{ artifact.artifact_type }} · v{{ artifact.version }} · {{ artifact.status }}{{ hasPendingDraft(artifact) ? ' · unsaved draft' : '' }}</small></span>
+              <div v-if="artifacts.length" class="artifact-list" :style="artifactListHeight === null ? undefined : { height: `${artifactListHeight}px` }" aria-label="Conversation artifacts">
+                <button v-for="artifact in artifacts" :key="artifact.id" :class="[artifactTone(artifact.artifact_type), { active: artifact.id === selectedArtifactId }]" type="button" :disabled="savingAllArtifacts" @click="selectArtifact(artifact)">
+                  <img v-if="artifactListImage(artifact)" class="artifact-list-image" :src="artifactListImage(artifact) || undefined" alt="" />
+                  <span v-else class="artifact-kind-icon">{{ artifact.artifact_type === 'card' ? '◇' : artifact.artifact_type === 'article' ? '¶' : artifact.artifact_type === 'slides' ? '▤' : '▧' }}</span>
+                  <span class="artifact-list-copy">
+                    <small>{{ artifact.artifact_type }} · {{ hasPendingDraft(artifact) ? 'unsaved draft' : artifact.status }}</small>
+                    <strong>{{ artifactTitle(artifactEditableContent(artifact)) }}</strong>
+                    <span class="artifact-list-excerpt">{{ artifactListExcerpt(artifactEditableContent(artifact)) }}</span>
+                  </span>
                 </button>
               </div>
+              <div
+                v-if="artifacts.length && artifactContent"
+                class="artifact-splitter"
+                role="separator"
+                aria-label="Resize artifact list and preview"
+                aria-orientation="horizontal"
+                tabindex="0"
+                :aria-valuenow="Math.round(artifactListHeight ?? MIN_ARTIFACT_LIST_HEIGHT)"
+                @pointerdown="startArtifactSplit"
+                @pointermove="moveArtifactSplit"
+                @pointerup="endArtifactSplit"
+                @pointercancel="endArtifactSplit"
+                @keydown="keyArtifactSplit"
+              ><span /></div>
               <div v-if="workspaceRestoring" class="artifact-placeholder">
                 <span><svg><use href="#icon-cards" /></svg></span>
                 <h2>{{ $t('Restoring conversation') }}</h2>
@@ -3984,7 +4132,7 @@ onBeforeUnmount(() => {
                 <h2>{{ $t('No artifacts yet') }}</h2>
                 <p>{{ $t('Keep talking with Zett Agent. Cards, articles, slides, and images will appear here when the conversation produces them.') }}</p>
               </div>
-              <div v-else class="artifact-panel artifact-editor">
+              <div v-else :key="selectedArtifactId ?? 'artifact-preview'" class="artifact-panel artifact-editor" :class="artifactTone(artifactContent.artifact_type)">
                 <div class="artifact-editor-accent" />
                 <header class="artifact-editor-header">
                   <div class="artifact-state"><i :class="{ saved: selectedArtifact?.status === 'saved' }" /><span><strong>{{ selectedArtifact?.artifact_type }} artifact</strong><small>{{ selectedArtifact?.status }} · version {{ selectedArtifact?.version }}{{ selectedArtifact && hasPendingDraft(selectedArtifact) ? ' · unsaved draft' : '' }}</small></span></div>
@@ -3993,7 +4141,7 @@ onBeforeUnmount(() => {
                 <div class="artifact-editor-body">
                   <ArtifactDiffView v-if="artifactDiff && selectedArtifactDiff" :diff="selectedArtifactDiff" />
                   <template v-else>
-                  <div v-if="artifactContent.artifact_type === 'card'" class="card-meta-row">
+                  <div v-if="artifactContent.artifact_type === 'card' && !artifactPreview" class="card-meta-row">
                     <div class="card-type-control">
                       <span>{{ $t('Card type') }}</span>
                       <div class="card-type-options" role="group" :aria-label="$t('Card type')">
@@ -4038,7 +4186,7 @@ onBeforeUnmount(() => {
                   <div v-if="artifactContent.artifact_type !== 'latex_pdf' && artifactContent.suggested_tags.length" class="suggestions card-tags-editor"><span>Classification</span><div class="suggestion-list"><label v-for="tag in artifactContent.suggested_tags" :key="tag.path" :class="{ selected: selectedSuggestions.includes(tag.path) }"><input v-model="selectedSuggestions" type="checkbox" :value="tag.path" /><span>{{ tag.path }}</span><small>{{ Math.round(tag.confidence * 100) }}%</small></label></div></div>
                   </template>
                 </div>
-                <footer class="panel-actions artifact-editor-actions"><button class="danger-button" type="button" @click="deleteSelectedArtifact">Delete</button><button class="primary-action" :disabled="saving || !artifactTitle(artifactContent).trim()" type="button" @click="saveSelectedArtifact">{{ saving ? 'Saving…' : artifactDiff && selectedArtifact?.draft_content ? 'Save draft' : artifactContent.artifact_type === 'image' ? 'Save changes' : selectedArtifact?.status === 'saved' ? `Update artifact ${artifactTypeLabel(artifactContent.artifact_type).toLowerCase()}` : 'Save artifact' }}<svg><use href="#icon-arrow" /></svg></button></footer>
+                <footer class="panel-actions artifact-editor-actions"><button class="danger-button" type="button" :disabled="savingAllArtifacts" @click="deleteSelectedArtifact">Delete</button><button class="primary-action" :disabled="saving || savingAllArtifacts || !artifactTitle(artifactContent).trim()" type="button" @click="saveSelectedArtifact">{{ saving ? 'Saving…' : artifactDiff && selectedArtifact?.draft_content ? 'Save draft' : artifactContent.artifact_type === 'image' ? 'Save changes' : selectedArtifact?.status === 'saved' ? `Update artifact ${artifactTypeLabel(artifactContent.artifact_type).toLowerCase()}` : 'Save artifact' }}<svg><use href="#icon-arrow" /></svg></button></footer>
               </div>
             </aside>
           </div>
@@ -4331,10 +4479,9 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .chat-topbar { min-height: 4.5rem; }
 .chat-topbar-title { display: flex; align-items: center; gap: .55rem; color: var(--secondary); font-size: .75rem; font-weight: 620; }
 .chat-topbar-title .status-dot { margin-left: 0; }
-.workspace-view-switch { display: flex; gap: .16rem; padding: .17rem; border: 1px solid rgba(60,78,67,.1); border-radius: .62rem; background: rgba(235,239,236,.82); }
-.workspace-view-switch button { min-height: 1.8rem; padding: 0 .68rem; border: 0; border-radius: .46rem; color: #68736c; background: transparent; cursor: pointer; font-size: .62rem; font-weight: 650; }
-.workspace-view-switch button:hover { color: #355442; }
-.workspace-view-switch button.active { color: #31523f; background: #fff; box-shadow: 0 1px 4px rgba(38,57,46,.1); }
+.workspace-view-toggle { display: grid; place-items: center; width: 2.15rem; height: 2.15rem; margin-left: auto; padding: 0; border: 1px solid rgba(60,78,67,.12); border-radius: .65rem; color: #5f7366; background: #fff; cursor: pointer; transition: background 160ms ease, transform 160ms ease; }
+.workspace-view-toggle:hover { background: #edf4ef; transform: translateY(-1px); }
+.workspace-view-toggle svg { width: 1rem; height: 1rem; fill: none; stroke: currentColor; stroke-width: 1.65; stroke-linejoin: round; }
 .search-field { flex: 1; max-width: 38rem; height: 2.65rem; display: flex; align-items: center; gap: .65rem; padding: 0 .85rem; border: 1px solid rgba(29,29,31,.08); border-radius: .78rem; background: rgba(255,255,255,.72); box-shadow: 0 1px 4px rgba(0,0,0,.035), inset 0 1px rgba(255,255,255,.8); transition: box-shadow 180ms ease, background 180ms ease; }
 .search-field:focus-within { background: white; box-shadow: 0 0 0 3px rgba(71,105,87,.12), 0 8px 24px rgba(0,0,0,.05); }
 .search-field svg { width: 1rem; height: 1rem; color: #85858a; }
@@ -4414,7 +4561,7 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .empty-state p { max-width: 24rem; margin: 0 0 1.25rem; color: var(--secondary); font-size: .8rem; line-height: 1.55; }
 
 .create-view { width: min(100%, 124rem); max-width: 124rem; padding-right: clamp(.55rem, 1vw, 1rem); padding-left: clamp(.55rem, 1vw, 1rem); }
-.agent-workspace { height: calc(100vh - 8.2rem); min-height: 39rem; display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 5fr) minmax(0, 3fr); gap: .72rem; }
+.agent-workspace { height: calc(100vh - 8.2rem); min-height: 39rem; display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 5fr) minmax(0, 3.4fr); gap: .65rem; }
 @media (min-width: 1181px) { .agent-workspace.assets-hidden { grid-template-columns: minmax(0, 5fr) minmax(0, 3fr); } }
 .trace-workspace { height: calc(100vh - 8.2rem); min-height: 39rem; }
 @media (min-width: 1181px) {
@@ -4423,7 +4570,7 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
   .create-view { height: calc(100vh - 4.5rem); min-height: 0; display: flex; flex-direction: column; overflow: hidden; padding-top: .9rem; padding-bottom: 1rem; }
   .create-view > .agent-workspace, .create-view > .trace-workspace { flex: 1 1 auto; height: auto; min-height: 0; }
 }
-.assets-pane, .agent-chat, .artifact-pane { min-width: 0; min-height: 0; overflow: hidden; border: 1px solid rgba(29,29,31,.08); border-radius: 1.15rem; background: rgba(255,255,255,.97); box-shadow: var(--shadow); backdrop-filter: blur(18px); transition: opacity 180ms ease, transform 240ms cubic-bezier(.2,.8,.2,1); }
+.assets-pane, .agent-chat, .artifact-pane { min-width: 0; min-height: 0; overflow: hidden; border: 1px solid rgba(29,29,31,.085); border-radius: .95rem; background: #fff; box-shadow: none; transition: opacity 180ms ease, transform 240ms cubic-bezier(.2,.8,.2,1); }
 .agent-workspace.session-switching .assets-pane, .agent-workspace.session-switching .artifact-pane { opacity: .48; transform: translateY(4px); pointer-events: none; }
 .agent-chat { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
 .agent-chat-header { min-height: 4.4rem; display: flex; align-items: center; gap: 1rem; padding: .75rem 1rem; border-bottom: 1px solid var(--line); }
@@ -4611,13 +4758,16 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 @container composer-footer (max-width: 760px) {
   .composer-submit > small { display: none; }
 }
-.artifact-pane { container-type: inline-size; container-name: artifact-pane; overflow: hidden; background: #f3f4f1; }
+.artifact-pane { container-type: inline-size; container-name: artifact-pane; overflow: hidden; background: #fff; }
 .artifact-workspace { display: flex; flex-direction: column; }
 .artifact-collection-header { display: flex; align-items: center; justify-content: space-between; gap: .7rem; padding: .85rem 1rem .72rem; border-bottom: 1px solid #e4e8e5; background: rgba(255,255,255,.92); }
 .artifact-collection-header strong, .artifact-collection-header small { display: block; }
 .artifact-collection-header strong { color: #303632; font-size: .78rem; }
 .artifact-collection-header small { margin-top: .1rem; color: var(--tertiary); font-size: .58rem; }
 .artifact-collection-actions { display: flex; align-items: center; gap: .45rem; }
+.artifact-save-all { min-height: 1.8rem; padding: 0 .7rem; border: 1px solid #d5e3d9; border-radius: .5rem; color: #365b43; background: #edf5ef; font: inherit; font-size: .65rem; font-weight: 650; cursor: pointer; }
+.artifact-save-all:hover:not(:disabled) { background: #e3efe6; }
+.artifact-save-all:disabled { opacity: .45; cursor: default; }
 .artifact-refresh { display: grid; place-items: center; width: 1.7rem; height: 1.7rem; padding: 0; border: 1px solid #e0e5e1; border-radius: .5rem; color: #5b6560; background: #fff; cursor: pointer; }
 .artifact-refresh:hover:not(:disabled) { color: #345442; background: #eef2ef; }
 .artifact-refresh:disabled { opacity: .55; cursor: default; }
@@ -4626,19 +4776,37 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 @keyframes artifact-refresh-spin { to { transform: rotate(360deg); } }
 .artifact-syncing { display: inline-flex; align-items: center; gap: .35rem; color: #758179; font-size: .58rem; }
 .artifact-syncing i { width: .36rem; height: .36rem; border-radius: 50%; background: #619071; animation: activity-pulse 1s ease-in-out infinite; }
-.artifact-list { flex: 0 0 auto; display: flex; gap: .45rem; padding: .65rem; overflow-x: auto; border-bottom: 1px solid #e5e9e6; background: #f7f9f7; scrollbar-width: thin; }
-.artifact-list button { min-width: 10.5rem; max-width: 14rem; display: flex; align-items: center; gap: .52rem; padding: .55rem .62rem; border: 1px solid #e0e5e1; border-radius: .68rem; color: #566059; background: #fff; text-align: left; cursor: pointer; }
-.artifact-list button.active { border-color: #88a694; color: #294b39; background: #edf4ef; box-shadow: 0 0 0 2px rgba(89,132,106,.09); }
-.artifact-list button > span:last-child { min-width: 0; }
+.artifact-list { flex: 0 1 auto; min-height: 0; max-height: none; display: flex; flex-direction: column; gap: .38rem; padding: .65rem; overflow-x: hidden; overflow-y: auto; background: #fff; scrollbar-width: thin; }
+.artifact-list:not([style]) { max-height: min(38%, 20rem); }
+.artifact-list[style] { flex: 0 0 auto; }
+.artifact-splitter { position: relative; z-index: 2; flex: 0 0 14px; display: grid; place-items: center; width: 100%; cursor: row-resize; touch-action: none; background: #fff; border-top: 1px solid #edf0ed; border-bottom: 1px solid #edf0ed; }
+.artifact-splitter span { width: 2.1rem; height: 3px; border-radius: 3px; background: #b4c3b8; transition: width 140ms ease, background 140ms ease; }
+.artifact-splitter:hover span, .artifact-splitter:focus-visible span { width: 3rem; background: #527d62; }
+.artifact-splitter:focus-visible { outline: 2px solid #739a80; outline-offset: -2px; }
+.artifact-list button { width: 100%; flex: 0 0 auto; display: flex; align-items: flex-start; gap: .6rem; padding: .7rem; border: 1px solid transparent; border-radius: .72rem; color: #566059; background: #fff; text-align: left; cursor: pointer; transition: background 150ms ease, border-color 150ms ease, transform 150ms ease; }
+.artifact-list button:hover { background: #f7faf7; transform: translateY(-1px); }
+.artifact-list button.active { border-color: #d7e4d9; color: #294b39; background: #f1f7f2; }
+.artifact-tone-card { --artifact-accent: #4e8062; --artifact-soft: #e8f2eb; --artifact-selected: #f2f8f3; }
+.artifact-tone-article { --artifact-accent: #5278a3; --artifact-soft: #e8f0f8; --artifact-selected: #f2f6fb; }
+.artifact-tone-image { --artifact-accent: #ae6d78; --artifact-soft: #f8edef; --artifact-selected: #fcf5f6; }
+.artifact-tone-slides { --artifact-accent: #8c70af; --artifact-soft: #f0ebf8; --artifact-selected: #f7f3fb; }
+.artifact-tone-latex-pdf { --artifact-accent: #aa784e; --artifact-soft: #f7eee5; --artifact-selected: #fbf6f0; }
+.artifact-list button.active { border-color: color-mix(in srgb, var(--artifact-accent) 28%, white); background: var(--artifact-selected); }
+.artifact-list button:hover:not(.active) { background: var(--artifact-selected); }
+.artifact-list button .artifact-kind-icon { color: var(--artifact-accent); background: var(--artifact-soft); }
+.artifact-list-copy { min-width: 0; display: grid; gap: .2rem; }
 .artifact-list strong, .artifact-list small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.artifact-list strong { font-size: .64rem; }
-.artifact-list small { margin-top: .14rem; color: #8a928d; font-size: .53rem; text-transform: capitalize; }
+.artifact-list strong { color: #2d3831; font-size: .75rem; line-height: 1.3; }
+.artifact-list small { color: #829187; font-size: .55rem; text-transform: capitalize; }
+.artifact-list-excerpt { display: -webkit-box; overflow: hidden; color: #78857b; font-size: .66rem; line-height: 1.45; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.artifact-list-image { width: 3.25rem; height: 3.25rem; flex: 0 0 auto; border-radius: .5rem; object-fit: cover; background: #eef2ef; }
 .artifact-kind-icon { width: 1.65rem; height: 1.65rem; flex: 0 0 auto; display: grid; place-items: center; border-radius: .5rem; color: #42634f; background: #e5eee8; font-size: .82rem; font-weight: 700; }
 .artifact-placeholder { height: 100%; display: grid; place-items: center; align-content: center; padding: 2rem; text-align: center; }
 .artifact-placeholder > span { display: grid; place-items: center; width: 3rem; height: 3rem; border-radius: 1rem; color: var(--accent); background: var(--accent-soft); }
 .artifact-placeholder h2 { margin: 1rem 0 .35rem; font-size: 1rem; }
 .artifact-placeholder p { max-width: 18rem; margin: 0; color: var(--tertiary); font-size: .7rem; line-height: 1.55; }
-.artifact-pane .artifact-panel { min-height: 0; flex: 1 1 auto; border: 0; border-radius: 0; box-shadow: none; }
+.artifact-pane .artifact-panel { min-height: 0; flex: 1 1 auto; border: 0; border-radius: 0; box-shadow: none; animation: artifact-preview-appear 220ms ease-out both; }
+@keyframes artifact-preview-appear { from { opacity: .65; transform: translateY(5px); } to { opacity: 1; transform: none; } }
 .editor-intro { display: flex; gap: 1rem; align-items: center; margin: .5rem 0 1.5rem; }
 .editor-intro h2, .settings-intro h2 { margin: 0 0 .28rem; font-size: 1.05rem; letter-spacing: -.015em; }
 .editor-intro p { max-width: 39rem; }
@@ -4688,7 +4856,7 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .send-button.stop svg { width: 1.08rem; height: 1.08rem; transform: none; fill: currentColor; }
 .artifact-panel { padding: 1.5rem; border: 1px solid rgba(29,29,31,.08); border-radius: 1.1rem; background: rgba(255,255,255,.88); box-shadow: var(--shadow); backdrop-filter: blur(18px); transform-origin: 50% 0; }
 .artifact-panel.artifact-editor { position: relative; display: flex; flex-direction: column; padding: 0; overflow: hidden; color: #252a27; background: #fff; }
-.artifact-editor-accent { height: .26rem; flex: 0 0 auto; background: linear-gradient(90deg, #385d49, #77a087 70%, #b5cabb); }
+.artifact-editor-accent { height: .2rem; flex: 0 0 auto; background: var(--artifact-accent, #527e63); }
 .artifact-editor-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .55rem 1rem; padding: .9rem 1.15rem; border-bottom: 1px solid #e9ece9; }
 .artifact-state { flex: 1 1 12rem; min-width: 0; display: flex; align-items: center; gap: .62rem; }
 .artifact-state > i { width: .58rem; height: .58rem; flex: 0 0 auto; border-radius: 50%; background: #7a9d87; box-shadow: 0 0 0 .28rem #edf4ef; }
@@ -4716,7 +4884,7 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .card-content-control { margin-top: 1.15rem; }
 .card-content-control textarea { min-height: 15rem; padding: .9rem; border: 1px solid #e2e5e3; border-radius: .82rem; background: #fbfcfb; font-size: .84rem; line-height: 1.68; }
 .card-content-control textarea:focus, .card-summary-control:focus-within { border-color: rgba(71,105,87,.42); box-shadow: 0 0 0 3px rgba(71,105,87,.08); }
-.artifact-preview { min-height: 23rem; margin-top: .7rem; padding: .35rem .1rem 1rem; }
+.artifact-preview { min-height: 0; margin-top: .2rem; padding: .35rem .1rem 1rem; }
 .artifact-preview-label { display: inline-flex; margin-bottom: .65rem; padding: .25rem .48rem; border-radius: 2rem; color: #4e6a59; background: #edf3ef; font-size: .56rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
 .article-subtitle { margin: -.35rem 0 1rem; color: #778079; font-size: .9rem; line-height: 1.5; }
 .artifact-preview-image img { width: 100%; max-height: 25rem; margin: .25rem 0 1rem; object-fit: contain; border: 1px solid #e2e7e3; border-radius: .8rem; background: #f6f8f6; }
@@ -4950,10 +5118,10 @@ kbd, .card-type, .card-tags span { font-size: .69rem; }
 @media (min-width: 761px) and (max-width: 1180px) {
   .refinement-workspace { grid-template-columns: 1fr; }
   .initial-agent-layout.streaming { grid-template-columns: 1fr; }
-  .agent-workspace { height: auto; grid-template-columns: 1fr; }
-  .assets-pane { min-height: 32rem; max-height: 75vh; }
-  .agent-chat { min-height: 42rem; }
-  .artifact-pane { min-height: 36rem; }
+  .agent-workspace { height: auto; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); align-items: stretch; }
+  .agent-chat { grid-column: 1; grid-row: 1; min-height: 42rem; }
+  .artifact-pane { grid-column: 2; grid-row: 1; min-height: 42rem; }
+  .assets-pane { grid-column: 1 / -1; grid-row: 2; min-height: 14rem; max-height: 28rem; }
   .conversation-panel { position: static; }
 }
 

@@ -70,13 +70,13 @@ it('opens Markdown images in a preview dialog', async () => {
   image?.click()
   await nextTick()
 
-  const dialog = document.body.querySelector('.markdown-image-preview-dialog')
+  const dialog = document.body.querySelector('.zett-preview-dialog')
   expect(dialog?.getAttribute('aria-label')).toBe('Preview Architecture diagram')
   expect(dialog?.querySelector<HTMLImageElement>('img')?.src).toBe('data:image/png;base64,aW1hZ2U=')
 
   dialog?.querySelector<HTMLButtonElement>('[aria-label="Close image preview"]')?.click()
   await nextTick()
-  expect(document.body.querySelector('.markdown-image-preview-dialog')).toBeNull()
+  await vi.waitFor(() => expect(document.body.querySelector('.zett-preview-dialog')).toBeNull())
 })
 
 it('isolates Mermaid diagrams from the application icon SVG stroke', () => {

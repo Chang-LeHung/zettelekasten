@@ -647,10 +647,11 @@ defineExpose({ refit: refitInlinePages })
 .pdf-preview.resizing-outline { user-select: none; cursor: col-resize; }
 .pdf-preview.artifact-pdf { height: 65vh; min-height: 24rem; }
 .pdf-inline-host { display: contents; }
-.pdf-expanded-backdrop { position: fixed; inset: 0; z-index: 1600; container-type: inline-size; display: grid; place-items: center; padding: 2vh 2vw; background: rgba(31,38,34,.4); }
-.pdf-preview.pdf-expanded { width: 96vw; height: 96vh; height: 96dvh; min-height: 0; overflow: hidden; border-radius: .9rem; background: #fafbfa; box-shadow: 0 24px 90px rgba(25,36,29,.25); outline: none; }
+.pdf-expanded-backdrop { position: fixed; inset: 0; z-index: 1600; container-type: inline-size; display: grid; place-items: center; padding: clamp(.5rem, 2vw, 2rem); background: rgba(25,33,28,.45); backdrop-filter: blur(10px); }
+.pdf-preview.pdf-expanded { width: min(96vw, 88rem); height: min(92dvh, 62rem); min-height: 0; overflow: hidden; border: 1px solid rgba(255,255,255,.72); border-radius: 1rem; background: #fcfcfa; box-shadow: 0 28px 90px rgba(16,27,19,.26), 0 3px 12px rgba(16,27,19,.08); outline: none; animation: pdf-appear 240ms cubic-bezier(.2,.8,.2,1); }
+@keyframes pdf-appear { from { opacity: 0; transform: translateY(.55rem) scale(.985); } }
 .pdf-expanded .expand-toggle { background: #e8eeea; color: #3d5145; }
-.pdf-toolbar { position: relative; z-index: 2; grid-column: 1 / -1; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: .65rem; min-height: 2.85rem; padding: .4rem .75rem; border-bottom: 1px solid rgba(55,70,61,.12); background: rgba(250,251,250,.96); box-shadow: 0 2px 10px rgba(33,42,36,.04); }
+.pdf-toolbar { position: relative; z-index: 2; grid-column: 1 / -1; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: .65rem; min-height: 3rem; padding: .4rem .75rem; border-bottom: 1px solid #e8ebe6; background: #fcfcfa; }
 .pdf-toolbar > div, .pdf-page-controls, .pdf-zoom-controls, .pdf-toolbar-actions { display: flex; align-items: center; gap: .34rem; }
 .pdf-toolbar-center { min-width: 0; justify-content: center; gap: .75rem; }
 .pdf-toolbar-actions { justify-self: end; }
@@ -672,7 +673,7 @@ defineExpose({ refit: refitInlinePages })
 .pdf-outline nav button { width: 100%; padding: .48rem .55rem .48rem calc(.55rem + var(--outline-depth) * .72rem); border-radius: .45rem; overflow: hidden; color: #5f6963; font-size: .66rem; line-height: 1.35; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 .pdf-outline nav button:hover { color: #2f513e; background: #e7eee9; }
 .pdf-outline p { margin: 1rem; color: #8a928d; font-size: .65rem; line-height: 1.5; }
-.pdf-pages { position: relative; min-width: 0; min-height: 0; overflow: auto; overflow-anchor: none; scrollbar-gutter: stable; padding: 1.5rem; background: #e7eae8; }
+.pdf-pages { position: relative; min-width: 0; min-height: 0; overflow: auto; overflow-anchor: none; scrollbar-gutter: stable; padding: clamp(.75rem, 2.5vw, 2rem); background: #f0f1ed; }
 .pdf-page-stack { display: grid; justify-items: center; gap: 1rem; width: max-content; min-width: 100%; }
 .pdf-page-stack.fit-pending { visibility: hidden; }
 .pdf-presentation { position: fixed; inset: 0; z-index: 1900; display: grid; place-items: center; overflow: hidden; color: #eef3ef; background: #1c211e; outline: none; }
@@ -704,5 +705,5 @@ defineExpose({ refit: refitInlinePages })
   .pdf-toolbar .scale-value { display: none; }
   .pdf-toolbar .presentation-toggle { display: none; }
 }
-@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 1.5s; } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 1.5s; } .pdf-preview.pdf-expanded { animation: none; } }
 </style>
