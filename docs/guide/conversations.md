@@ -75,6 +75,8 @@ The header icon toggles Workspace and Trace views of the same conversation:
   restrained accent colors. **Save all** publishes every new or changed draft
   in this conversation, including edits still open in the selected editor;
   failures are reported individually and the remaining artifacts continue.
+  Each row has Save/Update, Edit, and Delete icon actions; the row remains
+  selectable for preview, and deletion still asks for confirmation.
   Images, PDFs, and diagrams open on a consistent reading surface; Escape
   closes the preview, while PDF page/zoom controls and diagram zoom remain
   available.

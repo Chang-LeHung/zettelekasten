@@ -1513,6 +1513,16 @@ function openSelectedArtifactEditor(): void {
   libraryEditorItem.value = item
 }
 
+function editArtifactFromList(artifact: AgentArtifact): void {
+  selectArtifact(artifact)
+  if (['card', 'article', 'slides'].includes(artifact.artifact_type)) {
+    openSelectedArtifactEditor()
+    return
+  }
+  artifactPreview.value = false
+  artifactDiff.value = false
+}
+
 async function closeLibraryEditor(dirty: boolean): Promise<void> {
   if (libraryEditorSaving.value) return
   if (dirty) {
@@ -3138,22 +3148,32 @@ function formatAssetDate(value: string): string {
   }).format(parseUtcTimestamp(value))
 }
 
-async function saveSelectedArtifact(): Promise<boolean> {
+async function saveSelectedArtifact(artifact: AgentArtifact | null = selectedArtifact.value): Promise<boolean> {
   if (savingAllArtifacts.value || saving.value) return false
-  const artifactId = selectedArtifactId.value
+  const artifactId = artifact?.id
   const activeConversationId = conversationId.value
-  const content = artifactContent.value
+  const isSelected = artifactId === selectedArtifactId.value
+  const currentContent = isSelected ? artifactContent.value : artifact ? artifactEditableContent(artifact) : null
+  const editorSnapshot = currentContent ? JSON.stringify(currentContent) : null
+  const content = currentContent ? jsonSnapshot(currentContent) : null
   if (!content || !activeConversationId || !artifactId) return false
   saving.value = true
   try {
-    if (content.artifact_type !== 'latex_pdf') {
+    if (isSelected && content.artifact_type !== 'latex_pdf') {
       content.suggested_tags = content.suggested_tags.filter((tag) => selectedSuggestions.value.includes(tag.path))
     }
-    await syncSelectedArtifactDraft()
+    if (isSelected) {
+      const updated = await aiClient.updateAgentArtifactDraft(activeConversationId, artifactId, content)
+      if (conversationId.value !== activeConversationId) return false
+      const draftIndex = artifacts.value.findIndex(item => item.id === updated.id)
+      if (draftIndex >= 0) artifacts.value.splice(draftIndex, 1, updated)
+    }
     const saved = await aiClient.saveAgentArtifact(activeConversationId, artifactId)
+    if (conversationId.value !== activeConversationId) return false
     const index = artifacts.value.findIndex((artifact) => artifact.id === saved.id)
     if (index >= 0) artifacts.value.splice(index, 1, saved)
-    if (selectedArtifactId.value === artifactId) {
+    if (isSelected && selectedArtifactId.value === artifactId
+      && JSON.stringify(artifactContent.value) === editorSnapshot) {
       artifactContent.value = jsonSnapshot(saved.content)
       // The published draft is gone, so leave the comparison view.
       artifactDiff.value = false
@@ -3232,19 +3252,20 @@ async function saveAllArtifacts(): Promise<void> {
   }
 }
 
-async function deleteSelectedArtifact(): Promise<void> {
-  if (!conversationId.value || !selectedArtifactId.value) return
-  const artifactTitle = artifactContent.value?.artifact_type === 'latex_pdf'
-    ? artifactContent.value.pdf_name
-    : artifactContent.value?.title || 'Untitled artifact'
+async function deleteSelectedArtifact(artifact: AgentArtifact | null = selectedArtifact.value): Promise<void> {
+  const sessionId = conversationId.value
+  if (!sessionId || !artifact || saving || savingAllArtifacts.value) return
+  const title = artifactEditableContent(artifact)
+  const name = title?.artifact_type === 'latex_pdf' ? title.pdf_name : title?.title || 'Untitled artifact'
   const confirmed = await requestConfirmation(
     'Delete this artifact?',
-    `“${artifactTitle}” will be permanently removed from this conversation. A linked artifact will also be deleted.`,
+    `“${name}” will be permanently removed from this conversation. A linked artifact will also be deleted.`,
     'Delete artifact',
   )
-  if (!confirmed) return
+  if (!confirmed || conversationId.value !== sessionId || saving || savingAllArtifacts.value) return
   try {
-    await aiClient.deleteAgentArtifact(conversationId.value, selectedArtifactId.value)
+    await aiClient.deleteAgentArtifact(sessionId, artifact.id)
+    if (conversationId.value !== sessionId) return
     await refreshArtifacts(false)
     showNotice('Artifact deleted')
   } catch (error) {
@@ -4098,15 +4119,22 @@ onBeforeUnmount(() => {
                 </div>
               </header>
               <div v-if="artifacts.length" class="artifact-list" :style="artifactListHeight === null ? undefined : { height: `${artifactListHeight}px` }" aria-label="Conversation artifacts">
-                <button v-for="artifact in artifacts" :key="artifact.id" :class="[artifactTone(artifact.artifact_type), { active: artifact.id === selectedArtifactId }]" type="button" :disabled="savingAllArtifacts" @click="selectArtifact(artifact)">
-                  <img v-if="artifactListImage(artifact)" class="artifact-list-image" :src="artifactListImage(artifact) || undefined" alt="" />
-                  <span v-else class="artifact-kind-icon">{{ artifact.artifact_type === 'card' ? '◇' : artifact.artifact_type === 'article' ? '¶' : artifact.artifact_type === 'slides' ? '▤' : '▧' }}</span>
-                  <span class="artifact-list-copy">
-                    <small>{{ artifact.artifact_type }} · {{ hasPendingDraft(artifact) ? 'unsaved draft' : artifact.status }}</small>
-                    <strong>{{ artifactTitle(artifactEditableContent(artifact)) }}</strong>
-                    <span class="artifact-list-excerpt">{{ artifactListExcerpt(artifactEditableContent(artifact)) }}</span>
-                  </span>
-                </button>
+                <div v-for="artifact in artifacts" :key="artifact.id" class="artifact-list-item" :class="[artifactTone(artifact.artifact_type), { active: artifact.id === selectedArtifactId }]">
+                  <button class="artifact-list-select" type="button" :disabled="saving || savingAllArtifacts" @click="selectArtifact(artifact)">
+                    <img v-if="artifactListImage(artifact)" class="artifact-list-image" :src="artifactListImage(artifact) || undefined" alt="" />
+                    <span v-else class="artifact-kind-icon">{{ artifact.artifact_type === 'card' ? '◇' : artifact.artifact_type === 'article' ? '¶' : artifact.artifact_type === 'slides' ? '▤' : '▧' }}</span>
+                    <span class="artifact-list-copy">
+                      <small>{{ artifact.artifact_type }} · {{ hasPendingDraft(artifact) ? 'unsaved draft' : artifact.status }}</small>
+                      <strong>{{ artifactTitle(artifactEditableContent(artifact)) }}</strong>
+                      <span class="artifact-list-excerpt">{{ artifactListExcerpt(artifactEditableContent(artifact)) }}</span>
+                    </span>
+                  </button>
+                  <div class="artifact-list-actions">
+                    <button class="artifact-list-action" type="button" :disabled="saving || savingAllArtifacts || !artifactTitle(artifactEditableContent(artifact)).trim()" :aria-label="`${artifact.status === 'saved' ? 'Update' : 'Save'} ${artifactTitle(artifactEditableContent(artifact))}`" :title="artifact.status === 'saved' ? 'Update artifact' : 'Save artifact'" @click="saveSelectedArtifact(artifact)"><svg aria-hidden="true"><use href="#icon-check" /></svg></button>
+                    <button class="artifact-list-action" type="button" :disabled="savingAllArtifacts" :aria-label="`Edit ${artifactTitle(artifactEditableContent(artifact))}`" title="Edit artifact" @click="editArtifactFromList(artifact)"><svg aria-hidden="true"><use href="#icon-edit" /></svg></button>
+                    <button class="artifact-list-action danger" type="button" :disabled="saving || savingAllArtifacts" :aria-label="`Delete ${artifactTitle(artifactEditableContent(artifact))}`" title="Delete artifact" @click="deleteSelectedArtifact(artifact)"><svg aria-hidden="true"><use href="#icon-trash" /></svg></button>
+                  </div>
+                </div>
               </div>
               <div
                 v-if="artifacts.length && artifactContent"
@@ -4186,7 +4214,6 @@ onBeforeUnmount(() => {
                   <div v-if="artifactContent.artifact_type !== 'latex_pdf' && artifactContent.suggested_tags.length" class="suggestions card-tags-editor"><span>Classification</span><div class="suggestion-list"><label v-for="tag in artifactContent.suggested_tags" :key="tag.path" :class="{ selected: selectedSuggestions.includes(tag.path) }"><input v-model="selectedSuggestions" type="checkbox" :value="tag.path" /><span>{{ tag.path }}</span><small>{{ Math.round(tag.confidence * 100) }}%</small></label></div></div>
                   </template>
                 </div>
-                <footer class="panel-actions artifact-editor-actions"><button class="danger-button" type="button" :disabled="savingAllArtifacts" @click="deleteSelectedArtifact">Delete</button><button class="primary-action" :disabled="saving || savingAllArtifacts || !artifactTitle(artifactContent).trim()" type="button" @click="saveSelectedArtifact">{{ saving ? 'Saving…' : artifactDiff && selectedArtifact?.draft_content ? 'Save draft' : artifactContent.artifact_type === 'image' ? 'Save changes' : selectedArtifact?.status === 'saved' ? `Update artifact ${artifactTypeLabel(artifactContent.artifact_type).toLowerCase()}` : 'Save artifact' }}<svg><use href="#icon-arrow" /></svg></button></footer>
               </div>
             </aside>
           </div>
@@ -4783,17 +4810,28 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .artifact-splitter span { width: 2.1rem; height: 3px; border-radius: 3px; background: #b4c3b8; transition: width 140ms ease, background 140ms ease; }
 .artifact-splitter:hover span, .artifact-splitter:focus-visible span { width: 3rem; background: #527d62; }
 .artifact-splitter:focus-visible { outline: 2px solid #739a80; outline-offset: -2px; }
-.artifact-list button { width: 100%; flex: 0 0 auto; display: flex; align-items: flex-start; gap: .6rem; padding: .7rem; border: 1px solid transparent; border-radius: .72rem; color: #566059; background: #fff; text-align: left; cursor: pointer; transition: background 150ms ease, border-color 150ms ease, transform 150ms ease; }
-.artifact-list button:hover { background: #f7faf7; transform: translateY(-1px); }
-.artifact-list button.active { border-color: #d7e4d9; color: #294b39; background: #f1f7f2; }
+.artifact-list-item { position: relative; width: 100%; flex: 0 0 auto; border: 1px solid transparent; border-radius: .72rem; background: #fff; transition: background 150ms ease, border-color 150ms ease, transform 150ms ease; }
+.artifact-list-item:hover { transform: translateY(-1px); }
+.artifact-list-select { width: 100%; display: flex; align-items: flex-start; gap: .6rem; padding: .7rem; border: 0; border-radius: inherit; color: #566059; background: transparent; text-align: left; cursor: pointer; }
+.artifact-list-select:focus-visible, .artifact-list-action:focus-visible { outline: 2px solid var(--artifact-accent); outline-offset: -2px; }
+.artifact-list-select:disabled { cursor: default; }
 .artifact-tone-card { --artifact-accent: #4e8062; --artifact-soft: #e8f2eb; --artifact-selected: #f2f8f3; }
 .artifact-tone-article { --artifact-accent: #5278a3; --artifact-soft: #e8f0f8; --artifact-selected: #f2f6fb; }
 .artifact-tone-image { --artifact-accent: #ae6d78; --artifact-soft: #f8edef; --artifact-selected: #fcf5f6; }
 .artifact-tone-slides { --artifact-accent: #8c70af; --artifact-soft: #f0ebf8; --artifact-selected: #f7f3fb; }
 .artifact-tone-latex-pdf { --artifact-accent: #aa784e; --artifact-soft: #f7eee5; --artifact-selected: #fbf6f0; }
-.artifact-list button.active { border-color: color-mix(in srgb, var(--artifact-accent) 28%, white); background: var(--artifact-selected); }
-.artifact-list button:hover:not(.active) { background: var(--artifact-selected); }
-.artifact-list button .artifact-kind-icon { color: var(--artifact-accent); background: var(--artifact-soft); }
+.artifact-list-item.active { border-color: color-mix(in srgb, var(--artifact-accent) 28%, white); background: var(--artifact-selected); }
+.artifact-list-item:hover:not(.active) { background: var(--artifact-selected); }
+.artifact-list-item .artifact-kind-icon { color: var(--artifact-accent); background: var(--artifact-soft); }
+.artifact-list-item:is(:hover, :focus-within, .active) .artifact-list-copy :is(small, strong) { padding-right: 6.25rem; }
+.artifact-list-actions { position: absolute; top: .35rem; right: .35rem; display: flex; align-items: center; gap: .1rem; padding: .16rem; border: 1px solid color-mix(in srgb, var(--artifact-accent) 12%, white); border-radius: .55rem; background: rgba(255,255,255,.96); box-shadow: 0 2px 8px rgba(25,36,29,.08); opacity: 0; pointer-events: none; transform: translateY(-.2rem); transition: opacity 150ms ease, transform 150ms ease; }
+.artifact-list-item:hover .artifact-list-actions, .artifact-list-item:focus-within .artifact-list-actions, .artifact-list-item.active .artifact-list-actions { opacity: 1; pointer-events: auto; transform: none; }
+.artifact-list-action { display: grid; place-items: center; width: 1.8rem; height: 1.8rem; padding: 0; border: 0; border-radius: .4rem; color: #66736a; background: transparent; cursor: pointer; }
+.artifact-list-action:hover:not(:disabled) { color: var(--artifact-accent); background: var(--artifact-soft); }
+.artifact-list-action.danger:hover:not(:disabled) { color: #a24747; background: #f9eded; }
+.artifact-list-action:disabled { opacity: .38; cursor: default; }
+.artifact-list-action svg { width: .9rem; height: .9rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+@media (hover: none) { .artifact-list-actions { opacity: 1; pointer-events: auto; transform: none; } }
 .artifact-list-copy { min-width: 0; display: grid; gap: .2rem; }
 .artifact-list strong, .artifact-list small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .artifact-list strong { color: #2d3831; font-size: .75rem; line-height: 1.3; }
@@ -4897,7 +4935,6 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .preview-content { color: #343a36; font-size: .88rem; line-height: 1.72; }
 .card-tags-editor { margin-top: 1.2rem; }
 .card-tags-editor .suggestion-list label { border-radius: 2rem; background: #f5f5f3; }
-.artifact-editor-actions { position: relative; flex: 0 0 auto; margin-top: auto; padding: .85rem 1.15rem; border-top: 1px solid #e5e8e5; background: rgba(255,255,255,.94); backdrop-filter: blur(16px); }
 .panel-heading, .settings-intro { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .panel-heading h2 { margin: .22rem 0 0; font-size: 1.2rem; letter-spacing: -.02em; }
 .ai-badge { display: inline-flex; align-items: center; gap: .35rem; padding: .35rem .55rem; border-radius: 2rem; color: var(--accent-dark); background: var(--accent-soft); font-size: .65rem; font-weight: 650; }
