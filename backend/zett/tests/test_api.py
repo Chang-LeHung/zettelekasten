@@ -389,6 +389,9 @@ def test_session_asset_and_artifact_http_lifecycle():
         saved_artifacts = client.get("/api/artifacts?statuses=saved").json()
         assert {item["id"] for item in saved_artifacts} == {artifact_id, slides_id}
         assert [item["id"] for item in client.get("/api/artifacts?artifact_types=slides").json()] == [slides_id]
+        assert client.get("/api/artifacts/count?statuses=saved").json() == {"count": len(saved_artifacts)}
+        assert client.get("/api/artifacts/count?artifact_types=slides").json() == {"count": 1}
+        assert client.get("/api/artifacts/count?tag_ids=missing").status_code == 404
 
         detail = client.get(f"/api/agent/sessions/{session_id}").json()
         assert [item["id"] for item in detail["artifacts"]] == [slides_id, artifact_id]

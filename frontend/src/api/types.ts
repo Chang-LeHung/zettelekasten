@@ -55,6 +55,8 @@ export interface CardListOptions {
   tagId?: string | null
   artifactTypes?: LibraryItemType[]
   publishedOnly?: boolean
+  limit?: number
+  offset?: number
 }
 
 export type LibraryItemType = 'card' | 'article' | 'slides' | 'latex_pdf'

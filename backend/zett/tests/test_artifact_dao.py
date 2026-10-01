@@ -1,6 +1,7 @@
 import pytest
 from sqlalchemy import select
 
+from zett.application.tags.tagging import tag_service
 from zett.infra.persistence import database
 from zett.infra.persistence.dao.artifact import artifact_storage
 from zett.infra.persistence.dao.asset import session_asset_storage
@@ -20,6 +21,7 @@ from zett.schemas import (
     SessionAssetType,
     SlidesArtifactContent,
     StaticAssetCreate,
+    TagTargetType,
 )
 
 
@@ -138,6 +140,51 @@ async def test_artifact_filters_and_explicit_session_cleanup() -> None:
     assert [item.content.title for item in slides] == ["Python slides"]
     assert await artifact_storage.delete_session(session_id) == 3
     assert await artifact_storage.list(ArtifactListOptions(session_id=session_id)) == []
+
+
+async def test_artifact_count_matches_the_filters_it_numbers() -> None:
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
+    tagged = await artifact_storage.create(
+        AgentArtifactWrite(
+            session_id=session_id,
+            content=CardArtifactContent(title="Python card", content="A short note about Python."),
+            # Only a saved artifact can carry a tag, and only saved content is
+            # what an external `published_only` search may reveal.
+            status=ArtifactStatus.SAVED,
+        )
+    )
+    await artifact_storage.create(
+        AgentArtifactWrite(
+            session_id=session_id,
+            content=ArticleArtifactContent(title="Python guide", content="A long read about Python."),
+        )
+    )
+    await artifact_storage.create(
+        AgentArtifactWrite(
+            session_id=session_id,
+            content=SlidesArtifactContent(title="Rust ownership", content="# Rust\n\n---\n\n## Borrowing"),
+        )
+    )
+    tag = await tag_service.create_path("Python", TagTargetType.ARTIFACT)
+    await tag_service.replace_artifact_tags(tagged.id, ["Python"])
+
+    assert await artifact_storage.count(ArtifactListOptions(query="Python")) == 2
+    assert await artifact_storage.count(ArtifactListOptions(artifact_types=("slides",))) == 1
+    assert await artifact_storage.count(ArtifactListOptions(tag_ids=(tag.id,))) == 1
+    assert await artifact_storage.count(ArtifactListOptions(tag_ids=("missing-tag",))) == 0
+    # A count answers for the whole filter, never for the page it is sent with.
+    assert await artifact_storage.count(ArtifactListOptions(session_id=session_id, limit=1, offset=2)) == 3
+
+    for options in (
+        ArtifactListOptions(),
+        ArtifactListOptions(session_id=session_id),
+        ArtifactListOptions(session_id=session_id, artifact_types=("article",)),
+        ArtifactListOptions(session_id=session_id, statuses=("draft",)),
+        ArtifactListOptions(session_id=session_id, query="Python"),
+        ArtifactListOptions(session_id=session_id, query="Python", published_only=True),
+        ArtifactListOptions(session_id=session_id, tag_ids=(tag.id,)),
+    ):
+        assert await artifact_storage.count(options) == len(await artifact_storage.list(options))
 
 
 async def test_artifact_search_uses_bm25_and_reindexes_updates() -> None:

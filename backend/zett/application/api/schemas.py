@@ -118,6 +118,12 @@ class AgentStartOut(BaseModel):
     assets: list[SessionAssetEntity] = Field(default_factory=list)
 
 
+class ArtifactCountOut(BaseModel):
+    """How many artifacts one library filter matches."""
+
+    count: int
+
+
 class ArtifactCreateIn(BaseModel):
     """New draft or saved artifact scoped by the URL session."""
 

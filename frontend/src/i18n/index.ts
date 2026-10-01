@@ -267,6 +267,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'Results for “{query}”': '“{query}”的搜索结果',
     '{count} items in your library': '{count} 个产物',
     '{count} matching items': '找到 {count} 项匹配内容',
+    'Loading more…': '正在加载更多…',
     'Type': '类型',
     'All': '全部',
     'Cards': '卡片',

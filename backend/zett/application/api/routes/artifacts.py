@@ -8,9 +8,41 @@ from ....schemas import AgentArtifactEntity, AgentArtifactWrite, ArtifactListOpt
 from ...artifacts.library import library_session_service
 from ...artifacts.versioning import UncommittedLatexProjectError, artifact_versioning
 from ...tags.tagging import tag_service
-from ..schemas import ArtifactCreateIn, ArtifactUpdateIn, DeleteResponse
+from ..schemas import ArtifactCountOut, ArtifactCreateIn, ArtifactUpdateIn, DeleteResponse
 
 router = APIRouter(tags=["artifacts"])
+
+
+async def _library_options(
+    q: str | None,
+    artifact_types: list[ArtifactType],
+    statuses: list[ArtifactStatus],
+    tag_ids: list[str],
+    published_only: bool,
+    *,
+    limit: int | None = None,
+    offset: int = 0,
+) -> ArtifactListOptions:
+    """Turn one library query string into storage filters.
+
+    The list and its count share this, so a total can never describe a
+    different set than the pages it numbers. Tags expand to their whole
+    subtrees, and an unknown tag is the caller's 404 rather than an empty list.
+    """
+    try:
+        expanded_tag_ids = await tag_service.subtree_ids(tag_ids) if tag_ids else ()
+    except KeyError as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
+    filters = {
+        "query": q,
+        "artifact_types": tuple(item.value for item in artifact_types),
+        "statuses": tuple(item.value for item in statuses),
+        "tag_ids": expanded_tag_ids,
+        "published_only": published_only,
+    }
+    if limit is None:
+        return ArtifactListOptions(**filters)
+    return ArtifactListOptions(**filters, limit=limit, offset=offset)
 
 
 async def _require_committed_project(artifact: AgentArtifactEntity) -> None:
@@ -32,20 +64,25 @@ async def list_all_artifacts(
     published_only: bool = False,
 ) -> list[AgentArtifactEntity]:
     """Search artifacts across sessions for the library UI."""
-    try:
-        expanded_tag_ids = await tag_service.subtree_ids(tag_ids) if tag_ids else ()
-    except KeyError as error:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
-    options = ArtifactListOptions(
-        query=q,
-        artifact_types=tuple(item.value for item in artifact_types),
-        statuses=tuple(item.value for item in statuses),
-        tag_ids=expanded_tag_ids,
-        limit=limit,
-        offset=offset,
-        published_only=published_only,
-    )
+    options = await _library_options(q, artifact_types, statuses, tag_ids, published_only, limit=limit, offset=offset)
     return await artifact_storage.list(options)
+
+
+@router.get("/artifacts/count", response_model=ArtifactCountOut)
+async def count_all_artifacts(
+    q: str | None = None,
+    artifact_types: list[ArtifactType] = Query(default=[]),
+    statuses: list[ArtifactStatus] = Query(default=[]),
+    tag_ids: list[str] = Query(default=[]),
+    published_only: bool = False,
+) -> ArtifactCountOut:
+    """Count the artifacts one library filter matches, for its item total.
+
+    Declared before ``/artifacts/{artifact_id}`` so the path is never read as
+    an artifact id.
+    """
+    options = await _library_options(q, artifact_types, statuses, tag_ids, published_only)
+    return ArtifactCountOut(count=await artifact_storage.count(options))
 
 
 @router.get("/agent/{session_id}/artifacts", response_model=list[AgentArtifactEntity])
