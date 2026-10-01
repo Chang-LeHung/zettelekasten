@@ -152,7 +152,18 @@ function handleSlidesFullscreenChange(): void {
 const libraryEditorItem = ref<LibraryItem | null>(null)
 const libraryEditorArtifactId = ref<string | null>(null)
 const libraryEditorSaving = ref(false)
+/**
+ * Cards fetched per request. The sentinel under the grid turns this into the
+ * step size of one scroll, not a ceiling on what the library shows.
+ */
+const LIBRARY_PAGE_SIZE = 60
 const libraryLoading = ref(false)
+const libraryLoadingMore = ref(false)
+const libraryHasMore = ref(false)
+const libraryTotal = ref<number | null>(null)
+const librarySentinel = ref<HTMLElement | null>(null)
+let libraryRequestId = 0
+let libraryObserver: IntersectionObserver | null = null
 const deletingLibraryItemId = ref<string | null>(null)
 const draggingLibraryItem = ref<LibraryItem | null>(null)
 const draggingStaticAsset = ref<StaticAsset | null>(null)
@@ -383,18 +394,24 @@ const pageTitle = computed(() => {
   return selectedTagName.value || t('All knowledge')
 })
 const pageDescription = computed(() => {
+  // The header names the whole library, so a paged grid still counts every match.
+  const count = libraryTotal.value ?? libraryItems.value.length
   return view.value === 'search'
-    ? t('{count} matching items', { count: libraryItems.value.length })
-    : t('{count} items in your library', { count: libraryItems.value.length })
+    ? t('{count} matching items', { count })
+    : t('{count} items in your library', { count })
 })
 /**
- * Identity of the result set on screen. The grid is keyed by it, so a filter
- * that lands on a different set remounts its cards and replays the float-in,
- * while an unchanged set keeps the same nodes instead of animating again.
+ * Identity of the query on screen. The grid is keyed by it, so a filter that
+ * lands on a different set remounts its cards and replays the float-in, while
+ * the next page of the same query keeps the loaded nodes instead of animating
+ * the whole grid again.
  */
-const libraryGridKey = computed(() =>
-  libraryItems.value.map((item) => `${item.item_type}-${item.id}`).join('|'),
-)
+const libraryGridKey = computed(() => [
+  view.value,
+  view.value === 'search' ? activeQuery.value : '',
+  selectedTag.value ?? '',
+  selectedLibraryType.value ?? '',
+].join('|'))
 const conversationStarted = computed(
   () => loading.value || conversation.value.length > 0 || artifacts.value.length > 0 || artifactContent.value !== null,
 )
@@ -1341,18 +1358,52 @@ function settleConfirmation(confirmed: boolean): void {
   resolveConfirmation = null
 }
 
-async function loadLibrary(): Promise<void> {
-  libraryLoading.value = true
+/** The filters the grid is showing; the count and every page share them. */
+function libraryListFilters() {
+  return {
+    query: view.value === 'search' ? activeQuery.value : '',
+    tagId: selectedTag.value,
+    artifactTypes: selectedLibraryType.value ? [selectedLibraryType.value] : undefined,
+  }
+}
+
+/**
+ * Load one page of the library. A plain call replaces the grid and asks how
+ * many matches exist; `append` adds the next page when the sentinel below the
+ * grid scrolls into view. Each request fetches one card past the page size, so
+ * "is there more" costs no second round trip, and a stale page loses to the
+ * filter change that replaced it.
+ */
+async function loadLibrary({ append = false }: { append?: boolean } = {}): Promise<void> {
+  if (append && (libraryLoading.value || libraryLoadingMore.value || !libraryHasMore.value)) return
+  const requestId = ++libraryRequestId
+  const offset = append ? libraryItems.value.length : 0
+  const filters = libraryListFilters()
+  if (append) {
+    libraryLoadingMore.value = true
+  } else {
+    libraryLoading.value = true
+    // A reset supersedes any page still in flight, so its settle must not
+    // leave the "loading more" state behind.
+    libraryLoadingMore.value = false
+  }
   try {
-    libraryItems.value = await libraryClient.list({
-      query: view.value === 'search' ? activeQuery.value : '',
-      tagId: selectedTag.value,
-      artifactTypes: selectedLibraryType.value ? [selectedLibraryType.value] : undefined,
-    })
+    const [page, total] = await Promise.all([
+      libraryClient.list({ ...filters, limit: LIBRARY_PAGE_SIZE + 1, offset }),
+      append ? Promise.resolve(libraryTotal.value) : libraryClient.count(filters),
+    ])
+    if (requestId !== libraryRequestId) return
+    libraryHasMore.value = page.length > LIBRARY_PAGE_SIZE
+    const visible = libraryHasMore.value ? page.slice(0, LIBRARY_PAGE_SIZE) : page
+    libraryItems.value = append ? [...libraryItems.value, ...visible] : visible
+    if (total !== null) libraryTotal.value = total
   } catch (error) {
-    showNotice(errorMessage(error), 'error')
+    if (requestId === libraryRequestId) showNotice(errorMessage(error), 'error')
   } finally {
-    libraryLoading.value = false
+    if (requestId === libraryRequestId) {
+      libraryLoading.value = false
+      libraryLoadingMore.value = false
+    }
   }
 }
 
@@ -1378,21 +1429,25 @@ async function loadInitialData(): Promise<void> {
   try {
     const [
       tagData,
-      libraryData,
+      libraryPage,
+      libraryCount,
       providerData,
       runtimeSettingsData,
       usageActivityData,
       modelUsageActivityData,
     ] = await Promise.all([
       tagClient.list(collectionTarget.value),
-      libraryClient.list(),
+      libraryClient.list({ limit: LIBRARY_PAGE_SIZE + 1 }),
+      libraryClient.count(),
       aiClient.listProviders(),
       settingsClient.get(),
       settingsClient.getUsageActivity().catch(() => []),
       settingsClient.getModelUsageActivity(30).catch(() => []),
     ])
     collectionTags.value = tagData
-    libraryItems.value = libraryData
+    libraryHasMore.value = libraryPage.length > LIBRARY_PAGE_SIZE
+    libraryItems.value = libraryHasMore.value ? libraryPage.slice(0, LIBRARY_PAGE_SIZE) : libraryPage
+    libraryTotal.value = libraryCount
     providers.value = providerData
     runtimeSettings.value = runtimeSettingsData
     usageActivity.value = usageActivityData
@@ -1695,6 +1750,7 @@ async function deleteLibraryItem(item: LibraryItem): Promise<void> {
   try {
     await libraryClient.delete(item.item_type, item.id)
     libraryItems.value = libraryItems.value.filter((candidate) => candidate.id !== item.id)
+    if (libraryTotal.value !== null) libraryTotal.value = Math.max(0, libraryTotal.value - 1)
     if (selectedLibraryItem.value?.id === item.id) selectedLibraryItem.value = null
     if (libraryEditorItem.value?.id === item.id) {
       libraryEditorItem.value = null
@@ -3412,12 +3468,28 @@ onMounted(() => {
   if (agentTurnStack.value) agentContentResizeObserver.observe(agentTurnStack.value)
   void initializeWorkspace()
 })
+/**
+ * Infinite scroll for the library grid: the sentinel sits after the last card,
+ * so the next page is requested while the reader is still one screen above the
+ * fold. A page shorter than the size ends the run by clearing `libraryHasMore`.
+ */
+watch(librarySentinel, (element) => {
+  libraryObserver?.disconnect()
+  libraryObserver = null
+  if (!element || typeof IntersectionObserver === 'undefined') return
+  libraryObserver = new IntersectionObserver((entries) => {
+    if (entries.some((entry) => entry.isIntersecting)) void loadLibrary({ append: true })
+  }, { rootMargin: '600px 0px' })
+  libraryObserver.observe(element)
+}, { flush: 'post' })
 onBeforeUnmount(() => {
   document.removeEventListener('fullscreenchange', handleSlidesFullscreenChange)
   resolveConfirmation?.(false)
   activeStreamController.value?.abort()
   if (agentScrollFrame !== null) window.cancelAnimationFrame(agentScrollFrame)
   if (turnClock !== null) window.clearInterval(turnClock)
+  libraryObserver?.disconnect()
+  libraryObserver = null
   agentContentResizeObserver?.disconnect()
   agentContentResizeObserver = null
   artifactPaneResizeObserver?.disconnect()
@@ -3468,7 +3540,7 @@ onBeforeUnmount(() => {
           <svg><use href="#icon-schedule" /></svg><span>{{ $t('nav.scheduledTasks') }}</span>
         </button>
         <button :class="{ active: view === 'search' || (view === 'library' && selectedTag === null) }" type="button" @click="navigate('library')">
-          <svg><use href="#icon-cards" /></svg><span>{{ $t('nav.artifacts') }}</span><small>{{ libraryItems.length }}</small>
+          <svg><use href="#icon-cards" /></svg><span>{{ $t('nav.artifacts') }}</span><small>{{ libraryTotal ?? libraryItems.length }}</small>
         </button>
         <button :class="{ active: view === 'assets' }" type="button" @click="navigate('assets')">
           <svg><use href="#icon-attachment" /></svg><span>{{ $t('nav.assets') }}</span>
@@ -3708,6 +3780,13 @@ onBeforeUnmount(() => {
             <button class="primary-action" type="button" @click="view === 'search' ? navigate('library') : navigate('new')">
               {{ view === 'search' ? $t('Browse library') : $t('Create your first card') }}
             </button>
+          </div>
+          <!--
+            Observer anchor for the grid's next page. It stays outside the
+            v-if/v-else chain above so the empty state keeps its place in it.
+          -->
+          <div v-if="libraryItems.length && libraryHasMore" ref="librarySentinel" class="library-more" role="status" aria-live="polite">
+            <span v-if="libraryLoadingMore">{{ $t('Loading more…') }}</span>
           </div>
         </section>
       </template>
@@ -4538,6 +4617,7 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .library-type-filters button:hover { color: #435449; background: rgba(255,255,255,.6); }
 .library-type-filters button.active { border-color: rgba(78,111,91,.12); color: #3f604c; background: #edf3ef; box-shadow: inset 0 0 0 1px rgba(255,255,255,.55); }
 .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr)); gap: 1rem; }
+.library-more { display: grid; min-height: 3.2rem; margin-top: .6rem; place-items: center; color: var(--secondary); font-size: .74rem; }
 /* A filtered grid is remounted, so its cards rise the last few pixels into place.
    `backwards` fill keeps the start state during the stagger delay and hands the
    transform back to the hover lift once the animation ends. */

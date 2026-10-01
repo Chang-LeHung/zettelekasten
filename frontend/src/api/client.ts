@@ -135,6 +135,25 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return response.json() as Promise<T>
 }
 
+/**
+ * Filters of one library read, shared by the paged list and the count so the
+ * two can never describe different queries. Pagination stays out of the count:
+ * the header names the whole library, not the pages fetched so far.
+ */
+function libraryQueryParams(options: CardListOptions, paged: boolean): URLSearchParams {
+  const params = new URLSearchParams()
+  if (options.query) params.set('q', options.query)
+  for (const artifactType of options.artifactTypes ?? ['card', 'article', 'slides', 'latex_pdf']) {
+    params.append('artifact_types', artifactType)
+  }
+  params.append('statuses', 'saved')
+  if (options.tagId) params.append('tag_ids', options.tagId)
+  if (options.publishedOnly) params.set('published_only', 'true')
+  if (paged && options.limit !== undefined) params.set('limit', String(options.limit))
+  if (paged && options.offset) params.set('offset', String(options.offset))
+  return params
+}
+
 export const libraryClient = {
   /**
    * Create an artifact that belongs to no conversation. The server stores it
@@ -179,18 +198,19 @@ export const libraryClient = {
   },
 
   async list(options: CardListOptions = {}): Promise<LibraryItem[]> {
-    const params = new URLSearchParams()
-    if (options.query) params.set('q', options.query)
-    for (const artifactType of options.artifactTypes ?? ['card', 'article', 'slides', 'latex_pdf']) {
-      params.append('artifact_types', artifactType)
-    }
-    params.append('statuses', 'saved')
-    if (options.tagId) params.append('tag_ids', options.tagId)
-    if (options.publishedOnly) params.set('published_only', 'true')
+    const params = libraryQueryParams(options, true)
     const suffix = params.size ? `?${params}` : ''
     const artifacts = await request<AgentArtifact[]>(`/artifacts${suffix}`)
     artifacts.forEach((artifact) => artifactIndex.set(artifact.id, artifact))
     return artifacts.map(artifactToLibraryItem)
+  },
+
+  /** How many artifacts the same filters match, for the library's item count. */
+  async count(options: CardListOptions = {}): Promise<number> {
+    const params = libraryQueryParams(options, false)
+    const suffix = params.size ? `?${params}` : ''
+    const result = await request<{ count: number }>(`/artifacts/count${suffix}`)
+    return result.count
   },
 
   delete(_itemType: LibraryItemType, itemId: string): Promise<{ ok: boolean }> {

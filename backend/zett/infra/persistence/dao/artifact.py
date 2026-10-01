@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import TypeVar, cast
 
 from pydantic import TypeAdapter
-from sqlalchemy import Float, String, or_, select, text
+from sqlalchemy import Float, Select, String, Subquery, func, or_, select, text
 from sqlalchemy import delete as sql_delete
 from sqlalchemy import update as sql_update
 from zett_agent.ids import new_uuid7
@@ -146,6 +146,72 @@ def _validate_image_path(session_id: str, content: ArtifactContent | None) -> No
         raise ValueError(f"Image asset_path does not exist: {key.value}")
 
 
+def _filtered_artifact_statement(
+    options: ArtifactListOptions,
+) -> tuple[Select[tuple[SessionArtifactRow]], Subquery | None]:
+    """Build the artifact query with every list filter applied.
+
+    ``list`` and ``count`` share this so a library total can never describe a
+    different set than the pages it numbers. The returned rank column is the
+    FTS relevance the ranked search orders by, or ``None`` when the query used
+    the substring fallback.
+    """
+    statement = select(SessionArtifactRow)
+    if options.published_only:
+        statement = statement.where(
+            SessionArtifactRow.status == int(STATUS_TO_CODE[ArtifactStatus.SAVED]),
+            SessionArtifactRow.content_json != "",
+        )
+    if options.session_id:
+        statement = statement.where(SessionArtifactRow.session_id == options.session_id)
+    if options.artifact_types:
+        codes = [int(TYPE_TO_CODE[ArtifactType(value)]) for value in options.artifact_types]
+        statement = statement.where(SessionArtifactRow.artifact_type.in_(codes))
+    if options.statuses:
+        codes = [int(STATUS_TO_CODE[ArtifactStatus(value)]) for value in options.statuses]
+        statement = statement.where(SessionArtifactRow.status.in_(codes))
+    if options.tag_ids:
+        statement = statement.where(
+            SessionArtifactRow.id.in_(
+                select(TagLinkRow.target_id).where(
+                    TagLinkRow.target_type == int(TARGET_TO_CODE[TagTargetType.ARTIFACT]),
+                    TagLinkRow.tag_id.in_(options.tag_ids),
+                )
+            )
+        )
+    rank = None
+    if options.query:
+        # The normal FTS document also indexes draft_content and raw_content.
+        # An external knowledge search must not reveal their matches.
+        fts_query = None if options.published_only else build_fts_query(options.query)
+        if fts_query is None:
+            pattern = f"%{options.query}%"
+            columns = (
+                (SessionArtifactRow.content_json,)
+                if options.published_only
+                else (
+                    SessionArtifactRow.title,
+                    SessionArtifactRow.content_json,
+                    SessionArtifactRow.draft_content_json,
+                    SessionArtifactRow.raw_content,
+                )
+            )
+            statement = statement.where(or_(*(column.ilike(pattern) for column in columns)))
+        else:
+            rank = (
+                text(
+                    "SELECT artifact_id, bm25(artifact_search, 0.0, 8.0, 1.0) AS rank "
+                    "FROM artifact_search "
+                    "WHERE artifact_search MATCH :search_query"
+                )
+                .columns(artifact_id=String, rank=Float)
+                .bindparams(search_query=fts_query)
+                .subquery("artifact_search_rank")
+            )
+            statement = statement.join(rank, rank.c.artifact_id == SessionArtifactRow.id)
+    return statement, rank
+
+
 class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifactEntity, str, ArtifactListOptions]):
     """SQLAlchemy storage for polymorphic, session-owned artifacts."""
 
@@ -269,59 +335,7 @@ class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifactEntity, str,
     async def list(self, options: ArtifactListOptions | None = None) -> list[AgentArtifactEntity]:
         options = options or ArtifactListOptions()
         async with session_scope() as session:
-            statement = select(SessionArtifactRow)
-            if options.published_only:
-                statement = statement.where(
-                    SessionArtifactRow.status == int(STATUS_TO_CODE[ArtifactStatus.SAVED]),
-                    SessionArtifactRow.content_json != "",
-                )
-            if options.session_id:
-                statement = statement.where(SessionArtifactRow.session_id == options.session_id)
-            if options.artifact_types:
-                codes = [int(TYPE_TO_CODE[ArtifactType(value)]) for value in options.artifact_types]
-                statement = statement.where(SessionArtifactRow.artifact_type.in_(codes))
-            if options.statuses:
-                codes = [int(STATUS_TO_CODE[ArtifactStatus(value)]) for value in options.statuses]
-                statement = statement.where(SessionArtifactRow.status.in_(codes))
-            if options.tag_ids:
-                statement = statement.where(
-                    SessionArtifactRow.id.in_(
-                        select(TagLinkRow.target_id).where(
-                            TagLinkRow.target_type == int(TARGET_TO_CODE[TagTargetType.ARTIFACT]),
-                            TagLinkRow.tag_id.in_(options.tag_ids),
-                        )
-                    )
-                )
-            rank = None
-            if options.query:
-                # The normal FTS document also indexes draft_content and raw_content.
-                # An external knowledge search must not reveal their matches.
-                fts_query = None if options.published_only else build_fts_query(options.query)
-                if fts_query is None:
-                    pattern = f"%{options.query}%"
-                    columns = (
-                        (SessionArtifactRow.content_json,)
-                        if options.published_only
-                        else (
-                            SessionArtifactRow.title,
-                            SessionArtifactRow.content_json,
-                            SessionArtifactRow.draft_content_json,
-                            SessionArtifactRow.raw_content,
-                        )
-                    )
-                    statement = statement.where(or_(*(column.ilike(pattern) for column in columns)))
-                else:
-                    rank = (
-                        text(
-                            "SELECT artifact_id, bm25(artifact_search, 0.0, 8.0, 1.0) AS rank "
-                            "FROM artifact_search "
-                            "WHERE artifact_search MATCH :search_query"
-                        )
-                        .columns(artifact_id=String, rank=Float)
-                        .bindparams(search_query=fts_query)
-                        .subquery("artifact_search_rank")
-                    )
-                    statement = statement.join(rank, rank.c.artifact_id == SessionArtifactRow.id)
+            statement, rank = _filtered_artifact_statement(options)
             order = (
                 (rank.c.rank, SessionArtifactRow.updated_at.desc(), SessionArtifactRow.id.desc())
                 if rank is not None
@@ -333,6 +347,14 @@ class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifactEntity, str,
 
         tags = await tag_storage.tags_for(TagTargetType.ARTIFACT, tuple(artifact.id for artifact in artifacts))
         return [artifact.model_copy(update={"tags": tags.get(artifact.id, [])}) for artifact in artifacts]
+
+    async def count(self, options: ArtifactListOptions | None = None) -> int:
+        """How many artifacts the same filters match; paging never changes it."""
+        options = options or ArtifactListOptions()
+        async with session_scope() as session:
+            statement, _rank = _filtered_artifact_statement(options)
+            total = await session.scalar(select(func.count()).select_from(statement.subquery()))
+        return int(total or 0)
 
     async def delete_session(self, session_id: str) -> int:
         """Explicitly remove every artifact owned by a deleted session."""

@@ -236,6 +236,31 @@ it('can request published-only Artifact search without changing the default libr
   expect(ordinary.searchParams.has('published_only')).toBe(false)
 })
 
+it('pages the library list and counts the same filters without paging', async () => {
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify([])))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ count: 35 })))
+  vi.stubGlobal('fetch', fetchMock)
+
+  await libraryClient.list({ query: 'Python', tagId: 'python', limit: 61, offset: 120 })
+  expect(await libraryClient.count({ query: 'Python', tagId: 'python' })).toBe(35)
+
+  const listed = new URL(String(fetchMock.mock.calls[0]?.[0]), 'http://localhost')
+  expect(listed.pathname).toBe('/api/artifacts')
+  expect(listed.searchParams.get('q')).toBe('Python')
+  expect(listed.searchParams.get('tag_ids')).toBe('python')
+  expect(listed.searchParams.get('limit')).toBe('61')
+  expect(listed.searchParams.get('offset')).toBe('120')
+
+  const counted = new URL(String(fetchMock.mock.calls[1]?.[0]), 'http://localhost')
+  expect(counted.pathname).toBe('/api/artifacts/count')
+  expect(counted.searchParams.get('q')).toBe('Python')
+  expect(counted.searchParams.get('tag_ids')).toBe('python')
+  expect(counted.searchParams.getAll('statuses')).toEqual(['saved'])
+  expect(counted.searchParams.has('limit')).toBe(false)
+  expect(counted.searchParams.has('offset')).toBe(false)
+})
+
 it('creates tags and explicitly requests recursive assignment cleanup when deleting', async () => {
   const created = {
     id: 'python', path: 'Engineering/Python', normalized_path: 'engineering/python', name: 'Python',
