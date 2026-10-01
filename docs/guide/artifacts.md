@@ -186,6 +186,14 @@ conversation — so a shell can never remove a chat's artifact by naming its id.
 The same rule holds for the API: `DELETE /api/artifacts/{artifact_id}` decides by
 ownership, not by who calls it.
 
+### Saving from ChatGPT
+
+The optional `zett3rd/zettelekasten-chatgpt` integration lets ChatGPT save a
+card or article, classify it with the artifact library's tags, and later
+search, read, or edit it. It uses the same hidden Library Session as
+`zett artifact create`; nothing from the ChatGPT conversation becomes a Zett
+session. See its README for local MCP setup and limits.
+
 ## Teaching another coding agent to use Zett
 
 The commands above are what an agent needs, and `zett install` writes them into

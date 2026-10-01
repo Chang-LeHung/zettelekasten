@@ -4,6 +4,8 @@ backend/__pycache__/
 *.py[cod]
 frontend/node_modules/
 zett3rd/chrome-extension/node_modules/
+zett3rd/zettelekasten-chatgpt/node_modules/
+zett3rd/zettelekasten-chatgpt/dist/
 frontend/dist/
 dist/
 backend/zett/static/

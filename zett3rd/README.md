@@ -9,3 +9,4 @@ its own small project with its own README and its own way to run or install it.
 | Directory | What it is |
 | --- | --- |
 | [`chrome-extension/`](chrome-extension/) | The **Zettelekasten** Chrome extension (Vue 3 + TypeScript, built with Vite): embeds a separate conversation in each webpage, talks to the local Agent, and saves artifacts |
+| [`zettelekasten-chatgpt/`](zettelekasten-chatgpt/) | The Zettelekasten ChatGPT integration: a loopback MCP Apps bridge to save and classify knowledge in the global Library Session, then search, view, and edit it in ChatGPT |

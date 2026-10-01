@@ -25,6 +25,10 @@ class ArtifactListOptions(BaseModel):
     statuses: tuple[str, ...] = Field(default=(), description="Lifecycle states included in the result")
     tag_ids: tuple[str, ...] = Field(default=(), description="Assigned tag UUIDs included in the result")
     query: str | None = Field(default=None, description="Text matched against artifact titles")
+    published_only: bool = Field(
+        default=False,
+        description="Search published content only, excluding drafts and original source text",
+    )
     limit: int = Field(default=100, ge=1, le=500, description="Maximum artifacts returned")
     offset: int = Field(default=0, ge=0, description="Number of artifacts skipped")
 

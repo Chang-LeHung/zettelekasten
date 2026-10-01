@@ -54,6 +54,7 @@ export interface CardListOptions {
   query?: string
   tagId?: string | null
   artifactTypes?: LibraryItemType[]
+  publishedOnly?: boolean
 }
 
 export type LibraryItemType = 'card' | 'article' | 'slides' | 'latex_pdf'
@@ -82,6 +83,7 @@ export interface LibraryItemUpdate {
   content: string
   tags?: string[] | null
   metadata?: Record<string, unknown> | null
+  expectedVersion?: number
 }
 
 export interface SuggestedTag {

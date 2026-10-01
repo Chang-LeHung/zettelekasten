@@ -1,0 +1,24 @@
+{
+  "name": "zettelekasten-chatgpt",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Local MCP Apps bridge for the Zettelekasten knowledge library",
+  "scripts": {
+    "dev": "tsx src/server.ts",
+    "build": "esbuild src/widget.ts --bundle --format=esm --minify --target=es2022 --outfile=dist/widget.js",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --import tsx --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "1.7.5",
+    "@modelcontextprotocol/sdk": "1.31.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.4",
+    "esbuild": "^0.25.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
+  }
+}

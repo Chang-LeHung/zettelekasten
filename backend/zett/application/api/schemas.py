@@ -131,6 +131,9 @@ class ArtifactUpdateIn(BaseModel):
     """Replacement artifact content."""
 
     content: ArtifactContent
+    expected_version: int | None = Field(
+        default=None, ge=1, description="Reject the edit if the artifact has changed since it was read"
+    )
 
 
 class TagCreateIn(BaseModel):

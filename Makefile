@@ -72,6 +72,8 @@ check:
 	npm --prefix zett3rd/chrome-extension run test
 	npm --prefix zett3rd/chrome-extension run typecheck
 	npm --prefix zett3rd/chrome-extension run build
+	npm --prefix zett3rd/zettelekasten-chatgpt run typecheck
+	npm --prefix zett3rd/zettelekasten-chatgpt run test
 
 # The local build serves the site from the repository root, so every in-site
 # URL is root-absolute; the Docs workflow passes --base /zettelekasten/ because
