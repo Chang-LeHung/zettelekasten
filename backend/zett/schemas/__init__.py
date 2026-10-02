@@ -121,6 +121,11 @@ if TYPE_CHECKING:
         TagTreeEntity,
         TagWrite,
     )
+    from .updates import (
+        UpdateInstallKind,
+        UpdateInstallResult,
+        UpdateStatus,
+    )
     from .usage_activity import (
         ModelUsageActivitySeries,
         UsageActivityDayRecord,
@@ -222,6 +227,9 @@ _EXPORTS = {
     "TagTreeEntity": ".tags",
     "TagWrite": ".tags",
     "UsageActivityDayRecord": ".usage_activity",
+    "UpdateInstallKind": ".updates",
+    "UpdateInstallResult": ".updates",
+    "UpdateStatus": ".updates",
     "apply_artifact_patch": ".artifacts",
     "normalize_card_type": ".cards",
     "session_type_from_code": ".sessions",
@@ -319,6 +327,9 @@ __all__ = [
     "TagTreeEntity",
     "TagWrite",
     "UsageActivityDayRecord",
+    "UpdateInstallKind",
+    "UpdateInstallResult",
+    "UpdateStatus",
     "apply_artifact_patch",
     "normalize_card_type",
     "session_type_from_code",

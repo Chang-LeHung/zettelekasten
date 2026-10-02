@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ApiError, aiClient, assetClient, libraryClient, settingsClient, tagClient } from './api/client'
-import type { AgentArtifact, AgentAtCommand, AgentCompactionActivity, AgentContextComposition, AgentCustomEvent, AgentModelUsage, AgentModelUsageActivitySeries, AgentPersistedMessage, AgentServerToolActivity, AgentSession, AgentSlashCommand, AgentSteeringMessage, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AgentUsageActivityDay, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageImagePart, MessagePart, ReasoningEffort, RuntimeSettings, SessionAsset, SessionType, ShellApprovalMode, StaticAsset, Tag } from './api/types'
+import { ApiError, aiClient, assetClient, libraryClient, settingsClient, tagClient, updateClient } from './api/client'
+import type { AgentArtifact, AgentAtCommand, AgentCompactionActivity, AgentContextComposition, AgentCustomEvent, AgentModelUsage, AgentModelUsageActivitySeries, AgentPersistedMessage, AgentServerToolActivity, AgentSession, AgentSlashCommand, AgentSteeringMessage, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AgentUsageActivityDay, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageImagePart, MessagePart, ReasoningEffort, RuntimeSettings, SessionAsset, SessionType, ShellApprovalMode, StaticAsset, Tag, UpdateStatus } from './api/types'
 import AgentComposerControls from './components/AgentComposerControls.vue'
 import ArtifactDiffView from './components/ArtifactDiffView.vue'
 import ComposerCommandMenu from './components/ComposerCommandMenu.vue'
@@ -348,6 +348,10 @@ const maxAssetSizeMb = computed<number>({
   },
 })
 const runtimeSettingsSaving = ref(false)
+/** What PyPI offers for this copy, and how it would install it. */
+const updateStatus = ref<UpdateStatus | null>(null)
+const updateChecking = ref(false)
+const updateInstalling = ref(false)
 const usageActivity = ref<AgentUsageActivityDay[]>([])
 const modelUsageActivity = ref<AgentModelUsageActivitySeries[]>([])
 const usageActivityLoading = ref(false)
@@ -1435,6 +1439,7 @@ async function loadInitialData(): Promise<void> {
       runtimeSettingsData,
       usageActivityData,
       modelUsageActivityData,
+      updateData,
     ] = await Promise.all([
       tagClient.list(collectionTarget.value),
       libraryClient.list({ limit: LIBRARY_PAGE_SIZE + 1 }),
@@ -1443,6 +1448,7 @@ async function loadInitialData(): Promise<void> {
       settingsClient.get(),
       settingsClient.getUsageActivity().catch(() => []),
       settingsClient.getModelUsageActivity(30).catch(() => []),
+      updateClient.get().catch(() => null),
     ])
     collectionTags.value = tagData
     libraryHasMore.value = libraryPage.length > LIBRARY_PAGE_SIZE
@@ -1452,6 +1458,7 @@ async function loadInitialData(): Promise<void> {
     runtimeSettings.value = runtimeSettingsData
     usageActivity.value = usageActivityData
     modelUsageActivity.value = modelUsageActivityData
+    updateStatus.value = updateData
     const firstProvider = providerData.find((provider) => provider.enabled)
     if (firstProvider) {
       selectedProviderId.value = firstProvider.id
@@ -3362,6 +3369,60 @@ async function saveRuntimeSettings(): Promise<void> {
   }
 }
 
+/**
+ * Ask PyPI, through the backend's cache, whether a newer release exists. The
+ * backend reuses an answer for hours, so this is cheap to call on every start.
+ */
+async function refreshUpdateStatus(refresh = false): Promise<void> {
+  if (updateChecking.value || updateInstalling.value) return
+  updateChecking.value = true
+  try {
+    updateStatus.value = await updateClient.get(refresh)
+  } catch (error) {
+    showNotice(errorMessage(error), 'error')
+  } finally {
+    updateChecking.value = false
+  }
+}
+
+/**
+ * Download the release and let the installer that owns this copy replace it.
+ * The running process keeps the old code, so the answer asks for a restart.
+ */
+async function installAvailableUpdate(): Promise<void> {
+  const version = updateStatus.value?.latest
+  if (!version || updateInstalling.value) return
+  updateInstalling.value = true
+  try {
+    const result = await updateClient.install(version)
+    if (!result.ok) {
+      showNotice(result.detail || t('The installer failed'), 'error')
+      return
+    }
+    showNotice(t('Installed {version} — restart Zett to use it', { version: result.version }))
+    await refreshUpdateStatus(true)
+  } catch (error) {
+    showNotice(errorMessage(error), 'error')
+  } finally {
+    updateInstalling.value = false
+  }
+}
+
+const updateSummary = computed(() => {
+  const status = updateStatus.value
+  if (!status) return t('Checking for updates…')
+  if (status.check_failed) return t('Could not check for updates: {reason}', { reason: status.detail })
+  if (status.update_available) return t('A newer release is available: {version}', { version: status.latest ?? '' })
+  return t('Zett is up to date.')
+})
+
+const updateDetail = computed(() => {
+  const status = updateStatus.value
+  if (!status) return ''
+  if (!status.checked_at) return status.detail
+  return `${status.detail} ${t('Last checked {when}', { when: formatDateTime(status.checked_at) })}`
+})
+
 async function selectProvider(provider: AIProvider): Promise<void> {
   const generation = ++providerSelectionGeneration
   providerLoading.value = true
@@ -3524,6 +3585,7 @@ onBeforeUnmount(() => {
       <symbol id="icon-eye" viewBox="0 0 24 24"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/></symbol>
       <symbol id="icon-eye-off" viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 6.1A9.8 9.8 0 0 1 12 6c6 0 9.5 6 9.5 6a16.4 16.4 0 0 1-2.1 3M6.2 6.2C3.8 7.8 2.5 12 2.5 12s3.5 6 9.5 6c1.2 0 2.3-.3 3.3-.7M10.2 10.2a2.5 2.5 0 0 0 3.6 3.6"/></symbol>
       <symbol id="icon-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></symbol>
+      <symbol id="icon-download" viewBox="0 0 24 24"><path d="M12 4v9m0 0 3.5-3.5M12 13 8.5 9.5M5 19h14"/></symbol>
     </svg>
 
     <aside class="sidebar">
@@ -3635,6 +3697,12 @@ onBeforeUnmount(() => {
         <button :class="{ active: settingsOpen }" type="button" @click="navigate('settings')">
           <svg><use href="#icon-settings" /></svg><span>{{ $t('nav.settings') }}</span>
           <span class="status-dot" :class="{ online: providers.some((provider) => provider.enabled) }" />
+          <span
+            v-if="updateStatus?.update_available"
+            class="update-badge"
+            :title="$t('Zett {version} is available', { version: updateStatus.latest ?? '' })"
+            :aria-label="$t('Zett {version} is available', { version: updateStatus.latest ?? '' })"
+          ><svg><use href="#icon-download" /></svg></span>
         </button>
       </div>
     </aside>
@@ -4342,6 +4410,36 @@ onBeforeUnmount(() => {
               </label>
             </div>
           </div>
+          <div class="settings-intro updates-heading">
+            <div>
+              <h2>{{ $t('settings.updates') }}</h2>
+              <p>{{ updateSummary }}</p>
+            </div>
+            <div class="update-actions">
+              <button class="secondary-action" type="button" :disabled="updateChecking || updateInstalling" @click="refreshUpdateStatus(true)">
+                <svg><use href="#icon-refresh" /></svg>{{ updateChecking ? $t('Checking…') : $t('Check again') }}
+              </button>
+              <button
+                v-if="updateStatus?.can_install"
+                class="primary-action"
+                type="button"
+                :disabled="updateInstalling"
+                :aria-busy="updateInstalling"
+                @click="installAvailableUpdate"
+              >
+                <span v-if="updateInstalling" class="button-spinner" aria-hidden="true" />
+                <span>{{ updateInstalling ? $t('Installing…') : $t('Install {version}', { version: updateStatus.latest ?? '' }) }}</span>
+              </button>
+            </div>
+          </div>
+          <div class="settings-card update-card">
+            <div class="update-row">
+              <div class="update-copy">
+                <strong>{{ $t('Version {version}', { version: updateStatus?.current ?? '…' }) }}</strong>
+                <small>{{ updateDetail }}</small>
+              </div>
+            </div>
+          </div>
           </div>
           <div v-else-if="settingsSection === 'providers'" class="settings-section">
           <div class="settings-intro"><div><h2>{{ $t('AI providers') }}</h2><p>{{ $t('Keep multiple model connections and choose one for each conversation.') }}</p></div></div>
@@ -4585,6 +4683,18 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .sidebar-footer .channels-nav-button { margin-bottom: .65rem; }
 .status-dot { margin-left: auto; width: .43rem; height: .43rem; border-radius: 50%; background: #aaa; box-shadow: 0 0 0 3px rgba(0,0,0,.03); }
 .status-dot.online { background: #49a369; box-shadow: 0 0 0 3px rgba(73,163,105,.12); }
+/* The Settings entry carries the update itself: a download mark when PyPI has
+   something newer than the version this copy runs. */
+.update-badge { display: grid; place-items: center; width: 1.15rem; height: 1.15rem; flex: 0 0 auto; border-radius: 50%; color: #fff; background: linear-gradient(180deg, #537764, #3d604e); box-shadow: 0 1px 4px rgba(52,82,67,.28); }
+.update-badge svg { width: .72rem; height: .72rem; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.updates-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; }
+.update-actions { display: flex; align-items: center; gap: .5rem; }
+.update-actions svg { width: .9rem; height: .9rem; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; }
+.update-card { padding: .85rem 1rem; }
+.update-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.update-copy { min-width: 0; }
+.update-copy strong { display: block; font-size: .82rem; }
+.update-copy small { display: block; margin-top: .25rem; color: var(--secondary); font-size: .7rem; line-height: 1.5; }
 
 .workspace { min-width: 0; min-height: 100vh; grid-column: 2; }
 .topbar { position: sticky; top: 0; z-index: 8; min-height: 5rem; display: flex; align-items: center; gap: 1rem; padding: 1rem clamp(1.5rem, 4vw, 4rem); background: rgba(245,245,247,.97); backdrop-filter: blur(22px) saturate(160%); -webkit-backdrop-filter: blur(22px) saturate(160%); }
