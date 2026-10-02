@@ -1,0 +1,139 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Check the tag matches the released versions
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          python3 - <<'PY'
+          import os
+          import tomllib
+          from pathlib import Path
+
+          projects = {
+              "agim": Path("backend/agim/pyproject.toml"),
+              "zett-weixin": Path("backend/zett-weixin/pyproject.toml"),
+              "zettelekasten": Path("backend/pyproject.toml"),
+          }
+          versions = {
+              name: tomllib.loads(path.read_text(encoding="utf-8"))["project"]["version"]
+              for name, path in projects.items()
+          }
+          tag = os.environ["GITHUB_REF_NAME"]
+          expected = {f"v{version}" for version in versions.values()}
+          if len(expected) != 1:
+              raise SystemExit(f"the projects disagree on the version: {versions}")
+          only = expected.pop()
+          if tag != only:
+              raise SystemExit(f"tag {tag!r} does not match project version {only!r}")
+          print(f"tag {tag} matches every project version {versions}")
+          PY
+
+      # The compiled interface is embedded in the wheel, so the frontend build
+      # has to run before the package that carries it.
+      - name: Build the interface
+        run: |
+          npm ci --prefix frontend
+          npm --prefix frontend run build
+
+      # The dependency order matters: zett-weixin pins agim and zettelekasten
+      # pins both, so each wheel is built and published before its dependent.
+      # `--out-dir` is relative to each project, so these paths are absolute.
+      - name: Build agim
+        run: uv build --directory backend/agim --out-dir "$GITHUB_WORKSPACE/dist/agim"
+
+      - name: Build zett-weixin
+        run: uv build --directory backend/zett-weixin --out-dir "$GITHUB_WORKSPACE/dist/zett-weixin"
+
+      - name: Build zettelekasten
+        run: uv build --directory backend --out-dir "$GITHUB_WORKSPACE/dist/zettelekasten"
+
+      - name: Check distribution metadata
+        run: uv run --no-project --with twine twine check dist/*/*
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/zettelekasten
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      # An empty token falls back to PyPI Trusted Publishing, which the
+      # `id-token: write` above already allows.
+      - name: Publish agim
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/agim
+          password: ${{ secrets.PYPI_API_TOKEN }}
+
+      - name: Publish zett-weixin
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/zett-weixin
+          password: ${{ secrets.PYPI_API_TOKEN }}
+
+      - name: Publish zettelekasten
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/zettelekasten
+          password: ${{ secrets.PYPI_API_TOKEN }}
+
+  release:
+    name: GitHub release
+    needs: publish
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/*/* --generate-notes --title "$GITHUB_REF_NAME"

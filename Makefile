@@ -104,8 +104,15 @@ site:
 # The wheel embeds the compiled interface under zett/static, so the frontend
 # build has to run first; backend/hatch_build.py adds the README as the long
 # description that the PyPI page renders.
+# Every distribution the release publishes, in dependency order: the release
+# workflow publishes these same three, and PyPI refuses an install whose pinned
+# requirements are missing. `--out-dir` is relative to each project, so the
+# absolute paths keep all three artifacts in the repository's `dist/`.
 package: frontend-build
-	uv build --directory backend --out-dir ../dist
+	uv build --directory backend/agim --out-dir $(CURDIR)/dist/agim
+	uv build --directory backend/zett-weixin --out-dir $(CURDIR)/dist/zett-weixin
+	uv build --directory backend --out-dir $(CURDIR)/dist/zettelekasten
+	uv run --no-project --with twine twine check dist/*/*
 
 agim-check:
 	uv run --directory backend/agim ruff format --check src tests

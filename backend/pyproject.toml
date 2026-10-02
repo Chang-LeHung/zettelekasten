@@ -1,6 +1,6 @@
 [project]
-name = "zett"
-version = "0.1.0"
+name = "zettelekasten"
+version = "0.0.1"
 description = "A local-first, AI-assisted workspace for turning fleeting thoughts, conversations, links, and assets into reusable knowledge"
 requires-python = ">=3.10"
 dynamic = ["readme"]
@@ -35,8 +35,8 @@ dependencies = [
   "tiktoken>=0.12,<1",
   "zett-agent==0.1.4",
   "croniter>=6,<7",
-  "agim==0.1.0",
-  "zett-weixin==0.1.0",
+  "agim==0.0.1",
+  "zett-weixin==0.0.1",
   "qrcode>=8,<9",
 ]
 
