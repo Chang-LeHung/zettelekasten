@@ -3408,21 +3408,6 @@ async function installAvailableUpdate(): Promise<void> {
   }
 }
 
-const updateSummary = computed(() => {
-  const status = updateStatus.value
-  if (!status) return t('Checking for updates…')
-  if (status.check_failed) return t('Could not check for updates: {reason}', { reason: status.detail })
-  if (status.update_available) return t('A newer release is available: {version}', { version: status.latest ?? '' })
-  return t('Zett is up to date.')
-})
-
-const updateDetail = computed(() => {
-  const status = updateStatus.value
-  if (!status) return ''
-  if (!status.checked_at) return status.detail
-  return `${status.detail} ${t('Last checked {when}', { when: formatDateTime(status.checked_at) })}`
-})
-
 async function selectProvider(provider: AIProvider): Promise<void> {
   const generation = ++providerSelectionGeneration
   providerLoading.value = true
@@ -3694,15 +3679,27 @@ onBeforeUnmount(() => {
         <button class="channels-nav-button" :class="{ active: view === 'channels' || (view === 'new' && sessionScope === 'channel') }" type="button" @click="navigate('channels')">
           <svg><use href="#icon-channels" /></svg><span>{{ $t('nav.channels') }}</span>
         </button>
+        <!--
+          The update lives where the reader already looks for the running copy:
+          one line above Settings, absent until PyPI has something newer, and a
+          click installs it.
+        -->
+        <button
+          v-if="updateStatus?.update_available"
+          class="update-callout"
+          type="button"
+          :disabled="updateInstalling"
+          :aria-busy="updateInstalling"
+          :title="updateStatus.detail"
+          @click="installAvailableUpdate"
+        >
+          <svg><use href="#icon-download" /></svg>
+          <span>{{ updateInstalling ? $t('Installing…') : $t('Update to {version}', { version: updateStatus.latest ?? '' }) }}</span>
+          <span v-if="updateInstalling" class="button-spinner" aria-hidden="true" />
+        </button>
         <button :class="{ active: settingsOpen }" type="button" @click="navigate('settings')">
           <svg><use href="#icon-settings" /></svg><span>{{ $t('nav.settings') }}</span>
           <span class="status-dot" :class="{ online: providers.some((provider) => provider.enabled) }" />
-          <span
-            v-if="updateStatus?.update_available"
-            class="update-badge"
-            :title="$t('Zett {version} is available', { version: updateStatus.latest ?? '' })"
-            :aria-label="$t('Zett {version} is available', { version: updateStatus.latest ?? '' })"
-          ><svg><use href="#icon-download" /></svg></span>
         </button>
       </div>
     </aside>
@@ -4410,36 +4407,6 @@ onBeforeUnmount(() => {
               </label>
             </div>
           </div>
-          <div class="settings-intro updates-heading">
-            <div>
-              <h2>{{ $t('settings.updates') }}</h2>
-              <p>{{ updateSummary }}</p>
-            </div>
-            <div class="update-actions">
-              <button class="secondary-action" type="button" :disabled="updateChecking || updateInstalling" @click="refreshUpdateStatus(true)">
-                <svg><use href="#icon-refresh" /></svg>{{ updateChecking ? $t('Checking…') : $t('Check again') }}
-              </button>
-              <button
-                v-if="updateStatus?.can_install"
-                class="primary-action"
-                type="button"
-                :disabled="updateInstalling"
-                :aria-busy="updateInstalling"
-                @click="installAvailableUpdate"
-              >
-                <span v-if="updateInstalling" class="button-spinner" aria-hidden="true" />
-                <span>{{ updateInstalling ? $t('Installing…') : $t('Install {version}', { version: updateStatus.latest ?? '' }) }}</span>
-              </button>
-            </div>
-          </div>
-          <div class="settings-card update-card">
-            <div class="update-row">
-              <div class="update-copy">
-                <strong>{{ $t('Version {version}', { version: updateStatus?.current ?? '…' }) }}</strong>
-                <small>{{ updateDetail }}</small>
-              </div>
-            </div>
-          </div>
           </div>
           <div v-else-if="settingsSection === 'providers'" class="settings-section">
           <div class="settings-intro"><div><h2>{{ $t('AI providers') }}</h2><p>{{ $t('Keep multiple model connections and choose one for each conversation.') }}</p></div></div>
@@ -4683,18 +4650,14 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .sidebar-footer .channels-nav-button { margin-bottom: .65rem; }
 .status-dot { margin-left: auto; width: .43rem; height: .43rem; border-radius: 50%; background: #aaa; box-shadow: 0 0 0 3px rgba(0,0,0,.03); }
 .status-dot.online { background: #49a369; box-shadow: 0 0 0 3px rgba(73,163,105,.12); }
-/* The Settings entry carries the update itself: a download mark when PyPI has
-   something newer than the version this copy runs. */
-.update-badge { display: grid; place-items: center; width: 1.15rem; height: 1.15rem; flex: 0 0 auto; border-radius: 50%; color: #fff; background: linear-gradient(180deg, #537764, #3d604e); box-shadow: 0 1px 4px rgba(52,82,67,.28); }
-.update-badge svg { width: .72rem; height: .72rem; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
-.updates-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; }
-.update-actions { display: flex; align-items: center; gap: .5rem; }
-.update-actions svg { width: .9rem; height: .9rem; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; }
-.update-card { padding: .85rem 1rem; }
-.update-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
-.update-copy { min-width: 0; }
-.update-copy strong { display: block; font-size: .82rem; }
-.update-copy small { display: block; margin-top: .25rem; color: var(--secondary); font-size: .7rem; line-height: 1.5; }
+/* The update sits in the sidebar footer, right above Settings: it appears only
+   while PyPI has a newer release, and the whole row is the install button. */
+.update-callout { display: flex; align-items: center; gap: .5rem; width: 100%; margin-bottom: .5rem; padding: .5rem .6rem; border: 1px solid rgba(63,96,76,.18); border-radius: .72rem; color: #33513f; background: linear-gradient(180deg, #eef5f0, #e4eee8); cursor: pointer; font-size: .72rem; font-weight: 600; text-align: left; transition: background 160ms ease, transform 160ms ease; }
+.update-callout:hover:not(:disabled) { background: linear-gradient(180deg, #e6f1ea, #d9e8e0); transform: translateY(-1px); }
+.update-callout:disabled { cursor: progress; opacity: .8; }
+.update-callout svg { width: .95rem; height: .95rem; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.update-callout span:not(.button-spinner) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.update-callout .button-spinner { margin-left: auto; border-color: rgba(51,81,63,.3); border-top-color: #33513f; }
 
 .workspace { min-width: 0; min-height: 100vh; grid-column: 2; }
 .topbar { position: sticky; top: 0; z-index: 8; min-height: 5rem; display: flex; align-items: center; gap: 1rem; padding: 1rem clamp(1.5rem, 4vw, 4rem); background: rgba(245,245,247,.97); backdrop-filter: blur(22px) saturate(160%); -webkit-backdrop-filter: blur(22px) saturate(160%); }
@@ -5322,6 +5285,9 @@ kbd, .card-type, .card-tags span { font-size: .69rem; }
   .primary-nav button svg, .sidebar-footer button svg { width: 1.15rem; height: 1.15rem; }
   .sidebar-footer { position: absolute; right: .65rem; bottom: max(.45rem, env(safe-area-inset-bottom)); width: calc((100% - 1.3rem) / 3); display: grid; grid-template-columns: repeat(2, 1fr); padding: 0; border: 0; }
   .sidebar-footer .channels-nav-button { margin-bottom: 0; }
+  /* The update row spans the two icon columns above the Settings button. */
+  .sidebar-footer .update-callout { grid-column: 1 / -1; margin-bottom: .35rem; justify-content: center; }
+  .sidebar-footer .update-callout span:not(.button-spinner) { display: none; }
   .topbar { min-height: 4.5rem; padding: .8rem 1rem; }
   .topbar .primary-action { width: 2.65rem; padding: 0; font-size: 0; }
   .topbar .primary-action svg { width: 1rem; height: 1rem; }
