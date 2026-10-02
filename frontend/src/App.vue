@@ -63,7 +63,7 @@ type SessionScope = Extract<SessionType, 'normal' | 'scheduled' | 'channel'>
 type NoticeKind = 'success' | 'error'
 type AssetEditorMode = 'closed' | 'text' | 'link'
 type AssetFilter = 'all' | 'documents' | 'images' | 'links' | 'notes' | 'code'
-type SettingsSection = 'usage' | 'providers' | 'limits'
+type SettingsSection = 'general' | 'usage' | 'providers' | 'limits'
 type ComposerTarget = 'initial' | 'follow-up'
 const DEFAULT_SESSION_TITLE = '新会话'
 const { locale, setLocale, t } = useI18n()
@@ -3632,13 +3632,6 @@ onBeforeUnmount(() => {
         <button class="channels-nav-button" :class="{ active: view === 'channels' || (view === 'new' && sessionScope === 'channel') }" type="button" @click="navigate('channels')">
           <svg><use href="#icon-channels" /></svg><span>{{ $t('nav.channels') }}</span>
         </button>
-        <label class="locale-control">
-          <span>{{ $t('settings.language') }}</span>
-          <select :value="locale" @change="changeLocale">
-            <option value="en">{{ $t('settings.english') }}</option>
-            <option value="zh">{{ $t('settings.chinese') }}</option>
-          </select>
-        </label>
         <button :class="{ active: settingsOpen }" type="button" @click="navigate('settings')">
           <svg><use href="#icon-settings" /></svg><span>{{ $t('nav.settings') }}</span>
           <span class="status-dot" :class="{ online: providers.some((provider) => provider.enabled) }" />
@@ -4327,12 +4320,30 @@ onBeforeUnmount(() => {
           </header>
           <div class="settings-dialog-body">
           <nav class="settings-tabs" role="tablist" aria-label="Settings sections">
+            <button :class="{ active: settingsSection === 'general' }" type="button" role="tab" :aria-selected="settingsSection === 'general'" @click="selectSettingsSection('general')">{{ $t('settings.general') }}</button>
             <button :class="{ active: settingsSection === 'usage' }" type="button" role="tab" :aria-selected="settingsSection === 'usage'" @click="selectSettingsSection('usage')">{{ $t('settings.usage') }}</button>
             <button :class="{ active: settingsSection === 'providers' }" type="button" role="tab" :aria-selected="settingsSection === 'providers'" @click="selectSettingsSection('providers')">{{ $t('settings.providers') }}</button>
             <button :class="{ active: settingsSection === 'limits' }" type="button" role="tab" :aria-selected="settingsSection === 'limits'" @click="selectSettingsSection('limits')">{{ $t('settings.limits') }}</button>
           </nav>
           <section class="content settings-view">
-          <div v-if="settingsSection === 'providers'" class="settings-section">
+          <div v-if="settingsSection === 'general'" class="settings-section">
+          <div class="settings-intro">
+            <div><h2>{{ $t('Preferences') }}</h2><p>{{ $t('Choose how Zett reads on this computer.') }}</p></div>
+          </div>
+          <div class="settings-card">
+            <div class="form-grid">
+              <label class="field">
+                <span>{{ $t('settings.language') }}</span>
+                <select :value="locale" @change="changeLocale">
+                  <option value="en">{{ $t('settings.english') }}</option>
+                  <option value="zh">{{ $t('settings.chinese') }}</option>
+                </select>
+                <small>{{ $t('Applied right away, and remembered in this browser.') }}</small>
+              </label>
+            </div>
+          </div>
+          </div>
+          <div v-else-if="settingsSection === 'providers'" class="settings-section">
           <div class="settings-intro"><div><h2>{{ $t('AI providers') }}</h2><p>{{ $t('Keep multiple model connections and choose one for each conversation.') }}</p></div></div>
           <div class="provider-toolbar">
             <div v-if="providers.length" class="provider-list">
@@ -4572,8 +4583,6 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .sidebar-empty { padding: .55rem; color: var(--tertiary); font-size: .72rem; }
 .sidebar-footer { padding: .65rem 0 .15rem; border-top: 1px solid rgba(29,29,31,.07); }
 .sidebar-footer .channels-nav-button { margin-bottom: .65rem; }
-.locale-control { display: flex; align-items: center; justify-content: space-between; gap: .45rem; margin-bottom: .3rem; padding: 0 .55rem; color: #77777c; font-size: .64rem; }
-.locale-control select { min-width: 5.4rem; height: 1.8rem; padding: 0 1.65rem 0 .55rem; border: 1px solid rgba(29,29,31,.1); border-radius: .5rem; color: #4e5651; background: rgba(255,255,255,.65); cursor: pointer; font-size: .65rem; }
 .status-dot { margin-left: auto; width: .43rem; height: .43rem; border-radius: 50%; background: #aaa; box-shadow: 0 0 0 3px rgba(0,0,0,.03); }
 .status-dot.online { background: #49a369; box-shadow: 0 0 0 3px rgba(73,163,105,.12); }
 
@@ -5203,7 +5212,6 @@ kbd, .card-type, .card-tags span { font-size: .69rem; }
   .primary-nav button svg, .sidebar-footer button svg { width: 1.15rem; height: 1.15rem; }
   .sidebar-footer { position: absolute; right: .65rem; bottom: max(.45rem, env(safe-area-inset-bottom)); width: calc((100% - 1.3rem) / 3); display: grid; grid-template-columns: repeat(2, 1fr); padding: 0; border: 0; }
   .sidebar-footer .channels-nav-button { margin-bottom: 0; }
-  .locale-control { display: none; }
   .topbar { min-height: 4.5rem; padding: .8rem 1rem; }
   .topbar .primary-action { width: 2.65rem; padding: 0; font-size: 0; }
   .topbar .primary-action svg { width: 1rem; height: 1rem; }
