@@ -53,12 +53,13 @@ Zett ships as one Python package — the application, the `zett` command, and th
 compiled interface — so this is the whole install:
 
 ```bash
-uv tool install zett      # or: pipx install zett  /  pip install zett
-zett start                # serves 127.0.0.1:6280 in the background
+uv tool install zettelekasten   # or: pipx install zettelekasten
+zett start                      # serves 127.0.0.1:6280 in the background
 ```
 
-The package is not on PyPI yet: its `agim` and `zett-weixin` dependencies have
-to be published first. Until then, install the same package from a checkout:
+The distribution is `zettelekasten`; the command it installs is `zett`. It is
+published to PyPI together with the `agim` and `zett-weixin` packages it
+depends on, so one install is enough. To work from a checkout instead:
 
 ```bash
 git clone https://github.com/Chang-LeHung/zettelekasten

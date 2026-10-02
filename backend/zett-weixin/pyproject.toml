@@ -1,11 +1,11 @@
 [project]
 name = "zett-weixin"
-version = "0.1.0"
+version = "0.0.1"
 description = "Zett channel plugin for personal WeChat, built on the agim SDK"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-  "agim==0.1.0",
+  "agim==0.0.1",
 ]
 
 [project.entry-points."zett.channels"]
@@ -23,12 +23,12 @@ dev = [
   "pytest>=8,<9",
   "pytest-asyncio>=0.26,<2",
   "ruff>=0.11,<1",
-  "zett==0.1.0",
+  "zettelekasten==0.0.1",
 ]
 
 [tool.uv.sources]
 agim = { path = "../agim", editable = true }
-zett = { path = "..", editable = true }
+zettelekasten = { path = "..", editable = true }
 
 [tool.ruff]
 line-length = 120

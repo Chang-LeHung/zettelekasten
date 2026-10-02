@@ -39,7 +39,7 @@ build-backend = "hatchling.build"
 packages = ["src/zett_my_platform"]
 
 [dependency-groups]
-dev = ["pytest>=8,<9", "pytest-asyncio>=0.26,<2", "zett==0.1.0"]
+dev = ["pytest>=8,<9", "pytest-asyncio>=0.26,<2", "zettelekasten==0.0.1"]
 
 [tool.uv.sources]
 zett = { path = "../zettelekasten/backend", editable = true }

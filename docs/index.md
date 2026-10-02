@@ -11,11 +11,19 @@ You need Python 3.10 to 3.14, on macOS, Linux, or Windows. There is no Zett
 account to create.
 
 ```bash
-git clone https://github.com/Chang-LeHung/zettelekasten
-cd zettelekasten
-make install     # installs the `zett` command
+uv tool install zettelekasten   # or: pipx install zettelekasten
 zett start       # starts Zett in the background
 zett status      # checks that it is running
+```
+
+The distribution is `zettelekasten`; the command it installs is `zett`. To run
+the same application from a checkout instead:
+
+```bash
+git clone https://github.com/Chang-LeHung/zettelekasten
+cd zettelekasten
+make install     # builds the interface and installs the `zett` command
+zett start
 ```
 
 1. Open `http://127.0.0.1:6280`.
@@ -27,8 +35,7 @@ zett status      # checks that it is running
    library.
 
 `zett stop` stops Zett when you are done. To watch its logs while you try
-things, run `zett start --foreground` instead. Zett is not on PyPI yet, so the
-source checkout is how you install it today.
+things, run `zett start --foreground` instead.
 
 ## User guide
 

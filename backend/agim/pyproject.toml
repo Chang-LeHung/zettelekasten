@@ -1,6 +1,6 @@
 [project]
 name = "agim"
-version = "0.1.0"
+version = "0.0.1"
 description = "Standalone plugin toolkit for IM platform login, receive, and send"
 readme = "README.md"
 requires-python = ">=3.10"
