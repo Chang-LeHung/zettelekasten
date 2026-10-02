@@ -25,9 +25,10 @@ are listed on their own pages.
 Hover a conversation to rename it or delete it. Click its title to rename it in
 place.
 
-!!! warning "Deleting a conversation deletes what it made"
-    Deleting a conversation removes its messages, its files, and every artifact
-    created in it, including the ones already saved to your library.
+::: warning Deleting a conversation deletes what it made
+Deleting a conversation removes its messages, its files, and every artifact
+created in it, including the ones already saved to your library.
+:::
 
 ## The composer
 

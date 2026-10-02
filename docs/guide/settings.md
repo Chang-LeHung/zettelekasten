@@ -66,10 +66,11 @@ settings — lives in one folder on your computer: `~/.zettelekasten`.
   `zett start`.
 - **Logs** are in its `logs` folder, which helps when something goes wrong.
 
-!!! note "What leaves your computer"
-    Your folder stays local, but the messages you send to a model go to the
-    provider you chose, and a connected chat app exchanges messages with its
-    own service. Do not send anything you would not want them to process.
+::: info What leaves your computer
+Your folder stays local, but the messages you send to a model go to the
+provider you chose, and a connected chat app exchanges messages with its
+own service. Do not send anything you would not want them to process.
+:::
 
 Deleting a conversation also deletes the files and artifacts it created. A
 static asset cannot be deleted while a conversation still uses it.

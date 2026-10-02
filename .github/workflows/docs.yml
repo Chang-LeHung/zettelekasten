@@ -27,19 +27,21 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: actions/setup-node@v7
         with:
-          enable-cache: true
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+
+      - name: Install the documentation toolchain
+        run: npm ci --prefix docs
 
       - name: Build the landing page and the documentation
         # The landing page owns the site root and the documentation lives under
-        # /docs/. Both come from web/: the pages are rendered from the Markdown
-        # sources by our own builder, so the published site cannot drift from
-        # the READMEs and nothing generated is committed. --base is required
-        # because Pages serves this repository as a project site.
-        run: |
-          uv sync --directory backend --locked --group dev
-          uv run --project backend --no-sync python web/tools/build_docs.py --base /zettelekasten/
+        # /docs/. VitePress renders the pages straight from docs/*.md, so the
+        # published site cannot drift from the Markdown sources. SITE_BASE is
+        # required because Pages serves this repository as a project site.
+        run: make site SITE_BASE=/zettelekasten/
 
       - uses: actions/configure-pages@v6
 

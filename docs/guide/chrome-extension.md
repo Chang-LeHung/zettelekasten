@@ -5,9 +5,10 @@ about the page, turn the useful part into a card or an article, and save it to
 your library without switching tabs. The panel floats over the right side of
 the page: drag its top strip to move it, and drag any corner to resize it.
 
-!!! note "Installed from source"
-    The extension is not in the Chrome Web Store yet. You build it from this
-    repository and load it into Chrome yourself; it takes a minute.
+::: info Installed from source
+The extension is not in the Chrome Web Store yet. You build it from this
+repository and load it into Chrome yourself; it takes a minute.
+:::
 
 ## Install the extension
 
