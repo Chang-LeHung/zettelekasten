@@ -111,7 +111,7 @@ async def run_installer(installer: Installer, distribution: Path) -> InstallOutc
         return InstallOutcome(False, f"The installer could not start: {error}")
     try:
         stdout, _ = await asyncio.wait_for(process.communicate(), timeout=INSTALL_TIMEOUT_SECONDS)
-    except TimeoutError:
+    except asyncio.TimeoutError:
         process.kill()
         await process.wait()
         return InstallOutcome(False, f"The installer did not finish within {INSTALL_TIMEOUT_SECONDS}s")

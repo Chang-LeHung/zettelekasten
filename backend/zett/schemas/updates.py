@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from .._compat import StrEnum
 
 
 class UpdateInstallKind(StrEnum):
