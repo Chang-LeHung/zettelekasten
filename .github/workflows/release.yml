@@ -1,8 +1,19 @@
 name: Release
 
+# One tag per distribution, so a package can be released on its own:
+#
+#   agim-v0.0.2            backend/agim
+#   zett-weixin-v0.0.2     backend/zett-weixin
+#   zettelekasten-v0.0.2   backend, the application itself
+#
+# A tag has to match the version in that project's pyproject.toml. A manual run
+# builds without publishing, which is the rehearsal.
 on:
   push:
-    tags: ["v*"]
+    tags:
+      - "agim-v*"
+      - "zett-weixin-v*"
+      - "zettelekasten-v*"
   workflow_dispatch:
 
 permissions:
@@ -12,6 +23,8 @@ jobs:
   build:
     name: Build distribution
     runs-on: ubuntu-latest
+    outputs:
+      name: ${{ steps.tag.outputs.name }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -27,51 +40,64 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Check the tag matches the released versions
+      - name: Read the released package from the tag
+        id: tag
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          python3 - <<'PY'
-          import os
-          import tomllib
-          from pathlib import Path
+          name=""
+          path=""
+          case "$GITHUB_REF_NAME" in
+            agim-v*) name=agim; path=backend/agim ;;
+            zett-weixin-v*) name=zett-weixin; path=backend/zett-weixin ;;
+            zettelekasten-v*) name=zettelekasten; path=backend ;;
+            *)
+              echo "::error::tag $GITHUB_REF_NAME does not name a package"
+              exit 1
+              ;;
+          esac
+          version="${GITHUB_REF_NAME#"$name-v"}"
+          project=$(python3 -c "import tomllib; print(tomllib.load(open('$path/pyproject.toml','rb'))['project']['version'])")
+          if [ "$version" != "$project" ]; then
+            echo "::error::$GITHUB_REF_NAME does not match $path version $project"
+            exit 1
+          fi
+          echo "$GITHUB_REF_NAME matches $name $version"
+          {
+            echo "name=$name"
+            echo "path=$path"
+            echo "version=$version"
+          } >> "$GITHUB_OUTPUT"
 
-          projects = {
-              "agim": Path("backend/agim/pyproject.toml"),
-              "zett-weixin": Path("backend/zett-weixin/pyproject.toml"),
-              "zettelekasten": Path("backend/pyproject.toml"),
-          }
-          versions = {
-              name: tomllib.loads(path.read_text(encoding="utf-8"))["project"]["version"]
-              for name, path in projects.items()
-          }
-          tag = os.environ["GITHUB_REF_NAME"]
-          expected = {f"v{version}" for version in versions.values()}
-          if len(expected) != 1:
-              raise SystemExit(f"the projects disagree on the version: {versions}")
-          only = expected.pop()
-          if tag != only:
-              raise SystemExit(f"tag {tag!r} does not match project version {only!r}")
-          print(f"tag {tag} matches every project version {versions}")
-          PY
-
-      # The compiled interface is embedded in the wheel, so the frontend build
-      # has to run before the package that carries it.
+      # Only the application embeds the compiled interface, so only its release
+      # pays for the frontend build.
       - name: Build the interface
+        if: steps.tag.outputs.name == 'zettelekasten'
         run: |
           npm ci --prefix frontend
           npm --prefix frontend run build
 
-      # The dependency order matters: zett-weixin pins agim and zettelekasten
-      # pins both, so each wheel is built and published before its dependent.
-      # `--out-dir` is relative to each project, so these paths are absolute.
-      - name: Build agim
-        run: uv build --directory backend/agim --out-dir "$GITHUB_WORKSPACE/dist/agim"
+      - name: Build the released package
+        if: steps.tag.outputs.name != ''
+        run: |
+          uv build \
+            --directory "${{ steps.tag.outputs.path }}" \
+            --out-dir "$GITHUB_WORKSPACE/dist/${{ steps.tag.outputs.name }}"
 
-      - name: Build zett-weixin
-        run: uv build --directory backend/zett-weixin --out-dir "$GITHUB_WORKSPACE/dist/zett-weixin"
+      # A manual run has no tag to name a package, so it rehearses all three.
+      - name: Build every package
+        if: steps.tag.outputs.name == ''
+        run: |
+          npm ci --prefix frontend
+          npm --prefix frontend run build
+          uv build --directory backend/agim --out-dir "$GITHUB_WORKSPACE/dist/agim"
+          uv build --directory backend/zett-weixin --out-dir "$GITHUB_WORKSPACE/dist/zett-weixin"
+          uv build --directory backend --out-dir "$GITHUB_WORKSPACE/dist/zettelekasten"
 
-      - name: Build zettelekasten
-        run: uv build --directory backend --out-dir "$GITHUB_WORKSPACE/dist/zettelekasten"
+      # PyPI refuses an install whose exact pins are missing, so this fails
+      # before publishing instead of after.
+      - name: Check the pinned dependencies are on PyPI
+        if: steps.tag.outputs.name != ''
+        run: python3 .github/scripts/check_release_pins.py dist/"${{ steps.tag.outputs.name }}"/*
 
       - name: Check distribution metadata
         run: uv run --no-project --with twine twine check dist/*/*
@@ -89,7 +115,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/zettelekasten
+      url: https://pypi.org/p/${{ needs.build.outputs.name }}
     permissions:
       id-token: write
     steps:
@@ -100,22 +126,10 @@ jobs:
 
       # An empty token falls back to PyPI Trusted Publishing, which the
       # `id-token: write` above already allows.
-      - name: Publish agim
+      - name: Publish ${{ needs.build.outputs.name }}
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          packages-dir: dist/agim
-          password: ${{ secrets.PYPI_API_TOKEN }}
-
-      - name: Publish zett-weixin
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: dist/zett-weixin
-          password: ${{ secrets.PYPI_API_TOKEN }}
-
-      - name: Publish zettelekasten
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: dist/zettelekasten
+          packages-dir: dist/${{ needs.build.outputs.name }}
           password: ${{ secrets.PYPI_API_TOKEN }}
 
   release:
