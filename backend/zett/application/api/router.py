@@ -15,6 +15,7 @@ from .routes.sessions import router as session_router
 from .routes.settings import router as settings_router
 from .routes.static_assets import router as static_asset_router
 from .routes.tags import router as tag_router
+from .routes.updates import router as update_router
 
 api_router = APIRouter(prefix="/api")
 api_router.include_router(session_router)
@@ -30,3 +31,4 @@ api_router.include_router(agent_router)
 api_router.include_router(browser_router)
 api_router.include_router(settings_router)
 api_router.include_router(tag_router)
+api_router.include_router(update_router)

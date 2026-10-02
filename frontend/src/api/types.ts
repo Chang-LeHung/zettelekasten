@@ -676,3 +676,26 @@ export interface TagCreateRequest {
   name: string
   parent_id: number | null
 }
+
+/** How this running copy would install a newer release. */
+export type UpdateInstallKind = 'uv-tool' | 'pipx' | 'pip' | 'checkout' | 'unknown'
+
+export interface UpdateStatus {
+  current: string
+  latest: string | null
+  update_available: boolean
+  install_kind: UpdateInstallKind
+  can_install: boolean
+  detail: string
+  checked_at: string | null
+  check_failed: boolean
+}
+
+export interface UpdateInstallResult {
+  ok: boolean
+  version: string
+  needs_restart: boolean
+  file: string | null
+  detail: string
+  output_tail: string[]
+}

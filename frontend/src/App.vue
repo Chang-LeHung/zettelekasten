@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ApiError, aiClient, assetClient, libraryClient, settingsClient, tagClient } from './api/client'
-import type { AgentArtifact, AgentAtCommand, AgentCompactionActivity, AgentContextComposition, AgentCustomEvent, AgentModelUsage, AgentModelUsageActivitySeries, AgentPersistedMessage, AgentServerToolActivity, AgentSession, AgentSlashCommand, AgentSteeringMessage, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AgentUsageActivityDay, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageImagePart, MessagePart, ReasoningEffort, RuntimeSettings, SessionAsset, SessionType, ShellApprovalMode, StaticAsset, Tag } from './api/types'
+import { ApiError, aiClient, assetClient, libraryClient, settingsClient, tagClient, updateClient } from './api/client'
+import type { AgentArtifact, AgentAtCommand, AgentCompactionActivity, AgentContextComposition, AgentCustomEvent, AgentModelUsage, AgentModelUsageActivitySeries, AgentPersistedMessage, AgentServerToolActivity, AgentSession, AgentSlashCommand, AgentSteeringMessage, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AgentUsageActivityDay, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageImagePart, MessagePart, ReasoningEffort, RuntimeSettings, SessionAsset, SessionType, ShellApprovalMode, StaticAsset, Tag, UpdateStatus } from './api/types'
 import AgentComposerControls from './components/AgentComposerControls.vue'
 import ArtifactDiffView from './components/ArtifactDiffView.vue'
 import ComposerCommandMenu from './components/ComposerCommandMenu.vue'
@@ -348,6 +348,10 @@ const maxAssetSizeMb = computed<number>({
   },
 })
 const runtimeSettingsSaving = ref(false)
+/** What PyPI offers for this copy, and how it would install it. */
+const updateStatus = ref<UpdateStatus | null>(null)
+const updateChecking = ref(false)
+const updateInstalling = ref(false)
 const usageActivity = ref<AgentUsageActivityDay[]>([])
 const modelUsageActivity = ref<AgentModelUsageActivitySeries[]>([])
 const usageActivityLoading = ref(false)
@@ -1435,6 +1439,7 @@ async function loadInitialData(): Promise<void> {
       runtimeSettingsData,
       usageActivityData,
       modelUsageActivityData,
+      updateData,
     ] = await Promise.all([
       tagClient.list(collectionTarget.value),
       libraryClient.list({ limit: LIBRARY_PAGE_SIZE + 1 }),
@@ -1443,6 +1448,7 @@ async function loadInitialData(): Promise<void> {
       settingsClient.get(),
       settingsClient.getUsageActivity().catch(() => []),
       settingsClient.getModelUsageActivity(30).catch(() => []),
+      updateClient.get().catch(() => null),
     ])
     collectionTags.value = tagData
     libraryHasMore.value = libraryPage.length > LIBRARY_PAGE_SIZE
@@ -1452,6 +1458,7 @@ async function loadInitialData(): Promise<void> {
     runtimeSettings.value = runtimeSettingsData
     usageActivity.value = usageActivityData
     modelUsageActivity.value = modelUsageActivityData
+    updateStatus.value = updateData
     const firstProvider = providerData.find((provider) => provider.enabled)
     if (firstProvider) {
       selectedProviderId.value = firstProvider.id
@@ -3362,6 +3369,45 @@ async function saveRuntimeSettings(): Promise<void> {
   }
 }
 
+/**
+ * Ask PyPI, through the backend's cache, whether a newer release exists. The
+ * backend reuses an answer for hours, so this is cheap to call on every start.
+ */
+async function refreshUpdateStatus(refresh = false): Promise<void> {
+  if (updateChecking.value || updateInstalling.value) return
+  updateChecking.value = true
+  try {
+    updateStatus.value = await updateClient.get(refresh)
+  } catch (error) {
+    showNotice(errorMessage(error), 'error')
+  } finally {
+    updateChecking.value = false
+  }
+}
+
+/**
+ * Download the release and let the installer that owns this copy replace it.
+ * The running process keeps the old code, so the answer asks for a restart.
+ */
+async function installAvailableUpdate(): Promise<void> {
+  const version = updateStatus.value?.latest
+  if (!version || updateInstalling.value) return
+  updateInstalling.value = true
+  try {
+    const result = await updateClient.install(version)
+    if (!result.ok) {
+      showNotice(result.detail || t('The installer failed'), 'error')
+      return
+    }
+    showNotice(t('Installed {version} — restart Zett to use it', { version: result.version }))
+    await refreshUpdateStatus(true)
+  } catch (error) {
+    showNotice(errorMessage(error), 'error')
+  } finally {
+    updateInstalling.value = false
+  }
+}
+
 async function selectProvider(provider: AIProvider): Promise<void> {
   const generation = ++providerSelectionGeneration
   providerLoading.value = true
@@ -3524,6 +3570,7 @@ onBeforeUnmount(() => {
       <symbol id="icon-eye" viewBox="0 0 24 24"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/></symbol>
       <symbol id="icon-eye-off" viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 6.1A9.8 9.8 0 0 1 12 6c6 0 9.5 6 9.5 6a16.4 16.4 0 0 1-2.1 3M6.2 6.2C3.8 7.8 2.5 12 2.5 12s3.5 6 9.5 6c1.2 0 2.3-.3 3.3-.7M10.2 10.2a2.5 2.5 0 0 0 3.6 3.6"/></symbol>
       <symbol id="icon-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></symbol>
+      <symbol id="icon-download" viewBox="0 0 24 24"><path d="M12 4v9m0 0 3.5-3.5M12 13 8.5 9.5M5 19h14"/></symbol>
     </svg>
 
     <aside class="sidebar">
@@ -3631,6 +3678,24 @@ onBeforeUnmount(() => {
       <div class="sidebar-footer">
         <button class="channels-nav-button" :class="{ active: view === 'channels' || (view === 'new' && sessionScope === 'channel') }" type="button" @click="navigate('channels')">
           <svg><use href="#icon-channels" /></svg><span>{{ $t('nav.channels') }}</span>
+        </button>
+        <!--
+          The update lives where the reader already looks for the running copy:
+          one line above Settings, absent until PyPI has something newer, and a
+          click installs it.
+        -->
+        <button
+          v-if="updateStatus?.update_available"
+          class="update-callout"
+          type="button"
+          :disabled="updateInstalling"
+          :aria-busy="updateInstalling"
+          :title="updateStatus.detail"
+          @click="installAvailableUpdate"
+        >
+          <svg><use href="#icon-download" /></svg>
+          <span>{{ updateInstalling ? $t('Installing…') : $t('Update to {version}', { version: updateStatus.latest ?? '' }) }}</span>
+          <span v-if="updateInstalling" class="button-spinner" aria-hidden="true" />
         </button>
         <button :class="{ active: settingsOpen }" type="button" @click="navigate('settings')">
           <svg><use href="#icon-settings" /></svg><span>{{ $t('nav.settings') }}</span>
@@ -4585,6 +4650,14 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .sidebar-footer .channels-nav-button { margin-bottom: .65rem; }
 .status-dot { margin-left: auto; width: .43rem; height: .43rem; border-radius: 50%; background: #aaa; box-shadow: 0 0 0 3px rgba(0,0,0,.03); }
 .status-dot.online { background: #49a369; box-shadow: 0 0 0 3px rgba(73,163,105,.12); }
+/* The update sits in the sidebar footer, right above Settings: it appears only
+   while PyPI has a newer release, and the whole row is the install button. */
+.update-callout { display: flex; align-items: center; gap: .5rem; width: 100%; margin-bottom: .5rem; padding: .5rem .6rem; border: 1px solid rgba(63,96,76,.18); border-radius: .72rem; color: #33513f; background: linear-gradient(180deg, #eef5f0, #e4eee8); cursor: pointer; font-size: .72rem; font-weight: 600; text-align: left; transition: background 160ms ease, transform 160ms ease; }
+.update-callout:hover:not(:disabled) { background: linear-gradient(180deg, #e6f1ea, #d9e8e0); transform: translateY(-1px); }
+.update-callout:disabled { cursor: progress; opacity: .8; }
+.update-callout svg { width: .95rem; height: .95rem; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.update-callout span:not(.button-spinner) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.update-callout .button-spinner { margin-left: auto; border-color: rgba(51,81,63,.3); border-top-color: #33513f; }
 
 .workspace { min-width: 0; min-height: 100vh; grid-column: 2; }
 .topbar { position: sticky; top: 0; z-index: 8; min-height: 5rem; display: flex; align-items: center; gap: 1rem; padding: 1rem clamp(1.5rem, 4vw, 4rem); background: rgba(245,245,247,.97); backdrop-filter: blur(22px) saturate(160%); -webkit-backdrop-filter: blur(22px) saturate(160%); }
@@ -5212,6 +5285,9 @@ kbd, .card-type, .card-tags span { font-size: .69rem; }
   .primary-nav button svg, .sidebar-footer button svg { width: 1.15rem; height: 1.15rem; }
   .sidebar-footer { position: absolute; right: .65rem; bottom: max(.45rem, env(safe-area-inset-bottom)); width: calc((100% - 1.3rem) / 3); display: grid; grid-template-columns: repeat(2, 1fr); padding: 0; border: 0; }
   .sidebar-footer .channels-nav-button { margin-bottom: 0; }
+  /* The update row spans the two icon columns above the Settings button. */
+  .sidebar-footer .update-callout { grid-column: 1 / -1; margin-bottom: .35rem; justify-content: center; }
+  .sidebar-footer .update-callout span:not(.button-spinner) { display: none; }
   .topbar { min-height: 4.5rem; padding: .8rem 1rem; }
   .topbar .primary-action { width: 2.65rem; padding: 0; font-size: 0; }
   .topbar .primary-action svg { width: 1rem; height: 1rem; }
