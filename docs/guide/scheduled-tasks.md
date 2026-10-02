@@ -1,68 +1,59 @@
 # Scheduled tasks
 
-A scheduled task runs an Agent prompt on a cron schedule, without a browser
-attached. Ask the Agent in any conversation, or use the form in the
-`Scheduled tasks` view; both write the same durable definition.
+A scheduled task sends Zett the same message on a schedule, even when no
+browser is open: a Monday reading digest, a nightly tidy of yesterday's notes,
+a monthly summary of a project.
 
-| Field | Meaning |
+## Create a task
+
+Open **Scheduled tasks** in the sidebar and fill in the form, or simply ask in
+any conversation: “Every Monday at 9:00, summarize what I saved last week into
+one card.” Both create the same kind of task.
+
+| Field | What it means |
 | --- | --- |
-| Name | Short label shown in the task list |
-| Schedule | A cron expression plus an IANA time zone |
-| Provider | Which enabled provider the run uses |
-| Message | The prompt, sent in a fresh session |
-| Reasoning effort | Off, Low, Medium, or High |
-| Enabled | Whether the scheduler may queue it |
-| Timeout | Maximum runtime in seconds (default ten minutes) |
+| **Name** | The label shown in the task list. |
+| **Schedule** | When it runs, as a cron expression, plus the time zone it is read in, for example `0 9 * * 1` in `Asia/Shanghai` for Mondays at 9:00. |
+| **Provider** | Which of your providers answers. |
+| **Message** | What Zett is asked each time. Each run starts from a fresh conversation. |
+| **Reasoning effort** | **Off**, **Low**, **Medium**, or **High**. |
+| **Enabled** | Whether the task runs on its schedule. |
+| **Timeout** | How long a run may take before it is stopped. The default is ten minutes. |
 
-Ask the Agent for a provider list first if you are not sure which IDs are
-available — that is what the `list_providers` tool is for.
+When you ask Zett to create the task, name the provider you want it to use;
+Zett can look up your providers instead of guessing.
 
-## How a run behaves
+## Write a message that runs alone
 
-Every run creates a **new isolated session** with session type `scheduled`. It
-never joins or continues one of your conversations and never waits for a
-browser: `ask_user` is off and shell commands run without approval. Runs are
-headless by design, so keep a task's prompt and provider appropriate for
-unattended execution.
+No one is there to answer a question while a task runs, so Zett cannot stop to
+ask you what you meant. A task also cannot run commands or change files on your
+computer: it works with what is in Zett, such as your library, your assets, and
+your collections. Write the message as a complete instruction (what to read,
+what to make, and where to file it).
 
-Updates to artifacts owned by the scheduled session are written directly to
-their published content and clear any pending draft, because there is no user
-in the loop to press save. Updates aimed at artifacts from other conversations
-stay draft-only, exactly like in an interactive session.
+Artifacts a run creates are saved to your library directly, because no one is
+there to press **Save**. If the run changes an artifact from one of your other
+conversations, that change still waits as a draft for you to review.
 
-## Enabling, running, and history
+## Run, pause, and review
 
-Each task row shows the next run, the last outcome, and its action. From there
-you can run a task immediately, enable or disable it, and open its run history.
+Each task in the list shows when it runs next, how the last run went, and its
+actions.
 
-The Agent gets `create_scheduled_task`, `list_scheduled_tasks`,
-`get_scheduled_task`, `update_scheduled_task`, and `disable_scheduled_task` —
-deliberately not a delete tool. Disabling preserves the definition and the run
-history, so an Agent can stop future runs without erasing what already happened.
-Physical deletion stays a user action.
+- **Run now** starts a run immediately, without changing the schedule.
+- Turn **Enabled** off to pause a task. It keeps its settings and its history.
+- Open its history to see every run: when it ran, how long it took, whether it
+  succeeded, and the error if it did not. Each run links to its conversation,
+  so you can read exactly what Zett did and open what it made.
 
-Each run records its status, timing, error, and output, and links to the session
-it created so you can read the whole transcript afterwards — including the
-artifacts and assets that run produced.
+Only you can delete a task.
 
-## Processes and failure handling
+## If a task does not run
 
-Scheduling and execution are separate processes, never part of the web
-application itself:
-
-```bash
-uv run --directory backend zett scheduler   # queues due runs
-uv run --directory backend zett worker      # claims and executes them
-```
-
-`zett start` supervises both as child processes, `zett status` reports their
-recorded PIDs, and `zett stop` stops them along with the API. The scheduler only
-writes pending run rows; one or more workers claim and execute them with
-leases, so a crashed worker does not hold a task forever. A watchdog makes each
-child verify that the runtime state is complete and that the web process that
-owns it is still alive, and exit after a bounded number of failures, so an
-unclean crash cannot leave permanent orphan workers behind.
-
-If a task's provider is disabled or deleted, the scheduler refuses to queue it
-instead of failing silently, and a provider cannot be disabled while a task
-still references it.
+1. Run `zett status`. The server, the scheduler, and the worker should all read
+   `running`. If one does not, run `zett stop` and then `zett start`.
+2. Check that the task is enabled and that its next run is the time you expect
+   in the time zone you chose.
+3. Check that its provider is still enabled in [Settings](settings.md).
+4. Open the task's history: a run that started but failed shows its error
+   there.

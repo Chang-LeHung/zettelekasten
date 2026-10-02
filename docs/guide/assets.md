@@ -1,85 +1,61 @@
 # Assets
 
-Zett keeps two file libraries, and the difference matters when you decide where
-something belongs.
+Assets are the files and notes Zett works from: a paper you are summarizing, a
+link you want it to read, a screenshot, a snippet of code. Decide where one
+belongs by how long you need it.
 
 | | Session assets | Static Assets |
 | --- | --- | --- |
-| Scope | One conversation | Every conversation |
-| Shown in | The assets column of the workspace | The `Static Assets` view |
-| Adding | Add text, add link, upload, or paste into a message | Upload to the library, then import |
-| Importing elsewhere | — | Import by reference, without copying bytes |
-| Deleting | Always allowed | Refused while a session asset still references it |
+| Used by | One conversation | Any conversation |
+| Where you find them | The **Assets** column of the workspace | **Static Assets** in the sidebar |
+| How you add one | Add a note or a link, upload a file, or paste it into the column | Upload it once, then import it where you need it |
+| Deleting | Always possible | Not while a conversation still uses it |
 
 ## Session assets
 
-The assets column holds reference material for one conversation: notes, links,
-documents, images, and code. Files are written under
-`assets/sessions/<session-id>/`, so they are private to that session, and the
-column can be hidden with the eye button in its header — the choice is kept in
-local storage, not on the server.
+The **Assets** column beside a conversation holds its reference material:
+notes, links, documents, images, and code.
 
-You can also paste or drop files onto the message box. Those arrive as message
-attachments: images render inline in the transcript, and every attachment is
-written into the session's own upload directory at submit time, named by
-submission time. The message keeps its inline data, and the file on disk is the
-handle the Agent uses for a shell command or an image tool. These uploads are not
-assets — they never appear in `list_assets` — and deleting the conversation
-removes the whole session directory, so no orphan file is left behind.
+- **Add text note** and **Add link** create an asset from text or a URL.
+- **Upload files**, or drop and paste files onto the column, to add files.
+- Search the column, or filter it by type: documents, images, links, notes, or
+  code.
+- Use the eye button to hide or show the column when you need more room.
 
-The Agent reaches assets with its own tools (`create_asset`, `upload_asset`,
-`get_asset`, `update_asset`, `delete_asset`, `list_assets`) and can reference one with `@` in
-the composer, which reads it through the same tool rather than pasting its
-content into the prompt.
+Files you attach to a message work a little differently: they appear in the
+conversation itself, with images shown inline, and Zett can read them, but they
+are not listed in the **Assets** column.
+
+Type `@` in the composer to point at an asset without pasting its contents into
+your message: “summarize @paper.pdf in five bullets”.
 
 ## Static Assets
 
-The `Static Assets` view is the global library: things that must outlive a
-conversation and stay available everywhere, such as a paper you keep citing or a
-template you reuse.
+**Static Assets** is your file library across conversations: the paper you
+keep citing, a template you reuse, a style guide you want every draft to
+follow.
 
-Uploading adds a file to the global library. Importing one into a conversation
-creates a reference to the same stored object rather than a second copy, so
-editing or re-uploading the original changes what every conversation sees, and
-deleting a static asset is refused while a session still points at it.
+1. Upload a file in **Static Assets**.
+2. In any conversation, choose **Import static asset** and pick it. The
+   conversation refers to the file in the library instead of copying it.
+3. Zett will not delete a static asset while a conversation still imports it,
+   so a conversation never loses a file it depends on.
 
-The Agent publishes to this library with `upload_static_asset`, naming a file it
-already wrote or compiled on disk by its absolute path, so binary content never
-travels through the model's context. A shell that already holds the file can post
-it to `POST /api/assets/upload` instead, which is the same endpoint the tool
-calls. Classifying a published file is the model's too, through
-`create_asset_tag`, `list_asset_tags`, and `set_asset_tags` — all of which stay
-inside this library's own collection tree. Importing a static asset back into a
-conversation remains your action.
+Zett can also add a file it produced to Static Assets when you ask, for example
+“keep the exported chart in my Static Assets under Reports”. Importing it into
+another conversation stays your choice.
 
-Search filters both libraries by name and type. Every stored location is an
-object key relative to the storage root, and the only endpoint that streams
-binary content is `/api/files/{key}` — absolute filesystem paths are never part
-of a public model.
+Search Static Assets by name, or filter them by type.
 
-## Classifying a file
+## Classify a file
 
-Files carry tags from their own collection tree: the artifact library and the
-static asset library keep separate paths, so a collection you create here is not
-one of the artifact library's, and neither ever lists or counts the other's.
-Drag a file card in the `Static Assets` view onto a tag in the sidebar to add
-that tag — the file keeps the tags it already carries, and the row shows them.
-Dropping it on a tag it already has says so instead of rewriting the same set.
+Static Assets have their own **Collections** tree, separate from the artifact
+library's. A collection made here is not one of the artifact library's, even
+when the two have the same name, and each tree counts only its own items.
 
-The API takes both shapes, exactly like artifacts: `PUT
-/api/library/tags/assets/{asset_id}` replaces the complete set, while `PUT` and
-`DELETE /api/library/tags/{tag_id}/assets/{asset_id}` attach or detach one tag
-without touching the rest. This view browses its own collections: the sidebar
-tree filters to the paths files actually use, counts only files, and clicking a
-collection narrows the grid to it — a file collection never borrows the count of
-an artifact, and the artifact library never shows a path only files use.
+- Drag a file onto a collection in the sidebar to tag it. The file keeps the
+  tags it already has.
+- Click a collection to show only the files tagged there.
 
-From a shell, the tag commands take `--asset` to name a file instead of an
-artifact:
-
-```bash
-zett tag list
-zett tag add --asset <asset-id> Engineering/Python
-zett tag set --asset <asset-id> Projects/Zett Release
-zett tag remove --asset <asset-id> Projects/Zett
-```
+You can tag files from the terminal too: see
+[The command line](command-line.md#organize-with-tags).

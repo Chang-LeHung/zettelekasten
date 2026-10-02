@@ -1,189 +1,121 @@
 # Conversations
 
-One conversation is one Agent session. The Agent reads your message, calls its
-tools, and writes back while it works — assistant text, reasoning, tool calls,
-tool arguments, and tool results all stream into the page in timeline order.
-Nothing is generated off-screen and revealed at the end.
+A conversation is where things get made. Start with a question, a rough note,
+or a file; Zett answers as it works, and the useful part becomes an
+[artifact](artifacts.md) you review and keep. Reading in Chrome? You can do the
+same [beside the page](chrome-extension.md).
 
 ## Start a conversation
 
-`Start a new session` in the sidebar, or `New card` on an empty library, opens a
-fresh conversation. Sessions are stored by `zett-agent` as an immutable raw log
-plus versioned context snapshots, so the transcript you see is a replay of that
-log rather than a mutable document.
+1. Choose **Start a new session** in the sidebar, or **New card** in the
+   library.
+2. Pick a model in the composer. If the list is empty, add a provider in
+   [Settings](settings.md#ai-providers) first.
+3. Ask for a small, specific result: “Turn these notes into one concise card,
+   with a title and a two-sentence summary.”
 
-The sidebar lists normal conversations only. Scheduled runs and channel
-conversations keep their own entries under
-[Scheduled tasks](scheduled-tasks.md) and [Channels](channels.md).
+The answer streams in as Zett writes it. Anything it creates, such as a card,
+an article, or a slide deck, appears in the panel beside the chat as a draft for
+you to review.
 
-Hover a conversation for its actions: rename it in place, or delete it. Deleting
-a conversation removes its messages, session assets, message uploads, artifacts,
-and artifact project directories.
+The sidebar lists the conversations you started here. Runs of a
+[scheduled task](scheduled-tasks.md) and chats from a [channel](channels.md)
+are listed on their own pages.
+
+Hover a conversation to rename it or delete it. Click its title to rename it in
+place.
+
+!!! warning "Deleting a conversation deletes what it made"
+    Deleting a conversation removes its messages, its files, and every artifact
+    created in it, including the ones already saved to your library.
 
 ## The composer
 
 | Control | What it does |
 | --- | --- |
-| Model | Provider used for the next message; the choice is remembered per conversation |
-| Thinking | Reasoning effort for the next message: Off, Low, Medium, High |
-| Shell | `Review` asks you before a shell command runs, `Allow all` runs it directly |
-| Enter | Sends the message, or queues it when a turn is already running |
-| `/` | Slash commands registered by the container and its plugins |
-| `@` | Session assets and artifacts of this conversation |
+| **Model** | The provider and model that answer the next message. Each conversation remembers its choice. |
+| **Thinking** | How hard the model reasons before answering: **Off**, **Low**, **Medium**, or **High**. |
+| **Shell** | **Review** asks you before a shell command runs; **Allow all** runs commands directly. |
+| **Enter** | Sends the message, or queues it while Zett is still answering. **Shift + Enter** starts a new line. |
+| `/` | Opens the list of commands for this conversation. |
+| `@` | Refers to a file or artifact from this conversation. |
 
-Attach material by pasting or dropping it on the message box. Pasted images
-travel inline with the message and are rendered in the transcript, so the model
-can look at them through vision; the same bytes are also written into the
-session's upload directory, which is how the model reaches them with a shell
-command, `view_image`, or a LaTeX build. Other files are stored the same way and
-referenced by path. `Max asset file size` in [Settings](settings.md) bounds what
-you can attach.
+Paste or drop images and files onto the message box. A model that can see
+images reads them directly, and Zett can open attached files while it works.
+The largest upload size is set in [Settings](settings.md#limits).
 
-## While a turn is running
+Type `@` to point at something you already have here, for example “compare
+@reading-list.md with @Local-first beats sync”. The menu lists this
+conversation's files and artifacts.
 
-Keep typing. Pressing Enter while the Agent is working adds the message to the
-queue instead of interrupting it. From the queue you can reorder items, drop
-them, or steer one into the running request, which injects it immediately —
-useful for "stop, use this file instead". Slash commands and `@` references
-cannot be steered, because they change how a turn starts.
+## While Zett is answering
 
-The Agent may stop and ask you a question with a small set of choices; the turn
-waits until you answer it, and any questions that arrive behind it are queued.
+Keep typing. Pressing **Enter** while a turn is running adds the message to a
+queue instead of interrupting. In the queue you can:
 
-## Shell approval
+- drag a message to change the order,
+- remove it, or
+- choose **Steer** to hand it to the current turn right away, which is useful for
+  “use the second file instead.”
 
-In `Review` mode the Agent's shell commands pause on an approval card that shows
-the exact command and its timeout. `Execute` runs it once, `Abort` refuses it,
-and always allowing applies to that exact command only. The mode is stored per
-session and can be changed before each message.
+A queued message that starts with `/` or uses `@` always waits for its own
+turn.
 
-Scheduled runs and channel conversations are headless: no browser is watching,
-so they run their shell commands without asking. That is why they should only
-use providers and prompts you are comfortable running unattended.
+Sometimes Zett needs a decision from you. It shows a question with a few
+choices, plus **Other** for your own answer; pick one and choose **Continue**.
+The turn waits until you answer.
+
+## Approving shell commands
+
+With **Shell** set to **Review**, a command Zett wants to run pauses on an
+approval card that shows the exact command and how long it may run.
+
+- **Execute** runs it once.
+- **Abort** refuses it, and Zett continues without it.
+- Check **Always allow this exact command** before you choose **Execute** to
+  skip the question next time for that same command, in this conversation.
+
+Each conversation keeps its own setting, and you can change it before any
+message.
+
+[Scheduled tasks](scheduled-tasks.md) and [channels](channels.md) run with no
+one watching, so they run commands without asking. Use them with models and
+prompts you are comfortable leaving unattended.
+
+## The workspace
+
+Beside the chat, the workspace collects what this conversation has produced.
+
+- **Artifacts** are listed with a short excerpt or a thumbnail. Select one to
+  preview it below the list. Drag the divider between the list and the preview
+  to give either more room, or focus the divider and use the **↑** and **↓**
+  keys.
+- Each artifact has **Save** (or **Update**), **Edit**, and **Delete**.
+  **Save all** saves every artifact with pending changes; if one cannot be
+  saved, the others still are, and Zett tells you which one failed.
+- Images, PDFs, and diagrams open in a larger reader. Press **Esc** to close
+  it.
+- **Assets** lists the files this conversation keeps for reference. See
+  [Assets](assets.md).
 
 ## Trace and usage
 
-The header icon toggles Workspace and Trace views of the same conversation:
+The icon in the conversation header switches between **Workspace** and
+**Trace**. Trace shows every step of every turn: the model and thinking level,
+each tool Zett used with its input and result, how long each step took, and the
+tokens it spent.
 
-- `Workspace` is the chat itself, with asset and artifact panels beside it.
-  Artifacts form a vertical list with a readable excerpt or image thumbnail;
-  selecting one shows its complete preview below the list without switching
-  away from the conversation. Drag the divider between the list and preview
-  to give either more space, or focus it and use the Up/Down arrow keys.
-  Both sections retain a usable minimum height. The panes use restrained
-  borders rather than raised card shadows. Artifact types have distinct,
-  restrained accent colors. **Save all** publishes every new or changed draft
-  in this conversation, including edits still open in the selected editor;
-  failures are reported individually and the remaining artifacts continue.
-  Each row has Save/Update, Edit, and Delete icon actions; the row remains
-  selectable for preview, and deletion still asks for confirmation.
-  Images, PDFs, and diagrams open on a consistent reading surface; Escape
-  closes the preview, while PDF page/zoom controls and diagram zoom remain
-  available.
-- `Trace` renders every request and response of every turn: the model, reasoning
-  effort, tool calls with arguments, tool results, durations, and token usage.
+A separator between turns shows what the turn cost: input and output tokens,
+reasoning, cache use, and speed. Click it to jump to the message that started
+the turn.
 
-A turn separator marks each round trip and can be clicked to jump to the user
-message that started it. Per turn you can read input, output, reasoning, cache
-read and write tokens, cache hit rate, and speed; the context ring shows how
-full the context is and where the next compaction will happen.
+The ring next to the composer shows how full the conversation's memory is. When
+a long conversation gets close to the limit, Zett summarizes the older turns so
+the conversation can continue. You can follow that in Trace too.
 
-When the context approaches the configured threshold the runtime compacts older
-turns into a checkpoint while keeping a recent verbatim tail. The raw log and
-every earlier snapshot stay on disk, so nothing is lost by compacting.
+## Continue elsewhere
 
-## What the Agent can reach
-
-### Chrome extension
-
-The Chrome extension embeds a panel on the right edge of the webpage when you
-click its toolbar icon; it does not use Chrome's native side panel. Each tab
-and page URL owns a separate conversation. Closing and reopening the panel
-restores that page's messages and pending artifacts. The embedded panel reuses
-the web conversation's execution details and model controls; its header also
-lists recent conversations — 20 at a time, loaded as the list scrolls — so this
-page can be rebound to one of them and that transcript restored. Model choices
-show the connection name so two providers with the same
-model are distinguishable. Cache hit rate uses the real model usage counters;
-the context ring shows the latest input/output tokens relative to the configured
-compaction threshold, not the provider's advertised maximum context window.
-Hover or focus the ring to inspect the percentage and context composition.
-
-To let the Agent fill a webpage, click the extension's toolbar icon on that
-page. The embedded panel automatically connects the content script to its
-session, without debugger permission. Send a request
-such as “Fill this form from these details, but do not submit it.” The Agent can
-read the connected page and propose a structured DOM edit; review the selector,
-action and value, then choose **Allow once**, **Always allow in this session**, or
-**Reject**. Always allow approves that edit and stops asking for this
-conversation; **Ask before page edits again** in the `•••` menu restores the
-review. It can replace plain
-text, fill text fields, select a dropdown option, or set a checkbox. Arbitrary
-JavaScript and HTML injection are not available. `interact_with_browser` can
-request a reviewed click, hover, focus, scroll, bounded key press or drag/drop.
-Clicking a submit button can have real side effects and requires explicit user
-intent and approval. Synthetic events may be ignored by sites that require
-trusted input; the Agent must read the page again to verify the result.
-
-Only the connected top-level document is controlled. Switching tabs keeps each
-tab's embedded panel independent. Navigating to a different URL opens that
-page's conversation; returning restores the earlier one. Closing the panel
-disconnects its live tools without deleting its history. A failed connection
-can be retried with **Connect page**; failed edits are not replayed. While the
-page is not connected a turn still carries a bounded text excerpt, and the
-message says the live page tools do not exist in that turn, so the Agent does
-not probe tools it was not given. Field changes
-send input/change events and may trigger the website's
-own autosave. A timeout cannot roll back edits that already happened.
-Ordinary web conversations do not receive these browser tools.
-
-The webpage panel is a movable, resizable floating window rather than a
-full-height overlay: drag its top strip to reposition it, or any corner to
-resize it. Its pickers and `•••` menu close as soon as the pointer leaves the
-trigger or the menu, and hovering `•••` shows it. The composer keeps model and
-effort visible; the menu holds browser connection, Save all and token
-statistics (cache, tokens, generation speed, and the context share of the
-compaction threshold). Hovering the **Context** row there shows the composition
-pie and the share each part takes (system, tool prompt, tool output, user,
-assistant). The composer also takes images — the paperclip button, a paste, or a
-drag — and typing `/` or `@` opens the same slash command and reference menus
-the web app offers, so a turn runs through that command or resource. Answers
-render with the web thread's Markdown, including
-the same fenced-code toolbar, copy button and language set. When a page
-conversation is restored or an answer
-streams, the chat follows the newest output. `fill` also supports
-`contenteditable="true"` editors (including ProseMirror-style editors with
-nested paragraphs), using the browser's text-editing path; it does not submit
-the prompt or overwrite HTML.
-
-While the extension is generating, the Send button becomes **Stop**. Enter
-queues a follow-up above the composer instead: **Steer** injects it into the
-running turn — the thread shows it and marks it until the run answers — and
-**×** drops it, while whatever stays queued is sent one by one as the next
-turns. Stop cancels the current turn, drops the queue and clears pending
-webpage approvals while preserving partial output and your next-message draft;
-Stop is cancellation, not suspension of an executing tool. Edits already
-applied to a page are not undone, and page control must be explicitly
-reconnected after Stop.
-
-When the Agent asks a question (`ask_user`), the turn suspends until the panel
-answers it: the card offers the question's options, an **Other** text field and
-image attachments, and **Continue** resumes the run with that answer. Further
-questions wait behind the current one, and only **Stop** ends the run without
-an answer.
-
-### Application tools
-
-Inside a conversation the Agent's tools cover the whole local application:
-
-- artifacts and library search/tagging (`create_artifact`, `update_artifact`, `query_artifacts`)
-- session assets (`create_asset`, `get_asset`, `update_asset`, `delete_asset`, `list_assets`)
-- tags (`list_tags`, `create_tag`)
-- scheduled tasks (`create_scheduled_task` and friends)
-- the provider list, so a scheduled task can name one
-- files, globbing, and search inside the session workspace
-- skills, MCP servers, and any installed [plugin](../plugins/index.md) tool
-
-Tools the model does not have loaded yet can be found through search when the
-provider supports it, so a long tool list does not have to live in every
-request.
+Use [Zett in Chrome](chrome-extension.md) to work beside a webpage, or connect
+a [channel](channels.md) to talk to Zett from your phone. Each keeps its own
+conversations. Whatever you make, you decide when it is published: see
+[Artifacts and the library](artifacts.md).

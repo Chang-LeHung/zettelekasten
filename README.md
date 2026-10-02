@@ -74,7 +74,7 @@ leaves it running without the terminal, `zett status` reports it, and
 
 ## First steps
 
-1. **Connect a model.** `Settings` → `AI providers` → `New provider`. Give it a
+1. **Connect a model.** `Settings` → `Provider` → `New provider`. Give it a
    name, pick the provider, set the model, and paste an API key. Keys are
    encrypted with a local key file before they are stored.
 2. **Start a conversation.** Ask a question, drop in a note or a screenshot, and
@@ -96,9 +96,9 @@ Deleting a conversation removes its messages, files, and artifacts with it.
 The project site is published at **<https://chang-lehung.github.io/zettelekasten/>**,
 with the full documentation under **<https://chang-lehung.github.io/zettelekasten/docs/>**:
 
-- [Conversations](https://chang-lehung.github.io/zettelekasten/docs/guide/conversations/), [artifacts and the library](https://chang-lehung.github.io/zettelekasten/docs/guide/artifacts/), [assets](https://chang-lehung.github.io/zettelekasten/docs/guide/assets/), [scheduled tasks](https://chang-lehung.github.io/zettelekasten/docs/guide/scheduled-tasks/), [channels](https://chang-lehung.github.io/zettelekasten/docs/guide/channels/), [settings and local data](https://chang-lehung.github.io/zettelekasten/docs/guide/settings/)
+- [Conversations](https://chang-lehung.github.io/zettelekasten/docs/guide/conversations/), [the Chrome extension](https://chang-lehung.github.io/zettelekasten/docs/guide/chrome-extension/), [artifacts and the library](https://chang-lehung.github.io/zettelekasten/docs/guide/artifacts/), [assets](https://chang-lehung.github.io/zettelekasten/docs/guide/assets/), [scheduled tasks](https://chang-lehung.github.io/zettelekasten/docs/guide/scheduled-tasks/), [channels](https://chang-lehung.github.io/zettelekasten/docs/guide/channels/), [settings and local data](https://chang-lehung.github.io/zettelekasten/docs/guide/settings/), [the command line](https://chang-lehung.github.io/zettelekasten/docs/guide/command-line/)
 - [Writing a plugin](https://chang-lehung.github.io/zettelekasten/docs/plugins/) — add tools, hooks, or a new chat platform
-- [Backend reference](https://chang-lehung.github.io/zettelekasten/docs/backend/) — layers, storage boundaries, and the HTTP surface
+- [Backend reference](https://github.com/Chang-LeHung/zettelekasten/blob/main/backend/README.md) — layers, storage boundaries, and the HTTP surface, for contributors
 
 ## Development
 
@@ -117,14 +117,15 @@ serves. `backend/README.md` documents how the backend is put together, and
 
 The repository also carries two packages that are released on their own:
 [`agim`](https://chang-lehung.github.io/zettelekasten/docs/agim/), the stateless chat
-SDK, and `zett-weixin`, the WeChat channel plugin built on it. The agent runtime
+SDK, and [`zett-weixin`](https://chang-lehung.github.io/zettelekasten/docs/weixin/),
+the WeChat channel plugin built on it. The agent runtime
 Zett runs on lives in its own repository,
 [`zett-agent`](https://github.com/Chang-LeHung/zett-agent).
 
 `zett3rd/` keeps integrations that live beside Zett without being part of its
 build — nothing there is imported by the backend or the interface, so a broken
 one can never fail Zett itself. It currently holds a
-[Zettelekasten Chrome extension](zett3rd/chrome-extension/) (Vue 3 +
+[Zettelekasten Chrome extension](https://github.com/Chang-LeHung/zettelekasten/tree/main/zett3rd/chrome-extension) (Vue 3 +
 TypeScript, built with Vite) that embeds a separate conversation in each
 webpage, reads that page, and saves useful results into your library.
 

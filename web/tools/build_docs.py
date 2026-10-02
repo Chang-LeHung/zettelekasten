@@ -47,11 +47,13 @@ NAV: list[tuple[str, list[tuple[str, str]]]] = [
         "User guide",
         [
             ("Conversations", "guide/conversations.md"),
+            ("Chrome extension", "guide/chrome-extension.md"),
             ("Artifacts and the library", "guide/artifacts.md"),
             ("Assets", "guide/assets.md"),
             ("Scheduled tasks", "guide/scheduled-tasks.md"),
             ("Channels", "guide/channels.md"),
             ("Settings and local data", "guide/settings.md"),
+            ("Command line", "guide/command-line.md"),
         ],
     ),
     (
@@ -60,17 +62,21 @@ NAV: list[tuple[str, list[tuple[str, str]]]] = [
             ("Plugins", "plugins/index.md"),
             ("Agent plugins", "plugins/agent-plugins.md"),
             ("Channel plugins", "plugins/channel-plugins.md"),
-        ],
-    ),
-    (
-        "Reference",
-        [
-            ("Backend", "backend.md"),
             ("agim SDK", "agim.md"),
             ("WeChat channel plugin", "weixin.md"),
         ],
     ),
 ]
+
+#: Applied before any stylesheet loads, so a dark-mode visitor never sees a
+#: light flash while shared.js (a deferred module) finishes evaluating. Kept
+#: as a constant rather than inline in the f-string shell below, because an
+#: f-string would otherwise need every "{" and "}" in it doubled.
+THEME_SCRIPT = (
+    "try{var t=localStorage.getItem('zett.theme');"
+    "if(t==='dark'||(!t&&matchMedia('(prefers-color-scheme: dark)').matches))"
+    "document.documentElement.dataset.theme='dark'}catch(e){}"
+)
 
 URL_SCHEME = re.compile(r"^(?:[a-z]+:|#|/)", re.IGNORECASE)
 FENCE = re.compile(r"^(`{3,}|~{3,})(.*)$")
@@ -243,13 +249,14 @@ def render_page(
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="zett-base" content="{BASE}" />
+    <script>{THEME_SCRIPT}</script>
     <title>{html.escape(title)} · Zett</title>
     <meta name="description" content="{html.escape(strip_tags(markup)[:180])}" />
     <meta property="og:type" content="article" />
     <meta property="og:site_name" content="Zett" />
     <meta property="og:title" content="{html.escape(title)} · Zett" />
     <meta property="og:description" content="{html.escape(strip_tags(markup)[:180])}" />
-    <meta property="og:url" content="https://chang-lehung.github.io/zettelekasten{page_url(source)}" />
+    <meta property="og:url" content="https://chang-lehung.github.io/zettelekasten/{page_url(source).removeprefix(BASE)}" />
     <meta property="og:image" content="https://chang-lehung.github.io/zettelekasten/assets/og.png" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content="https://chang-lehung.github.io/zettelekasten/assets/og.png" />
@@ -262,6 +269,7 @@ def render_page(
   <body>
     <a class="skip-link" href="#content">Skip to content</a>
     <header class="nav nav--solid">
+      <div class="nav__progress" data-nav-progress aria-hidden="true"></div>
       <button class="icon-button docs__nav-toggle" type="button" data-docs-nav-toggle aria-label="Toggle navigation" aria-expanded="false">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M4 12h16M4 17h16" stroke-linecap="round" /></svg>
       </button>
@@ -276,13 +284,15 @@ def render_page(
         <button class="icon-button" type="button" data-search-open aria-label="Search">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="6" /><path d="m20 20-3.6-3.6" stroke-linecap="round" /></svg>
         </button>
-        <button class="icon-button" type="button" data-theme-toggle aria-label="Switch to dark mode">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M20 12.5A8 8 0 1 1 11.5 4a6.5 6.5 0 0 0 8.5 8.5Z" stroke-linejoin="round" /></svg>
+        <button class="icon-button theme-toggle" type="button" data-theme-toggle aria-label="Switch to dark mode">
+          <svg class="theme-toggle__sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="4.2" /><path d="M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4" stroke-linecap="round" /></svg>
+          <svg class="theme-toggle__moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M20 12.5A8 8 0 1 1 11.5 4a6.5 6.5 0 0 0 8.5 8.5Z" stroke-linejoin="round" /></svg>
         </button>
       </div>
     </header>
 
     <div class="docs">
+      <div class="docs-backdrop" data-docs-backdrop aria-hidden="true"></div>
       <nav class="docs__nav" data-docs-nav aria-label="Documentation">
         {"".join(nav_html)}
       </nav>
@@ -294,7 +304,7 @@ def render_page(
       </main>
       <aside class="docs__toc" aria-label="On this page">
         <p class="docs-toc__title">On this page</p>
-        <ul class="docs-toc__list">{"".join(toc_html)}</ul>
+        <ul class="docs-toc__list"><span class="docs-toc__indicator" data-toc-indicator aria-hidden="true"></span>{"".join(toc_html)}</ul>
       </aside>
     </div>
 
@@ -308,7 +318,7 @@ def render_page(
       </nav>
     </footer>
 
-    <div class="search-dialog" data-search-dialog role="dialog" aria-label="Search the documentation">
+    <div class="search-dialog" data-search-dialog role="dialog" aria-modal="true" aria-label="Search the documentation">
       <div class="search-dialog__panel">
         <div class="search-dialog__field">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="6" /><path d="m20 20-3.6-3.6" stroke-linecap="round" /></svg>
@@ -316,6 +326,11 @@ def render_page(
         </div>
         <p class="search-dialog__empty" data-search-empty hidden>Type to search the documentation.</p>
         <ul class="search-dialog__results" data-search-results></ul>
+        <div class="search-dialog__hints">
+          <span><kbd>↑</kbd><kbd>↓</kbd> to navigate</span>
+          <span><kbd>↵</kbd> to open</span>
+          <span><kbd>esc</kbd> to close</span>
+        </div>
       </div>
     </div>
 

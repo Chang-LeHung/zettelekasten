@@ -1,112 +1,121 @@
-# Plugins
+# Build a Zett plugin
 
-Zett is extended by installed packages, not by patches. A plugin is an ordinary
-Python distribution that registers itself through an entry point; Zett discovers
-it at startup, hands it the objects it may use, and contains its failures.
+A plugin adds something to Zett for every conversation: tools the model can
+call, a `/` command, an `@` reference, or a whole chat app people can message
+Zett from. Plugins are ordinary Python packages. Declare an entry point,
+install the package next to Zett, and restart Zett.
 
-Two kinds exist today, each with its own entry-point group:
+| You want to… | Build a… | Entry point group |
+| --- | --- | --- |
+| Give Zett new tools, watch its runs, or add `/` commands and `@` references | [Agent plugin](agent-plugins.md) | `zett.agent` |
+| Let people talk to Zett from another chat app | [Channel plugin](channel-plugins.md) | `zett.channels` |
 
-| Kind | Entry-point group | Base class | What it adds |
-| --- | --- | --- | --- |
-| Channel | `zett.channels` | `zett.plugins.ChannelPlugin` | A chat platform: login, receive, send |
-| Agent | `zett.agent` | `zett.plugins.AgentPlugin` | Tools, lifecycle hooks, slash commands, `@` references inside a conversation |
+One package may provide both; declare both entry points.
 
-A package can register both. `zett-weixin` is the reference channel plugin; the
-[agent plugin guide](agent-plugins.md) walks through a complete `zett.agent`
-package.
+## What a plugin imports
 
-## The public API
+- **`zett.plugins`** holds the base classes (`AgentPlugin`, `ChannelPlugin`),
+  `PluginContext`, `KVStorage`, `PluginError`, and the channel models. It is the
+  stable surface for plugins. The only other Zett modules a plugin needs are
+  `zett.agent.slash` and `zett.agent.at_command`, for `/` commands and `@`
+  references.
+- **`zett_agent`** is the agent runtime Zett is built on. Tools, messages, and
+  run events are its types: `tool` and `AgentTool` from `zett_agent.tools.base`,
+  `UserMessage` from `zett_agent.messages`, `AgentEvent` from
+  `zett_agent.events`, and `AgentRunContext` from `zett_agent.agent`.
 
-Plugins import from `zett.plugins`, which is deliberately narrow — it never
-pulls in Zett's application or infrastructure modules, so a plugin can depend on
-it without an import cycle:
+Both arrive with Zett, so a plugin does not list them as runtime dependencies.
+Add Zett to a development dependency group instead, so that your tests and
+your editor can import it:
 
-- contracts: `Plugin`, `PluginContext`, `KVStorage`, `NamespacedKV`, `PluginError`, `PluginLoadError`
-- channel models: `ChannelPlugin`, `ChannelLoginChallenge`, `ChannelLoginState`, `ChannelCredentials`, `ChannelInboundMessage`, `ChannelMedia`, and the media limits
-- agent contracts: `AgentPlugin`, `AgentCommandRegistry`, `AGENT_PLUGIN_API_VERSION`
+```toml
+[dependency-groups]
+dev = ["pytest>=8,<9", "pytest-asyncio>=0.26,<2", "zett==0.1.0"]
 
-Everything a hook or a tool receives is the runtime's own type, so a plugin
-author reads one set of types (`AgentTool`, `ModelRequest`, `ModelResponse`,
-`ToolCall`, `ToolMessage`, `AgentRunContext`) and never a second, parallel copy.
-
-## Installing a plugin
-
-Discovery reads the entry points of the environment Zett itself runs in, so a
-package installed somewhere else is invisible.
-
-```bash
-# Zett installed as a uv tool: add the plugin to the tool environment
-uv tool install --force --with zett-weixin ./backend
-
-# Running from a source checkout: put it in the backend environment
-uv add --directory backend zett-weixin
-uv run --directory backend zett start --foreground --reload
+[tool.uv.sources]
+zett = { path = "../zettelekasten/backend", editable = true }  # your Zett checkout
 ```
 
-Restart Zett afterwards. Startup logs name what loaded — channel plugins are
-reported by `ChannelService.initialize`, agent plugins by
-`Agent plugins loaded: …` — and `GET /api/channels/plugins` lists the channel
-platforms the UI may offer.
+The two guides each show a complete `pyproject.toml`.
 
-## What the host guarantees
+## What Zett hands a plugin
 
-Plugin code is treated as untrusted third-party code at every boundary:
+Zett constructs your plugin class with one argument, a `PluginContext`:
 
-- **Discovery is best effort.** A broken entry point, a factory that raises, or a
-  plugin that does not match its contract is skipped with a log line while the
-  rest still load. One bad plugin never stops the application from starting.
-- **Construction is guarded.** Blank ids, blank scopes, a store that is not a
-  `KVStorage`, and constructor exceptions become `PluginLoadError` instead of
-  leaking a plugin's own exception type.
-- **Lifetime is process-wide.** One instance serves every conversation, started
-  with the application and stopped on shutdown in reverse order.
-- **Storage is namespaced.** A plugin persists only through
-  `PluginContext.kv`, prefixed with its own kind, id, and scope — for agent
-  plugins that is `agent:<plugin_id>:`. One plugin cannot read another's keys.
-- **Failures stay visible.** A failing agent-plugin call is re-raised as
-  `PluginError` naming the plugin and the hook, so the run fails being able to
-  say which plugin broke, instead of continuing with a plugin that silently
-  stopped working.
-- **Capabilities are pinned.** Plugin tools are registered as
-  `<plugin_id>__<tool>`, and every slash command and `@` kind carries the
-  plugin's id as its owner, so a plugin can neither shadow a built-in name nor
-  register under someone else's namespace.
+| Field | What it holds |
+| --- | --- |
+| `plugin_id` | The entry-point name, such as `memory`. |
+| `scope_id` | `agent` for an agent plugin. For a channel plugin, one login attempt or one connected channel. |
+| `kv` | Durable key-value storage that belongs to this plugin and scope. |
+| `config`, `secrets` | For a connected channel, what its login returned. Empty during a login and for an agent plugin. |
 
-## Deliberate limits
+Keep anything that must survive a restart in `kv`. Its methods are async:
 
-Two extension points stay with the host, because each needs its own contract
-rather than a passthrough:
+| Method | Does |
+| --- | --- |
+| `get(key)` | Returns the stored value, or `None`. |
+| `set(key, value)` | Stores a JSON-compatible value: text, numbers, booleans, `None`, lists, and dicts. |
+| `delete(key)` | Removes a key and returns whether it existed. |
+| `iter_prefix(prefix)` | Returns every `(key, value)` pair under a prefix, sorted by key. |
 
-- Nothing can replace the incoming user message or inject into the leading
-  system prefix. Every run declares its session id as the provider's prompt
-  cache key, so a rebuilt prefix costs a full cache miss for the whole
-  conversation.
-- No plugin can answer an external event such as a shell approval, and the
-  model-request and tool-call middlewares are not exposed, because they change
-  what the provider receives and could bypass the approval boundary.
+Choose short keys of your own, such as `note:42`. Zett already keeps each
+plugin's keys apart from every other plugin's.
 
-The runtime adapter is also appended after every built-in extension, so a plugin
-cannot wrap persistence, safety, or logging.
+## Install and check
 
-## In-repo extensions are a different mechanism
+Install the package into the same Python environment as Zett, then restart
+Zett. A package installed anywhere else is never found.
 
-Zett itself is composed of two internal extension points, which are not the
-plugin API:
+If you installed Zett with `make install`, run this from the root of your Zett
+checkout:
 
-- `zett/agent/extensions/` holds adapters to the runtime's `AgentExtension`
-  (artifacts, assets, tags, scheduled tasks, tracing, approval, compaction). This
-  is where a built-in tool belongs.
-- `zett/agent/plugins/` holds Zett's own container plugins: `ZettelkastenExt`
-  implementations that register slash commands and `@` kinds from
-  `ZettelkastenAgentConfig`. Built-in capabilities are registered here.
+```bash
+uv tool install --force --with-editable /absolute/path/to/zett-memory ./backend
+zett stop
+zett start
+```
 
-An installed agent plugin reaches the same container through
-`AgentPlugin.register`, so a third-party command appears next to the built-in
-ones without touching Zett's HTTP layer. If you are contributing a feature to
-Zett itself rather than publishing a package, add it as an extension or a
-container plugin, and read `AGENTS.md` for the boundaries that apply.
+The plugin stays linked to its folder, so after you edit it, `zett stop` and
+`zett start` load the new code. `make install` reinstalls Zett without your
+plugin; run the command again after it.
 
-## Next
+If you run Zett from source with `make dev`, add the plugin to the backend
+environment instead. Use an absolute path, because `--directory` changes the
+folder that relative paths start from:
 
-- [Agent plugins](agent-plugins.md) — tools, hooks, commands, and packaging.
-- [Channel plugins](channel-plugins.md) — a new chat platform built on `agim`.
+```bash
+uv add --directory backend --editable /absolute/path/to/zett-memory
+```
+
+This records the plugin in `backend/pyproject.toml` and `backend/uv.lock`;
+leave those lines out of changes you share.
+
+Then check that Zett found it. Start Zett with `zett start --foreground` to
+watch the log on screen, or open `~/.zettelekasten/logs/zett.log`:
+
+```text
+Agent plugins loaded: memory (External memory)
+Channel plugins available: my-platform, wechat
+```
+
+A plugin that cannot be imported or constructed is skipped. The log names it
+and shows the error, and the rest of Zett starts normally.
+
+An installed channel plugin becomes available in **Channels → Connect**.
+WeChat ships with Zett, so once you install another platform the dialog asks
+which one to connect, listing each by its label.
+
+## Trust
+
+A plugin runs as Python code inside Zett, with the same access to your files,
+your network, and your library as Zett itself. Install only plugins you trust.
+Zett names plugin tools `<plugin_id>__<tool>` so that a plugin cannot replace a
+built-in tool, keeps every plugin's storage apart, and names the plugin in
+every failure it reports, but it is not a sandbox.
+
+Keep secrets out of log lines and tool results: a tool result goes to the
+model provider.
+
+Start with [an agent plugin](agent-plugins.md) to add a tool or a command.
+Build [a channel plugin](channel-plugins.md) when you have a chat platform
+client that can log in, receive, and send.
