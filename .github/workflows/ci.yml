@@ -94,6 +94,7 @@ jobs:
             frontend/package-lock.json
             zett3rd/chrome-extension/package-lock.json
             zett3rd/zettelekasten-chatgpt/package-lock.json
+            docs/package-lock.json
 
       - name: Install dependencies
         run: npm ci --prefix frontend
@@ -106,6 +107,13 @@ jobs:
 
       - name: Build
         run: npm --prefix frontend run build
+
+      # The documentation is a VitePress site of its own, so a broken page or
+      # config has to fail here instead of on the deploy that publishes it.
+      - name: Build the documentation
+        run: |
+          npm ci --prefix docs
+          npm --prefix docs run build
 
       # The side panel ships beside Zett rather than inside it, and loads the
       # built directory, so its own project is installed, checked, and built here.

@@ -3,6 +3,10 @@ backend/__pycache__/
 **/__pycache__/
 *.py[cod]
 frontend/node_modules/
+docs/node_modules/
+# VitePress build scratch space.
+docs/.vitepress/cache/
+docs/.vitepress/.temp/
 zett3rd/chrome-extension/node_modules/
 zett3rd/zettelekasten-chatgpt/node_modules/
 zett3rd/zettelekasten-chatgpt/dist/

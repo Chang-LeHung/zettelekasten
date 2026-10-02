@@ -44,9 +44,10 @@ If one of them is not running, run `zett stop` and then `zett start`. When Zett
 is not running at all, `zett status` says so and exits with a non-zero status,
 which makes it usable in a script.
 
-!!! tip "Leave Zett on this computer"
-    Your library has no login screen. Keep the default address unless you know
-    who else can reach the port you open.
+::: tip Leave Zett on this computer
+Your library has no login screen. Keep the default address unless you know
+who else can reach the port you open.
+:::
 
 ## Add to the library
 
@@ -196,6 +197,7 @@ save the same thing twice creates two items. An edit is refused when the item
 changed since ChatGPT read it or has an unsaved draft, so reopen it and try
 again. Nothing from the ChatGPT conversation itself is stored in Zett.
 
-!!! warning "Keep it private"
-    The integration has no password. Never expose its address, or Zett's, on a
-    public tunnel or proxy.
+::: warning Keep it private
+The integration has no password. Never expose its address, or Zett's, on a
+public tunnel or proxy.
+:::

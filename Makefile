@@ -1,12 +1,16 @@
 HOST ?= 127.0.0.1
 PORT ?= 6280
+# GitHub Pages serves this repository as a project site, so its workflow builds
+# with SITE_BASE=/zettelekasten/; a local `make site` serves the tree at /.
+SITE_BASE ?= /
 
 .PHONY: help install backend-install frontend-install frontend-build start status scheduler worker dev check \
-	agim-check zett-weixin-check ruff-check typecheck pre-commit-install docs-build docs-serve site package
+	agim-check zett-weixin-check ruff-check typecheck pre-commit-install docs-install docs-build docs-serve site package
 
 help:
 	@echo "Available targets:"
 	@echo "  make install   Build the frontend and install the zett command"
+	@echo "  make docs-install  Install the documentation site's Node dependencies"
 	@echo "  make start     Start the installed application"
 	@echo "  make status    Show whether the application is running"
 	@echo "  make scheduler Start the scheduling control process"
@@ -74,23 +78,27 @@ check:
 	npm --prefix zett3rd/chrome-extension run build
 	npm --prefix zett3rd/zettelekasten-chatgpt run typecheck
 	npm --prefix zett3rd/zettelekasten-chatgpt run test
+	$(MAKE) docs-build
 
-# The local build serves the site from the repository root, so every in-site
-# URL is root-absolute; the Docs workflow passes --base /zettelekasten/ because
-# GitHub Pages serves this repository as a project site.
+# The documentation is a VitePress site: the default theme with Zett's green
+# palette, rendered from docs/*.md into site/docs/. `docs/node_modules` is a
+# prerequisite for both targets, installed once with `make docs-install`.
+docs-install:
+	npm --prefix docs ci
+
 docs-build:
-	uv run --project backend python web/tools/build_docs.py
+	DOCS_BASE=$(SITE_BASE)docs/ npm --prefix docs run build
 
 docs-serve: site
 	python3 -m http.server -d site 8000
 
 # What the Docs workflow publishes: the landing page at the root, the
 # documentation under /docs/. The build starts from an empty site/ so a stale
-# stylesheet or page can never survive a rebuild, and web/tools stays out of the
-# published site.
+# stylesheet or page can never survive a rebuild.
 site:
 	rm -rf site
 	$(MAKE) docs-build
+	node web/tools/compose_site.mjs --base $(SITE_BASE)
 	@echo "Preview with: python3 -m http.server -d site 8000"
 
 # The wheel embeds the compiled interface under zett/static, so the frontend

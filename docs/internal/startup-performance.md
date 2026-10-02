@@ -1,8 +1,8 @@
 # Zett startup performance: where the time went
 
 Internal engineering note. It is deliberately not part of the published site:
-`web/tools/build_docs.py` renders only the pages listed in its `NAV`, so this
-file stays in the repository and never reaches `site/docs/`.
+`docs/.vitepress/config.mts` excludes this directory through `srcExclude`, so
+the file stays in the repository and never reaches `site/docs/`.
 
 Measured 2026-09-27 on macOS (Apple silicon), Python 3.14 from `backend/.venv`,
 warm page cache, median of three runs unless noted.
