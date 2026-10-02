@@ -1,73 +1,71 @@
-# Zett documentation
+# Make something worth keeping
 
-Zett runs on your machine and keeps one data directory. Jot down a fleeting
-thought the moment it arrives, develop it with the Assistant into something
-durable, and keep it in a library of your own.
-
-Everything here is written for the running application: what a feature does, how
-to use it, and what a plugin author has to implement.
+Zett is a workspace for thinking with an AI, on your own computer. Start with a
+thought, a file, or the page you are reading; shape it into a card, an article,
+a slide deck, an image, or a paper; and keep the version you choose in a
+library that lives in a folder you own.
 
 ## Quick start
+
+You need Python 3.10 to 3.14, on macOS, Linux, or Windows. There is no Zett
+account to create.
 
 ```bash
 git clone https://github.com/Chang-LeHung/zettelekasten
 cd zettelekasten
-make install     # build the interface and install the `zett` command
-zett start       # serve on 127.0.0.1:6280 in the background
-zett status      # what is running, and which background roles are up
+make install     # installs the `zett` command
+zett start       # starts Zett in the background
+zett status      # checks that it is running
 ```
 
-Open `http://127.0.0.1:6280`, add a provider in `Settings`, and start a
-conversation. The API documentation is at `/docs` while the service runs, and
-`make check` runs the whole verification suite. `zett start` returns as soon as
-the server answers and keeps running without the terminal; use
-`zett start --foreground` to stay attached, and `zett stop` to end it.
+1. Open `http://127.0.0.1:6280`.
+2. In **Settings → Provider**, add the model you want Zett to use. Zett brings
+   no model of its own; see [AI providers](guide/settings.md#ai-providers).
+3. Choose **Start a new session** and try “Make a concise card about this
+   idea: local-first beats sync for personal notes.”
+4. Review the card beside the chat, then choose **Save** to put it in your
+   library.
+
+`zett stop` stops Zett when you are done. To watch its logs while you try
+things, run `zett start --foreground` instead. Zett is not on PyPI yet, so the
+source checkout is how you install it today.
 
 ## User guide
 
 <ul class="docs-cards">
-  <li><a class="docs-card" href="guide/conversations.md"><strong>Conversations</strong><span>Stream a turn, queue or steer a message, approve shell commands, and read the trace.</span></a></li>
-  <li><a class="docs-card" href="guide/artifacts.md"><strong>Artifacts and the library</strong><span>Cards, articles, images, slides, and LaTeX PDFs — draft first, published when you save.</span></a></li>
-  <li><a class="docs-card" href="guide/assets.md"><strong>Assets</strong><span>Session reference material and the global Static Assets library.</span></a></li>
-  <li><a class="docs-card" href="guide/scheduled-tasks.md"><strong>Scheduled tasks</strong><span>Run an Agent prompt on a cron schedule, headless, with its own isolated session.</span></a></li>
-  <li><a class="docs-card" href="guide/channels.md"><strong>Channels</strong><span>Talk to the same Agent from a chat platform, with per-chat sessions and media support.</span></a></li>
-  <li><a class="docs-card" href="guide/settings.md"><strong>Settings and local data</strong><span>Providers, limits, usage, and exactly which file lives where on disk.</span></a></li>
+  <li><a class="docs-card" href="guide/conversations.md"><strong>Conversations</strong><span>Ask, queue and steer messages, approve commands, and read what each turn did.</span></a></li>
+  <li><a class="docs-card" href="guide/chrome-extension.md"><strong>Read from Chrome</strong><span>Open Zett beside a webpage, ask about it, and save the result without leaving the page.</span></a></li>
+  <li><a class="docs-card" href="guide/artifacts.md"><strong>Artifacts and the library</strong><span>Cards, articles, images, slides, and LaTeX papers: drafts first, published when you save.</span></a></li>
+  <li><a class="docs-card" href="guide/assets.md"><strong>Assets</strong><span>Reference files for one conversation, and a file library for all of them.</span></a></li>
+  <li><a class="docs-card" href="guide/scheduled-tasks.md"><strong>Scheduled tasks</strong><span>Have Zett do the same job every morning, week, or month, with no browser open.</span></a></li>
+  <li><a class="docs-card" href="guide/channels.md"><strong>Channels</strong><span>Message Zett from WeChat on your phone, with photos, voice notes, and files.</span></a></li>
+  <li><a class="docs-card" href="guide/settings.md"><strong>Settings and local data</strong><span>Connect models, set limits, see your usage, and back up your folder.</span></a></li>
+  <li><a class="docs-card" href="guide/command-line.md"><strong>The command line</strong><span>Start and stop Zett, add to the library from scripts, and let Claude Code, Codex, or ChatGPT save for you.</span></a></li>
 </ul>
 
 ## Developer guide
 
 <ul class="docs-cards">
-  <li><a class="docs-card" href="plugins/index.md"><strong>Plugins</strong><span>How Zett discovers installed packages, what the host guarantees, and where the boundaries are.</span></a></li>
-  <li><a class="docs-card" href="plugins/agent-plugins.md"><strong>Agent plugins</strong><span>Add tools, lifecycle hooks, slash commands, and <code>@</code> references to a conversation.</span></a></li>
-  <li><a class="docs-card" href="plugins/channel-plugins.md"><strong>Channel plugins</strong><span>Connect a new chat platform through the login, receive, and send contract.</span></a></li>
+  <li><a class="docs-card" href="plugins/index.md"><strong>Plugins</strong><span>How a plugin is packaged, installed, and loaded.</span></a></li>
+  <li><a class="docs-card" href="plugins/agent-plugins.md"><strong>Agent plugins</strong><span>Give Zett new tools, hooks, slash commands, and <code>@</code> references.</span></a></li>
+  <li><a class="docs-card" href="plugins/channel-plugins.md"><strong>Channel plugins</strong><span>Connect another chat app through login, receive, and send.</span></a></li>
+  <li><a class="docs-card" href="agim.md"><strong>agim SDK</strong><span>The small chat-platform SDK the WeChat plugin is built on.</span></a></li>
+  <li><a class="docs-card" href="weixin.md"><strong>WeChat channel plugin</strong><span>A complete channel plugin to read alongside the guide.</span></a></li>
 </ul>
 
-## Reference
+## A good first session
 
-<ul class="docs-cards">
-  <li><a class="docs-card" href="backend.md"><strong>Backend</strong><span>Layers, storage boundaries, the HTTP surface, and every setting.</span></a></li>
-  <li><a class="docs-card" href="agim.md"><strong>agim SDK</strong><span>The stateless IM login/receive/send interface channel plugins build on.</span></a></li>
-  <li><a class="docs-card" href="weixin.md"><strong>WeChat channel plugin</strong><span>The personal WeChat plugin Zett discovers through its entry point.</span></a></li>
-</ul>
+1. Paste a paragraph or attach a file in a [conversation](guide/conversations.md).
+2. Ask for one concise card. Read it beside the chat, ask for changes, and save
+   it when the wording is right.
+3. File it in a [collection](guide/artifacts.md#tags) so you can find it later,
+   and keep files you reuse in [Static Assets](guide/assets.md#static-assets).
+4. Do the same while you read: [open Zett in Chrome](guide/chrome-extension.md).
 
-## Highlights
+## Where your data lives
 
-- Catch a fleeting thought, a rough note, or a question before it is gone, and grow it into an artifact later.
-- Stream assistant text, reasoning, tool calls, arguments, and results in timeline order.
-- Create cards, articles, images, slide decks, and LaTeX PDFs from one conversation.
-- Publish cards and articles into a unified searchable library.
-- Organize knowledge with recursively nested tags.
-- Attach text, links, images, and files to isolated session workspaces.
-- Configure multiple AI providers and pick a model and reasoning effort per conversation.
-- Connect instant-messaging channels and schedule recurring agent runs.
-
-## Where the data lives
-
-`~/.zettelekasten/` holds both SQLite databases, session and static assets,
-git-tracked artifact projects, user skills, the provider encryption key, and the
-rotating log files. Set `ZETT_STORAGE_ROOT` to move it. Every file location is
-persisted as an object key relative to that root, and tests use isolated
-temporary directories instead of the real one.
-
-The project README is the overview of the product, and the agent runtime lives
-in [`zett-agent`](https://github.com/Chang-LeHung/zett-agent).
+Your library, conversations, files, and settings live in `~/.zettelekasten/`.
+Back up that folder to keep your workspace, or set `ZETT_STORAGE_ROOT` before
+`zett start` to keep it somewhere else. Messages you send to a model still go
+to the provider you chose, so don't send anything you would not want that
+provider to process.

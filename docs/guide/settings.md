@@ -1,82 +1,75 @@
 # Settings and local data
 
-Click **Settings** in the sidebar to open a dialog over your current workspace.
-The Usage, Provider, and Limit submenus show model activity, connection
-configuration, and conversation limits separately. Close with ×, Escape, or the
-backdrop to return to the same workspace without losing its place.
+Choose **Settings** in the sidebar. The dialog opens over your workspace, with
+**Usage**, **Provider**, and **Limit** sections. Close it with **×**, **Esc**,
+or a click outside, and you are back exactly where you were.
 
-## Preferences
+## Language
 
-The language switch (English / 中文) is stored in your browser, not in the
-database, so it follows you across conversations on that browser.
+Switch between **English** and **中文** with the language menu at the bottom of
+the sidebar. The choice is remembered by this browser.
 
-## Providers
+## AI providers
 
-`AI providers` holds every model connection. A provider record is a name, a
-protocol, a model identifier, an optional base URL, an API key, and an
-optional API mode. Several records can point at the same vendor, which is how
-you keep two models or two endpoints side by side and choose one per
-conversation.
+Zett brings no model of its own. A provider is one connection to a model: a
+name, the service, the model, and your API key. Add several to keep two models
+or two endpoints side by side, then pick one per conversation, task, or
+channel.
 
-| Protocol | Use |
+1. Open **Settings → Provider** and choose **New provider**.
+2. Give it a **Connection name** you will recognize, such as “DeepSeek chat”.
+3. Under **Provider**, choose the kind of service, then enter the **Model**,
+   for example `deepseek-chat`.
+4. Paste your **API key**. Fill in **Base URL** only if your service needs a
+   custom address.
+5. Save. The provider appears in the **Model** menu of every conversation.
+
+| Provider | Use it for |
 | --- | --- |
-| `openai`, `anthropic`, `google`, `deepseek`, `ollama` | Native adapters |
-| `openai_compatible`, `responses_compatible` | Any endpoint that speaks the OpenAI or Responses API |
+| **OpenAI**, **Anthropic**, **Google Gemini**, **DeepSeek**, **Ollama** | Those services directly. Ollama runs models on your own computer. |
+| **OpenAI compatible**, **Responses compatible** | Any other service that offers an OpenAI-style or Responses-style API. |
 
-API keys are encrypted with a local key file before they are stored, and never
-come back through the API — a provider read reports only whether a key is
-configured. Composing a prompt is what decides which protocol adapter is used;
-only one place in the codebase makes that choice, so a new protocol does not
-have to be taught to the rest of the application.
+Your API key is encrypted on this computer and is never shown again. When you
+edit a provider, leave the key empty to keep the one you saved.
 
-A provider that a conversation, a scheduled task, or a channel still uses cannot
-be disabled or deleted; the request is refused rather than leaving a dangling
-reference.
+A provider that a conversation, scheduled task, or channel still uses cannot be
+disabled or deleted. Switch those to another provider first.
 
 ## Limits
 
-| Setting | Meaning |
+| Setting | What it controls |
 | --- | --- |
-| Images per message | How many images one message may carry |
-| Model steps per turn | Maximum model/tool round trips in one turn |
-| Max asset file size | Bound for an uploaded or pasted file |
-| Compact context at | Token threshold that triggers compaction |
-| Keep recent context | Recent tokens kept verbatim by a compaction |
+| **Images per message** | How many images one message can carry. |
+| **Model steps per turn** | How many steps Zett may take, such as tool calls, before it has to answer. |
+| **Max asset file size** | The largest file you can upload or paste. |
+| **Compact context at** | How long a conversation can get before Zett summarizes its older turns. |
+| **Keep recent context** | How much of the latest conversation is kept word for word when it does. |
 
-These are user settings rather than environment variables, and they apply to new
-requests immediately.
+New messages use the changed limits right away. A reply that is already running
+finishes with the limits it started with.
 
 ## Usage
 
-`Usage` records model activity from completed calls: requests and tokens per
-day over the last twelve months, broken down by model with input, output,
-reasoning, cache read and write tokens, and cache hit rate. It is a local log —
-nothing is sent anywhere — and it is what the per-turn numbers in the
-conversation trace are aggregated from.
+**Usage** shows how you have used your models over time: requests, input and
+output tokens, reasoning, and cache use for each model, with a calendar of
+daily activity. It is computed from your own history on this computer. For one
+conversation's details, open its **Trace**.
 
 ## Where your data lives
 
-Everything is under one directory, `~/.zettelekasten` by default:
+Everything Zett keeps — your library, conversations, files, providers, and
+settings — lives in one folder on your computer: `~/.zettelekasten`.
 
-```text
-~/.zettelekasten/
-├── zett.db         artifacts, assets, static assets, tags, providers, settings
-├── agent.db        sessions, immutable raw messages, context snapshots
-├── assets/         sessions/<session-id>/ binaries, message uploads, static/
-├── artifacts/      per-session artifact project directories (LaTeX PDFs)
-├── skills/         user skills, including the built-in zett-artifact-syntax
-├── provider.key    local key encrypting provider credentials
-├── runtime.json    active server and supervised child process state
-└── logs/           rotating log files
-```
+- **Back up** that folder to keep your workspace, and restore it to bring
+  everything back.
+- **Move it** by setting `ZETT_STORAGE_ROOT` to another folder before you run
+  `zett start`.
+- **Logs** are in its `logs` folder, which helps when something goes wrong.
 
-Set `ZETT_STORAGE_ROOT` to move it. Every stored path is an object key relative
-to that root, so nothing in the database is tied to a machine-specific absolute
-path, and tests run against isolated temporary directories rather than your
-real data. The full variable list is on the [backend](../backend.md) page.
+!!! note "What leaves your computer"
+    Your folder stays local, but the messages you send to a model go to the
+    provider you chose, and a connected chat app exchanges messages with its
+    own service. Do not send anything you would not want them to process.
 
-Deleting a conversation removes its messages, assets, uploads, artifacts, and
-artifact project directories. Deleting a static asset is refused while a
-session asset still imports it. Nothing here is uploaded to a third party:
-the only network calls are the model provider you configured and, if you enable
-them, the chat platforms you connected.
+Deleting a conversation also deletes the files and artifacts it created. A
+static asset cannot be deleted while a conversation still uses it.

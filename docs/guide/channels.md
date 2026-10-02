@@ -1,67 +1,67 @@
 # Channels
 
-Channels connect Zett to a chat platform, so you can talk to the same Agent from
-your phone. The `Channels` view lists what is installed, starts a login flow, and
-shows each channel's state.
+A channel connects Zett to a chat app, so you can message the same Zett from
+your phone: send a whiteboard photo and ask for a card, forward a voice note,
+or ask what you saved about a topic this week.
 
-## Connect a channel
+## Connect a chat app
 
-1. Open `Channels`, then `Connect`.
-2. Pick the platform (the list comes from the installed plugins, not from a
-   hard-coded assumption), name the bot, and choose the provider whose model
-   handles its conversations.
-3. Scan the QR code with the account you want to link, and confirm on the
-   platform. Some platforms also show a pairing code — enter it in the dialog.
-4. The channel appears as `Connected` and starts receiving messages.
+1. Open **Channels** in the sidebar and choose **Connect**.
+2. If more than one chat app is available, pick the platform.
+3. Give the bot a name and choose the provider that answers its chats.
+4. Choose **Generate QR code**, then scan the code with the account you want to
+   connect and confirm on your phone.
+5. If the app shows a pairing code, type it into the dialog.
+6. The channel appears as **Connected** and starts answering messages.
 
-Only one platform is installed today: WeChat, through the personal WeChat
-robot feature (Tencent's 微信机器人). WeCom smart robots are not a substitute.
+The dialog tells you where you are: waiting for the scan, scanned and waiting
+for you to confirm, waiting for the pairing code, or connecting. A QR code
+expires after five minutes; generate a new one if it does.
 
-## How conversations map
+The platforms you can choose are the chat plugins installed with Zett. Today
+that is **WeChat**, through Tencent's personal WeChat bot feature (微信机器人).
+A WeCom (企业微信) bot does not work as a substitute.
 
-One external conversation — a channel plus a chat id — maps to one Agent
-session with session type `channel`. Turns for the same chat run one at a time,
-so two messages in one chat never race each other, and different chats run in
-parallel. Channel sessions stay out of the conversation sidebar and are listed
-under `Channels`.
+## Chats and history
 
-If you delete the session a chat is bound to, the next message starts a fresh
-one instead of leaving the chat mute, and the stale binding is replaced.
+Every direct chat and every group chat gets its own conversation, listed under
+**Channels** rather than with your other conversations. Messages in one chat
+are answered in order. Delete a chat's history to make the next message start
+fresh.
 
-## Media
+## Photos, voice, and files
 
-Images, voice notes, files, and video arrive as attachments the plugin already
-downloaded and decrypted, so nothing is fetched twice. Zett writes every
-attachment under the session's upload directory and decides what the model sees:
-images travel as real image content for a vision model, while voice, files,
-video, and oversized images travel as a text reference naming the stored key.
-Whether the configured model can use a given attachment is the model's decision,
-and a message with only an attachment and no text is a valid turn.
+Send images, voice notes, files, or video, with or without a message. Zett
+keeps a copy of each one with that chat's conversation. A model that can see
+images reads supported images directly; other files are available for Zett to
+open. Whether the model can understand a particular file depends on your
+provider.
 
-Limits are enforced at the boundary rather than trusted from the plugin: at most
-16 attachments and 256 MB per message, and a bounded amount of inline image data
-per turn. An attachment over the limit is never dropped silently — the chat gets
-`That file is too large to process. Please send a smaller one.` instead of a
-turn over bytes nobody received.
+A message can carry up to 16 attachments and 256 MB in total. When something
+is too large, the chat receives an explanation instead of losing the file
+silently.
 
-## Channel policy
+## Channel settings
 
-Each channel stores its provider, reasoning effort, and whether remote
-conversations may use coding tools. These are read per turn, so editing them
-never restarts the plugin; only the enabled flag starts or stops it. Disabling a
-provider is refused while a channel still uses it.
+For each channel you can choose:
 
-Channel runs are headless, like scheduled runs: shell commands execute without
-an approval card. Leave `Allow coding tools in remote conversations` off unless
-you want a chat message to be able to run commands.
+- the **provider** and **reasoning effort** that answer its chats, which take
+  effect from the next message;
+- whether **Allow coding tools in remote conversations** is on.
 
-If a turn fails, the chat receives one fixed notice — `Sorry, something went
-wrong while handling that message. Please try again.` — rather than staying
-silent. A login that fails, or a scan that is never confirmed, leaves the
-channel disconnected and reusable instead of half-created.
+Chat messages run with no one at a screen, so commands run without an approval
+card. Leave **Allow coding tools in remote conversations** off unless you want
+a chat message to be able to run commands on this computer.
 
-## Writing another channel
+Use **Disable** to pause a channel and **Enable** to resume it. While a channel
+uses a provider, that provider cannot be disabled or deleted.
 
-Channels are plugins discovered from installed entry points, so a new platform
-is a package, not a patch to Zett. See
+## When something goes wrong
+
+If Zett cannot answer a message, the chat receives an error notice. Check that
+the channel still reads **Connected** and that `zett status` shows Zett
+running, then send the message again. If a login fails or the QR code expires,
+start again with **Connect**.
+
+Want Zett in another chat app? Channels are plugins; see
 [Channel plugins](../plugins/channel-plugins.md).
