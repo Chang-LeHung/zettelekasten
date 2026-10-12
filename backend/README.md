@@ -274,6 +274,7 @@ Everything is mounted under `/api`.
 | `/api/ai/providers*` | Model endpoint configuration |
 | `/api/channels*` | Channel management (list/update/delete), plugin listing at `/api/channels/plugins`, and QR login behind the installed channel plugins |
 | `/api/settings` | Read or replace runtime limits |
+| `GET /api/updates`, `POST /api/updates/install` | Newest PyPI release and whether this copy can install it; hand one release to the installer that owns this copy |
 | `/api/library/tags`, `POST/PUT/DELETE /api/library/tags/{tag_id}` | Tag tree listing, creation, single read, rename/move/restyle, and deletion |
 | `PUT /api/library/tags/artifacts/{artifact_id}` | Replace the complete tag set of one saved artifact (the editor's save path) |
 | `PUT/DELETE /api/library/tags/{tag_id}/artifacts/{artifact_id}` | Attach or detach one tag without rewriting the artifact's other assignments |
@@ -627,6 +628,38 @@ configured lands in `logs/background.log`, and a start that never becomes ready
 reports that file with its last lines. `zett stop` stops the API and every
 supervised child process. The IM gateway has no separate process to stop
 because it is imported directly by Zett.
+
+### Updates
+
+`application/runtime/updates.py` (`UpdateService`) asks PyPI's JSON API for the
+newest `zettelekasten` version through `infra/updates/pypi.py` and remembers the
+answer in the key-value store (`updates.status`, reused for six hours;
+`?refresh=true` asks again). `infra/updates/installer.py` picks the installer
+from `sys.prefix`: `uv tool install --force`, `pipx install --force`, or
+`pip install --upgrade`, and refuses a source checkout because that copy was
+never installed. The installer receives the requirement `zettelekasten>=X`
+rather than a downloaded file, so the receipt `uv tool` or pipx keeps names a
+requirement that later upgrades can move past, and the installer verifies the
+release against the index's own hashes. An install is single-flight, runs only
+while the requested version is still the newest, and answers with the
+installer's own exit status. `UpdateStatus` reports `current` (what this process
+imported) next to `installed` (what is on disk): the files change at once, the
+running code only after a restart, so `restart_required` is derived instead of
+remembered and survives a page reload.
+
+### MCP servers
+
+`zett/agent/extensions/mcp.py` builds the runtime's `McpExtension` so MCP never
+fails a request. The runtime already skips a server that cannot connect or
+times out during tool discovery and tells the model which one was unavailable.
+Zett closes the two strict edges that remained: an invalid server entry is
+skipped and logged instead of invalidating the file (`mcp_strict_config=False`;
+set it to `True` to restore the old behavior), and a file that cannot be read or
+parsed contributes no servers for that request, with the failure logged and the
+file read again on the next one. An Agent is built per request, so before this a
+single typo in `mcp.json` failed every conversation, scheduled run, and channel
+turn. Duplicate names among explicitly supplied servers are a code mistake and
+still raise.
 
 ### Platform support
 
