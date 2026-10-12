@@ -124,6 +124,12 @@ class ArtifactCountOut(BaseModel):
     count: int
 
 
+class UpdateInstallIn(BaseModel):
+    """The release a client asks this copy to download and install."""
+
+    version: str = Field(min_length=1, max_length=64)
+
+
 class ArtifactCreateIn(BaseModel):
     """New draft or saved artifact scoped by the URL session."""
 
