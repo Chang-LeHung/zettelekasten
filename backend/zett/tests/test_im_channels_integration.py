@@ -385,7 +385,7 @@ class ShellCallingModel:
     async def stream(self, request: ModelRequest) -> AsyncIterator[ModelEvent]:
         self.requests.append(request)
         message = (
-            AssistantMessage(tool_calls=(ToolCall("shell-1", "run_shell", {"command": "printf approved"}),))
+            AssistantMessage(tool_calls=(ToolCall("shell-1", "bash", {"command": "printf approved"}),))
             if len(self.requests) == 1
             else AssistantMessage(content="shell complete")
         )

@@ -29,9 +29,6 @@ from zett_agent.extensions.compaction import (
 from zett_agent.extensions.external import (
     ExternalEvent,
 )
-from zett_agent.extensions.mcp import (
-    McpExtension,
-)
 from zett_agent.extensions.model_request_trace import (
     ModelRequestTraceExtension,
 )
@@ -80,6 +77,7 @@ from .extensions import (
     TagExtension,
     TraceLogExtension,
 )
+from .extensions.mcp import build_mcp_extension
 from .plugins import PluginCommandRegistry, SessionReferenceExtension
 from .slash import (
     SlashCommandDefinition,
@@ -121,10 +119,11 @@ class ZettelkastenAgent(ZettelkastenContainer):
                 keep_recent_tokens=config.compaction_keep_recent_tokens,
             ),
             SkillExtension(config.skill_roots),
-            McpExtension(
+            build_mcp_extension(
                 servers=config.mcp_servers,
                 config_path=config.mcp_config_path,
                 server_keys=config.mcp_server_keys,
+                strict_config=config.mcp_strict_config,
             ),
             ToolGuidelinesExtension(),
             DeferredToolExtension(),

@@ -22,3 +22,4 @@ backend/.zett-tool-output/
 backend/zett/profile/
 **/.pytest_cache/
 **/.ruff_cache/
+.zett-tool-output/

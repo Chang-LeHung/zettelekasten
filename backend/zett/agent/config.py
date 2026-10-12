@@ -58,6 +58,10 @@ class ZettelkastenAgentConfig:
     ``~/.zettelekasten/mcp.json`` when that file exists. Explicit servers are merged
     with the configured file. Set ``mcp_config_path`` to ``None`` to disable
     file loading; ``mcp_server_keys`` controls which JSON root names are valid.
+    MCP is best effort: an invalid server entry is skipped and logged instead of
+    invalidating the file (set ``mcp_strict_config`` to restore that), a file that
+    cannot be parsed contributes no servers, and a server that is down for one
+    request only drops its own tools.
     """
 
     session_id: str
@@ -74,6 +78,7 @@ class ZettelkastenAgentConfig:
     mcp_servers: tuple[McpServer, ...] = ()
     mcp_config_path: str | Path | None = DEFAULT_ZETT_MCP_CONFIG_PATH
     mcp_server_keys: tuple[str, ...] = DEFAULT_MCP_SERVER_KEYS
+    mcp_strict_config: bool = False
     interactive: bool = True
     coding_enabled: bool = True
     allow_direct_artifact_edits: bool = False

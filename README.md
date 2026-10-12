@@ -73,6 +73,22 @@ and start a conversation. `zett start` returns once the server answers and
 leaves it running without the terminal, `zett status` reports it, and
 `zett stop` shuts it down; `zett start --foreground` stays attached instead.
 
+### Updating
+
+Zett checks PyPI for a newer release (the answer is cached for six hours) and,
+when one exists and this copy was installed with `uv tool`, `pipx`, or `pip`,
+shows **Update to X** above Settings in the sidebar. One click runs that
+installer for the new release, and the sidebar then asks you to restart Zett:
+
+```bash
+zett stop && zett start
+```
+
+The running process keeps the old code until you do. A checkout never shows the
+button; update it with `git pull && make install`. To update by hand, run
+`uv tool install --force --refresh-package zettelekasten zettelekasten` (or
+`pipx upgrade zettelekasten`).
+
 ## First steps
 
 1. **Connect a model.** `Settings` → `Provider` → `New provider`. Give it a
@@ -85,6 +101,16 @@ leaves it running without the terminal, `zett status` reports it, and
    paper. The Assistant writes a draft; you review the diff and publish it.
 4. **Optional.** Connect a channel under `Channels`, or create a recurring
    prompt under `Scheduled tasks`.
+
+## MCP servers
+
+Zett reads [MCP](https://modelcontextprotocol.io) servers from
+`~/.zettelekasten/mcp.json` (a `servers` or `mcpServers` object, Streamable HTTP
+or local stdio) and exposes their tools as `<server>__<tool>`. MCP is best
+effort: a server that is down or slow only loses its own tools for that
+request, an invalid entry is skipped and logged while the other servers keep
+working, and a file that cannot be parsed is ignored until it is fixed. Edits
+apply to the next request, with no restart.
 
 ## Where your data lives
 
