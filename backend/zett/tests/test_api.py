@@ -579,7 +579,7 @@ class ShellFakeModel:
     async def stream(self, request: ModelRequest) -> AsyncIterator[ModelEvent]:
         self.requests.append(request)
         message = (
-            AssistantMessage(tool_calls=(ToolCall("shell-1", "run_shell", {"command": "printf approved"}),))
+            AssistantMessage(tool_calls=(ToolCall("shell-1", "bash", {"command": "printf approved"}),))
             if len(self.requests) == 1
             else AssistantMessage(content="shell complete")
         )
@@ -684,9 +684,9 @@ def test_agent_turn_logs_each_model_request_and_tool_call(monkeypatch, tmp_path)
     assert len(requests) == 2 and len(responses) == 2
     assert all(f"session_id={session_id}" in message for message in requests)
     calls = [message for message in records if "Tool call;" in message]
-    assert any("tool=run_shell" in message for message in calls)
+    assert any("tool=bash" in message for message in calls)
     assert any(
-        "Tool call completed" in message and "tool=run_shell" in message and "result=approved" in message
+        "Tool call completed" in message and "tool=bash" in message and "result=approved" in message
         for message in records
     )
 
