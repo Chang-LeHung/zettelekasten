@@ -219,6 +219,7 @@ class ProviderIn(BaseModel):
             "openai-compatible": "openai_compatible",
             "response-compatible": "responses_compatible",
             "responses-compatible": "responses_compatible",
+            "anthropic-compatible": "anthropic_compatible",
             "gemini": "google",
         }
         return aliases.get(str(value), value)
@@ -241,6 +242,8 @@ class ProviderIn(BaseModel):
             if not self.base_url:
                 raise ValueError("Responses-compatible providers require a base URL")
             self.response = True
+        if self.provider == ProviderType.ANTHROPIC_COMPATIBLE and not self.base_url:
+            raise ValueError("Anthropic-compatible providers require a base URL")
         if self.response and self.provider not in supported:
             raise ValueError(f"Responses API is not supported by {self.provider.value}")
         return self
