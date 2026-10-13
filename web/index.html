@@ -22,6 +22,8 @@
     <meta property="og:image:height" content="630" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content="https://chang-lehung.github.io/zettelekasten/assets/og.png" />
+    <link rel="alternate" hreflang="en" href="https://chang-lehung.github.io/zettelekasten/" />
+    <link rel="alternate" hreflang="zh-CN" href="https://chang-lehung.github.io/zettelekasten/zh/" />
     <link rel="stylesheet" href="/styles/tokens.css" />
     <link rel="stylesheet" href="/styles/base.css" />
     <link rel="stylesheet" href="/styles/site.css" />
@@ -41,6 +43,7 @@
         <a href="/docs/">Docs</a>
       </nav>
       <div class="nav__actions nav__actions--end">
+        <a class="nav__lang" href="/zh/" hreflang="zh-CN" lang="zh-CN">中文</a>
         <button class="icon-button" type="button" data-search-open aria-label="Search the documentation">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="6" /><path d="m20 20-3.6-3.6" stroke-linecap="round" /></svg>
         </button>
@@ -192,7 +195,7 @@
           <p>Python 3.10 to 3.14. Nothing to sign in to, and nothing running in the cloud.</p>
         </div>
         <div class="install" data-reveal>
-          <button class="install__copy" type="button" data-copy aria-label="Copy the install commands">Copy</button>
+          <button class="install__copy" type="button" data-copy data-copied="Copied" data-fallback="Press ⌘C" aria-label="Copy the install commands">Copy</button>
 <pre><code data-copy-source><span class="line"><span class="dim">$</span> uv tool install zettelekasten</span>
 <span class="line"><span class="dim">$</span> zett start</span>
 <span class="line out">Zett is running at http://127.0.0.1:6280</span></code></pre>

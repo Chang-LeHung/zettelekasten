@@ -12,7 +12,8 @@
  */
 
 :root {
-  --serif: ui-serif, "Iowan Old Style", "Palatino Linotype", "Source Han Serif SC", Georgia, serif;
+  --serif: ui-serif, "Iowan Old Style", "Palatino Linotype", Georgia, "Songti SC", "Source Han Serif SC",
+    "Noto Serif CJK SC", "SimSun", serif;
   --measure: 40rem;
   --wrap: 76rem;
 }
@@ -518,4 +519,60 @@ code {
     opacity: 0;
     transform: translate3d(0, 48px, 0) scale(0.97);
   }
+}
+
+/* Chinese text: no tracking, a little more weight and air, and no balanced wrapping that fights punctuation. */
+html[lang^="zh"] h1,
+html[lang^="zh"] h2,
+html[lang^="zh"] h3 {
+  letter-spacing: 0;
+}
+
+html[lang^="zh"] .hero__title {
+  max-width: 12ch;
+  font-size: clamp(2.6rem, 6.2vw, 5rem);
+  font-weight: 700;
+  line-height: 1.14;
+}
+
+html[lang^="zh"] .feature__head h2,
+html[lang^="zh"] .ways h2,
+html[lang^="zh"] .band h2,
+html[lang^="zh"] .start__head h2 {
+  font-size: clamp(1.8rem, 3.8vw, 3rem);
+}
+
+html[lang^="zh"] .feature__head h2,
+html[lang^="zh"] .ways h2,
+html[lang^="zh"] .band h2,
+html[lang^="zh"] .start__head h2 {
+  line-height: 1.18;
+}
+
+html[lang^="zh"] body {
+  line-height: 1.7;
+}
+
+html[lang^="zh"] .hero__sub,
+html[lang^="zh"] .feature__head p,
+html[lang^="zh"] .band p {
+  line-height: 1.75;
+}
+
+html[lang^="zh"] .specs dd,
+html[lang^="zh"] .ways p {
+  line-height: 1.7;
+}
+
+.nav__lang {
+  padding: 0.3rem 0.6rem;
+  border-radius: 980px;
+  color: var(--muted);
+  font-size: var(--small);
+  font-weight: 550;
+}
+
+.nav__lang:hover {
+  color: var(--ink);
+  text-decoration: none;
 }
