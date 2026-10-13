@@ -55,13 +55,18 @@ async def test_correlated_reply_parallel_rejection_and_disconnect() -> None:
     peer = BrowserConnection("session", "token", queue.put)
     task = asyncio.create_task(peer.call("snapshot"))
     command = await queue.get()
-    with pytest.raises(BrowserUnavailableError, match="pending"):
-        await peer.call("snapshot")
+    queued = asyncio.create_task(peer.call("snapshot"))
+    await asyncio.sleep(0)
+    assert queue.empty(), "a second call waits for the first instead of failing"
     peer.resolve(BrowserReply(type="result", id="wrong", ok=True, result="null"))
     assert not task.done()
     peer.resolve(BrowserReply(type="result", id=command["id"], ok=True, result='{"title":"Page"}'))
     result = await task
     assert json.loads(result.result) == {"title": "Page"}
+    second = await queue.get()
+    assert second["id"] != command["id"]
+    peer.resolve(BrowserReply(type="result", id=second["id"], ok=True, result='{"title":"Again"}'))
+    assert json.loads((await queued).result) == {"title": "Again"}
     task = asyncio.create_task(peer.call("snapshot"))
     await queue.get()
     peer.close()
@@ -296,3 +301,40 @@ async def test_agent_browser_tool_roundtrip() -> None:
     assert calls[0]["operation"] == "update"
     assert calls[0]["change"]["value"] == "Ada"
     assert "script" not in calls[0]
+
+
+async def test_calls_issued_together_run_one_after_another() -> None:
+    """A model that emits two tool calls at once queues them instead of failing one."""
+    queue = asyncio.Queue()
+    peer = BrowserConnection("session", "token", queue.put)
+    first = asyncio.create_task(peer.call("snapshot"))
+    second = asyncio.create_task(peer.call("snapshot"))
+    command = await queue.get()
+    await asyncio.sleep(0)
+    assert queue.empty()
+    peer.resolve(BrowserReply(type="result", id=command["id"], ok=True, result='{"n":1}'))
+    follow_up = await queue.get()
+    peer.resolve(BrowserReply(type="result", id=follow_up["id"], ok=True, result='{"n":2}'))
+    assert json.loads((await first).result) == {"n": 1}
+    assert json.loads((await second).result) == {"n": 2}
+
+
+async def test_unset_query_fields_are_not_sent_to_the_panel() -> None:
+    queue = asyncio.Queue()
+    peer = BrowserConnection("session", "token", queue.put)
+    task = asyncio.create_task(peer.call("snapshot", query=BrowserPageQuery(text="add to cart")))
+    command = await queue.get()
+    assert command["query"] == {"text": "add to cart"}
+    assert "change" not in command and "interaction" not in command
+    peer.resolve(BrowserReply(type="result", id=command["id"], ok=True, result="{}"))
+    await task
+
+
+async def test_a_lost_connection_answers_the_model_instead_of_failing_the_tool() -> None:
+    from zett.agent.extensions.browser import BrowserExtension
+
+    peer = BrowserConnection("session", "token", AsyncMock())
+    peer.close()
+    result = await BrowserExtension(peer)._call("snapshot", query=BrowserPageQuery())
+    assert result.ok is False
+    assert "do not retry" in (result.error or "")

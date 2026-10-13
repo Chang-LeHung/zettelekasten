@@ -30,6 +30,7 @@ import type {
   MessageImagePart,
   MessagePart,
 } from '../../../frontend/src/api/types'
+import { isReasoningEffort, REASONING_EFFORTS } from '../../../frontend/src/utils/reasoningEffort'
 import { addAgentUsage, formatTokenCount, latestAgentUsage, summarizeAgentUsage } from '../../../frontend/src/utils/agentUsage'
 import { buildMessageParts, readMessageImage, type PositionedMessageImage } from '../../../frontend/src/utils/messageParts'
 import { parseUtcTimestamp } from '../../../frontend/src/utils/timestamps'
@@ -45,14 +46,9 @@ import { browserApprovalKey, pageKey } from './chat/page-sessions'
 import { PAGE_PROMPT_MARKER, restoreTranscript } from './chat/restore-transcript'
 
 /** Thinking effort the app offers, in the order it lists them. */
-const EFFORTS: Array<{ value: ReasoningEffort; label: string }> = [
-  { value: 'off', label: 'Off' },
-  { value: 'low', label: 'Low' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'high', label: 'High' },
-]
+const EFFORTS = REASONING_EFFORTS
 
-const HINTS = ['Summarize this page', 'Save this page as a card', 'Key points']
+const HINTS = ['Summarize this page', 'Key points', 'Explain it simply', 'Save this page as a card']
 
 const client = ref(new ZettClient(DEFAULT_SERVER_URL))
 const serverUrl = ref(DEFAULT_SERVER_URL)
@@ -214,21 +210,97 @@ function chooseEffort(value: ReasoningEffort): void {
   effortOpen.value = false
 }
 
+let noticeTimer: ReturnType<typeof setTimeout> | undefined
 function notify(message: string, kind: 'ok' | 'error' = 'ok'): void {
   notice.value = message
   noticeKind.value = kind
+  clearTimeout(noticeTimer)
+  // Good news fades on its own; a problem stays until it is read and dismissed.
+  if (message && kind === 'ok') noticeTimer = setTimeout(() => { if (notice.value === message) notice.value = '' }, 6000)
 }
 
-async function connectBrowser(): Promise<void> {
+/**
+ * The whole header moves the panel. The panel is an iframe, so the page never
+ * sees this pointer: report screen-coordinate deltas to the content script,
+ * which owns the host element. Buttons keep their own clicks. The message
+ * carries only pointer deltas: the page can read it, so it holds no secret.
+ */
+const canDragPanel = owningTabId !== null && Boolean(panelNonce) && window.parent !== window
+const panelDragging = ref(false)
+
+function startPanelDrag(event: PointerEvent): void {
+  if (!canDragPanel || event.button !== 0 || (event.target as HTMLElement).closest('button, a, input, select, textarea')) return
+  const header = event.currentTarget as HTMLElement
+  const post = (type: string, dx = 0, dy = 0): void => {
+    window.parent.postMessage({ zett: 'panel-drag', type, dx, dy }, '*')
+  }
+  event.preventDefault()
+  header.setPointerCapture(event.pointerId)
+  const startX = event.screenX
+  const startY = event.screenY
+  panelDragging.value = true
+  post('start')
+  const move = (next: PointerEvent): void => post('move', next.screenX - startX, next.screenY - startY)
+  const done = (): void => {
+    panelDragging.value = false
+    post('end')
+    header.removeEventListener('pointermove', move)
+    header.removeEventListener('pointerup', done)
+    header.removeEventListener('pointercancel', done)
+    header.removeEventListener('lostpointercapture', done)
+  }
+  header.addEventListener('pointermove', move)
+  header.addEventListener('pointerup', done)
+  header.addEventListener('pointercancel', done)
+  header.addEventListener('lostpointercapture', done)
+}
+
+/** The page the panel sits on, as the header names it. */
+const pageHost = computed(() => {
+  try { return new URL(page.value?.url ?? '').hostname.replace(/^www\./, '') } catch { return '' }
+})
+const headerTitle = computed(() => page.value?.title?.trim() || pageHost.value || 'Zettelkasten')
+const pageToolsLabel = computed(() => browserConnecting.value ? 'Connecting…' : browserConnected.value ? 'Page connected' : 'Connect page')
+
+/** The user turned page tools off on purpose, so a send must not quietly turn them back on. */
+const pageToolsOff = ref(false)
+
+async function userDisconnectBrowser(): Promise<void> {
+  pageToolsOff.value = true
+  await disconnectBrowser()
+}
+
+async function togglePageTools(): Promise<void> {
+  if (browserConnecting.value) return
+  if (browserConnected.value) await userDisconnectBrowser()
+  else await connectBrowser()
+}
+
+/** Seconds left on the consent card, so an unanswered request does not look stuck. */
+const consentSecondsLeft = computed(() => {
+  const consent = browserConsent.value
+  return consent ? Math.max(0, Math.ceil((consent.expiresAt - clock.value) / 1000)) : 0
+})
+
+/** Reads change nothing and fills only edit a field; the rest can submit, navigate or publish. */
+const consentRisk = computed<'edit' | 'act'>(() => {
+  const consent = browserConsent.value
+  if (consent?.command.change) return 'edit'
+  const action = consent?.command.interaction?.action
+  return action && ['hover', 'focus', 'scroll'].includes(action) ? 'edit' : 'act'
+})
+
+async function connectBrowser(quiet = false): Promise<void> {
   if (!conversationId.value || browserConnecting.value || owningTabId === null) return
   browserConnecting.value = true
+  if (!quiet) pageToolsOff.value = false
   try {
     await browserBridge.connect(client.value.browserSocketUrl(conversationId.value), owningTabId)
     browserConnected.value = true
-    notify('Page connected. DOM changes will ask for approval.')
+    // The header pill already says the page is connected; only trouble needs a message.
   } catch (error) {
     browserConnected.value = false
-    notify((error as Error).message, 'error')
+    if (!quiet) notify((error as Error).message, 'error')
   } finally { browserConnecting.value = false }
 }
 
@@ -363,19 +435,20 @@ async function loadSettings(): Promise<void> {
   const stored = await chrome.storage.local.get(['serverUrl', 'providerId', 'effort'])
   serverUrl.value = typeof stored.serverUrl === 'string' ? stored.serverUrl : DEFAULT_SERVER_URL
   selectedProviderId.value = typeof stored.providerId === 'string' ? stored.providerId : ''
-  effort.value = EFFORTS.some((option) => option.value === stored.effort) ? (stored.effort as ReasoningEffort) : 'medium'
+  effort.value = isReasoningEffort(stored.effort) ? stored.effort : 'medium'
   client.value = new ZettClient(serverUrl.value)
 }
 
 /** Confirm the server answers, then make sure a provider and session exist. */
-async function connect(): Promise<void> {
+/** `quiet` is for a check the user asked for in settings, which reports in place instead of in the composer bar. */
+async function connect(quiet = false): Promise<void> {
   try {
     await client.value.health()
     serverStatus.value = 'reachable'
   } catch (error) {
     serverStatus.value = 'not reachable'
     providers.value = []
-    notify((error as Error).message, 'error')
+    if (!quiet) notify((error as Error).message, 'error')
     return
   }
 
@@ -385,7 +458,7 @@ async function connect(): Promise<void> {
       selectedProviderId.value = providers.value[0]?.id ?? ''
     }
     if (!providers.value.length) {
-      notify('No enabled model provider: configure one in Zett first.', 'error')
+      if (!quiet) notify('No enabled model provider: configure one in Zett first.', 'error')
       return
     }
     const settings = await client.value.runtimeSettings()
@@ -396,7 +469,7 @@ async function connect(): Promise<void> {
       maxMessageImages.value = settings.max_message_images
     }
   } catch (error) {
-    notify((error as Error).message, 'error')
+    if (!quiet) notify((error as Error).message, 'error')
   }
 }
 
@@ -419,6 +492,7 @@ async function openPage(): Promise<void> {
   await disconnectBrowser()
   if (switchId !== pageSwitch) return
   pageIdentity.value = nextKey
+  pageToolsOff.value = false
   conversationId.value = null
   transcript.value = []
   queuedFollowUps.value = []
@@ -464,10 +538,64 @@ async function openPage(): Promise<void> {
   await connectBrowser()
 }
 
+/** The address field edits a draft: the live address keys every page session, so it only changes on Save. */
+const serverDraft = ref('')
+const settingsError = ref('')
+const testing = ref(false)
+/** True only once a check has taken long enough to be worth showing. */
+const testingVisible = ref(false)
+const draftAddress = computed(() => serverDraft.value.trim().replace(/\/+$/, '') || DEFAULT_SERVER_URL)
+const draftChanged = computed(() => draftAddress.value !== serverUrl.value)
+const connectionState = computed<'ok' | 'down' | 'idle'>(() => (
+  serverStatus.value === 'reachable' ? 'ok' : serverStatus.value === 'not reachable' ? 'down' : 'idle'
+))
+const connectionLabel = computed(() => (
+  connectionState.value === 'ok'
+    ? (providers.value.length ? `Connected · ${providers.value.length} model${providers.value.length === 1 ? '' : 's'}` : 'Connected · no model yet')
+    : connectionState.value === 'down' ? 'Can’t reach Zett' : 'Checking…'
+))
+
+function toggleSettings(): void {
+  settingsOpen.value = !settingsOpen.value
+  if (!settingsOpen.value) return
+  historyOpen.value = false
+  serverDraft.value = serverUrl.value
+  settingsError.value = ''
+}
+
+/** Re-check the current address without touching any conversation. */
+async function testConnection(): Promise<void> {
+  testing.value = true
+  // A local server answers in milliseconds. Showing a busy state for that long is
+  // a flash, so the spinner only appears when the check is actually slow, and the
+  // message line keeps its height until the result replaces it.
+  const spinner = setTimeout(() => { testingVisible.value = true }, 400)
+  try {
+    await connect(true)
+    settingsError.value = connectionState.value === 'down'
+      ? `Nothing answered at ${serverUrl.value}. Start Zett with “zett start”, or correct the address.`
+      : ''
+  } finally {
+    clearTimeout(spinner)
+    testingVisible.value = false
+    testing.value = false
+  }
+}
+
 async function saveSettings(): Promise<void> {
+  const next = draftAddress.value
+  try {
+    const parsed = new URL(next)
+    if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('scheme')
+  } catch {
+    settingsError.value = 'Enter an address such as http://127.0.0.1:6280.'
+    return
+  }
+  settingsError.value = ''
+  if (next === serverUrl.value) { await testConnection(); return }
   ++pageSwitch
   await disconnectBrowser()
-  const next = (serverUrl.value || DEFAULT_SERVER_URL).trim()
+  serverUrl.value = next
   await chrome.storage.local.set({ serverUrl: next })
   client.value = new ZettClient(next)
   // Every server has its own page-session keys.
@@ -489,8 +617,8 @@ async function saveSettings(): Promise<void> {
   currentUsage.value = null
   contextComposition.value = null
   compactionMaxTokens.value = 0
-  notify(`Talking to ${next}`)
-  await connect()
+  await connect(true)
+  if (connectionState.value === 'down') settingsError.value = `Saved, but nothing answered at ${next}. Start Zett with “zett start”.`
   await openPage()
 }
 
@@ -1078,6 +1206,9 @@ async function sendTurn(text: string, parts: MessagePart[] = []): Promise<void> 
     notify('Zett is not ready yet: check the server and a provider.', 'error')
     return
   }
+  // A dropped page connection (a cancelled command, a restarted server) heals
+  // itself here instead of silently costing this turn its page tools.
+  if (!browserConnected.value && !browserConnecting.value && !pageToolsOff.value) await connectBrowser(true)
   busy.value = true
   stopping.value = false
   const controller = new AbortController()
@@ -1268,15 +1399,26 @@ watch(conversationId, (sessionId) => { void loadBrowserApproval(sessionId) })
 </script>
 
 <template>
-  <header class="chat-header">
+  <header class="chat-header" :class="{ draggable: canDragPanel, dragging: panelDragging }" @pointerdown="startPanelDrag">
     <span class="mark" aria-hidden="true"><img src="/logo.png" alt="" /></span>
     <div class="chat-title">
-      <strong>Zettelkasten Agent</strong>
+      <strong :title="headerTitle">{{ headerTitle }}</strong>
       <small>
         <i class="status-dot" :class="{ online: Boolean(selectedProviderId) }" />
-        {{ selectedProvider ? `${selectedProvider.model} · online` : 'No model provider' }}
+        {{ selectedProvider ? `${pageHost ? `${pageHost} · ` : ''}${selectedProvider.model}` : 'No model provider' }}
       </small>
     </div>
+    <button
+      class="page-pill"
+      :class="{ on: browserConnected, busy: browserConnecting }"
+      type="button"
+      :disabled="browserConnecting || !conversationId"
+      :aria-pressed="browserConnected"
+      :title="browserConnected ? 'The Agent can read this page and, with your approval, act on it. Click to turn off.' : 'Let the Agent read this page and, with your approval, act on it.'"
+      @click="togglePageTools"
+    >
+      <i aria-hidden="true" />{{ pageToolsLabel }}
+    </button>
     <div class="header-actions">
       <button type="button" title="Previous conversations" aria-label="Previous conversations" @click="toggleHistory">
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1287,7 +1429,7 @@ watch(conversationId, (sessionId) => { void loadBrowserApproval(sessionId) })
       <button type="button" title="Start a new conversation" aria-label="Start a new conversation" :disabled="busy" @click="newChat">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
       </button>
-      <button type="button" title="Server settings" aria-label="Server settings" @click="settingsOpen = !settingsOpen">
+      <button type="button" title="Server settings" aria-label="Server settings" @click="toggleSettings">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M4 8h16M4 16h16" />
           <circle cx="9" cy="8" r="2.2" />
@@ -1324,19 +1466,47 @@ watch(conversationId, (sessionId) => { void loadBrowserApproval(sessionId) })
     <p v-else-if="historySessions.length && historyExhausted" class="session-history-empty">That's every conversation.</p>
   </section>
 
-  <section v-if="settingsOpen" class="settings">
-    <label>
-      <span>Zett server</span>
-      <input v-model="serverUrl" type="url" spellcheck="false" placeholder="http://127.0.0.1:6280" />
-    </label>
-    <div class="settings-row">
-      <button type="button" :disabled="busy" @click="saveSettings">Save</button>
-      <small>{{ serverStatus }}</small>
+  <section v-if="settingsOpen" class="settings" aria-label="Panel settings" @keydown.esc="settingsOpen = false">
+    <div class="settings-card">
+      <header>
+        <div><strong>Connection</strong><small>Where this panel finds your Zett</small></div>
+        <span class="conn-pill" :class="connectionState" role="status"><i aria-hidden="true" />{{ connectionLabel }}</span>
+      </header>
+      <form class="server-form" @submit.prevent="saveSettings">
+        <input
+          v-model="serverDraft"
+          type="url"
+          inputmode="url"
+          spellcheck="false"
+          autocomplete="off"
+          aria-label="Zett server address"
+          :placeholder="DEFAULT_SERVER_URL"
+          :aria-invalid="Boolean(settingsError)"
+        />
+        <button class="settings-primary" type="submit" :disabled="busy || testing">
+          <span v-if="testingVisible" class="button-spinner" aria-hidden="true" />
+          <span v-else>{{ draftChanged ? 'Save' : 'Test' }}</span>
+        </button>
+      </form>
+      <p v-if="settingsError" class="settings-error" role="alert">{{ settingsError }}</p>
+      <p v-else class="settings-hint">Start it with <code>zett start</code>. The panel only talks to this address, and only when you send a message.</p>
     </div>
-    <p>
-      Start the server with <code>zett start</code>. This panel talks to the same HTTP API the browser app uses,
-      so nothing here reaches your files directly.
-    </p>
+    <div class="settings-card">
+      <label class="setting-row">
+        <span>
+          <strong>Review page changes</strong>
+          <small>{{ browserAutoApprove ? 'The Agent edits and clicks without asking in this conversation.' : 'Ask before the Agent edits or clicks on this page.' }}</small>
+        </span>
+        <input
+          class="switch"
+          type="checkbox"
+          role="switch"
+          :checked="!browserAutoApprove"
+          :disabled="!conversationId"
+          @change="rememberBrowserApproval(!($event.target as HTMLInputElement).checked)"
+        />
+      </label>
+    </div>
   </section>
 
   <section ref="thread" class="thread">
@@ -1397,19 +1567,36 @@ watch(conversationId, (sessionId) => { void loadBrowserApproval(sessionId) })
     </div>
   </section>
 
-  <section v-if="browserConsent" class="browser-consent" role="region" aria-label="Review webpage change">
-    <header><span class="consent-mark" aria-hidden="true">✦</span><div><strong>Review page action</strong><small>{{ browserConsent.command.change?.description || browserConsent.command.interaction?.description }}</small></div></header>
+  <section v-if="browserConsent" class="browser-consent" :class="consentRisk" role="region" aria-label="Review page action">
+    <header>
+      <span class="consent-mark" aria-hidden="true">{{ consentRisk === 'act' ? '!' : '✎' }}</span>
+      <div>
+        <strong>{{ consentRisk === 'act' ? 'Allow this action on the page?' : 'Allow this change to the page?' }}</strong>
+        <small>{{ browserConsent.command.change?.description || browserConsent.command.interaction?.description }}</small>
+      </div>
+      <span class="consent-timer" :title="`Declines on its own in ${consentSecondsLeft}s`">{{ consentSecondsLeft }}s</span>
+    </header>
     <dl v-if="consentDetails">
       <div><dt>Action</dt><dd>{{ consentDetails.action }}</dd></div>
-      <div><dt>Element</dt><dd><code>{{ consentDetails.target }}</code> {{ consentDetails.extra }}</dd></div>
+      <div v-if="browserConsent.target?.matched === 1 && (browserConsent.target.label || browserConsent.target.tag)">
+        <dt>Target</dt>
+        <dd>
+          <strong v-if="browserConsent.target.label">“{{ browserConsent.target.label }}”</strong>
+          <span class="consent-tag">{{ browserConsent.target.tag }}</span>
+          <span v-if="browserConsent.target.href" class="consent-href">{{ browserConsent.target.href }}</span>
+        </dd>
+      </div>
+      <div><dt>Selector</dt><dd><code>{{ consentDetails.target }}</code> {{ consentDetails.extra }}</dd></div>
       <div v-if="consentDetails.value"><dt>Value</dt><dd class="consent-value">{{ consentDetails.value }}</dd></div>
     </dl>
-    <p class="consent-warning">This may trigger changes on the website. Review before allowing.</p>
-    <p class="consent-note">Always allow skips this review for the rest of this conversation; turn it off again from the ••• menu.</p>
+    <p v-if="browserConsent.target && browserConsent.target.matched !== 1" class="consent-warning">
+      {{ browserConsent.target.matched ? `This selector matches ${browserConsent.target.matched} elements, so the action will be refused.` : 'This selector matches nothing on the page right now, so the action will be refused.' }}
+    </p>
+    <p v-else-if="consentRisk === 'act'" class="consent-warning">Clicks and key presses can submit, publish, or navigate on the website.</p>
     <div class="consent-actions">
-      <button type="button" @click="browserConsent.reject">Reject</button>
+      <button type="button" @click="browserConsent.reject">Decline</button>
+      <button class="allow-session" type="button" title="Skip this review for the rest of this conversation. Turn it back on from the ••• menu." @click="allowBrowserForSession">Always allow here</button>
       <button class="allow" type="button" @click="browserConsent.approve">Allow once</button>
-      <button class="allow-session" type="button" @click="allowBrowserForSession">Always allow in this session</button>
     </div>
   </section>
 
@@ -1567,8 +1754,8 @@ watch(conversationId, (sessionId) => { void loadBrowserApproval(sessionId) })
             <span class="picker-label">Thinking</span><strong>{{ EFFORTS.find(option => option.value === effort)?.label }}</strong><span class="picker-chevron">⌄</span>
           </button>
           <div v-if="effortOpen" class="picker-popover effort-popover" role="listbox" aria-label="Thinking effort options">
-            <button v-for="option in EFFORTS" :key="option.value" type="button" :class="{ selected: option.value === effort }" @click="chooseEffort(option.value)">
-              {{ option.label }}
+            <button v-for="option in EFFORTS" :key="option.value" type="button" role="option" :aria-selected="option.value === effort" :class="{ selected: option.value === effort }" @click="chooseEffort(option.value)">
+              <strong>{{ option.label }}</strong><small>{{ option.description }}</small>
             </button>
           </div>
         </div>
@@ -1610,14 +1797,17 @@ watch(conversationId, (sessionId) => { void loadBrowserApproval(sessionId) })
             </span>
           </div>
           <button v-if="!browserConnected" type="button" :disabled="browserConnecting || !conversationId" @click="connectBrowser(); moreOpen = false">{{ browserConnecting ? 'Connecting…' : 'Connect page' }}</button>
-          <button v-else type="button" @click="disconnectBrowser(); moreOpen = false">Disconnect page</button>
+          <button v-else type="button" @click="userDisconnectBrowser(); moreOpen = false">Disconnect page</button>
           <button v-if="browserAutoApprove" type="button" @click="rememberBrowserApproval(false); moreOpen = false">Ask before page edits again</button>
           <button type="button" :disabled="savingIds.length > 0 || busy" @click="saveAll(); moreOpen = false">Save all artifacts</button>
         </div>
       </div>
       </div>
     </div>
-    <p v-if="notice" class="notice" :class="noticeKind">{{ notice }}</p>
+    <div v-if="notice" class="notice-bar" :class="noticeKind">
+      <p class="notice" :class="noticeKind" :role="noticeKind === 'error' ? 'alert' : 'status'">{{ notice }}</p>
+      <button type="button" class="notice-close" aria-label="Dismiss message" @click="notify('')">×</button>
+    </div>
   </form>
 </template>
 
@@ -1661,12 +1851,18 @@ button {
 }
 button:hover:not(:disabled) { color: var(--accent-dark); background: var(--accent-soft); border-color: rgba(71, 105, 87, .3); }
 button:disabled { opacity: .45; cursor: not-allowed; }
+/* Keyboard users get a ring on every control; pointer users never see it. */
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid rgba(71, 105, 87, .55); outline-offset: 2px; }
+.agent-input textarea:focus-visible { outline: 0; }
 button svg { width: .9rem; height: .9rem; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 
 /* Header: the app's conversation header, sized for a panel. */
 .chat-header { min-height: 3.6rem; display: flex; align-items: center; gap: .62rem; padding: .6rem .8rem; border-bottom: 1px solid var(--line); }
 .chat-header { min-height: 3.35rem; padding: .55rem 1rem; border-bottom-color: rgba(29,29,31,.055); }
 .header-actions { margin-left: auto; }
+/* The header is the panel's grip: anything in it that is not a button moves the panel. */
+.chat-header.draggable { cursor: grab; user-select: none; -webkit-user-select: none; touch-action: none; }
+.chat-header.dragging { cursor: grabbing; }
 .header-actions button { background: transparent; border-color: transparent; color: #8a948d; }
 .header-actions button:hover { background: #f3f6f4; }
 .header-actions .close-panel { font-size: 1.25rem; font-weight: 350; }
@@ -1675,14 +1871,61 @@ button svg { width: .9rem; height: .9rem; fill: none; stroke: currentColor; stro
 .mark, .welcome-mark { display: grid; place-items: center; flex: 0 0 auto; width: 1.75rem; height: 1.75rem; }
 .mark img, .welcome-mark img { display: block; width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 3px 4px rgba(53, 83, 67, .18)); }
 .chat-title { min-width: 0; flex: 1 1 auto; }
-.chat-title strong { display: block; overflow: hidden; font-size: .84rem; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
+.chat-title strong { display: block; max-width: 100%; overflow: hidden; font-size: .84rem; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
 .chat-title small { display: flex; align-items: center; gap: .32rem; margin-top: .12rem; color: var(--tertiary); font-size: .6rem; }
 .status-dot { width: .42rem; height: .42rem; flex: 0 0 auto; border-radius: 50%; background: #c2c8c4; }
 .status-dot.online { background: #347b51; }
 .header-actions { display: flex; gap: .28rem; }
+/* Whether the Agent can see this page, always visible instead of buried in the ••• menu. */
+.page-pill { display: inline-flex; align-items: center; gap: .35rem; flex: 0 0 auto; height: 1.65rem; padding: 0 .65rem 0 .55rem; border-radius: 999px; border-color: transparent; color: #7d887f; background: #f1f3f2; font-size: .62rem; font-weight: 600; white-space: nowrap; }
+.page-pill i { width: .4rem; height: .4rem; border-radius: 50%; background: #b8bfba; }
+.page-pill.on { color: #2f6a47; background: #e4f1e9; }
+.page-pill.on i { background: #347b51; box-shadow: 0 0 0 3px rgba(52,123,81,.15); }
+.page-pill.busy i { animation: pill-pulse 1s ease-in-out infinite; }
+@keyframes pill-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .page-pill.busy i { animation: none; } }
 .header-actions button { display: grid; place-items: center; width: 1.9rem; height: 1.9rem; padding: 0; }
 
-.settings { display: grid; gap: .45rem; padding: .6rem .8rem; border-bottom: 1px solid var(--line); background: #f7f8f7; }
+/* Settings: two quiet cards on a tinted sheet, the same grammar as the app's Settings. */
+.settings { display: grid; gap: .55rem; padding: .7rem .8rem .8rem; border-bottom: 1px solid var(--line); background: #f6f7f6; animation: sheet-in 160ms ease-out both; }
+@keyframes sheet-in { from { opacity: 0; transform: translateY(-4px); } }
+@media (prefers-reduced-motion: reduce) { .settings { animation: none; } }
+.settings-card { display: grid; gap: .6rem; padding: .75rem .8rem; border: 1px solid rgba(29,29,31,.07); border-radius: .85rem; background: #fff; box-shadow: 0 1px 2px rgba(29,29,31,.03); }
+.settings-card header { display: flex; align-items: center; justify-content: space-between; gap: .6rem; }
+.settings-card header strong { display: block; font-size: .78rem; font-weight: 650; letter-spacing: -.005em; }
+.settings-card header small { display: block; margin-top: .1rem; color: var(--tertiary); font-size: .62rem; }
+.conn-pill { display: inline-flex; align-items: center; gap: .35rem; flex: 0 0 auto; height: 1.5rem; padding: 0 .6rem 0 .5rem; border-radius: 999px; color: #7d887f; background: #f1f3f2; font-size: .62rem; font-weight: 600; white-space: nowrap; }
+.conn-pill i { width: .4rem; height: .4rem; border-radius: 50%; background: #b8bfba; }
+.conn-pill.ok { color: #2f6a47; background: #e4f1e9; }
+.conn-pill.ok i { background: #347b51; box-shadow: 0 0 0 3px rgba(52,123,81,.15); }
+.conn-pill.down { color: #9a4b3c; background: #fbece8; }
+.conn-pill.down i { background: #c8604d; }
+.server-form { display: flex; gap: .4rem; }
+.server-form input { flex: 1 1 auto; min-width: 0; height: 2rem; padding: 0 .65rem; border: 1px solid rgba(29,29,31,.12); border-radius: .6rem; color: var(--text); background: #fafbfa; font: inherit; font-size: .74rem; transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease; }
+.server-form input:hover { border-color: rgba(29,29,31,.2); }
+.server-form input:focus { outline: 0; border-color: rgba(71,105,87,.55); background: #fff; box-shadow: 0 0 0 3px rgba(71,105,87,.14); }
+.server-form input[aria-invalid="true"] { border-color: rgba(200,96,77,.6); }
+.settings-primary { display: grid; place-items: center; flex: 0 0 auto; width: 4.2rem; height: 2rem; padding: 0 .85rem; border-color: transparent; border-radius: .6rem; color: #fff; background: var(--accent); font-size: .72rem; font-weight: 600; }
+.settings-primary:hover:not(:disabled) { color: #fff; background: var(--accent-dark); border-color: transparent; }
+.settings-hint, .settings-error { margin: 0; font-size: .64rem; line-height: 1.5; }
+.settings-hint { color: var(--tertiary); }
+.settings-hint, .settings-error { min-height: 2.1em; }
+.button-spinner { width: .85rem; height: .85rem; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: settings-spin .7s linear infinite; }
+@keyframes settings-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .button-spinner { animation-duration: 2s; } }
+.settings-error { color: #a33e3e; }
+.settings code { padding: .08em .35em; border-radius: .3em; background: #eef0ee; font-size: .92em; }
+.setting-row { display: flex; align-items: center; justify-content: space-between; gap: .9rem; cursor: pointer; }
+.setting-row span { min-width: 0; }
+.setting-row strong { display: block; font-size: .74rem; font-weight: 620; }
+.setting-row small { display: block; margin-top: .12rem; color: var(--tertiary); font-size: .62rem; line-height: 1.45; }
+/* A native checkbox drawn as the system switch: keeps keyboard and screen-reader behaviour for free. */
+.switch { appearance: none; -webkit-appearance: none; position: relative; flex: 0 0 auto; width: 2.1rem; height: 1.25rem; margin: 0; border-radius: 999px; background: #d4d9d5; cursor: pointer; transition: background 160ms ease; }
+.switch::after { content: ''; position: absolute; top: .125rem; left: .125rem; width: 1rem; height: 1rem; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.28); transition: transform 180ms cubic-bezier(.3,1.3,.5,1); }
+.switch:checked { background: var(--accent); }
+.switch:checked::after { transform: translateX(.85rem); }
+.switch:disabled { opacity: .45; cursor: not-allowed; }
+@media (prefers-reduced-motion: reduce) { .switch, .switch::after { transition: none; } }
 /* Previous conversations: rebind this page to any recent session. */
 .session-history { display: grid; gap: .2rem; max-height: 12rem; padding: .5rem .6rem; overflow-y: auto; border-bottom: 1px solid var(--line); background: #f7f8f7; scrollbar-width: thin; }
 .session-history header { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; padding: 0 .25rem .15rem; }
@@ -1694,12 +1937,6 @@ button svg { width: .9rem; height: .9rem; fill: none; stroke: currentColor; stro
 .session-history-item.current { border-color: #b9cdc1; background: #edf4ef; }
 .session-history-item strong { overflow: hidden; color: #45594b; font-size: .7rem; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
 .session-history-item small { overflow: hidden; color: var(--tertiary); font-size: .58rem; text-overflow: ellipsis; white-space: nowrap; }
-.settings label { display: grid; gap: .2rem; font-size: .68rem; color: var(--secondary); }
-.settings-row { display: flex; align-items: center; gap: .5rem; }
-.settings-row button { padding: .3rem .6rem; }
-.settings p { margin: 0; color: var(--tertiary); font-size: .62rem; line-height: 1.5; }
-.settings input { padding: .38rem .5rem; border: 1px solid var(--line); border-radius: .5rem; font: inherit; font-size: .72rem; color: var(--text); background: #fff; }
-.settings code { padding: .1em .3em; border-radius: .3em; background: #eceaea; font-size: .92em; }
 
 /* Thread: user turns right-aligned, answers as plain Markdown, like the app. */
 .thread { flex: 1 1 0; min-height: 0; padding: 1.05rem 1.15rem .4rem; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-gutter: stable; }
@@ -1817,11 +2054,11 @@ button svg { width: .9rem; height: .9rem; fill: none; stroke: currentColor; stro
 /* Menus sit flush against their trigger: the pointer never crosses a gap, so
    leaving the trigger or the menu can close it immediately. */
 .picker-popover { position: absolute; z-index: 20; bottom: 100%; left: 0; width: min(17rem,calc(100vw - 3rem)); max-height: 50dvh; padding: .35rem; overflow-y: auto; border: 1px solid #e3e9e4; border-radius: .8rem; background: #fff; box-shadow: 0 16px 44px rgba(30,45,34,.16); }
-.picker-popover button { display: grid; gap: .1rem; width: 100%; min-height: 2.4rem; padding: .45rem .6rem; border: 0; border-radius: .55rem; background: transparent; text-align: left; }
+.picker-popover button { display: grid; align-content: center; gap: .1rem; width: 100%; min-height: 2.4rem; padding: .45rem .6rem; border: 0; border-radius: .55rem; background: transparent; text-align: left; }
 .picker-popover button:hover, .picker-popover button.selected { background: #edf4ef; }
 .picker-popover button strong { overflow: hidden; color: #435649; text-overflow: ellipsis; white-space: nowrap; }
 .picker-popover button small { overflow: hidden; color: #8c9790; text-overflow: ellipsis; white-space: nowrap; }
-.effort-popover { width: 9rem; }
+.effort-popover { width: 13rem; max-height: min(20rem, 50dvh); }
 .more-trigger { flex: 0 0 auto; width: 2rem; height: 2rem; border: 0; border-radius: 50%; background: transparent; color: #7c8b80; letter-spacing: .07em; }
 .more-trigger:hover, .more-trigger[aria-expanded="true"] { background: #eef3ef; }
 .more-menu { position: relative; flex: 0 0 auto; }
@@ -1844,28 +2081,42 @@ button svg { width: .9rem; height: .9rem; fill: none; stroke: currentColor; stro
 @container composer-footer (max-width: 430px) {
   .usage-details .usage-context .context-popover { right: -.35rem; bottom: calc(100% + .35rem); }
 }
-.browser-consent { margin: 0 .8rem .25rem; padding: .85rem; max-height: 40dvh; overflow: auto; border: 1px solid #e4ebe6; border-radius: 1rem; background: #fff; box-shadow: 0 10px 35px rgba(30,45,34,.09); font-size: .75rem; }
-.browser-consent header { display: flex; gap: .55rem; align-items: center; }
-.browser-consent header > div { min-width: 0; display: grid; gap: .1rem; }
-.browser-consent header strong { font-size: .8rem; color: #354d3d; }
-.browser-consent header small { color: #87938a; line-height: 1.4; }
-.consent-mark { display: grid; place-items: center; width: 1.55rem; height: 1.55rem; flex: 0 0 auto; border-radius: .5rem; color: #456b53; background: #edf4ef; }
-.browser-consent dl { display: grid; gap: .45rem; margin: .75rem 0 .5rem; padding: .65rem; border-radius: .7rem; background: #f7f9f7; }
-.browser-consent dl > div { display: grid; grid-template-columns: 3.4rem minmax(0,1fr); gap: .5rem; }
+.browser-consent { margin: 0 .8rem .35rem; padding: .8rem .85rem .75rem; max-height: 44dvh; overflow: auto; border: 1px solid #e0e7e2; border-left: 3px solid #476957; border-radius: .9rem; background: #fff; box-shadow: 0 10px 32px rgba(30,45,34,.09); font-size: .75rem; }
+.browser-consent.act { border-left-color: #c28a2c; }
+.browser-consent header { display: flex; gap: .6rem; align-items: center; }
+.browser-consent header > div { min-width: 0; flex: 1 1 auto; display: grid; gap: .12rem; }
+.browser-consent header strong { color: #2f4638; font-size: .8rem; font-weight: 650; }
+.browser-consent header small { overflow-wrap: anywhere; color: #7d897f; line-height: 1.4; }
+.consent-mark { display: grid; place-items: center; width: 1.6rem; height: 1.6rem; flex: 0 0 auto; border-radius: .5rem; color: #3f6450; background: #e9f1ec; font-size: .8rem; font-weight: 700; }
+.browser-consent.act .consent-mark { color: #8a5d12; background: #f8eed8; }
+.consent-timer { flex: 0 0 auto; align-self: flex-start; padding: .1rem .4rem; border-radius: 999px; color: #8a948d; background: #f2f5f3; font-size: .6rem; font-variant-numeric: tabular-nums; }
+.browser-consent dl { display: grid; gap: .4rem; margin: .7rem 0 .5rem; padding: .6rem .65rem; border-radius: .65rem; background: #f6f8f6; }
+.browser-consent dl > div { display: grid; grid-template-columns: 4.2rem minmax(0,1fr); gap: .5rem; }
 .browser-consent dt { color: #929e95; }
 .browser-consent dd { min-width: 0; margin: 0; overflow-wrap: anywhere; color: #405649; }
-.browser-consent code { font-size: .72rem; }
+.browser-consent dd strong { color: #2f4638; font-weight: 650; }
+.browser-consent code { font-size: .7rem; }
+.consent-tag { margin-left: .35rem; padding: .02rem .35rem; border-radius: .3rem; color: #6e7d72; background: #e8eeea; font-size: .6rem; }
+.consent-href { display: block; margin-top: .15rem; color: #6e7d72; font-size: .66rem; }
 .consent-value { max-height: 4.5rem; overflow-y: auto; white-space: pre-wrap; }
 .browser-consent p { margin: .4rem 0 .65rem; overflow-wrap: anywhere; }
-.browser-consent .consent-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; }
-.browser-consent button { padding: .45rem .7rem; }
-.browser-consent button.allow { border-color: #476957; background: #476957; color: #fff; }
-.browser-consent button.allow-session { border-color: #cbd9d1; color: #3f5b4a; background: #eef4f0; }
-.consent-warning { color: #796339; font-size: .65rem; }
-.consent-note { margin: -.25rem 0 .55rem; color: var(--tertiary); font-size: .6rem; }
-.notice { margin: .15rem .6rem .35rem; font-size: .66rem; }
+.browser-consent .consent-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .4rem; }
+.browser-consent button { padding: .42rem .75rem; border-radius: .6rem; }
+.browser-consent button.allow { border-color: #476957; background: #476957; color: #fff; font-weight: 600; }
+.browser-consent button.allow:hover:not(:disabled) { background: #395b48; border-color: #395b48; color: #fff; }
+.browser-consent button.allow-session { border-color: transparent; color: #5d7567; background: transparent; }
+.browser-consent button.allow-session:hover:not(:disabled) { background: #eef4f0; }
+.consent-warning { color: #8a6a28; font-size: .66rem; line-height: 1.45; }
+.notice-bar { display: flex; align-items: flex-start; gap: .3rem; margin: .25rem .35rem .15rem; padding: .35rem .3rem .35rem .6rem; border-radius: .6rem; background: #f1f6f3; }
+.notice-bar.error { background: #fbeeee; }
+.notice { flex: 1 1 auto; min-width: 0; margin: 0; overflow-wrap: anywhere; font-size: .66rem; line-height: 1.5; }
 .notice.ok { color: var(--accent-dark); }
 .notice.error { color: #a33e3e; }
+/* A turn's own error line sits in the thread, not in the composer bar. */
+.turn-response .notice { margin: .3rem 0 0; }
+.notice-close { flex: 0 0 auto; width: 1.3rem; height: 1.3rem; padding: 0; border: 0; border-radius: 50%; color: inherit; background: transparent; opacity: .55; font-size: .9rem; line-height: 1; }
+.notice-bar.error .notice-close { color: #a33e3e; }
+.notice-close:hover:not(:disabled) { opacity: 1; background: rgba(0, 0, 0, .06); }
 @media (max-width: 355px) {
   .model-trigger { width: 7.4rem; }
   .effort-trigger { width: 5.1rem; }

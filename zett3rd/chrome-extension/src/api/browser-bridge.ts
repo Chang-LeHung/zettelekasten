@@ -1,10 +1,16 @@
-import { BrowserExecutor, validateCommand, type BrowserCommand } from '../page/browser-executor'
+import { BrowserExecutor, validateCommand, type BrowserCommand, type BrowserTarget } from '../page/browser-executor'
 
 export interface BrowserConsent {
   command: BrowserCommand
+  /** The element the action targets, read from the page; null when it could not be described. */
+  target: BrowserTarget | null
+  /** When the request lapses unanswered, so the card can say how long is left. */
+  expiresAt: number
   approve: () => void
   reject: () => void
 }
+
+const CONSENT_WINDOW_MS = 90000
 
 /** An explicitly connected panel owns its socket, tab, and pending consent.
  * No reconnect/replay: every reconnect requires a new user click and token.
@@ -99,13 +105,23 @@ export class BrowserBridgeClient {
       if (command.operation !== 'snapshot' && !this.autoApprove) {
         const approved = await new Promise<boolean>(resolve => {
           this.consent = resolve
-          this.consentTimer = setTimeout(() => resolve(false), 90000)
-          this.onConsent({ command, approve: () => resolve(true), reject: () => resolve(false) })
+          this.consentTimer = setTimeout(() => resolve(false), CONSENT_WINDOW_MS)
+          const consent: BrowserConsent = {
+            command, target: null, expiresAt: Date.now() + CONSENT_WINDOW_MS,
+            approve: () => resolve(true), reject: () => resolve(false),
+          }
+          this.onConsent(consent)
+          // The card is on screen at once; the page's own name for the element
+          // joins it a moment later, and only while this request is still open.
+          const selector = command.change?.selector ?? command.interaction?.selector
+          if (selector) void this.describeFor(selector).then(target => {
+            if (target && this.activeId === command.id && this.consent === resolve) this.onConsent({ ...consent, target })
+          })
         })
         clearTimeout(this.consentTimer)
         this.consent = undefined
         this.onConsent(null)
-        if (!approved) throw new Error('User declined the DOM change or approval expired')
+        if (!approved) throw new Error('The user declined this action or did not answer in time. Do not retry it; ask what they want instead.')
       }
       if (generation !== this.generation || !this.executor) return
       const result = await this.executor.execute(command)
@@ -115,6 +131,10 @@ export class BrowserBridgeClient {
     } finally {
       if (generation === this.generation) this.activeId = undefined
     }
+  }
+
+  private async describeFor(selector: string): Promise<BrowserTarget | null> {
+    try { return (await this.executor?.describe?.(selector)) ?? null } catch { return null }
   }
 
   private reply(id: string, result: { ok: boolean; result?: string; error?: string }): void {

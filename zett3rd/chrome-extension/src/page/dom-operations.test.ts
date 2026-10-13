@@ -125,7 +125,7 @@ it('dispatches one reviewed click but does not claim the website accepted it', (
   expect(click).toHaveBeenCalledTimes(1)
   expect(receipt).toMatchObject({ action: 'click', dispatched: true, verified: false })
   expect(receipt.notice).toContain('inspect the page')
-  expect(() => interact('click', { selector: '#text' })).toThrow('interactive')
+  expect(() => interact('click', { selector: '#text' })).toThrow('plain content')
   expect(() => interact('click', { selector: '#disabled' })).toThrow('disabled')
 })
 
@@ -176,6 +176,58 @@ it('dispatches drag/drop events with a bounded target and an unverified receipt'
   expect(events).toEqual(['start', 'drop'])
   expect(receipt).toMatchObject({ dispatched: true, verified: false })
   expect(receipt.notice).toContain('trusted pointer input')
-  expect(() => interact('drag', { target_selector: '#missing' })).toThrow('exactly one')
+  expect(() => interact('drag', { target_selector: '#missing' })).toThrow('No element matches')
   vi.unstubAllGlobals()
+})
+
+function mutate(selector: string) {
+  return () => applyDOMCommand({ ...read, query: { selector } })
+}
+
+it('names the candidates when a selector is ambiguous, so the next call can be exact', () => {
+  document.body.innerHTML = '<button class="buy" name="first">Add to cart</button><button class="buy">Add to cart</button>'
+  try {
+    mutate('.buy')()
+    expect.unreachable()
+  } catch (error) {
+    const message = (error as Error).message
+    expect(message).toContain('matches 2 elements')
+    expect(message).toContain('button[name="first"]')
+    expect(message).toContain('"Add to cart"')
+    expect(message.length).toBeLessThanOrEqual(1000)
+  }
+})
+
+it('explains missing, invalid, and hidden selectors in words the model can act on', () => {
+  document.body.innerHTML = '<div style="display:none"><button id="gone">Gone</button></div>'
+  expect(mutate('#nope')).toThrow('get_browser_page again')
+  expect(mutate('###')).toThrow('not a valid CSS selector')
+  expect(mutate('#gone')).toThrow('ancestor has display: none')
+})
+
+it('finds elements by their visible text and returns usable selectors', () => {
+  document.body.innerHTML = '<p>Intro</p><button id="pay">Pay now</button><a href="/x">Pay later</a><div style="display:none">Pay hidden</div>'
+  const result = JSON.parse(applyDOMCommand({ ...read, query: { selector: null, text: 'pay' } }).result!)
+  expect(result.total).toBe(2)
+  expect(result.matches.map((match: { selector: string }) => match.selector)).toContain('#pay')
+  expect(result.matches.every((match: { interactive: boolean }) => match.interactive)).toBe(true)
+  const none = JSON.parse(applyDOMCommand({ ...read, query: { selector: null, text: 'absent' } }).result!)
+  expect(none).toMatchObject({ total: 0, matches: [] })
+})
+
+it('clicks the control a child sits in, and refuses plain content with guidance', () => {
+  document.body.innerHTML = '<button id="b"><span id="inner">Go</span></button><p id="para">Words</p><div id="card" onclick="void 0">Card</div>'
+  const clicked = vi.fn()
+  document.querySelector('#b')!.addEventListener('click', clicked)
+  expect(() => interact('click', { selector: '#inner' })).not.toThrow()
+  expect(clicked).toHaveBeenCalledTimes(1)
+  expect(() => interact('click', { selector: '#para' })).toThrow('plain content')
+  expect(() => interact('click', { selector: '#card' })).not.toThrow()
+})
+
+it('reports where the page is scrolled and each control’s link target', () => {
+  document.body.innerHTML = '<a id="link" href="https://example.com/next">Next</a>'
+  const page = JSON.parse(applyDOMCommand(read).result!)
+  expect(page.scroll).toMatchObject({ y: 0 })
+  expect(page.controls[0]).toMatchObject({ selector: '#link', href: 'https://example.com/next' })
 })

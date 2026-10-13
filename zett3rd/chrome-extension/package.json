@@ -1,6 +1,6 @@
 {
   "name": "zettelekasten-side-panel",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Embedded per-page Chrome conversation for the local Zett server",

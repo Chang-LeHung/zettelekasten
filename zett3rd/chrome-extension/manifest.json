@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Zettelekasten",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Read the page you are on, ask your local Zett agent about it, and file the result as an artifact.",
   "icons": {
     "16": "icons/icon16.png",

@@ -99,7 +99,7 @@ export type CardType = 'note' | 'idea' | 'quote' | 'todo' | 'reference'
 export type ArtifactType = 'card' | 'article' | 'image' | 'slides' | 'latex_pdf'
 export type ArtifactStatus = 'draft' | 'saved'
 export type SessionAssetType = 'text' | 'image' | 'link' | 'file'
-export type ReasoningEffort = 'off' | 'low' | 'medium' | 'high'
+export type ReasoningEffort = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
 export type ShellApprovalMode = 'review' | 'allow_all'
 
 export interface RuntimeSettings {
