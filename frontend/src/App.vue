@@ -4389,7 +4389,7 @@ onBeforeUnmount(() => {
         <div v-if="settingsOpen" class="settings-backdrop" @click.self="closeSettings">
         <section ref="settingsDialog" class="settings-dialog" role="dialog" aria-modal="true" :aria-label="$t('Settings')" tabindex="-1">
           <header class="settings-dialog-header">
-            <div><p class="eyebrow">{{ $t('Preferences') }}</p><h1>{{ $t('Settings') }}</h1></div>
+            <h1>{{ $t('Settings') }}</h1>
             <button class="close-button" type="button" :aria-label="$t('Close')" @click="closeSettings">×</button>
           </header>
           <div class="settings-dialog-body">

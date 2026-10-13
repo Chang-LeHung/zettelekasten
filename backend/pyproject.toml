@@ -1,6 +1,6 @@
 [project]
 name = "zettelekasten"
-version = "0.0.2"
+version = "0.0.3"
 description = "A local-first, AI-assisted workspace for turning fleeting thoughts, conversations, links, and assets into reusable knowledge"
 requires-python = ">=3.10"
 dynamic = ["readme"]

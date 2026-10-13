@@ -1,0 +1,101 @@
+/*
+ * Finishing layer, loaded after every component's own styles.
+ *
+ * It holds the rules that should read the same on every screen instead of being
+ * decided one component at a time: how a label is set, how a menu looks, how a
+ * sheet arrives, and what motion is allowed. Keeping them here means a screen
+ * cannot drift from the rest by re-declaring its own version.
+ */
+
+:root {
+  --ease-out: cubic-bezier(.22, 1, .36, 1);
+  --radius-sheet: 1.4rem;
+  --ring: 0 0 0 3px rgba(71, 105, 87, .16);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(29, 29, 31, .22) transparent;
+}
+
+::selection { background: rgba(71, 105, 87, .22); }
+
+/* Small labels are set in sentence case at a readable size: capitals and tracking
+   shout, and 0.6rem type is below what most people read comfortably. */
+.eyebrow,
+.sidebar-heading,
+.library-type-filters > span,
+.detail-section h2,
+.detail-metadata dt,
+.scheduled-facts dt,
+.scheduled-modal-header span,
+.channel-modal header span,
+.tag-manager-panel header span,
+.confirm-copy > span,
+.wechat-connect > div:nth-child(2) > span,
+.channel-card dt,
+.provider-picker,
+.metadata-fields label,
+.run-detail-grid dt,
+.run-detail-section h3 {
+  text-transform: none;
+  letter-spacing: 0;
+}
+.eyebrow { color: var(--secondary); font-size: .78rem; font-weight: 600; }
+.sidebar-heading { font-size: .72rem; font-weight: 650; }
+.library-type-filters > span, .detail-section h2, .detail-metadata dt, .scheduled-facts dt,
+.channel-card dt, .run-detail-grid dt { font-size: .7rem; font-weight: 600; }
+.scheduled-modal-header span, .channel-modal header span, .tag-manager-panel header span,
+.confirm-copy > span { font-size: .74rem; font-weight: 640; }
+
+/* Native selects are drawn once, the same everywhere: a quiet field with the
+   system chevron inset, instead of each browser's own control. `:not(#_)` lifts
+   the rule above component rules whose `background` shorthand would erase the
+   chevron. */
+select:not(#_) {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 2.1rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%236e6e73' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m3 4.5 3 3 3-3'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right .8rem center;
+  background-size: .8rem;
+  cursor: pointer;
+}
+select:not(#_):hover { border-color: rgba(29, 29, 31, .2); }
+select:not(#_):focus-visible { outline: 0; border-color: rgba(71, 105, 87, .5); box-shadow: var(--ring); }
+
+/* Settings is a sheet: it settles in, its backdrop softens the app behind it
+   without turning it grey, and its content keeps a reading width instead of
+   stretching a single field across the whole window. */
+.settings-backdrop { background: rgba(24, 33, 28, .28); backdrop-filter: blur(18px) saturate(140%); -webkit-backdrop-filter: blur(18px) saturate(140%); animation: sheet-backdrop 220ms ease-out both; }
+.settings-dialog {
+  border-radius: var(--radius-sheet);
+  border-color: rgba(255, 255, 255, .8);
+  background: rgba(253, 254, 253, .98);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .9) inset, 0 40px 100px rgba(18, 32, 23, .24), 0 8px 24px rgba(18, 32, 23, .1);
+  animation: sheet-in 320ms var(--ease-out) both;
+}
+.settings-dialog-header { padding: 1.1rem 1.5rem; }
+.settings-dialog-header h1 { margin-top: .1rem; font-size: 1.35rem; letter-spacing: -.022em; }
+.settings-section { max-width: 52rem; margin-inline: auto; }
+.settings-card { border-radius: 1.1rem; background: #fff; box-shadow: 0 1px 2px rgba(29, 29, 31, .04), 0 8px 24px rgba(29, 29, 31, .03); }
+.settings-tabs button { transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease; }
+.settings-tabs button:hover:not(.active) { background: rgba(255, 255, 255, .6); }
+@keyframes sheet-backdrop { from { opacity: 0; } }
+@keyframes sheet-in { from { opacity: 0; transform: translateY(10px) scale(.985); } }
+
+/* The closing and refresh controls in a header share one quiet circular grip. */
+.close-button { transition: background 140ms ease, transform 120ms ease; }
+.close-button:hover { background: #e4e4e8; }
+
+/* An empty list says what belongs there and offers the way to start. */
+.empty-hint { display: grid; justify-items: center; gap: .35rem; padding: 2.6rem 1.4rem; text-align: center; }
+.empty-hint svg { width: 1.6rem; height: 1.6rem; margin-bottom: .35rem; color: #9aa59e; stroke-width: 1.5; }
+.empty-hint strong { color: #3d4a42; font-size: .86rem; font-weight: 640; letter-spacing: -.005em; }
+.empty-hint p { max-width: 17rem; margin: 0; color: var(--tertiary); font-size: .74rem; line-height: 1.55; }
+.empty-hint button { margin-top: .7rem; }
+
+/* Counts line up as columns of figures, and long titles never push a row apart. */
+.count, .badge, kbd { font-variant-numeric: tabular-nums; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
