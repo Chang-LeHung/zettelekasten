@@ -87,6 +87,7 @@ docs-install:
 	npm --prefix docs ci
 
 docs-build:
+	node web/tools/check-translations.mjs
 	DOCS_BASE=$(SITE_BASE)docs/ npm --prefix docs run build
 
 docs-serve: site

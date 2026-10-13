@@ -3,37 +3,72 @@
  * The home page's hero picture: a miniature of the workspace that loops through
  * one request. Pure CSS — a prompt is typed, then a card, a deck and a paper
  * rise out of it — and it stands still when the reader prefers reduced motion.
+ * The words follow the page language.
  */
+import { computed } from 'vue'
+import { useData } from 'vitepress'
+
+const COPY = {
+  en: {
+    label: 'A prompt in the Zett workspace becomes a card, a slide deck, and a paper',
+    title: 'AI workspace',
+    chip: 'Your model',
+    prompt: 'Turn this idea into a card, a deck, and a paper.',
+    card: 'Card',
+    cardTitle: 'Local-first beats sync',
+    slides: 'Slides',
+    slidesTitle: 'Ten minutes on local notes',
+    paper: 'Paper · PDF',
+    paperTitle: 'Note sync without a server',
+    saved: 'Saved to a folder you own',
+  },
+  zh: {
+    label: 'Zett 工作台里的一句话，变成卡片、幻灯片和论文',
+    title: 'AI 工作台',
+    chip: '你的模型',
+    prompt: '把这个想法做成卡片、幻灯片和一篇论文。',
+    card: '卡片',
+    cardTitle: '本地优先胜过同步',
+    slides: '幻灯片',
+    slidesTitle: '十分钟聊聊本地笔记',
+    paper: '论文 · PDF',
+    paperTitle: '不依赖服务器的笔记同步',
+    saved: '已保存到属于你的文件夹',
+  },
+}
+
+const { lang } = useData()
+const t = computed(() => (lang.value.startsWith('zh') ? COPY.zh : COPY.en))
 </script>
 
 <template>
-  <div class="hero-art" role="img" aria-label="A prompt in the Zett workspace becomes a card, a slide deck, and a paper">
+  <div class="hero-art" role="img" :aria-label="t.label">
     <div class="ha-window">
       <div class="ha-bar">
         <span class="ha-dots"><i /><i /><i /></span>
-        <span class="ha-title">AI workspace</span>
-        <span class="ha-chip">Your model</span>
+        <span class="ha-title">{{ t.title }}</span>
+        <span class="ha-chip">{{ t.chip }}</span>
       </div>
       <div class="ha-body">
-        <p class="ha-prompt"><span class="ha-type">Turn this idea into a card, a deck, and a paper.</span></p>
+        <p class="ha-prompt"><span class="ha-type">{{ t.prompt }}</span></p>
         <div class="ha-stack">
           <article class="ha-card ha-card--1">
-            <span class="ha-kind">Card</span>
-            <strong>Local-first beats sync</strong>
+            <span class="ha-kind">{{ t.card }}</span>
+            <strong>{{ t.cardTitle }}</strong>
             <span class="ha-line" /><span class="ha-line ha-line--short" />
           </article>
           <article class="ha-card ha-card--2">
-            <span class="ha-kind">Slides</span>
-            <strong>Ten minutes on local notes</strong>
+            <span class="ha-kind">{{ t.slides }}</span>
+            <strong>{{ t.slidesTitle }}</strong>
             <span class="ha-slides"><i /><i /><i /></span>
           </article>
           <article class="ha-card ha-card--3">
-            <span class="ha-kind">Paper · PDF</span>
-            <strong>Note sync without a server</strong>
+            <span class="ha-kind">{{ t.paper }}</span>
+            <strong>{{ t.paperTitle }}</strong>
             <span class="ha-line" /><span class="ha-line ha-line--short" />
           </article>
         </div>
-        <p class="ha-saved"><span class="ha-check" />Saved to a folder you own</p>
+        <p class="ha-saved"><span class="ha-check" />{{ t.saved }}</p>
       </div>
     </div>
   </div>

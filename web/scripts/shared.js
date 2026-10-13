@@ -6,6 +6,10 @@
 /* ------------------------------------------------------------------ theme */
 
 const THEME_KEY = 'zett.theme';
+const isZh = document.documentElement.lang.toLowerCase().startsWith('zh');
+const TEXT = isZh
+  ? { toLight: '切换到浅色模式', toDark: '切换到深色模式', copy: '复制', copied: '已复制', failed: '复制失败', overview: '概览' }
+  : { toLight: 'Switch to light mode', toDark: 'Switch to dark mode', copy: 'Copy', copied: 'Copied', failed: 'Copy failed', overview: 'Overview' };
 const root = document.documentElement;
 
 function applyTheme(theme, { persist = true } = {}) {
@@ -20,7 +24,7 @@ function applyTheme(theme, { persist = true } = {}) {
   }
   for (const button of document.querySelectorAll('[data-theme-toggle]')) {
     button.setAttribute('aria-pressed', String(theme === 'dark'));
-    button.setAttribute('aria-label', theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
+    button.setAttribute('aria-label', theme === 'dark' ? TEXT.toLight : TEXT.toDark);
   }
 }
 
@@ -57,7 +61,7 @@ const siteBase = document.querySelector('meta[name="zett-base"]')?.content ?? '/
 
 function loadIndex() {
   if (!indexPromise) {
-    indexPromise = fetch(`${siteBase}docs/search.json`)
+    indexPromise = fetch(`${siteBase}docs/${isZh ? 'zh/' : ''}search.json`)
       .then((response) => (response.ok ? response.json() : []))
       .catch(() => []);
   }
@@ -178,17 +182,17 @@ for (const block of document.querySelectorAll('.docs-content .highlight')) {
   const button = document.createElement('button');
   button.className = 'copy-button';
   button.type = 'button';
-  button.textContent = 'Copy';
+  button.textContent = TEXT.copy;
   button.addEventListener('click', async () => {
     const code = block.querySelector('code')?.textContent ?? '';
     try {
       await navigator.clipboard.writeText(code);
-      button.textContent = 'Copied';
+      button.textContent = TEXT.copied;
       setTimeout(() => {
-        button.textContent = 'Copy';
+        button.textContent = TEXT.copy;
       }, 1600);
     } catch {
-      button.textContent = 'Copy failed';
+      button.textContent = TEXT.failed;
     }
   });
   block.append(button);

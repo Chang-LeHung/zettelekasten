@@ -29,6 +29,7 @@ if (reduceMotion.matches || !('IntersectionObserver' in window)) {
 const copyButton = document.querySelector('[data-copy]');
 
 if (copyButton) {
+  const idleLabel = copyButton.textContent;
   copyButton.addEventListener('click', async () => {
     const source = document.querySelector('[data-copy-source]');
     const commands = [...source.querySelectorAll('.line:not(.out)')]
@@ -36,12 +37,12 @@ if (copyButton) {
       .join('\n');
     try {
       await navigator.clipboard.writeText(commands);
-      copyButton.textContent = 'Copied';
+      copyButton.textContent = copyButton.dataset.copied ?? 'Copied';
     } catch {
-      copyButton.textContent = 'Press ⌘C';
+      copyButton.textContent = copyButton.dataset.fallback ?? 'Press ⌘C';
     }
     setTimeout(() => {
-      copyButton.textContent = 'Copy';
+      copyButton.textContent = idleLabel;
     }, 1600);
   });
 }

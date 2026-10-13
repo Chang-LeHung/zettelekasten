@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Zett — 做出值得留下的东西</title>
+    <meta name="description" content="Zett 是一个本地优先的 AI 工作区。把一个想法、一份文件或正在阅读的网页，整理成卡片、幻灯片或论文，并保存在属于你的文件夹里。无需账号，没有遥测。" />
+    <link rel="icon" href="/assets/favicon.ico" />
+    <link rel="alternate" hreflang="en" href="https://chang-lehung.github.io/zettelekasten/" />
+    <link rel="alternate" hreflang="zh-CN" href="https://chang-lehung.github.io/zettelekasten/zh/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Zett" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:title" content="Zett — 做出值得留下的东西" />
+    <meta property="og:description" content="本地优先的 AI 工作区：卡片、幻灯片和论文，都保存在属于你的文件夹里。" />
+    <meta property="og:url" content="https://chang-lehung.github.io/zettelekasten/zh/" />
+    <meta property="og:image" content="https://chang-lehung.github.io/zettelekasten/assets/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="https://chang-lehung.github.io/zettelekasten/assets/og.png" />
+    <link rel="stylesheet" href="/styles/tokens.css" />
+    <link rel="stylesheet" href="/styles/base.css" />
+    <link rel="stylesheet" href="/styles/site.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">跳到正文</a>
+
+    <header class="nav" data-enter="nav">
+      <a class="nav__brand" href="/zh/">
+        <img src="/assets/logo.png" width="28" height="28" alt="" />
+        <span>Zett</span>
+      </a>
+      <nav class="nav__links" aria-label="主导航">
+        <a href="#product">产品</a>
+        <a href="#ways">使用方式</a>
+        <a href="#data">你的数据</a>
+        <a href="/docs/zh/">文档</a>
+      </nav>
+      <div class="nav__actions nav__actions--end">
+        <a class="nav__lang" href="/" hreflang="en" lang="en">English</a>
+        <button class="icon-button" type="button" data-search-open aria-label="搜索文档">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="6" /><path d="m20 20-3.6-3.6" stroke-linecap="round" /></svg>
+        </button>
+        <button class="icon-button" type="button" data-theme-toggle aria-label="切换到深色模式">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M20 12.5A8 8 0 1 1 11.5 4a6.5 6.5 0 0 0 8.5 8.5Z" stroke-linejoin="round" /></svg>
+        </button>
+        <a class="nav__cta" href="#start">安装</a>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero__copy">
+          <h1 class="hero__title" id="hero-title"><span class="rise">做出值得</span> <span class="rise">留下的东西。</span></h1>
+          <p class="hero__sub rise">
+            Zett 是一个在你自己电脑上与 AI 一起思考的工作区。从一个想法、一份文件或正在阅读的网页出发，把它整理成卡片、幻灯片或论文，并把你选定的版本留在属于你的文件夹里。
+          </p>
+          <div class="hero__actions rise">
+            <a class="button button--primary button--lg" href="#start">安装 Zett</a>
+            <a class="button button--lg" href="/docs/zh/">阅读文档</a>
+          </div>
+          <p class="hero__meta rise">免费开源。无需账号，没有遥测。支持 macOS、Linux 和 Windows。</p>
+        </div>
+
+        <figure class="shot shot--hero" data-hero-shot>
+          <img src="/assets/product/zh/workspace.jpg" width="1800" height="1125" alt="Zett 工作台：左侧是会话，右侧打开了它生成的卡片，上方有“全部保存”按钮" />
+        </figure>
+      </section>
+
+      <section class="feature" id="product" aria-labelledby="f1-title">
+        <div class="feature__head" data-reveal>
+          <h2 id="f1-title">聊透它，留下好的。</h2>
+          <p>
+            让它做一张卡片、一篇文章、一套幻灯片、一张图，或一篇 LaTeX 论文。草稿会在聊天旁边打开，你可以阅读、反驳，并亲眼看着它改变，保存之前不会有任何东西进入产物库。
+          </p>
+        </div>
+        <figure class="shot" data-reveal>
+          <img src="/assets/product/zh/draft.jpg" width="1800" height="1035" loading="lazy" alt="一张卡片草稿，与生成它的会话并排打开，上方是“全部保存”" />
+        </figure>
+        <dl class="specs" data-reveal>
+          <div><dt>先出草稿</dt><dd>保存之前，什么都不会进入产物库。之后的修改只写入草稿，你可以与已保存的版本对比。</dd></div>
+          <div><dt>边做边引导</dt><dd>排队追加消息、中途改变方向，或直接停止。每个会话可以选择八档推理强度。</dd></div>
+          <div><dt>你有什么模型就用什么</dt><dd>OpenAI、Anthropic、Gemini、DeepSeek、Ollama，或任何兼容的接口。Zett 自己不带模型。</dd></div>
+        </dl>
+      </section>
+
+      <section class="feature" aria-labelledby="f2-title">
+        <div class="feature__head" data-reveal>
+          <h2 id="f2-title">十年后，它仍然属于你。</h2>
+          <p>
+            保存下来的内容都在同一个可搜索的产物库里，带着你自己定义的标签。卡片、文章、幻灯片和 PDF 并排放着，任何一项都可以再回到会话里继续讨论。
+          </p>
+        </div>
+        <figure class="shot" data-reveal>
+          <img src="/assets/product/zh/library.jpg" width="1800" height="1125" loading="lazy" alt="产物库：六张已保存的卡片、文章和幻灯片，左侧是分类" />
+        </figure>
+        <dl class="specs" data-reveal>
+          <div><dt>分类</dt><dd>你自己建立的多级标签，附带数量。可以按类型筛选，也可以搜索所有正文。</dd></div>
+          <div><dt>用 @ 指向它</dt><dd>在输入框里引用某个产物或上传的文件，助手会在需要时再去读取。</dd></div>
+          <div><dt>底层是普通文件</dt><dd>Markdown、PDF 和 PNG 都放在文件夹里。可以一次选中多张卡片批量删除。</dd></div>
+        </dl>
+      </section>
+
+      <section class="feature" aria-labelledby="f3-title">
+        <div class="feature__head" data-reveal>
+          <h2 id="f3-title">你不在时，它照常工作。</h2>
+          <p>
+            给一条提示词设定时间，之后再来看记录。每次运行都有自己的会话，无人值守的任务不会弄乱你的会话列表。
+          </p>
+        </div>
+        <figure class="shot shot--short" data-reveal>
+          <img src="/assets/product/zh/tasks.jpg" width="1800" height="825" loading="lazy" alt="定时任务：每周阅读摘要和工作日早间整理，显示 cron 计划和下次运行时间" />
+        </figure>
+        <dl class="specs" data-reveal>
+          <div><dt>Cron 表达式</dt><dd>每天、每周、每月，可指定时区。停用任务后，历史记录依然保留。</dd></div>
+          <div><dt>无界面运行，全程记录</dt><dd>每次运行的提示词、工具调用和回答都会被记录，不需要打开浏览器。</dd></div>
+          <div><dt>同一个产物库</dt><dd>结果和其他产物一样保存，早上起来就在那里。</dd></div>
+        </dl>
+      </section>
+
+      <section class="ways" id="ways" aria-labelledby="ways-title">
+        <h2 id="ways-title" data-reveal>无论你在哪里，都是同一个助手。</h2>
+        <div class="ways__grid" data-reveal>
+          <article>
+            <h3>在 Chrome 里</h3>
+            <p>在任意页面旁打开 Zett，它能读取你正在看的内容。填写字段或点击按钮之前，会等你选择“仅此一次允许”“拒绝”或“本会话始终允许”，敏感字段则永远不会被触碰。</p>
+            <a href="/docs/zh/guide/chrome-extension/">安装扩展</a>
+          </article>
+          <article>
+            <h3>在微信里</h3>
+            <p>用手机给 Zett 发消息。照片、语音和文件都会作为文件送达，你不在电脑前时，结果也会保存进产物库。</p>
+            <a href="/docs/zh/guide/channels/">接入聊天应用</a>
+          </article>
+          <article>
+            <h3>在终端里</h3>
+            <p>Claude Code 或 Codex 刚完成的工作，可以通过命令行或 MCP 直接归档到产物库。</p>
+            <pre class="inline-code"><code>zett artifact create --type card \
+  --title "发布说明" --body-file notes.md</code></pre>
+            <a href="/docs/zh/guide/command-line/">阅读命令行指南</a>
+          </article>
+          <article>
+            <h3>在 Python 里</h3>
+            <p>插件可以增加工具、钩子、Slash 命令，甚至整个聊天渠道。插件默认不受信任，所以一个出错的插件不会拖垮 Zett。</p>
+            <a href="/docs/zh/plugins/">编写插件</a>
+          </article>
+        </div>
+      </section>
+
+      <section class="band" id="data" aria-labelledby="data-title">
+        <div class="band__inner">
+          <div class="band__copy">
+            <h2 id="data-title" data-reveal>一切都在一个文件夹里。</h2>
+            <p data-reveal>
+              你的产物库、会话、文件和设置，都是磁盘上的普通文件。像对待任何文件夹一样备份、迁移或删除它们。唯一的网络流量只发往你选择的模型，只有接入聊天应用时才会连接对应平台。
+            </p>
+            <p data-reveal>没有你的许可，助手既不能删除任何东西，也不能操作网页。</p>
+          </div>
+          <div class="tree" data-tree role="img" aria-label="~/.zettelekasten 文件夹：zett.db、agent.db、artifacts、assets、skills、logs">
+            <p class="tree__root">~/.zettelekasten/</p>
+            <ul>
+              <li><b>zett.db</b><span>产物库、标签、设置</span></li>
+              <li><b>agent.db</b><span>所有会话</span></li>
+              <li><b>artifacts/</b><span>论文和生成的文件</span></li>
+              <li><b>assets/</b><span>你添加的文件</span></li>
+              <li><b>skills/</b><span>你可以编辑的指令</span></li>
+              <li><b>logs/</b><span>出问题时查看</span></li>
+            </ul>
+            <p class="tree__foot">模型密钥在此文件夹中加密保存。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="start" id="start" aria-labelledby="start-title">
+        <div class="start__head" data-reveal>
+          <h2 id="start-title">两条命令，即可开始。</h2>
+          <p>Python 3.10 到 3.14。无需登录任何账号，也没有任何东西在云端运行。</p>
+        </div>
+        <div class="install" data-reveal>
+          <button class="install__copy" type="button" data-copy data-copied="已复制" data-fallback="请按 ⌘C" aria-label="复制安装命令">复制</button>
+<pre><code data-copy-source><span class="line"><span class="dim">$</span> uv tool install zettelekasten</span>
+<span class="line"><span class="dim">$</span> zett start</span>
+<span class="line out">Zett is running at http://127.0.0.1:6280</span></code></pre>
+        </div>
+        <ol class="steps" data-reveal>
+          <li><strong>先启动一次。</strong> <code>zett start</code> 会在后台运行工作区，<code>zett status</code> 可以查看状态。</li>
+          <li><strong>接入一个模型。</strong> 在设置里添加模型服务，密钥会被加密并留在你的电脑上。</li>
+          <li><strong>开始对话。</strong> 让它做一张卡片，在聊天旁边审阅，然后保存。</li>
+        </ol>
+        <div class="start__actions" data-reveal>
+          <a class="button button--primary button--lg" href="/docs/zh/">阅读文档</a>
+          <a class="button button--lg" href="https://github.com/Chang-LeHung/zettelekasten">在 GitHub 上查看</a>
+        </div>
+      </section>
+
+    </main>
+
+    <footer class="footer">
+      <div class="footer__brand">
+        <img src="/assets/logo.png" width="22" height="22" alt="" />
+        <span>Zett</span>
+      </div>
+      <nav class="footer__links" aria-label="页脚">
+        <a href="/docs/zh/">文档</a>
+        <a href="/docs/zh/plugins/">插件</a>
+        <a href="https://github.com/Chang-LeHung/zettelekasten">GitHub</a>
+        <a href="/" hreflang="en" lang="en">English</a>
+        <a href="https://github.com/Chang-LeHung/zettelekasten/blob/main/LICENSE">MIT 许可</a>
+      </nav>
+    </footer>
+
+    <div class="search-dialog" data-search-dialog role="dialog" aria-label="搜索文档">
+      <div class="search-dialog__panel">
+        <div class="search-dialog__field">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="6" /><path d="m20 20-3.6-3.6" stroke-linecap="round" /></svg>
+          <input type="search" placeholder="搜索文档…" aria-label="搜索文档" />
+        </div>
+        <p class="search-dialog__empty" data-search-empty hidden>输入关键词搜索文档。</p>
+        <ul class="search-dialog__results" data-search-results></ul>
+      </div>
+    </div>
+
+    <script type="module" src="/scripts/shared.js"></script>
+    <script type="module" src="/scripts/site.js"></script>
+  </body>
+</html>
