@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { aiClient, channelClient } from '../api/client'
 import type { AIProvider, Channel, ChannelLogin, ChannelPluginInfo, ChannelType, ReasoningEffort } from '../api/types'
 import { useI18n } from '../i18n'
+import { REASONING_EFFORTS } from '../utils/reasoningEffort'
 
 const { t } = useI18n()
 
@@ -301,10 +302,7 @@ onBeforeUnmount(() => {
           <label>
             <span>Reasoning</span>
             <select v-model="form.reasoningEffort">
-              <option value="off">Off</option>
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
+              <option v-for="option in REASONING_EFFORTS" :key="option.value" :value="option.value">{{ option.label }}</option>
             </select>
           </label>
           <label class="channel-coding">

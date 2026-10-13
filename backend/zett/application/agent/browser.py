@@ -26,6 +26,16 @@ def _reject_json_constant(value: str) -> None:
     raise ValueError(f"Not a JSON value: {value}")
 
 
+DISCONNECTED = (
+    "Browser disconnected: the tab navigated, closed, or the panel reconnected. Page tools are unavailable "
+    "for the rest of this turn, so do not retry them; tell the user what you could and could not do."
+)
+DISCONNECTED_MID_ACTION = (
+    "Browser disconnected while the last action ran, so it may or may not have happened. Do not repeat it "
+    "blindly and do not retry page tools this turn; tell the user."
+)
+
+
 class BrowserUnavailableError(ValueError):
     """An expired/missing connection must never silently target another tab."""
 
@@ -57,16 +67,17 @@ class BrowserDOMPatch(BaseModel):
 
 
 class BrowserPageQuery(BaseModel):
-    """Read the whole page or exactly one CSS-selected subtree."""
+    """Read the page or one CSS-selected subtree, or find elements by their visible text."""
 
     model_config = ConfigDict(extra="forbid", strict=True)
     selector: str | None = Field(default=None, min_length=1, max_length=500)
+    text: str | None = Field(default=None, min_length=1, max_length=200)
 
-    @field_validator("selector")
+    @field_validator("selector", "text")
     @classmethod
     def nonblank(cls, value: str | None) -> str | None:
         if value is not None and not value.strip():
-            raise ValueError("selector must not be blank")
+            raise ValueError("selector and text must not be blank")
         return value
 
 
@@ -169,6 +180,9 @@ class BrowserConnection:
     send: Callable[[dict[str, object]], Awaitable[None]]
     pending: dict[str, asyncio.Future[BrowserResult]] = field(default_factory=dict)
     active: bool = True
+    # A model may emit several tool calls at once. The panel runs one command at
+    # a time and approves each separately, so calls queue here instead of failing.
+    _turn: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
 
     async def call(
         self,
@@ -178,10 +192,19 @@ class BrowserConnection:
         query: BrowserPageQuery | None = None,
         interaction: BrowserInteraction | None = None,
     ) -> BrowserResult:
+        async with self._turn:
+            return await self._call(operation, change, query=query, interaction=interaction)
+
+    async def _call(
+        self,
+        operation: Literal["snapshot", "update", "interact"],
+        change: BrowserDOMPatch | None,
+        *,
+        query: BrowserPageQuery | None,
+        interaction: BrowserInteraction | None,
+    ) -> BrowserResult:
         if not self.active:
-            raise BrowserUnavailableError("Browser disconnected; reconnect the tab before another turn")
-        if self.pending:
-            raise BrowserUnavailableError("Another browser command is pending; call browser tools sequentially")
+            raise BrowserUnavailableError(DISCONNECTED)
         command = BrowserCommand(
             id=secrets.token_hex(16), operation=operation, change=change, query=query, interaction=interaction
         )
@@ -197,7 +220,7 @@ class BrowserConnection:
             # the cancellation lands after that awaitable finished, so it can
             # swallow the CancelledError and keep waiting for the reply.
             async with timeout(5):
-                await self.send(command.model_dump(mode="json"))
+                await self.send(command.model_dump(mode="json", exclude_none=True))
             async with timeout(120):
                 result = await future
             completed = True
@@ -228,7 +251,7 @@ class BrowserConnection:
         self.active = False
         for future in self.pending.values():
             if not future.done():
-                future.set_exception(BrowserUnavailableError("Browser disconnected; outcome may be unknown"))
+                future.set_exception(BrowserUnavailableError(DISCONNECTED_MID_ACTION))
         self.pending.clear()
 
 

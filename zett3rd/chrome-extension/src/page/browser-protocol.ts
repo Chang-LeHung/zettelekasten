@@ -19,7 +19,7 @@ export interface BrowserCommand {
   id: string
   operation: 'snapshot' | 'update' | 'interact'
   change: BrowserDOMPatch | null
-  query: { selector: string | null } | null
+  query: { selector: string | null; text?: string | null } | null
   interaction: BrowserInteraction | null
 }
 export interface BrowserResult { ok: boolean; result?: string; error?: string }
@@ -40,8 +40,9 @@ export function validateCommand(value: unknown): BrowserCommand {
   if (cmd.operation === 'snapshot') {
     if (cmd.change != null || cmd.interaction != null) throw new Error('A read cannot include a mutation')
     if (cmd.query != null) {
-      const query = record(cmd.query, ['selector'])
+      const query = record(cmd.query, ['selector', 'text'])
       if (query.selector != null && !text(query.selector, 500)) throw new Error('Invalid selector')
+      if (query.text != null && !text(query.text, 200)) throw new Error('Invalid search text')
     }
   } else if (cmd.operation === 'update') {
     if (cmd.query != null || cmd.interaction != null) throw new Error('An update cannot include another operation')
@@ -84,4 +85,15 @@ export function encodeResult(value: unknown): BrowserResult {
     throw new Error('Result exceeds 64 KB; read a smaller subtree with a selector')
   }
   return { ok: true, result }
+}
+
+/** Fragment-only changes keep the same document, so they must not drop the connection. */
+export function sameDocumentUrl(left: string, right: string): boolean {
+  try {
+    const a = new URL(left)
+    const b = new URL(right)
+    a.hash = ''
+    b.hash = ''
+    return a.href === b.href
+  } catch { return left === right }
 }

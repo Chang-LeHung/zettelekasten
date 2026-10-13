@@ -111,7 +111,8 @@ async function send(host: HTMLElement): Promise<void> {
   input.dispatchEvent(new Event('input', { bubbles: true }))
   await nextTick()
   input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
-  await nextTick()
+  // A dropped page connection is retried first, so the turn starts a tick later.
+  await flush()
 }
 
 it('opens the More menu on hover and closes composer menus on leave or outside press', async () => {
@@ -513,7 +514,7 @@ it('removes the page bar, retains automatic page context, and clears on Enter be
   const host = await mount()
   expect(host.querySelector('.page-strip')).toBeNull()
   expect(host.querySelector('.include-toggle')).toBeNull()
-  expect(host.textContent).not.toContain('Example page')
+  expect(host.querySelector('.thread')!.textContent).not.toContain('Example page')
   await send(host)
   expect(host.querySelector('textarea')!.value).toBe('')
   expect(options.text).toBe('Read this page')
@@ -639,7 +640,7 @@ it('stops an in-flight turn, revokes browser consent, and keeps partial output a
   expect(input.value).toBe('Next question')
   expect(host.querySelector<HTMLButtonElement>('[aria-label="Send"]')!.disabled).toBe(false)
   host.querySelector<HTMLButtonElement>('[aria-label="Send"]')!.click()
-  await nextTick()
+  await flush()
   expect(options.signal!.aborted).toBe(false)
   expect(options.signal).not.toBe(signal)
   finish('Next answer')
@@ -710,4 +711,87 @@ it('follows the bottom when turns stream and when an existing page chat is resto
   expect(second.host.textContent).toContain('Restored answer')
   expect(second.host.querySelector('.thread')).not.toBeNull()
   second.close()
+})
+
+it('offers every thinking level, and remembers one only if it is still valid', async () => {
+  stored.effort = 'xhigh'
+  const host = await mount()
+  expect(host.querySelector('.effort-trigger strong')?.textContent).toBe('Extra high')
+  host.querySelector<HTMLButtonElement>('.effort-trigger')!.click()
+  await nextTick()
+  const labels = [...host.querySelectorAll('.effort-popover button strong')].map(item => item.textContent)
+  expect(labels).toEqual(['Off', 'Minimal', 'Low', 'Medium', 'High', 'Extra high', 'Max', 'Ultra'])
+  host.querySelector<HTMLButtonElement>('.effort-popover button:last-child')!.click()
+  await flush()
+  expect(stored.effort).toBe('ultra')
+})
+
+it('falls back to Medium for a remembered level that no longer exists', async () => {
+  stored.effort = 'extreme'
+  const host = await mount()
+  expect(host.querySelector('.effort-trigger strong')?.textContent).toBe('Medium')
+})
+
+it('edits the server address as a draft and only switches pages when it is saved', async () => {
+  const host = await mount()
+  host.querySelector<HTMLButtonElement>('[aria-label="Server settings"]')!.click()
+  await nextTick()
+  const input = host.querySelector<HTMLInputElement>('[aria-label="Zett server address"]')!
+  const save = host.querySelector<HTMLButtonElement>('.settings-primary')!
+  expect(input.value).toBe('http://127.0.0.1:6280')
+  expect(save.textContent?.trim()).toBe('Test')
+  expect(host.querySelector('.conn-pill')?.textContent).toContain('Connected')
+
+  input.value = 'ftp://nope'
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+  await nextTick()
+  expect(save.textContent?.trim()).toBe('Save')
+  save.click()
+  await flush()
+  expect(host.querySelector('.settings-error')?.textContent).toContain('http://127.0.0.1:6280')
+  expect(stored.serverUrl).toBeUndefined()
+
+  input.value = 'http://127.0.0.1:7000/'
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+  await nextTick()
+  host.querySelector<HTMLButtonElement>('.settings-primary')!.click()
+  await flush()
+  expect(stored.serverUrl).toBe('http://127.0.0.1:7000')
+})
+
+it('turns page-change review off and on from the settings switch', async () => {
+  const host = await mount()
+  host.querySelector<HTMLButtonElement>('[aria-label="Server settings"]')!.click()
+  await nextTick()
+  const toggle = host.querySelector<HTMLInputElement>('.setting-row .switch')!
+  expect(toggle.checked).toBe(true)
+  toggle.checked = false
+  toggle.dispatchEvent(new Event('change', { bubbles: true }))
+  await flush()
+  expect(Object.keys(stored).some(key => key.startsWith('browserApproval') || key.includes('pprov'))).toBe(true)
+  expect(host.querySelector('.setting-row small')?.textContent).toContain('without asking')
+})
+
+it('testing the connection does not flash: the label holds, and a failure reports only in settings', async () => {
+  const host = await mount()
+  host.querySelector<HTMLButtonElement>('[aria-label="Server settings"]')!.click()
+  await nextTick()
+  const button = host.querySelector<HTMLButtonElement>('.settings-primary')!
+  const labels: string[] = []
+  const observer = new MutationObserver(() => labels.push(button.textContent!.trim()))
+  observer.observe(button, { childList: true, subtree: true, characterData: true })
+
+  button.click()
+  await flush()
+  expect(button.textContent!.trim()).toBe('Test')
+  expect(button.querySelector('.button-spinner')).toBeNull()
+  expect(labels.filter(label => label !== 'Test')).toEqual([])
+
+  vi.mocked(ZettClient.prototype.health).mockRejectedValueOnce(new Error('connect failed'))
+  button.click()
+  await flush()
+  expect(host.querySelector('.settings-error')?.textContent).toContain('Nothing answered')
+  expect(host.querySelector('.notice-bar')).toBeNull()
+  expect(host.querySelector('.conn-pill')?.textContent).toContain('Can’t reach')
+  observer.disconnect()
 })

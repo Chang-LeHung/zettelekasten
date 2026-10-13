@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { aiClient, scheduledTaskClient } from '../api/client'
+import { REASONING_EFFORTS } from '../utils/reasoningEffort'
 import type {
   AIProvider,
   ReasoningEffort,
@@ -306,13 +307,13 @@ onBeforeUnmount(() => {
   <header class="topbar compact">
     <div><p class="eyebrow">Automation</p><h1>Scheduled tasks</h1></div>
     <div class="scheduled-topbar-actions">
-      <button class="secondary-action new-scheduled-task-button" type="button" @click="formOpen = true">
+      <button class="secondary-action refresh-scheduled-tasks" type="button" :disabled="loading" aria-label="Refresh" title="Refresh" @click="loadTasks()">
+        <span v-if="loading" class="button-spinner" aria-hidden="true" />
+        <svg v-else><use href="#icon-refresh" /></svg>
+      </button>
+      <button class="primary-action new-scheduled-task-button" type="button" @click="formOpen = true">
         <svg><use href="#icon-add" /></svg>
         New task
-      </button>
-      <button class="primary-action" type="button" :disabled="loading" @click="loadTasks()">
-        <span v-if="loading" class="button-spinner" aria-hidden="true" />
-        Refresh
       </button>
     </div>
   </header>
@@ -343,7 +344,12 @@ onBeforeUnmount(() => {
             </span>
           </button>
         </div>
-        <div v-else class="scheduled-empty">No scheduled tasks yet.</div>
+        <div v-else class="empty-hint">
+          <svg><use href="#icon-schedule" /></svg>
+          <strong>No scheduled tasks yet</strong>
+          <p>Run a prompt on a schedule and read what it produced while you were away.</p>
+          <button class="secondary-action" type="button" @click="formOpen = true">Create a task</button>
+        </div>
       </aside>
 
       <div class="scheduled-detail">
@@ -440,7 +446,11 @@ onBeforeUnmount(() => {
               </div>
             </footer>
           </div>
-          <div v-else class="scheduled-empty">No runs recorded for this task.</div>
+          <div v-else class="empty-hint">
+            <svg><use href="#icon-conversation" /></svg>
+            <strong>No runs yet</strong>
+            <p>Each time this task runs, its status and transcript appear here.</p>
+          </div>
         </article>
       </div>
     </div>
@@ -471,7 +481,7 @@ onBeforeUnmount(() => {
               <small v-if="!timezoneValid" class="field-error">Use a valid IANA timezone such as Asia/Shanghai.</small>
             </label>
             <label><span>Provider</span><select v-model="form.providerId"><option value="" disabled>Select a provider</option><option v-for="provider in enabledProviders" :key="provider.id" :value="provider.id">{{ provider.name }} · {{ provider.model }}</option></select></label>
-            <label><span>Reasoning</span><select v-model="form.reasoningEffort"><option value="off">Off</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
+            <label><span>Reasoning</span><select v-model="form.reasoningEffort"><option v-for="option in REASONING_EFFORTS" :key="option.value" :value="option.value">{{ option.label }}</option></select></label>
             <label>
               <span>Timeout seconds</span>
               <input v-model.number="form.timeoutSeconds" type="number" min="1" max="86400" step="1" :aria-invalid="!timeoutValid" />

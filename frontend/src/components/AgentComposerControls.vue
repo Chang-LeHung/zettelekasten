@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { AgentContextComposition, AgentModelUsage, AIProvider, ReasoningEffort, ShellApprovalMode } from '../api/types'
 import { formatTokenCount, type AgentUsageSummary } from '../utils/agentUsage'
+import { REASONING_EFFORTS } from '../utils/reasoningEffort'
 import { useI18n } from '../i18n'
 import ContextCompositionRing from './ContextCompositionRing.vue'
 
@@ -39,14 +40,18 @@ const currentContextTokens = computed(() => (
     : null
 ))
 
-const effortOptions = computed<Array<{ value: ReasoningEffort; label: string; description: string }>>(() => [
-  { value: 'off', label: t('composer.off'), description: 'Answer directly' },
-  { value: 'low', label: t('composer.low'), description: 'Light thinking' },
-  { value: 'medium', label: t('composer.medium'), description: 'Balanced depth' },
-  { value: 'high', label: t('composer.high'), description: 'Deep analysis' },
-])
+const effortOptions = computed<Array<{ value: ReasoningEffort; label: string; description: string }>>(() => (
+  REASONING_EFFORTS.map((option) => ({
+    ...option,
+    // The four classic levels keep their translated names; the rest read the same everywhere.
+    label: ['off', 'low', 'medium', 'high'].includes(option.value) ? t(`composer.${option.value}`) : option.label,
+  }))
+))
 
-const selectedEffort = computed(() => effortOptions.value.find((option) => option.value === props.effort) || effortOptions.value[2])
+const selectedEffort = computed(() => (
+  effortOptions.value.find((option) => option.value === props.effort)
+  || effortOptions.value.find((option) => option.value === 'medium')!
+))
 const shellApprovalOptions = computed<Array<{ value: ShellApprovalMode; label: string; description: string }>>(() => [
   { value: 'review', label: t('composer.review'), description: t('composer.reviewDescription') },
   { value: 'allow_all', label: t('composer.allowAll'), description: t('composer.allowAllDescription') },
@@ -251,10 +256,14 @@ onBeforeUnmount(() => {
 .effort-dot { width: .48rem; height: .48rem; flex: 0 0 auto; border: 1px solid #a8b3ac; border-radius: 50%; background: #fff; box-shadow: 0 0 0 .2rem #f0f3f1; }
 .effort-dot.low { background: #a8bbae; }
 .effort-dot.medium { border-color: #668573; background: #71917d; }
-.effort-dot.high { border-color: #3f684f; background: #416d53; box-shadow: 0 0 0 .2rem #e6eee9; }
+.effort-dot.minimal { background: #d3ddd6; }
+.effort-dot.high, .effort-dot.xhigh, .effort-dot.max, .effort-dot.ultra { border-color: #3f684f; background: #416d53; box-shadow: 0 0 0 .2rem #e6eee9; }
+.effort-dot.xhigh { background: #34593f; }
+.effort-dot.max { border-color: #2c4b38; background: #2c4b38; box-shadow: 0 0 0 .2rem #d9e6de; }
+.effort-dot.ultra { border-color: #1f3a2b; background: #1f3a2b; box-shadow: 0 0 0 .2rem #cddfd3; }
 .control-popover { position: absolute; left: 0; bottom: calc(100% + .55rem); z-index: 30; padding: .42rem; border: 1px solid rgba(52, 70, 60, .12); border-radius: .86rem; background: rgba(255, 255, 255, .98); box-shadow: 0 16px 42px rgba(35, 49, 41, .14), 0 2px 8px rgba(35, 49, 41, .06); backdrop-filter: blur(18px); animation: popover-enter 150ms ease-out; }
 .model-popover { width: min(19rem, calc(100vw - 2rem)); }
-.effort-popover { width: 14rem; }
+.effort-popover { width: 14rem; max-height: min(22rem, 60dvh); overflow-y: auto; }
 .shell-popover { width: 15rem; }
 .control-popover header { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; padding: .45rem .52rem .52rem; }
 .control-popover header strong { color: #38423c; font-size: .66rem; }

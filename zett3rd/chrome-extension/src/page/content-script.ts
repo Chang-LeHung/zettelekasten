@@ -1,5 +1,5 @@
-import { applyDOMCommand } from './dom-operations'
-import { allowedPage, validateCommand } from './browser-protocol'
+import { applyDOMCommand, describeSelector } from './dom-operations'
+import { allowedPage, sameDocumentUrl, validateCommand } from './browser-protocol'
 
 /** Installed on demand only in the connected top document. No page-world
  * messaging, eval, script tags, HTML insertion, or arbitrary attribute edits.
@@ -21,7 +21,12 @@ if (!scope.__zettDOMBridgeInstalled) {
   /** Wide enough for the composer's `•••` menu and the context pie beside it. */
   const DEFAULT_PANEL_WIDTH = 520
 
+  /** Removes the listener that carries drags started from inside the panel's header. */
+  let detachFrameMessages: (() => void) | undefined
+
   function removePanel(): void {
+    detachFrameMessages?.()
+    detachFrameMessages = undefined
     panel?.remove()
     panel = undefined
     panelNonce = undefined
@@ -68,6 +73,32 @@ if (!scope.__zettDOMBridgeInstalled) {
     frame.src = url.href
     shell.append(handle, frame, ...corners)
     shadow.append(shell)
+    /** Move the panel by (dx, dy) from `start`, keeping it fully inside the viewport. */
+    function placeFrom(start: DOMRect, dx: number, dy: number): void {
+      host.style.left = `${Math.max(0, Math.min(innerWidth - start.width, start.left + dx))}px`
+      host.style.top = `${Math.max(0, Math.min(innerHeight - start.height, start.top + dy))}px`
+      host.style.right = 'auto'
+    }
+    // The panel's own header is the large drag target. It lives in the extension
+    // iframe, whose pointer events never reach this page, so the frame reports
+    // its pointer as screen-coordinate deltas (stable while the panel moves) and
+    // this side moves the host. Only that frame, from the extension's origin,
+    // is believed; `event.source` cannot be forged by the page, and the message
+    // carries nothing secret because the page can read it.
+    const extensionOrigin = chrome.runtime.getURL('').replace(/\/$/, '')
+    let headerDrag: DOMRect | undefined
+    const onFrameMessage = (event: MessageEvent): void => {
+      const data = event.data as { zett?: unknown; type?: unknown; dx?: unknown; dy?: unknown } | null
+      if (event.source !== frame.contentWindow || event.origin !== extensionOrigin) return
+      if (!data || data.zett !== 'panel-drag') return
+      if (data.type === 'start') headerDrag = host.getBoundingClientRect()
+      else if (data.type === 'end') headerDrag = undefined
+      else if (data.type === 'move' && headerDrag && Number.isFinite(data.dx) && Number.isFinite(data.dy)) {
+        placeFrom(headerDrag, Number(data.dx), Number(data.dy))
+      }
+    }
+    addEventListener('message', onFrameMessage)
+    detachFrameMessages = () => removeEventListener('message', onFrameMessage)
     function drag(event: PointerEvent, kind: 'move' | 'nw' | 'ne' | 'sw' | 'se'): void {
       if (event.button !== 0) return
       event.preventDefault()
@@ -84,9 +115,7 @@ if (!scope.__zettDOMBridgeInstalled) {
         const dx = next.clientX - x
         const dy = next.clientY - y
         if (kind === 'move') {
-          host.style.left = `${Math.max(0, Math.min(innerWidth - start.width, start.left + dx))}px`
-          host.style.top = `${Math.max(0, Math.min(innerHeight - start.height, start.top + dy))}px`
-          host.style.right = 'auto'
+          placeFrom(start, dx, dy)
           return
         }
         // Keep the opposite corner pinned while clamping to the viewport and
@@ -174,7 +203,15 @@ if (!scope.__zettDOMBridgeInstalled) {
         respond({ ok: true })
         return
       }
-      if (message.type !== 'command' || location.href !== binding.url || message.url !== binding.url) throw new Error('Page navigated; reconnect')
+      if (!sameDocumentUrl(location.href, binding.url) || !sameDocumentUrl(String(message.url ?? binding.url), binding.url)) {
+        throw new Error('The page navigated to a different address. Read the new page with get_browser_page after the panel reconnects.')
+      }
+      if (message.type === 'describe') {
+        // Read-only: names the element a pending action targets for the consent card.
+        respond({ ok: true, target: describeSelector(String(message.selector ?? '').slice(0, 500)) })
+        return
+      }
+      if (message.type !== 'command') throw new Error('Unknown page message')
       if (!Number.isFinite(message.expiresAt) || Date.now() > message.expiresAt || message.expiresAt > Date.now() + 11000) {
         throw new Error('DOM command expired')
       }

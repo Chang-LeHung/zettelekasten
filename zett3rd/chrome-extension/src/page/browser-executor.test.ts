@@ -53,3 +53,23 @@ it('prohibits executable payloads and browser-internal targets', () => {
   }
   expect(() => validateCommand({ ...command, script: { code: 'alert(1)' } })).toThrow()
 })
+
+it('treats a fragment-only change as the same document, but not a different path', async () => {
+  const executor = new BrowserExecutor(5)
+  await executor.connect()
+  vi.mocked(chrome.tabs.get).mockResolvedValue({ url: `${url}#details` } as chrome.tabs.Tab)
+  expect(await executor.execute(command)).toEqual({ ok: true, result: '{"applied":true}' })
+  vi.mocked(chrome.tabs.get).mockResolvedValue({ url: `${url}?page=2` } as chrome.tabs.Tab)
+  await expect(executor.execute(command)).rejects.toThrow('navigated')
+})
+
+it('describes a pending target without ever throwing', async () => {
+  const executor = new BrowserExecutor(5)
+  expect(await executor.describe('#pay')).toBeNull()
+  await executor.connect()
+  sendMessage.mockImplementation(async (_tab, message) => message.type === 'describe'
+    ? { ok: true, target: { matched: 1, tag: 'button', label: 'Pay now' } } : { ok: true, url })
+  expect(await executor.describe('#pay')).toEqual({ matched: 1, tag: 'button', label: 'Pay now', href: undefined })
+  sendMessage.mockRejectedValue(new Error('gone'))
+  expect(await executor.describe('#pay')).toBeNull()
+})

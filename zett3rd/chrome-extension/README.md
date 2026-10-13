@@ -37,8 +37,12 @@ welcome screen show the same logo.
 After a change, run `npm run build` again and press the reload button on the
 extension's card.
 
-If the server runs elsewhere, open the panel's **Settings** and change the
-address.
+If the server runs elsewhere, open the panel's settings (the sliders button). The
+**Connection** card shows whether Zett answers and how many models it offers; edit the
+address and press **Save** (the button reads **Test** while the address is unchanged,
+and re-checks it without touching your conversations). An address that is not
+`http(s)://…` is refused before anything is stored. **Review page changes** turns the
+per-action approval card off or on for the current conversation.
 
 The extension asks for access to all sites because reading the page you are on
 is its whole job: `chrome.scripting` needs that access to hand the panel a
@@ -50,7 +54,7 @@ the server address you configured, and only when you send a message.
 | Control | What happens |
 | --- | --- |
 | Page context | Reads the page that owns this panel (bounded to 20 000 characters). Each tab and URL has its own conversation; navigating to a new page switches to that page's conversation, and returning restores its previous chat. |
-| Composer picks | Compact connection/model and thinking controls stay under the input. Both choices stick across turns, and their menus close as soon as the pointer leaves the trigger or the menu. |
+| Composer picks | Compact connection/model and thinking controls stay under the input. Thinking offers every level the runtime defines — Off, Minimal, Low, Medium, High, Extra high, Max, Ultra — and a provider maps a level it cannot express onto its closest one. Both choices stick across turns, and their menus close as soon as the pointer leaves the trigger or the menu. |
 | Message images | The paperclip button, a paste, or a drop attaches images to the next message (up to `max_message_images`). Drafts show above the input with a remove button, the sent turn carries them as message parts so a vision model sees the pixels, and restored turns show their thumbnails. |
 | `/` commands and `@` references | Typing `/` or `@` at the start of a word opens the same menu the web composer uses. Arrow keys move, Enter or a click inserts the token, Escape closes, and a message carrying a listed token runs through that slash command or referenced resource instead of the plain message route. |
 | More options | The `•••` button holds connection retry/disconnect, Save all and usage metrics (cache, tokens, generation speed in tok/s, context percentage), leaving the composer uncluttered. Hovering or clicking it shows the menu, hovering the **Context** row shows the composition pie and its breakdown, and leaving the trigger or the menu closes it. |
@@ -63,9 +67,9 @@ the server address you configured, and only when you send a message.
 | **Save all** | Publishes every artifact of this conversation that still has something to save, and says how many it saved. |
 | **New chat** | Starts a fresh conversation for this page only, leaving the conversations of other tabs and pages unchanged. |
 | **Previous conversations** | Lists recent conversations, newest first, with their updated time and message count. It loads 20 at a time and fetches the next page when the list is scrolled to the end, saying so once there is nothing left. Choosing one rebinds this page to it, restores its transcript, and reconnects the page tools; the current one is marked. The header's sliders button opens the server settings instead. |
-| Floating panel | Starts at 520px wide and up to 90% of the viewport height. Drag the top strip to move it; drag any corner to resize it. Invisible corner zones keep the page's own content unobstructed. |
-| Page connection | Connects automatically when the page's conversation opens. **Disconnect page** turns off browser tools for this panel; **Connect page** retries a failed or deliberately disconnected connection. |
-| **Allow once / Always allow in this session / Reject** | Reviews each DOM edit's selector, action and value before applying it. **Always allow** approves this edit and stops asking for the rest of the conversation; **Ask before page edits again** in the `•••` menu turns that back on. No model-authored code executes. |
+| Floating panel | Starts at 520px wide and up to 90% of the viewport height. **Drag anywhere on the header** (the title, the empty space, the logo) to move it; the buttons in it keep their clicks. The thin strip above it also moves it, and any corner resizes it. The panel never leaves the viewport. Invisible corner zones keep the page's own content unobstructed. |
+| Page connection | The header names the page you are on and carries a **Page connected** pill: green when the Agent can read the page, grey when it cannot. Click it to turn page tools off or on. The panel connects on its own when a conversation opens and quietly reconnects before a send if the connection dropped, unless you turned page tools off yourself. A hash-only change (`#section`) keeps the connection; a different path or query closes it and the panel reconnects on the new page. |
+| **Review card** | Every action that can change the page waits for you. The card says in plain words what is about to happen, names the element as the page labels it (`“Pay now” button`, a link's address), shows the selector and value, flags clicks and key presses as able to submit or navigate, and counts down the 90 seconds before it declines on its own. **Allow once** applies it, **Decline** refuses it, and **Always allow here** skips the card for the rest of the conversation (revoke it from the `•••` menu). No model-authored code executes. |
 
 The server address and each tab/URL-to-session mapping persist in
 `chrome.storage.local`; the panel loads messages from the server when reopened.
@@ -200,3 +204,13 @@ npm --prefix zett3rd/chrome-extension run typecheck
 ```
 
 All three steps, plus the build, run from the repository's `make check`.
+
+## What the page tools tell the Agent
+
+The three tools answer every outcome as a result the model can act on, so a miss costs one more call instead of a red error:
+
+- `get_browser_page` returns the visible text, the controls with exact selectors, links with their addresses, and where the page is scrolled (`scroll.more_below`). Pass `text` to find elements by their visible words instead of the whole page.
+- A selector that matches several elements answers with up to five exact selectors and their labels; one that matches nothing, is invalid, or is hidden says which and what to do next.
+- A click lands on the button or link a child sits in, and on pointer-styled boxes; plain text is refused with guidance.
+- Several tool calls issued at once queue behind each other rather than failing.
+- A tab that navigated or a panel that closed answers once that page tools are gone for this turn, instead of raising an error that invites retries.

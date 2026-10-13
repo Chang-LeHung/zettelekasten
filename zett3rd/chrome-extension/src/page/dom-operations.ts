@@ -14,11 +14,52 @@ function visible(element: Element): boolean {
   return true
 }
 
+/** Why an element cannot be acted on, in words a model can act on. */
+function hiddenReason(element: Element): string | null {
+  for (let parent: Element | null = element; parent; parent = parent.parentElement) {
+    const subject = parent === element ? 'it' : 'an ancestor'
+    if (parent.matches(EXCLUDED)) return `${subject} is hidden or excluded (hidden/aria-hidden/script)`
+    const style = getComputedStyle(parent)
+    if (style.display === 'none') return `${subject} has display: none`
+    if (style.visibility === 'hidden' || style.visibility === 'collapse') return `${subject} has visibility: ${style.visibility}`
+  }
+  return null
+}
+
+function labelOf(element: Element): string {
+  const control = element as HTMLInputElement
+  const raw = element.getAttribute('aria-label') || control.labels?.[0]?.textContent
+    || (element instanceof HTMLInputElement && ['button', 'submit', 'reset'].includes(element.type) ? element.value : '')
+    || element.textContent || control.placeholder || element.getAttribute('title') || ''
+  return raw.replace(/\s+/g, ' ').trim().slice(0, 80)
+}
+
+/** One element in words: the shape of every candidate list and consent card. */
+function brief(element: Element): { selector: string; tag: string; label: string } {
+  return { selector: selectorFor(element), tag: element.tagName.toLowerCase(), label: labelOf(element) }
+}
+
 function target(selector: string): HTMLElement {
-  const matches = document.querySelectorAll(selector)
-  if (matches.length !== 1) throw new Error(`Selector must match exactly one element (matched ${matches.length})`)
+  let matches: NodeListOf<Element>
+  try {
+    matches = document.querySelectorAll(selector)
+  } catch {
+    throw new Error(`"${selector.slice(0, 120)}" is not a valid CSS selector. Copy a selector from get_browser_page instead of writing one.`)
+  }
+  if (matches.length === 0) {
+    throw new Error(`No element matches "${selector.slice(0, 120)}". The page may have changed: call get_browser_page again, or pass its text argument to find the element by its visible words.`)
+  }
+  if (matches.length > 1) {
+    const candidates = Array.from(matches).slice(0, 5).map((element, index) => {
+      const item = brief(element)
+      return `${index + 1}. ${item.selector || item.tag}${item.label ? ` "${item.label}"` : ''}`
+    })
+    throw new Error(`"${selector.slice(0, 120)}" matches ${matches.length} elements. Retry with one exact selector: ${candidates.join(' | ')}`.slice(0, 950))
+  }
   const element = matches[0]
-  if (!(element instanceof HTMLElement) || !visible(element)) throw new Error('Target is hidden or unsupported')
+  if (!(element instanceof HTMLElement)) throw new Error('That element is not an HTML element (for example an SVG shape); target its enclosing button or link instead')
+  const reason = hiddenReason(element)
+  if (reason) throw new Error(`Cannot use "${selector.slice(0, 120)}": ${reason}. Read the page again for a visible element.`)
   return element
 }
 
@@ -33,21 +74,33 @@ function editableRoot(element: HTMLElement): boolean {
     && !element.matches('[role="textbox"][aria-readonly="true"]')
 }
 
+/** Attributes authors keep stable, tried before a structural path. */
+const STABLE_ATTRIBUTES = ['data-testid', 'data-test', 'data-qa', 'name', 'aria-label', 'placeholder', 'title']
+
 /** Return selectors the model can actually use, without adding IDs to the DOM. */
 function selectorFor(element: Element): string {
   if (element.id) {
     const id = `#${CSS.escape(element.id)}`
     if (document.querySelectorAll(id).length === 1 && id.length <= 500) return id
   }
+  const tag = element.tagName.toLowerCase()
+  for (const attribute of STABLE_ATTRIBUTES) {
+    const value = element.getAttribute(attribute)
+    if (!value || value.length > 80) continue
+    const selector = `${tag}[${attribute}="${value.replace(/["\\]/g, '\\$&')}"]`
+    if (document.querySelectorAll(selector).length === 1) return selector
+  }
   const path: string[] = []
+  let fallback = ''
   for (let node: Element | null = element; node && node !== document.documentElement; node = node.parentElement) {
     const siblings = Array.from(node.parentElement?.children ?? []).filter(sibling => sibling.tagName === node!.tagName)
     path.unshift(`${node.tagName.toLowerCase()}:nth-of-type(${siblings.indexOf(node) + 1})`)
     const selector = path.join(' > ')
     if (selector.length > 500) break
+    fallback = selector
     if (document.querySelectorAll(selector).length === 1) return selector
   }
-  return ''
+  return fallback.length <= 500 ? fallback : ''
 }
 
 /** Walk bounded visible text; never serialize HTML, script source, or passwords.
@@ -80,9 +133,45 @@ function readableText(root: Element): { text: string; truncated: boolean } {
   return { text: chunks.join('\n').slice(0, 20000), truncated }
 }
 
-function snapshot(selector: string | null | undefined): BrowserResult {
+/** Visible elements whose own text contains `needle`, nearest actionable ancestor first. */
+function findByText(root: Element, needle: string): BrowserResult {
+  const wanted = needle.toLowerCase()
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  const seen = new Set<Element>()
+  const matches: Array<Record<string, unknown>> = []
+  let total = 0
+  let visited = 0
+  for (let node = walker.nextNode(); node && visited < 20000; node = walker.nextNode(), visited++) {
+    const text = node.textContent || ''
+    if (!text.toLowerCase().includes(wanted)) continue
+    const owner = node.parentElement
+    if (!owner) continue
+    const element = owner.closest(INTERACTIVE) ?? owner
+    if (seen.has(element) || !visible(element)) continue
+    seen.add(element)
+    total++
+    if (matches.length >= 20) continue
+    matches.push({
+      ...brief(element), interactive: element.matches(INTERACTIVE),
+      in_viewport: inViewport(element), text: text.replace(/\s+/g, ' ').trim().slice(0, 160),
+    })
+  }
+  return encodeResult({
+    title: document.title.slice(0, 500), url: location.href.slice(0, 2000),
+    query: needle, total, matches,
+    ...(total === 0 ? { notice: 'No visible element contains that text. Try fewer words, or scroll and read the page again.' } : {}),
+  })
+}
+
+function inViewport(element: Element): boolean {
+  const rect = element.getBoundingClientRect()
+  return rect.bottom > 0 && rect.right > 0 && rect.top < innerHeight && rect.left < innerWidth
+}
+
+function snapshot(selector: string | null | undefined, text?: string | null): BrowserResult {
   const root = selector ? target(selector) : document.body
   if (!root) throw new Error('Page has no body')
+  if (text) return findByText(root, text)
   const controls: Array<Record<string, unknown>> = []
   const candidates = [root, ...root.querySelectorAll(INTERACTIVE)].slice(0, 2000)
   for (const el of candidates) {
@@ -91,7 +180,9 @@ function snapshot(selector: string | null | undefined): BrowserResult {
     if (el.matches('[contenteditable="true"]') && !editableRoot(el as HTMLElement)) continue
     const control = el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | HTMLButtonElement
     controls.push({
-      selector: selectorFor(el), tag: el.tagName.toLowerCase(), type: el.matches('[contenteditable="true"]') ? 'contenteditable' : control.type || el.getAttribute('role') || el.tagName.toLowerCase(),
+      selector: selectorFor(el), tag: el.tagName.toLowerCase(), in_viewport: inViewport(el),
+      ...(el instanceof HTMLAnchorElement && el.href ? { href: el.href.slice(0, 300) } : {}),
+      type: el.matches('[contenteditable="true"]') ? 'contenteditable' : control.type || el.getAttribute('role') || el.tagName.toLowerCase(),
       label: (el.getAttribute('aria-label') || control.labels?.[0]?.textContent || el.textContent || '').slice(0, 160),
       name: (control.name || '').slice(0, 160), disabled: control.disabled || el.getAttribute('aria-disabled') === 'true',
       ...(el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement
@@ -109,19 +200,40 @@ function snapshot(selector: string | null | undefined): BrowserResult {
     .slice(0, 40).map(el => ({ selector: selectorFor(el), text: el.textContent!.trim().slice(0, 240) }))
   return encodeResult({
     title: document.title.slice(0, 500), url: location.href.slice(0, 2000),
+    scroll: {
+      y: Math.round(scrollY), page_height: document.documentElement.scrollHeight, viewport_height: innerHeight,
+      more_below: scrollY + innerHeight < document.documentElement.scrollHeight - 8,
+    },
     ...readableText(root), controls, elements,
   })
 }
 
+/** What a click on `element` would reach: itself, its button/link ancestor, or a pointer-styled box. */
+function clickable(element: HTMLElement): HTMLElement | null {
+  const ancestor = element.closest<HTMLElement>(INTERACTIVE)
+  if (ancestor && !hiddenReason(ancestor)) return ancestor
+  if (element.hasAttribute('onclick') || getComputedStyle(element).cursor === 'pointer') return element
+  return null
+}
+
+function notActionable(element: HTMLElement, what: string): Error {
+  const item = brief(element)
+  return new Error(`${what} needs a button, link, or other control, but "${item.selector || item.tag}"${item.label ? ` ("${item.label}")` : ''} is plain content. Pick a control from get_browser_page, or search with its text argument.`)
+}
+
 function interact(command: BrowserCommand): BrowserResult {
   const item = command.interaction!
-  const element = target(item.selector)
+  let element = target(item.selector)
+  if (item.action === 'click' || item.action === 'double_click' || item.action === 'press_key') {
+    const resolved = element.matches(INTERACTIVE) ? element : clickable(element)
+    if (!resolved) throw notActionable(element, item.action === 'press_key' ? 'A key press' : 'A click')
+    element = resolved
+  }
   if (element.matches(':disabled,[aria-disabled="true"],[readonly]')) throw new Error('Target is disabled or read-only')
   const receipt = { action: item.action, selector: item.selector, dispatched: true, verified: false }
   switch (item.action) {
     case 'click':
     case 'double_click': {
-      if (!element.matches(INTERACTIVE)) throw new Error('Click requires an interactive element')
       element.click()
       if (item.action === 'double_click') element.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }))
       break
@@ -151,7 +263,6 @@ function interact(command: BrowserCommand): BrowserResult {
       })
     }
     case 'press_key': {
-      if (!element.matches(INTERACTIVE)) throw new Error('Key press requires an interactive element')
       element.focus()
       const key = item.key === 'Space' ? ' ' : item.key!
       element.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
@@ -183,7 +294,7 @@ function interact(command: BrowserCommand): BrowserResult {
 /** Every edit is code owned by the extension; remote values remain plain data. */
 export function applyDOMCommand(command: BrowserCommand): BrowserResult {
   validateCommand(command)
-  if (command.operation === 'snapshot') return snapshot(command.query?.selector)
+  if (command.operation === 'snapshot') return snapshot(command.query?.selector, command.query?.text)
   if (command.operation === 'interact') return interact(command)
   const patch = command.change!
   const element = target(patch.selector)
@@ -248,4 +359,22 @@ export function applyDOMCommand(command: BrowserCommand): BrowserResult {
     selector: patch.selector, action: patch.action, applied: actual === patch.value,
     value: typeof actual === 'string' ? actual.slice(0, 10000) : actual,
   })
+}
+
+/** What the user is about to act on, in the page's own words, for the consent card. */
+export function describeSelector(selector: string): { matched: number; tag?: string; label?: string; href?: string; selector?: string } {
+  let matches: NodeListOf<Element>
+  try {
+    matches = document.querySelectorAll(selector)
+  } catch {
+    return { matched: 0 }
+  }
+  if (matches.length !== 1) return { matched: matches.length }
+  const element = matches[0]
+  const target = element.matches(INTERACTIVE) ? element : element.closest(INTERACTIVE) ?? element
+  const item = brief(target)
+  return {
+    matched: 1, tag: item.tag, label: item.label, selector: item.selector,
+    ...(target instanceof HTMLAnchorElement && target.href ? { href: target.href.slice(0, 300) } : {}),
+  }
 }

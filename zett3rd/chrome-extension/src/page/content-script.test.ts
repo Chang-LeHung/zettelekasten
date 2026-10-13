@@ -134,3 +134,36 @@ it('moves and resizes the floating panel without covering the whole viewport', (
   corner('top left').dispatchEvent(pointer('pointerup', 1000, 700))
   attach.mockRestore()
 })
+
+it('moves the panel when its own header reports a drag, and believes nobody else', () => {
+  document.querySelectorAll('#zettelekasten-panel-host').forEach(old => old.remove())
+  const frameWindow = {} as Window
+  Object.defineProperty(HTMLIFrameElement.prototype, 'contentWindow', { configurable: true, get: () => frameWindow })
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1200 })
+  Object.defineProperty(window, 'innerHeight', { configurable: true, value: 900 })
+  expect(send({ type: 'toggle-panel', tabId: 7 }, background)).toEqual({ ok: true, open: true })
+  const host = document.querySelector<HTMLElement>('#zettelekasten-panel-host')!
+  host.getBoundingClientRect = () => ({ left: 300, top: 40, width: 500, height: 600, right: 800, bottom: 640, x: 300, y: 40, toJSON() {} })
+  const post = (data: object, source: unknown = frameWindow, origin = 'chrome-extension://extension') => {
+    const event = new MessageEvent('message', { data, origin })
+    Object.defineProperty(event, 'source', { value: source })
+    window.dispatchEvent(event)
+  }
+
+  post({ zett: 'panel-drag', type: 'start' })
+  post({ zett: 'panel-drag', type: 'move', dx: -100, dy: 25 })
+  expect([host.style.left, host.style.top]).toEqual(['200px', '65px'])
+  // The panel never leaves the viewport, however far the pointer goes.
+  post({ zett: 'panel-drag', type: 'move', dx: 5000, dy: -5000 })
+  expect([host.style.left, host.style.top]).toEqual(['700px', '0px'])
+
+  // A page script posting to itself, another origin, or junk deltas move nothing.
+  post({ zett: 'panel-drag', type: 'move', dx: 1, dy: 1 }, window)
+  post({ zett: 'panel-drag', type: 'move', dx: 1, dy: 1 }, frameWindow, 'https://evil.example')
+  post({ zett: 'panel-drag', type: 'move', dx: 'NaN', dy: null })
+  expect([host.style.left, host.style.top]).toEqual(['700px', '0px'])
+
+  post({ zett: 'panel-drag', type: 'end' })
+  post({ zett: 'panel-drag', type: 'move', dx: -50, dy: 0 })
+  expect(host.style.left).toBe('700px')
+})
