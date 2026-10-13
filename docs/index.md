@@ -1,10 +1,55 @@
-# Make something worth keeping
+---
+layout: home
 
-Zett is a workspace for thinking with an AI, on your own computer. Start with a
-thought, a file, or the page you are reading; shape it into a card, an article,
-a slide deck, an image, or a paper; and keep the version you choose in a
-library that lives in a folder you own.
+hero:
+  name: Zett
+  text: Make something worth keeping.
+  tagline: "A workspace for thinking with an AI, on your own computer. Start from a thought, a file, or the page you are reading, and keep the version you choose in a folder you own."
+  actions:
+    - theme: brand
+      text: Quick start
+      link: '#quick-start'
+    - theme: alt
+      text: Read the guide
+      link: /guide/conversations
+    - theme: alt
+      text: GitHub
+      link: https://github.com/Chang-LeHung/zettelekasten
 
+features:
+  - title: Conversations
+    details: "Queue follow-ups while a turn runs, steer it mid-flight, approve shell commands, and pick one of eight reasoning levels."
+    link: /guide/conversations
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg>'
+  - title: Read from Chrome
+    details: "Open Zett beside any page. It reads the page, and can fill or click only after you approve each action."
+    link: /guide/chrome-extension
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M14 13h4M14 16h4"/></svg>'
+  - title: Artifacts and the library
+    details: "Cards, articles, images, slide decks, and LaTeX papers: drafts first, published when you save."
+    link: /guide/artifacts
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>'
+  - title: Assets
+    details: "Reference files for one conversation, and a file library you can reuse in all of them."
+    link: /guide/assets
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>'
+  - title: Scheduled tasks
+    details: "Have Zett do the same job every morning, week, or month, with no browser open."
+    link: /guide/scheduled-tasks
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>'
+  - title: Channels
+    details: "Message Zett from WeChat on your phone, with photos, voice notes, and files."
+    link: /guide/channels
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2.5"/><path d="M11 18h2"/></svg>'
+  - title: Settings and local data
+    details: "Connect any model, set limits, watch usage, and back up one folder."
+    link: /guide/settings
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg>'
+  - title: The command line
+    details: "Start and stop Zett, add to the library from scripts, and let Claude Code or Codex file for you."
+    link: /guide/command-line
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 4 4-4 4M12 17h7"/></svg>'
+---
 ## Quick start
 
 You need Python 3.10 to 3.14, on macOS, Linux, or Windows. There is no Zett
@@ -37,29 +82,6 @@ zett start
 `zett stop` stops Zett when you are done. To watch its logs while you try
 things, run `zett start --foreground` instead.
 
-## User guide
-
-<ul class="docs-cards">
-  <li><a class="docs-card" href="guide/conversations.md"><strong>Conversations</strong><span>Ask, queue and steer messages, approve commands, and read what each turn did.</span></a></li>
-  <li><a class="docs-card" href="guide/chrome-extension.md"><strong>Read from Chrome</strong><span>Open Zett beside a webpage, ask about it, and save the result without leaving the page.</span></a></li>
-  <li><a class="docs-card" href="guide/artifacts.md"><strong>Artifacts and the library</strong><span>Cards, articles, images, slides, and LaTeX papers: drafts first, published when you save.</span></a></li>
-  <li><a class="docs-card" href="guide/assets.md"><strong>Assets</strong><span>Reference files for one conversation, and a file library for all of them.</span></a></li>
-  <li><a class="docs-card" href="guide/scheduled-tasks.md"><strong>Scheduled tasks</strong><span>Have Zett do the same job every morning, week, or month, with no browser open.</span></a></li>
-  <li><a class="docs-card" href="guide/channels.md"><strong>Channels</strong><span>Message Zett from WeChat on your phone, with photos, voice notes, and files.</span></a></li>
-  <li><a class="docs-card" href="guide/settings.md"><strong>Settings and local data</strong><span>Connect models, set limits, see your usage, and back up your folder.</span></a></li>
-  <li><a class="docs-card" href="guide/command-line.md"><strong>The command line</strong><span>Start and stop Zett, add to the library from scripts, and let Claude Code, Codex, or ChatGPT save for you.</span></a></li>
-</ul>
-
-## Developer guide
-
-<ul class="docs-cards">
-  <li><a class="docs-card" href="plugins/index.md"><strong>Plugins</strong><span>How a plugin is packaged, installed, and loaded.</span></a></li>
-  <li><a class="docs-card" href="plugins/agent-plugins.md"><strong>Agent plugins</strong><span>Give Zett new tools, hooks, slash commands, and <code>@</code> references.</span></a></li>
-  <li><a class="docs-card" href="plugins/channel-plugins.md"><strong>Channel plugins</strong><span>Connect another chat app through login, receive, and send.</span></a></li>
-  <li><a class="docs-card" href="agim.md"><strong>agim SDK</strong><span>The small chat-platform SDK the WeChat plugin is built on.</span></a></li>
-  <li><a class="docs-card" href="weixin.md"><strong>WeChat channel plugin</strong><span>A complete channel plugin to read alongside the guide.</span></a></li>
-</ul>
-
 ## A good first session
 
 1. Paste a paragraph or attach a file in a [conversation](guide/conversations.md).
@@ -68,6 +90,16 @@ things, run `zett start --foreground` instead.
 3. File it in a [collection](guide/artifacts.md#tags) so you can find it later,
    and keep files you reuse in [Static Assets](guide/assets.md#static-assets).
 4. Do the same while you read: [open Zett in Chrome](guide/chrome-extension.md).
+
+## Build on Zett
+
+<ul class="home-links">
+  <li><a href="plugins/"><strong>Plugins</strong><span>How a plugin is packaged, installed, and loaded.</span></a></li>
+  <li><a href="plugins/agent-plugins"><strong>Agent plugins</strong><span>Give Zett new tools, hooks, slash commands, and <code>@</code> references.</span></a></li>
+  <li><a href="plugins/channel-plugins"><strong>Channel plugins</strong><span>Connect another chat app through login, receive, and send.</span></a></li>
+  <li><a href="agim"><strong>agim SDK</strong><span>The small chat-platform SDK the WeChat plugin is built on.</span></a></li>
+  <li><a href="weixin"><strong>WeChat channel plugin</strong><span>A complete channel plugin to read alongside the guide.</span></a></li>
+</ul>
 
 ## Where your data lives
 
