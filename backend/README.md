@@ -661,6 +661,22 @@ single typo in `mcp.json` failed every conversation, scheduled run, and channel
 turn. Duplicate names among explicitly supplied servers are a code mistake and
 still raise.
 
+### Deleting and Anthropic
+
+The Agent's `delete_artifact` and `delete_tag` tools are not registered at all unless
+`agent_may_delete_artifacts` / `agent_may_delete_tags` is on in `/api/settings` (both default to
+off; Settings → Limit → Agent permissions). Only an interactive conversation can be offered
+them: scheduled and channel runs never get a delete tool, because nobody is watching to stop a
+wrong one. A tool the model cannot see cannot be prompt-injected into running, which a guideline
+cannot promise. Tools are decided per request, but a model that already refused in a conversation may keep
+refusing after the switch is turned on; a new conversation picks the tool up at once (checked against a real
+Anthropic-protocol model).
+
+`anthropic` and `anthropic_compatible` build the same Messages-API adapter; the latter requires
+a base URL for third-party services that speak the Anthropic protocol. `anthropic_base_url`
+drops a trailing `/messages` and `/v1` because the SDK appends `/v1/messages` itself, so a pasted
+`…/v1/messages` works.
+
 ### Platform support
 
 The process layer keeps every OS difference in
