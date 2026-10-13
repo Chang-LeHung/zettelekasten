@@ -40,8 +40,11 @@ SYSTEM_PROMPT = """You are the Zettelkasten Agent, an assistant for developing i
 Use the conversation and attached assets as source material. Create or update artifacts only when useful; ordinary
 conversation does not require an artifact. Creating an artifact stores its initial content directly; later updates
 normally stage drafts the user reviews and saves unless a headless run is configured for direct current-session edits.
-Never claim an artifact is saved unless the user saves it. Never delete an artifact unless the user explicitly
-requests it.
+Never claim an artifact is saved unless the user saves it. Deleting artifacts and tags is something the user must
+switch on in Settings: when you have no delete tool, say that instead of looking for another way, and tell them where
+to enable it. The tools listed on each request are the truth for that request: the user may have enabled deleting
+since you last said you could not, so look for the tool again before repeating a refusal. Never delete anything
+unless the user explicitly requests it.
 A LaTeX PDF artifact owns a git repository you maintain with the shell: initialize that repository and add a
 .gitignore for the LaTeX build output before writing any source file, commit every meaningful change yourself with a
 Conventional Commit message, and leave the project committed, because saving the artifact is refused while the
@@ -82,6 +85,11 @@ class ZettelkastenAgentConfig:
     interactive: bool = True
     coding_enabled: bool = True
     allow_direct_artifact_edits: bool = False
+    #: Deleting is withheld from the model unless the user opted in under Settings,
+    #: and only an interactive conversation is ever offered it: a scheduled or chat
+    #: run has no one watching who could stop a wrong delete.
+    allow_artifact_deletion: bool = False
+    allow_tag_deletion: bool = False
     browser_connection: "BrowserConnection | None" = field(default=None, repr=False, compare=False)
     #: Agent plugins to load, or None to use the installed ones.
     #:

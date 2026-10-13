@@ -154,6 +154,8 @@ def test_key_column_has_a_unique_sqlite_index(isolated_database: Path) -> None:
 async def test_runtime_settings_http_lifecycle_uses_defaults_and_persists_updates() -> None:
     with TestClient(app) as client:
         assert client.get("/api/settings").json() == {
+            "agent_may_delete_artifacts": False,
+            "agent_may_delete_tags": False,
             "max_message_images": 32,
             "max_turn_iterations": 256,
             "max_asset_size_bytes": DEFAULT_MAX_ASSET_SIZE_BYTES,
@@ -173,6 +175,8 @@ async def test_runtime_settings_http_lifecycle_uses_defaults_and_persists_update
         )
         assert updated.status_code == 200
         assert updated.json() == {
+            "agent_may_delete_artifacts": False,
+            "agent_may_delete_tags": False,
             "max_message_images": 48,
             "max_turn_iterations": 64,
             "max_asset_size_bytes": 128 * 1024 * 1024,
@@ -180,6 +184,8 @@ async def test_runtime_settings_http_lifecycle_uses_defaults_and_persists_update
             "compaction_keep_recent_tokens": 64_000,
         }
         assert client.get("/api/settings").json() == {
+            "agent_may_delete_artifacts": False,
+            "agent_may_delete_tags": False,
             "max_message_images": 48,
             "max_turn_iterations": 64,
             "max_asset_size_bytes": 128 * 1024 * 1024,
@@ -228,9 +234,22 @@ async def test_runtime_settings_http_lifecycle_uses_defaults_and_persists_update
         assert len(revisions) == 1
         assert revisions[0].version == 1
         assert json.loads(revisions[0].value) == {
+            "agent_may_delete_artifacts": False,
+            "agent_may_delete_tags": False,
             "max_message_images": 48,
             "max_turn_iterations": 64,
             "max_asset_size_bytes": 128 * 1024 * 1024,
             "compaction_max_tokens": 512_000,
             "compaction_keep_recent_tokens": 64_000,
         }
+
+
+async def test_agent_deletion_switches_are_off_by_default_and_persist_when_enabled() -> None:
+    with TestClient(app) as client:
+        stored = client.get("/api/settings").json()
+        assert stored["agent_may_delete_artifacts"] is False and stored["agent_may_delete_tags"] is False
+        stored["agent_may_delete_tags"] = True
+        assert client.put("/api/settings", json=stored).json()["agent_may_delete_tags"] is True
+        again = client.get("/api/settings").json()
+        assert again["agent_may_delete_tags"] is True and again["agent_may_delete_artifacts"] is False
+        assert client.put("/api/settings", json={**stored, "agent_may_delete_tags": "maybe"}).status_code == 422

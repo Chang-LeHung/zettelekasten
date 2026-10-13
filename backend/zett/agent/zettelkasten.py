@@ -110,8 +110,9 @@ class ZettelkastenAgent(ZettelkastenContainer):
             AssetExtension(max_asset_size_bytes=config.max_asset_size_bytes),
             ArtifactExtension(
                 allow_direct_current_session_edits=config.allow_direct_artifact_edits,
+                allow_delete=config.allow_artifact_deletion and config.interactive,
             ),
-            TagExtension(),
+            TagExtension(allow_delete=config.allow_tag_deletion and config.interactive),
             ScheduledTaskExtension(),
             TodoWriteExtension(),
             CompactionExtension(

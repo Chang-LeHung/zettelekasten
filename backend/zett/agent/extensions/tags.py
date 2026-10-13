@@ -30,6 +30,10 @@ class TagExtension(AgentExtension):
     # taxonomy in the leading system prefix would invalidate prompt-cache
     # prefixes whenever a tag changes without adding unseen information.
 
+    def __init__(self, *, allow_delete: bool = False) -> None:
+        """``delete_tag`` is only registered when the user has opted in to it."""
+        self.allow_delete = allow_delete
+
     async def on_tool(self, context: AgentRunContext) -> None:
         session_id = context.config.session_id
 
@@ -196,14 +200,16 @@ class TagExtension(AgentExtension):
                 raise ValueError(f"Static asset not found: {asset_id}")
             return static_asset_receipt(await tag_service.replace_asset_tags(asset_id, paths))
 
-        for registered in (
+        registered_tools = [
             create_tag,
             list_tags,
             update_tag,
-            delete_tag,
             set_artifact_tags,
             create_asset_tag,
             list_asset_tags,
             set_asset_tags,
-        ):
+        ]
+        if self.allow_delete:
+            registered_tools.append(delete_tag)
+        for registered in registered_tools:
             context.register_tool(registered)

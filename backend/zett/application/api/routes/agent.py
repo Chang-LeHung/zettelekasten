@@ -167,6 +167,8 @@ def _agent_config(session_id: str, runtime_settings: RuntimeSettings) -> Zettelk
         shell_approval_storage=shell_approval_storage,
         storage=get_agent_runtime_storage(),
         context_composition_recorder=_remember_context_composition,
+        allow_artifact_deletion=runtime_settings.agent_may_delete_artifacts,
+        allow_tag_deletion=runtime_settings.agent_may_delete_tags,
     )
 
 
