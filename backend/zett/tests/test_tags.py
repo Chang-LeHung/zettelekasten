@@ -146,9 +146,14 @@ async def test_tag_extension_registers_real_taxonomy_tools() -> None:
         "create_tag",
         "list_tags",
         "update_tag",
-        "delete_tag",
         "set_artifact_tags",
     }
+    # Deleting is withheld until the user opts in.
+    assert "delete_tag" not in context.tools
+
+    permitted = AgentRunContext(config=AgentRunConfig(session_id="tag-tools"), state=AgentState(), tools={})
+    await TagExtension(allow_delete=True).on_tool(permitted)
+    assert "delete_tag" in permitted.tools
 
 
 def tool_payload(request: ModelRequest) -> dict[str, object]:
@@ -235,7 +240,9 @@ async def test_tag_tools_run_a_complete_classification_lifecycle() -> None:
     session_id = (await session_storage.create(AgentSessionCreate())).session_id
     artifact = await tagged_card(session_id)
     model = TagToolModel(artifact.id)
-    agent = await Agent.create(model, config=AgentRunConfig(session_id=session_id), extensions=[TagExtension()])
+    agent = await Agent.create(
+        model, config=AgentRunConfig(session_id=session_id), extensions=[TagExtension(allow_delete=True)]
+    )
 
     result = await agent.run("Classify this card")
 

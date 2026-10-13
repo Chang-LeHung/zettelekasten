@@ -63,7 +63,6 @@ class ArtifactQueryModel:
             "get_artifact",
             "query_artifacts",
             "update_artifact",
-            "delete_artifact",
         }
         match self.step:
             case 0:
@@ -480,3 +479,35 @@ async def test_successive_model_updates_build_on_the_previous_draft() -> None:
     assert stored.editable_content is not None
     # The editable view is the draft, which is what every editor continues from.
     assert stored.editable_content.content == "ALPHA beta GAMMA"
+
+
+async def _registered_tools(extension: ArtifactExtension) -> set[str]:
+    from zett_agent.agent import AgentRunContext, AgentState
+
+    context = AgentRunContext(config=AgentRunConfig(session_id="delete-gate"), state=AgentState(), tools={})
+    await extension.on_tool(context)
+    return set(context.tools)
+
+
+async def test_delete_artifact_is_only_offered_when_the_user_opted_in() -> None:
+    assert "delete_artifact" not in await _registered_tools(ArtifactExtension())
+    assert "delete_artifact" in await _registered_tools(ArtifactExtension(allow_delete=True))
+
+
+async def test_the_container_offers_deletion_only_to_an_interactive_conversation_that_opted_in() -> None:
+    from zett.agent.config import ZettelkastenAgentConfig
+    from zett.agent.extensions import ArtifactExtension as Artifacts
+    from zett.agent.extensions import TagExtension as Tags
+    from zett.agent.zettelkasten import ZettelkastenAgent
+
+    async def flags(**changes: bool) -> tuple[bool, bool]:
+        agent = ZettelkastenAgent(ZettelkastenAgentConfig("gate", **changes))
+        artifacts = next(item for item in agent.agent.extensions if isinstance(item, Artifacts))
+        tags = next(item for item in agent.agent.extensions if isinstance(item, Tags))
+        return artifacts.allow_delete, tags.allow_delete
+
+    assert await flags() == (False, False)
+    assert await flags(allow_artifact_deletion=True, allow_tag_deletion=True) == (True, True)
+    assert await flags(allow_artifact_deletion=True) == (True, False)
+    # An unattended run never gets it, whatever the setting says.
+    assert await flags(allow_artifact_deletion=True, allow_tag_deletion=True, interactive=False) == (False, False)

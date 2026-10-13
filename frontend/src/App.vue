@@ -32,7 +32,7 @@ import { moveItemBeforeOrAfter } from './utils/reorder'
 import { readPaneHidden, writePaneHidden } from './utils/paneVisibility'
 import { artifactImageUrl, versionedPreviewUrl } from './utils/artifactPreview'
 import { appendStreamedAssistantMessage, createStreamedAssistantMessage } from './utils/streamedAssistant'
-import { defaultProviderBaseUrl, providerBaseUrlHelp } from './utils/providerDefaults'
+import { defaultProviderBaseUrl, providerBaseUrlHelp, providerIgnoresTemperature } from './utils/providerDefaults'
 import { todoFromTool } from './utils/toolPresentation'
 import { hasRunningTool, upsertToolActivity } from './utils/toolActivities'
 import { TurnDetailsVisibility } from './utils/turnDetails'
@@ -44,6 +44,7 @@ import { artifactTone } from './utils/artifactTone'
 import { clampArtifactListHeight, MIN_ARTIFACT_LIST_HEIGHT } from './utils/artifactSplit'
 import { asContextComposition } from './utils/contextComposition'
 import { visibleTagRows } from './utils/tagTree'
+import { boxFromPoints, exceedsThreshold, idsInBox, pruned, rangeBetween, settleLimited, toggled, type Box } from './utils/multiSelect'
 import { useI18n, type Locale } from './i18n'
 
 const MarkdownContent = defineAsyncComponent(() => import('./components/MarkdownContent.vue'))
@@ -165,6 +166,13 @@ const librarySentinel = ref<HTMLElement | null>(null)
 let libraryRequestId = 0
 let libraryObserver: IntersectionObserver | null = null
 const deletingLibraryItemId = ref<string | null>(null)
+/** Cards picked with the mouse; any selection turns a click on a card into a toggle. */
+const selectedLibraryIds = ref<Set<string>>(new Set())
+const libraryMarquee = ref<Box | null>(null)
+const bulkDeleting = ref(false)
+let selectionAnchorId: string | null = null
+const selectingLibrary = computed(() => selectedLibraryIds.value.size > 0)
+const selectedLibraryItems = computed(() => libraryItems.value.filter((item) => selectedLibraryIds.value.has(item.id)))
 const draggingLibraryItem = ref<LibraryItem | null>(null)
 const draggingStaticAsset = ref<StaticAsset | null>(null)
 const tagDropTargetId = ref<string | null>(null)
@@ -334,6 +342,8 @@ const ai = ref<AIProviderInput>({
   enabled: true,
 })
 const runtimeSettings = ref<RuntimeSettings>({
+  agent_may_delete_artifacts: false,
+  agent_may_delete_tags: false,
   max_message_images: 32,
   max_turn_iterations: 256,
   max_asset_size_bytes: 250 * 1024 * 1024,
@@ -348,6 +358,21 @@ const maxAssetSizeMb = computed<number>({
   },
 })
 const runtimeSettingsSaving = ref(false)
+const agentPermissions = [
+  {
+    key: 'agent_may_delete_artifacts',
+    title: 'Delete artifacts',
+    description: 'Lets the Agent delete this conversation’s artifacts when you ask. Off, it has no delete tool at all.',
+  },
+  {
+    key: 'agent_may_delete_tags',
+    title: 'Delete tags',
+    description: 'Lets the Agent delete tags from your library when you ask. Off, it has no delete tool at all.',
+  },
+] as const
+/** What the server last confirmed, so a permission switch never saves half-edited limits with it. */
+let persistedRuntimeSettings: RuntimeSettings | null = null
+const agentPermissionSaving = ref<'agent_may_delete_artifacts' | 'agent_may_delete_tags' | null>(null)
 /** What PyPI offers for this copy, and how it would install it. */
 const updateStatus = ref<UpdateStatus | null>(null)
 const updateChecking = ref(false)
@@ -1423,6 +1448,17 @@ async function refreshTags(): Promise<void> {
 
 // Each library browses its own tree, so switching libraries drops a selection
 // that belongs to the other one instead of filtering a list it cannot show.
+// A card that was deleted, filtered away, or paged out cannot stay selected, and
+// leaving the library drops the selection so it never resurfaces on return.
+watch(libraryItems, (items) => {
+  if (!selectedLibraryIds.value.size) return
+  const remaining = pruned(selectedLibraryIds.value, items.map((item) => item.id))
+  if (remaining.size !== selectedLibraryIds.value.size) selectedLibraryIds.value = remaining
+})
+watch(view, (next) => {
+  if (next !== 'library') clearLibrarySelection()
+})
+
 watch(collectionTarget, () => {
   selectedTag.value = null
   loadCollectionTags().catch((error: unknown) => showNotice(errorMessage(error), 'error'))
@@ -1439,7 +1475,6 @@ async function loadInitialData(): Promise<void> {
       runtimeSettingsData,
       usageActivityData,
       modelUsageActivityData,
-      updateData,
     ] = await Promise.all([
       tagClient.list(collectionTarget.value),
       libraryClient.list({ limit: LIBRARY_PAGE_SIZE + 1 }),
@@ -1448,7 +1483,6 @@ async function loadInitialData(): Promise<void> {
       settingsClient.get(),
       settingsClient.getUsageActivity().catch(() => []),
       settingsClient.getModelUsageActivity(30).catch(() => []),
-      updateClient.get().catch(() => null),
     ])
     collectionTags.value = tagData
     libraryHasMore.value = libraryPage.length > LIBRARY_PAGE_SIZE
@@ -1456,9 +1490,12 @@ async function loadInitialData(): Promise<void> {
     libraryTotal.value = libraryCount
     providers.value = providerData
     runtimeSettings.value = runtimeSettingsData
+    persistedRuntimeSettings = { ...runtimeSettingsData }
     usageActivity.value = usageActivityData
     modelUsageActivity.value = modelUsageActivityData
-    updateStatus.value = updateData
+    // The update check may wait on PyPI for seconds. It must never hold up the
+    // library, nor land late enough to overwrite what the user has since changed.
+    void updateClient.get().then((status) => { updateStatus.value = status }).catch(() => {})
     const firstProvider = providerData.find((provider) => provider.enabled)
     if (firstProvider) {
       selectedProviderId.value = firstProvider.id
@@ -1543,6 +1580,15 @@ function handleShortcut(event: KeyboardEvent): void {
   if (event.key === 'Escape' && libraryEditorItem.value) return
   if (event.key === 'Escape' && selectedLibraryItem.value) {
     selectedLibraryItem.value = null
+    return
+  }
+  if (event.key === 'Escape' && selectedLibraryIds.value.size && !confirmation.value.open) {
+    clearLibrarySelection()
+    return
+  }
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a' && view.value === 'library' && !isEditableTarget(event.target)) {
+    event.preventDefault()
+    selectAllLibraryItems()
     return
   }
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
@@ -1743,6 +1789,155 @@ async function dropResourceOnTag(tag: Tag, event: DragEvent): Promise<void> {
 function applyAssetTags(asset: StaticAsset): void {
   staticAssets.value = staticAssets.value.map((item) => (item.id === asset.id ? asset : item))
   void staticAssetsView.value?.reload()
+}
+
+/**
+ * Stop an inner control's key from also activating the card, without swallowing
+ * Escape: the global handler owns it, and a focused card button must not hide it.
+ */
+function stopCardKey(event: KeyboardEvent): void {
+  if (event.key !== 'Escape') event.stopPropagation()
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && Boolean(target.closest('input, textarea, select, [contenteditable="true"]'))
+}
+
+function clearLibrarySelection(): void {
+  selectedLibraryIds.value = new Set()
+  selectionAnchorId = null
+}
+
+function selectAllLibraryItems(): void {
+  selectedLibraryIds.value = new Set(libraryItems.value.map((item) => item.id))
+  selectionAnchorId = libraryItems.value[0]?.id ?? null
+}
+
+function toggleLibrarySelection(item: LibraryItem): void {
+  selectedLibraryIds.value = toggled(selectedLibraryIds.value, item.id)
+  selectionAnchorId = item.id
+}
+
+/** Shift extends from the last card picked; the earlier picks stay. */
+function extendLibrarySelection(item: LibraryItem): void {
+  const span = rangeBetween(libraryItems.value.map((candidate) => candidate.id), selectionAnchorId, item.id)
+  selectedLibraryIds.value = new Set([...selectedLibraryIds.value, ...span])
+  selectionAnchorId ??= item.id
+}
+
+/** Click opens a card, unless the user is picking cards: then it picks, as in Finder and Photos. */
+function onLibraryCardActivate(item: LibraryItem, event: MouseEvent | KeyboardEvent): void {
+  if (event.shiftKey) extendLibrarySelection(item)
+  else if (event.metaKey || event.ctrlKey || selectingLibrary.value) toggleLibrarySelection(item)
+  else openLibraryItem(item)
+}
+
+const MARQUEE_EDGE = 64
+const NOT_A_MARQUEE_START = '.card, button, a, input, select, textarea, label, summary, [role="button"], [role="dialog"], .library-bulk-bar'
+
+/**
+ * Drag a rectangle over empty space to pick every card it covers. Shift or
+ * Cmd/Ctrl adds to the current picks; a plain drag replaces them, and a plain
+ * click on empty space clears them. The rectangle is anchored to the page, not
+ * the window, so it keeps covering what it started on while the page scrolls.
+ */
+function startLibraryMarquee(event: PointerEvent): void {
+  if (event.button !== 0 || bulkDeleting.value || !libraryItems.value.length) return
+  if (event.target instanceof Element && event.target.closest(NOT_A_MARQUEE_START)) return
+  const additive = event.shiftKey || event.metaKey || event.ctrlKey
+  const base = additive ? new Set(selectedLibraryIds.value) : new Set<string>()
+  const originX = event.clientX + window.scrollX
+  const originY = event.clientY + window.scrollY
+  let pointerX = event.clientX
+  let pointerY = event.clientY
+  let dragging = false
+  let frame = 0
+
+  const update = (): void => {
+    const box = boxFromPoints(originX - window.scrollX, originY - window.scrollY, pointerX, pointerY)
+    libraryMarquee.value = box
+    const targets = [...document.querySelectorAll<HTMLElement>('[data-library-id]')].map((element) => {
+      const rect = element.getBoundingClientRect()
+      return { id: element.dataset.libraryId!, box: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom } }
+    })
+    selectedLibraryIds.value = new Set([...base, ...idsInBox(box, targets)])
+  }
+  const tick = (): void => {
+    if (pointerY < MARQUEE_EDGE) window.scrollBy(0, -Math.ceil((MARQUEE_EDGE - pointerY) / 3))
+    else if (pointerY > window.innerHeight - MARQUEE_EDGE) window.scrollBy(0, Math.ceil((pointerY - (window.innerHeight - MARQUEE_EDGE)) / 3))
+    update()
+    frame = requestAnimationFrame(tick)
+  }
+  const move = (next: PointerEvent): void => {
+    pointerX = next.clientX
+    pointerY = next.clientY
+    if (!dragging) {
+      if (!exceedsThreshold(pointerX - (originX - window.scrollX), pointerY - (originY - window.scrollY))) return
+      dragging = true
+      document.body.classList.add('marquee-selecting')
+      frame = requestAnimationFrame(tick)
+    }
+  }
+  const finish = (): void => {
+    cancelAnimationFrame(frame)
+    window.removeEventListener('pointermove', move)
+    window.removeEventListener('pointerup', finish)
+    window.removeEventListener('pointercancel', finish)
+    document.body.classList.remove('marquee-selecting')
+    libraryMarquee.value = null
+    // A plain click on empty space is "select nothing".
+    if (!dragging && !additive) clearLibrarySelection()
+    else selectionAnchorId = [...selectedLibraryIds.value].at(-1) ?? null
+  }
+  window.addEventListener('pointermove', move)
+  window.addEventListener('pointerup', finish)
+  window.addEventListener('pointercancel', finish)
+}
+
+async function deleteSelectedLibraryItems(): Promise<void> {
+  const items = selectedLibraryItems.value
+  if (!items.length || bulkDeleting.value || deletingLibraryItemId.value !== null) return
+  const count = items.length
+  const names = items.slice(0, 3).map((item) => `“${item.title}”`).join(', ')
+  const confirmed = await requestConfirmation(
+    count === 1 ? 'Delete this artifact?' : `Delete ${count} artifacts?`,
+    `${names}${count > 3 ? ` and ${count - 3} more` : ''} will be permanently removed from artifacts. This action cannot be undone.`,
+    count === 1 ? 'Delete artifact' : `Delete ${count} artifacts`,
+  )
+  if (!confirmed) return
+  bulkDeleting.value = true
+  try {
+    // A few at a time: each is its own request, and a failure must not stop the rest.
+    const results = await settleLimited(items, 4, (item) => libraryClient.delete(item.item_type, item.id))
+    const removed = new Set(items.filter((_, index) => {
+      const result = results[index]
+      return result.status === 'fulfilled' && result.value.ok
+    }).map((item) => item.id))
+    const failed = items.filter((item) => !removed.has(item.id))
+    if (removed.size) {
+      libraryItems.value = libraryItems.value.filter((candidate) => !removed.has(candidate.id))
+      if (libraryTotal.value !== null) libraryTotal.value = Math.max(0, libraryTotal.value - removed.size)
+      if (selectedLibraryItem.value && removed.has(selectedLibraryItem.value.id)) selectedLibraryItem.value = null
+      if (libraryEditorItem.value && removed.has(libraryEditorItem.value.id)) {
+        libraryEditorItem.value = null
+        libraryEditorArtifactId.value = null
+      }
+      await refreshTags()
+    }
+    // What could not be deleted stays selected, so one more press retries exactly those.
+    selectedLibraryIds.value = new Set(failed.map((item) => item.id))
+    if (!failed.length) {
+      showNotice(removed.size === 1 ? 'Artifact deleted' : `${removed.size} artifacts deleted`)
+    } else {
+      const firstFailure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+      showNotice(
+        `${removed.size ? `${removed.size} deleted, ` : ''}${failed.length} could not be deleted${firstFailure ? `: ${errorMessage(firstFailure.reason)}` : ''}`,
+        'error',
+      )
+    }
+  } finally {
+    bulkDeleting.value = false
+  }
 }
 
 async function deleteLibraryItem(item: LibraryItem): Promise<void> {
@@ -3361,11 +3556,33 @@ async function saveRuntimeSettings(): Promise<void> {
   runtimeSettingsSaving.value = true
   try {
     runtimeSettings.value = await settingsClient.update(runtimeSettings.value)
+    persistedRuntimeSettings = { ...runtimeSettings.value }
     showNotice('Runtime settings saved')
   } catch (error) {
     showNotice(errorMessage(error), 'error')
   } finally {
     runtimeSettingsSaving.value = false
+  }
+}
+
+/**
+ * Apply one Agent permission the moment its switch moves. It saves the last
+ * confirmed settings plus this one change, so limits still being typed in the
+ * form above are neither saved nor lost.
+ */
+async function setAgentPermission(key: 'agent_may_delete_artifacts' | 'agent_may_delete_tags', enabled: boolean): Promise<void> {
+  if (agentPermissionSaving.value) return
+  agentPermissionSaving.value = key
+  const base = persistedRuntimeSettings ?? runtimeSettings.value
+  try {
+    const saved = await settingsClient.update({ ...base, [key]: enabled })
+    persistedRuntimeSettings = { ...saved }
+    runtimeSettings.value = { ...runtimeSettings.value, [key]: saved[key] }
+    showNotice(enabled ? 'The Agent can now delete here when you ask it to' : 'The Agent can no longer delete here')
+  } catch (error) {
+    showNotice(errorMessage(error), 'error')
+  } finally {
+    agentPermissionSaving.value = null
   }
 }
 
@@ -3753,7 +3970,7 @@ onBeforeUnmount(() => {
           <button class="primary-action" type="button" @click="navigate('new')"><svg><use href="#icon-add" /></svg>{{ $t('search.newCard') }}</button>
         </header>
 
-        <section class="content library-view">
+        <section class="content library-view" :class="{ selecting: selectingLibrary }" @pointerdown="startLibraryMarquee">
           <div class="page-heading">
             <div><p class="eyebrow">{{ $t('Your knowledge') }}</p><h1>{{ pageTitle }}</h1><p>{{ pageDescription }}</p></div>
             <button v-if="selectedTag !== null" class="text-button" type="button" @click="filterByTag(null)">Clear filter</button>
@@ -3784,40 +4001,53 @@ onBeforeUnmount(() => {
               v-for="(item, index) in libraryItems"
               :key="`${item.item_type}-${item.id}`"
               class="card"
-              :class="[`library-${item.item_type}`, { dragging: draggingLibraryItem?.id === item.id }]"
+              :class="[`library-${item.item_type}`, { dragging: draggingLibraryItem?.id === item.id, picked: selectedLibraryIds.has(item.id), picking: selectingLibrary }]"
               :style="{ animationDelay: cardFloatDelay(index) }"
+              :data-library-id="item.id"
               role="button"
               tabindex="0"
               draggable="true"
               :aria-label="`Open ${item.title}`"
-              @click="openLibraryItem(item)"
-              @keydown.enter="openLibraryItem(item)"
-              @keydown.space.prevent="openLibraryItem(item)"
+              :aria-selected="selectingLibrary ? selectedLibraryIds.has(item.id) : undefined"
+              @click="onLibraryCardActivate(item, $event)"
+              @keydown.enter="onLibraryCardActivate(item, $event)"
+              @keydown.space.prevent="onLibraryCardActivate(item, $event)"
               @dragstart="startLibraryItemDrag(item, $event)"
               @dragend="endLibraryItemDrag"
             >
               <div class="card-topline">
+                <button
+                  class="card-select"
+                  type="button"
+                  role="checkbox"
+                  :aria-checked="selectedLibraryIds.has(item.id)"
+                  :aria-label="`Select ${item.title}`"
+                  @click.stop="toggleLibrarySelection(item)"
+                  @keydown="stopCardKey"
+                >
+                  <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 10.5 3.2 3.2L15 7" /></svg>
+                </button>
                 <span class="card-type">{{ item.item_type === 'card' ? $t(item.card_type || 'card') : $t(item.item_type) }}</span>
                 <div class="card-topline-actions">
-                  <button class="card-action-button" type="button" :aria-label="`Open conversation for ${item.title}`" title="Open source conversation" @click.stop="openArtifactSession(item)" @keydown.stop>
+                  <button class="card-action-button" type="button" :aria-label="`Open conversation for ${item.title}`" title="Open source conversation" @click.stop="openArtifactSession(item)" @keydown="stopCardKey">
                     <svg><use href="#icon-conversation" /></svg>
                   </button>
-                  <button v-if="item.item_type === 'slides'" class="card-action-button" type="button" :aria-label="`Preview ${item.title} fullscreen`" title="Fullscreen preview" @click.stop="openSlidesFullscreen(item)" @keydown.stop>
+                  <button v-if="item.item_type === 'slides'" class="card-action-button" type="button" :aria-label="`Preview ${item.title} fullscreen`" title="Fullscreen preview" @click.stop="openSlidesFullscreen(item)" @keydown="stopCardKey">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6" /></svg>
                   </button>
-                  <button v-if="item.item_type === 'latex_pdf'" class="card-action-button" type="button" :aria-label="`Preview ${item.title}`" title="Preview PDF" @click.stop="openLibraryPdf(item, 'expanded')" @keydown.stop>
+                  <button v-if="item.item_type === 'latex_pdf'" class="card-action-button" type="button" :aria-label="`Preview ${item.title}`" title="Preview PDF" @click.stop="openLibraryPdf(item, 'expanded')" @keydown="stopCardKey">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6" /></svg>
                   </button>
-                  <button v-if="item.item_type === 'latex_pdf'" class="card-action-button" type="button" :aria-label="`Present ${item.title}`" title="Present PDF" @click.stop="openLibraryPdf(item, 'presentation')" @keydown.stop>
+                  <button v-if="item.item_type === 'latex_pdf'" class="card-action-button" type="button" :aria-label="`Present ${item.title}`" title="Present PDF" @click.stop="openLibraryPdf(item, 'presentation')" @keydown="stopCardKey">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M12 17v4m-4 0h8M10 8l5 2.5-5 2.5Z" /></svg>
                   </button>
-                  <button v-if="item.item_type !== 'latex_pdf'" class="card-action-button" type="button" :aria-label="`Edit ${item.title}`" title="Edit and preview" @click.stop="openLibraryEditor(item)" @keydown.stop>
+                  <button v-if="item.item_type !== 'latex_pdf'" class="card-action-button" type="button" :aria-label="`Edit ${item.title}`" title="Edit and preview" @click.stop="openLibraryEditor(item)" @keydown="stopCardKey">
                     <svg><use href="#icon-edit" /></svg>
                   </button>
-                  <button class="card-action-button card-copy-action" type="button" :aria-label="`Copy ID for ${item.title}`" title="Copy artifact ID" @click.stop="copyLibraryItemId(item)" @keydown.stop>
+                  <button class="card-action-button card-copy-action" type="button" :aria-label="`Copy ID for ${item.title}`" title="Copy artifact ID" @click.stop="copyLibraryItemId(item)" @keydown="stopCardKey">
                     <svg><use href="#icon-copy" /></svg>
                   </button>
-                  <button class="card-action-button danger" :disabled="deletingLibraryItemId !== null" type="button" :aria-label="`Delete ${item.title}`" :title="deletingLibraryItemId === item.id ? 'Deleting…' : `Delete ${item.item_type}`" @click.stop="deleteLibraryItem(item)" @keydown.stop>
+                  <button class="card-action-button danger" :disabled="deletingLibraryItemId !== null || bulkDeleting" type="button" :aria-label="`Delete ${item.title}`" :title="deletingLibraryItemId === item.id ? 'Deleting…' : `Delete ${item.item_type}`" @click.stop="deleteLibraryItem(item)" @keydown="stopCardKey">
                     <svg><use href="#icon-trash" /></svg>
                   </button>
                 </div>
@@ -3855,6 +4085,23 @@ onBeforeUnmount(() => {
           <div v-if="libraryItems.length && libraryHasMore" ref="librarySentinel" class="library-more" role="status" aria-live="polite">
             <span v-if="libraryLoadingMore">{{ $t('Loading more…') }}</span>
           </div>
+
+          <div v-if="libraryMarquee" class="library-marquee" aria-hidden="true" :style="{ left: `${libraryMarquee.left}px`, top: `${libraryMarquee.top}px`, width: `${libraryMarquee.right - libraryMarquee.left}px`, height: `${libraryMarquee.bottom - libraryMarquee.top}px` }" />
+
+          <Transition name="bulk-bar">
+            <div v-if="selectingLibrary" class="library-bulk-bar" role="toolbar" :aria-label="$t('Selected artifacts')">
+              <strong class="bulk-count" aria-live="polite">{{ $t('{count} selected', { count: selectedLibraryIds.size }) }}</strong>
+              <button type="button" class="bulk-secondary" :disabled="bulkDeleting || selectedLibraryIds.size === libraryItems.length" @click="selectAllLibraryItems">
+                {{ libraryHasMore ? $t('Select all loaded') : $t('Select all') }}
+              </button>
+              <button type="button" class="bulk-secondary" :disabled="bulkDeleting" @click="clearLibrarySelection">{{ $t('Clear') }}</button>
+              <button type="button" class="bulk-delete" :disabled="bulkDeleting" :aria-busy="bulkDeleting" @click="deleteSelectedLibraryItems">
+                <span v-if="bulkDeleting" class="button-spinner" aria-hidden="true" />
+                <svg v-else aria-hidden="true"><use href="#icon-trash" /></svg>
+                {{ bulkDeleting ? $t('Deleting…') : $t('Delete') }}
+              </button>
+            </div>
+          </Transition>
         </section>
       </template>
 
@@ -4428,11 +4675,11 @@ onBeforeUnmount(() => {
           <form class="settings-card" @submit.prevent="saveAI">
             <div class="form-grid">
               <label class="field"><span>{{ $t('Connection name') }}</span><input v-model="ai.name" placeholder="e.g. Fast OpenAI" /><small>Shown in the conversation provider picker.</small></label>
-              <label class="field"><span>{{ $t('Provider') }}</span><select v-model="ai.provider" @change="selectProviderKind"><option value="openai_compatible">OpenAI compatible</option><option value="responses_compatible">Responses compatible</option><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="anthropic">Anthropic</option><option value="google">Google Gemini</option><option value="ollama">Ollama</option></select><small>The API format used for model requests.</small></label>
+              <label class="field"><span>{{ $t('Provider') }}</span><select v-model="ai.provider" @change="selectProviderKind"><option value="openai_compatible">OpenAI compatible</option><option value="responses_compatible">Responses compatible</option><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="anthropic">Anthropic</option><option value="anthropic_compatible">Anthropic compatible</option><option value="google">Google Gemini</option><option value="ollama">Ollama</option></select><small>The API format used for model requests.</small></label>
               <label class="field"><span>{{ $t('Model') }}</span><input v-model="ai.model" placeholder="e.g. gpt-4.1-mini" /><small>Use the exact model identifier from your provider.</small></label>
-              <label class="field full"><span>{{ $t('Base URL') }} <em>{{ ['openai_compatible', 'responses_compatible'].includes(ai.provider) ? 'Custom' : 'Auto-filled' }}</em></span><input v-model="ai.base_url" :placeholder="ai.provider === 'responses_compatible' ? 'https://api.example.com' : 'https://api.example.com/v1'" /><small>{{ providerBaseUrlHelp(ai.provider) }}</small></label>
+              <label class="field full"><span>{{ $t('Base URL') }} <em>{{ ['openai_compatible', 'responses_compatible', 'anthropic_compatible'].includes(ai.provider) ? 'Custom' : 'Auto-filled' }}</em></span><input v-model="ai.base_url" :placeholder="ai.provider === 'responses_compatible' ? 'https://api.example.com' : 'https://api.example.com/v1'" /><small>{{ providerBaseUrlHelp(ai.provider) }}</small></label>
               <label class="field full"><span>{{ $t('API key') }} <em>{{ providerLoading ? 'Loading…' : editingProviderId === null ? 'New' : ai.api_key ? 'Loaded' : 'Not set' }}</em></span><div class="secret-input"><input v-model="ai.api_key" :type="apiKeyVisible ? 'text' : 'password'" autocomplete="off" placeholder="Leave blank to keep the saved key" /><button type="button" :aria-label="apiKeyVisible ? 'Hide API key' : 'Show API key'" :title="apiKeyVisible ? 'Hide API key' : 'Show API key'" @click="apiKeyVisible = !apiKeyVisible"><svg aria-hidden="true"><use :href="apiKeyVisible ? '#icon-eye-off' : '#icon-eye'" /></svg></button></div><small>Stored encrypted locally. Saving a blank value keeps the existing key.</small></label>
-              <label class="field temperature-field"><span>{{ $t('Temperature') }} <output>{{ ai.temperature.toFixed(1) }}</output></span><input v-model.number="ai.temperature" type="range" min="0" max="2" step="0.1" /></label>
+              <label v-if="!providerIgnoresTemperature(ai.provider)" class="field temperature-field"><span>{{ $t('Temperature') }} <output>{{ ai.temperature.toFixed(1) }}</output></span><input v-model.number="ai.temperature" type="range" min="0" max="2" step="0.1" /></label>
               <div v-if="ai.provider === 'responses_compatible'" class="field"><span>{{ $t('API mode') }}</span><strong>Responses API</strong><small>This compatible connection always uses the Responses protocol.</small></div>
               <div v-else-if="['openai', 'openai_compatible', 'deepseek'].includes(ai.provider)" class="field"><span>{{ $t('API mode') }}</span><div class="mode-options" role="group" :aria-label="$t('API mode')"><button type="button" :class="{ active: !ai.response }" @click="setResponseMode(false)">Chat Completions</button><button type="button" :class="{ active: ai.response }" @click="setResponseMode(true)">Responses API</button></div><small>Responses mode enables provider-hosted tools such as web search.</small></div>
             </div>
@@ -4476,6 +4723,27 @@ onBeforeUnmount(() => {
               <div><button class="primary-action" :disabled="runtimeSettingsSaving" type="submit">{{ runtimeSettingsSaving ? 'Saving…' : $t('Save limits') }}</button></div>
             </div>
           </form>
+          <div class="settings-intro runtime-settings-heading">
+            <div><h2>{{ $t('Agent permissions') }}</h2><p>{{ $t('Things the Agent may do in a conversation only when you allow them.') }}</p></div>
+          </div>
+          <div class="settings-card permission-card">
+            <label v-for="permission in agentPermissions" :key="permission.key" class="permission-row">
+              <span class="permission-copy">
+                <strong>{{ $t(permission.title) }}</strong>
+                <small>{{ $t(permission.description) }}</small>
+              </span>
+              <span class="switch">
+                <input
+                  type="checkbox"
+                  role="switch"
+                  :checked="runtimeSettings[permission.key]"
+                  :disabled="agentPermissionSaving !== null"
+                  @change="setAgentPermission(permission.key, ($event.target as HTMLInputElement).checked)"
+                />
+                <span />
+              </span>
+            </label>
+          </div>
           </div>
           <div v-else class="settings-section">
           <div class="settings-intro runtime-settings-heading">
@@ -4726,6 +4994,30 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .card-topline { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: .45rem; }
 .card-topline .card-type { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-topline-actions { display: flex; align-items: center; gap: .16rem; }
+/* Picking cards: a round check that grows in on hover or once picking has begun,
+   a ring on what is picked, and a rectangle for the drag. */
+.card-select { display: grid; place-items: center; flex: 0 0 auto; width: 0; height: 1.35rem; margin-right: 0; padding: 0; overflow: hidden; border: 1.5px solid rgba(29,29,31,.28); border-radius: 50%; color: transparent; background: rgba(255,255,255,.9); opacity: 0; cursor: pointer; transition: width 160ms cubic-bezier(.2,.8,.2,1), margin 160ms cubic-bezier(.2,.8,.2,1), opacity 120ms ease, background 140ms ease, border-color 140ms ease; }
+.card-select svg { width: .85rem; height: .85rem; stroke-width: 2.4; }
+.card:hover .card-select, .card:focus-within .card-select, .card.picking .card-select, .card.picked .card-select { width: 1.35rem; margin-right: .5rem; border-width: 1.5px; opacity: 1; }
+.card-select:hover { border-color: var(--accent); }
+.card.picked .card-select { border-color: var(--accent); color: #fff; background: var(--accent); }
+.card.picked { border-color: rgba(71,105,87,.55); background: rgba(240,246,242,.96); box-shadow: 0 0 0 2px rgba(71,105,87,.55), 0 6px 18px rgba(52,82,67,.12); }
+.library-view { min-height: calc(100vh - 6rem); }
+.library-view.selecting .card[draggable="true"] { cursor: pointer; }
+.library-marquee { position: fixed; z-index: 30; pointer-events: none; border: 1px solid rgba(71,105,87,.7); border-radius: .35rem; background: rgba(71,105,87,.12); }
+body.marquee-selecting { user-select: none; -webkit-user-select: none; cursor: crosshair; }
+.library-bulk-bar { position: fixed; z-index: 40; left: calc(50% + 8.25rem); bottom: 1.4rem; transform: translateX(-50%); display: flex; align-items: center; gap: .35rem; padding: .4rem .45rem .4rem 1rem; border: 1px solid rgba(255,255,255,.7); border-radius: 999px; background: rgba(250,250,251,.86); box-shadow: 0 14px 40px rgba(24,28,26,.18), 0 2px 8px rgba(24,28,26,.08); backdrop-filter: blur(22px) saturate(180%); -webkit-backdrop-filter: blur(22px) saturate(180%); }
+.bulk-count { margin-right: .5rem; font-size: .82rem; font-weight: 620; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.library-bulk-bar button { min-height: 2.1rem; padding: 0 .85rem; border: 0; border-radius: 999px; font-size: .78rem; font-weight: 580; cursor: pointer; transition: background 140ms ease, color 140ms ease, opacity 140ms ease; }
+.bulk-secondary { color: #4b4b50; background: transparent; }
+.bulk-secondary:hover:not(:disabled) { background: rgba(29,29,31,.07); }
+.bulk-delete { display: inline-flex; align-items: center; gap: .4rem; color: #fff; background: #c4443a; }
+.bulk-delete:hover:not(:disabled) { background: #ad3a31; }
+.bulk-delete svg { width: .95rem; height: .95rem; }
+.library-bulk-bar button:disabled { opacity: .5; cursor: default; }
+.bulk-bar-enter-active, .bulk-bar-leave-active { transition: opacity 180ms ease, transform 260ms cubic-bezier(.22,1,.36,1); }
+.bulk-bar-enter-from, .bulk-bar-leave-to { opacity: 0; transform: translate(-50%, 14px); }
+@media (max-width: 920px) { .library-bulk-bar { left: 50%; bottom: 4.6rem; max-width: calc(100vw - 1.5rem); } }
 .card-action-button { display: grid; place-items: center; width: 1.75rem; height: 1.75rem; padding: 0; border: 0; border-radius: .5rem; color: #8b918d; background: transparent; cursor: pointer; transition: color 160ms ease, background 160ms ease, transform 160ms ease; }
 .card-action-button:hover, .card-action-button:focus-visible { color: #365845; background: #e9f0ec; outline: none; transform: scale(1.04); }
 .card-action-button.danger:hover, .card-action-button.danger:focus-visible { color: #a33e3e; background: #f8eded; }
@@ -5179,6 +5471,12 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .settings-actions > span { color: var(--tertiary); font-size: .68rem; }
 .settings-actions > div { display: flex; align-items: center; gap: 1rem; margin-left: auto; }
 .danger-button { border: 0; color: #a33e3e; background: transparent; cursor: pointer; font-size: .7rem; font-weight: 600; }
+.permission-card { display: grid; padding: .35rem 1.5rem; }
+.permission-row { display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; padding: 1rem 0; cursor: pointer; }
+.permission-row + .permission-row { border-top: 1px solid var(--line); }
+.permission-copy { min-width: 0; display: grid; gap: .2rem; }
+.permission-copy strong { font-size: .86rem; font-weight: 620; }
+.permission-copy small { color: var(--tertiary); font-size: .74rem; line-height: 1.5; }
 .switch { display: flex; align-items: center; gap: .55rem; cursor: pointer; }
 .switch input { position: absolute; opacity: 0; }
 .switch > span { position: relative; width: 2.25rem; height: 1.3rem; border-radius: 1rem; background: #c7c7cc; transition: background 180ms ease; }

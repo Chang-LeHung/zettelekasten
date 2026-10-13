@@ -27,6 +27,25 @@ ProviderAdapter = TypeAliasType(
 )
 
 
+def anthropic_base_url(value: str | None) -> str | None:
+    """Return the API root the Anthropic SDK expects, or ``None`` for its default.
+
+    The SDK appends ``/v1/messages`` itself, so an address pasted with more than
+    the root (``…/v1`` as OpenAI-style endpoints are written, or the full
+    ``…/v1/messages`` that many Anthropic-compatible services document and that
+    people copy whole) would be requested at ``/v1/v1/messages`` or
+    ``/v1/messages/v1/messages`` and fail with a bare 404. Trailing slashes, a
+    trailing ``/messages``, and one trailing ``/v1`` are dropped.
+    """
+    if not value:
+        return None
+    root = value.strip().rstrip("/")
+    for suffix in ("/messages", "/v1"):
+        if root.endswith(suffix):
+            root = root[: -len(suffix)].rstrip("/")
+    return root or None
+
+
 def uses_responses_api(model: AgentModel | None) -> bool:
     """Return whether one adapter speaks the Responses API.
 
@@ -74,12 +93,15 @@ def create_model(
                 temperature=temperature,
                 response=response,
             )
-        case ProviderType.ANTHROPIC:
+        case ProviderType.ANTHROPIC | ProviderType.ANTHROPIC_COMPATIBLE:
+            if connection.provider == ProviderType.ANTHROPIC_COMPATIBLE and not connection.base_url:
+                raise ValueError("Anthropic-compatible providers require a base URL")
+            base_url = anthropic_base_url(connection.base_url)
             return AnthropicProvider(
                 model=connection.model,
                 api_key=api_key,
-                **({"base_url": connection.base_url} if connection.base_url else {}),
-                response=response,
+                **({"base_url": base_url} if base_url else {}),
+                response=False,
             )
         case ProviderType.GOOGLE:
             return GoogleProvider(model=connection.model, api_key=api_key, response=response)

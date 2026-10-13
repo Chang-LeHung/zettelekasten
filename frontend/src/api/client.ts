@@ -217,8 +217,12 @@ export const libraryClient = {
 
   delete(_itemType: LibraryItemType, itemId: string): Promise<{ ok: boolean }> {
     const artifact = requireIndexedArtifact(itemId)
-    artifactIndex.delete(itemId)
-    return request<{ ok: boolean }>(`/agent/${artifact.session_id}/artifacts/${itemId}`, { method: 'DELETE' })
+    // Forget the artifact only once the server has deleted it: a refused or failed
+    // delete must leave it deletable again, which a bulk delete's retry relies on.
+    return request<{ ok: boolean }>(`/agent/${artifact.session_id}/artifacts/${itemId}`, { method: 'DELETE' }).then((result) => {
+      if (result.ok) artifactIndex.delete(itemId)
+      return result
+    })
   },
 
   async update(itemType: LibraryItemType, itemId: string, payload: LibraryItemUpdate): Promise<LibraryItem> {

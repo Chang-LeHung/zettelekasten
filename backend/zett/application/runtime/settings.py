@@ -27,6 +27,14 @@ class RuntimeSettings(BaseModel):
         le=512,
         description="Maximum number of primary model calls allowed for one turn",
     )
+    agent_may_delete_artifacts: bool = Field(
+        default=False,
+        description="Whether the Agent in a web conversation may delete artifacts of that conversation",
+    )
+    agent_may_delete_tags: bool = Field(
+        default=False,
+        description="Whether the Agent in a web conversation may delete tags from the library",
+    )
     max_asset_size_bytes: int = Field(
         default=settings.max_asset_size_bytes,
         ge=1,

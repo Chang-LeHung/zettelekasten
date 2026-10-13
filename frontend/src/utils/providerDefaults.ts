@@ -1,5 +1,6 @@
 const providerBaseUrls: Readonly<Record<string, string>> = {
   anthropic: 'https://api.anthropic.com',
+  anthropic_compatible: '',
   deepseek: 'https://api.deepseek.com/v1',
   google: 'https://generativelanguage.googleapis.com',
   ollama: 'http://localhost:11434',
@@ -14,6 +15,11 @@ export function defaultProviderBaseUrl(provider: string, response = false): stri
   return providerBaseUrls[provider] ?? ''
 }
 
+/** Providers whose adapter takes no temperature, so a slider for it would do nothing. */
+export function providerIgnoresTemperature(provider: string): boolean {
+  return ['anthropic', 'anthropic_compatible', 'google', 'ollama'].includes(provider)
+}
+
 /** Explain whether the selected endpoint is inferred or must be supplied by the user. */
 export function providerBaseUrlHelp(provider: string): string {
   if (provider === 'openai_compatible') {
@@ -21,6 +27,9 @@ export function providerBaseUrlHelp(provider: string): string {
   }
   if (provider === 'responses_compatible') {
     return 'Enter the Responses API root exposed by your compatible service.'
+  }
+  if (provider === 'anthropic_compatible') {
+    return 'Enter the API root of your Anthropic-compatible service; the full …/v1/messages address works too.'
   }
   if (provider === 'ollama') {
     return 'Defaults to local Ollama; change it when the server runs elsewhere.'

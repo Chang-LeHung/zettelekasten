@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { defaultProviderBaseUrl, providerBaseUrlHelp } from './providerDefaults'
+import { defaultProviderBaseUrl, providerBaseUrlHelp, providerIgnoresTemperature } from './providerDefaults'
 
 describe('provider defaults', () => {
   it.each([
@@ -29,4 +29,13 @@ describe('provider defaults', () => {
     expect(providerBaseUrlHelp('ollama')).toContain('local Ollama')
     expect(providerBaseUrlHelp('openai')).toContain('standard API endpoint')
   })
+})
+
+it('knows Anthropic-compatible services need an address, and which adapters ignore temperature', () => {
+  expect(defaultProviderBaseUrl('anthropic')).toBe('https://api.anthropic.com')
+  expect(defaultProviderBaseUrl('anthropic_compatible')).toBe('')
+  expect(providerBaseUrlHelp('anthropic_compatible')).toContain('Anthropic-compatible')
+  expect(providerIgnoresTemperature('anthropic')).toBe(true)
+  expect(providerIgnoresTemperature('anthropic_compatible')).toBe(true)
+  expect(providerIgnoresTemperature('openai')).toBe(false)
 })

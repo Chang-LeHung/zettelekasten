@@ -17,6 +17,7 @@ class ProviderType(StrEnum):
     OLLAMA = "ollama"
     OPENAI_COMPATIBLE = "openai_compatible"
     RESPONSES_COMPATIBLE = "responses_compatible"
+    ANTHROPIC_COMPATIBLE = "anthropic_compatible"
 
 
 class ProviderWrite(BaseModel):

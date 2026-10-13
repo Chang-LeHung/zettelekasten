@@ -39,9 +39,15 @@ artifact_pruner = ArtifactPruner()
 class ArtifactExtension(AgentExtension):
     """Expose typed artifact operations to the model."""
 
-    def __init__(self, *, allow_direct_current_session_edits: bool = False) -> None:
-        """Configure whether headless runs may write current-session content directly."""
+    def __init__(self, *, allow_direct_current_session_edits: bool = False, allow_delete: bool = False) -> None:
+        """Configure direct headless writes, and whether the model may delete at all.
+
+        ``delete_artifact`` is not registered unless ``allow_delete`` is set: a tool
+        the model cannot see cannot be called by a prompt-injected page or a
+        misunderstood request, which no guideline can promise.
+        """
         self.allow_direct_current_session_edits = allow_direct_current_session_edits
+        self.allow_delete = allow_delete
 
     # Do not add an on_state() workspace system message. A conversation starts
     # with no artifacts, and later create/update/delete tool calls and results
@@ -207,13 +213,10 @@ class ArtifactExtension(AgentExtension):
             await self._artifact(session_id, artifact_id)
             return await artifact_storage.delete(artifact_id)
 
-        for registered in (
-            create_artifact,
-            get_artifact,
-            query_artifacts,
-            update_artifact,
-            delete_artifact,
-        ):
+        registered_tools = [create_artifact, get_artifact, query_artifacts, update_artifact]
+        if self.allow_delete:
+            registered_tools.append(delete_artifact)
+        for registered in registered_tools:
             context.register_tool(registered)
 
     @staticmethod
