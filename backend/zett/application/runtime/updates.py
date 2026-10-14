@@ -38,6 +38,9 @@ STATUS_KEY = "updates.status"
 #: How long one PyPI answer is reused before Settings asks again.
 CHECK_INTERVAL = timedelta(hours=6)
 
+#: What ``installed_version`` answers when no installed distribution can be found.
+UNKNOWN_VERSION = "0.0.0"
+
 VERSION_PREFIX = re.compile(r"^(\d+(?:\.\d+)*)")
 
 
@@ -53,7 +56,7 @@ def installed_version(distribution: str = PROJECT_NAME) -> str:
         return importlib.metadata.version(distribution)
     except importlib.metadata.PackageNotFoundError:
         # A source checkout that was never installed has no metadata to read.
-        return "0.0.0"
+        return UNKNOWN_VERSION
 
 
 def _checked_at(value: object) -> datetime | None:
@@ -113,11 +116,17 @@ class UpdateService:
                 )
         else:
             latest, checked_at = cached
+        # An environment replaced under a running process (another Python, a reinstall) takes
+        # this copy's metadata with it: the process still runs, but no distribution is found.
+        # That is a restart waiting to happen, not an uninstalled checkout.
+        replaced = installed == UNKNOWN_VERSION and self._running_version != UNKNOWN_VERSION
+        if replaced:
+            installed = latest or self._running_version
         available = bool(latest) and version_key(latest) > version_key(installed)
         return UpdateStatus(
             current=self._running_version,
             installed=installed,
-            restart_required=version_key(installed) > version_key(self._running_version),
+            restart_required=replaced or version_key(installed) > version_key(self._running_version),
             latest=latest,
             update_available=available,
             can_install=installer.can_install and available,

@@ -219,6 +219,33 @@ async def test_status_asks_for_a_restart_once_the_installed_version_moves_past_t
     assert restarted.restart_required is False
 
 
+async def test_an_environment_replaced_under_a_running_copy_asks_for_a_restart(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from zett.application.runtime import updates as updates_module
+
+    # The running process cannot find its own distribution any more: another Python replaced the
+    # environment. It must not read as an uninstalled checkout and keep offering the same update.
+    monkeypatch.setattr(updates_module, "installed_version", lambda distribution="": "0.0.0")
+    service = UpdateService(
+        client=FakePypi("0.0.6"),  # type: ignore[arg-type]
+        installer_factory=uv_tool_installer,
+        running_version="0.0.5",
+    )
+    status = await service.status(refresh=True)
+    assert status.restart_required is True
+    assert status.installed == "0.0.6"
+    assert status.update_available is False and status.can_install is False
+
+    # A checkout that was never installed knows no version at all, and asks for nothing.
+    checkout = UpdateService(
+        client=FakePypi("0.0.6"),  # type: ignore[arg-type]
+        installer_factory=uv_tool_installer,
+        running_version="0.0.0",
+    )
+    assert (await checkout.status(refresh=True)).restart_required is False
+
+
 async def test_status_reports_an_unreachable_index_without_failing() -> None:
     service = UpdateService(client=FakePypi(error="PyPI lookup failed: offline"))  # type: ignore[arg-type]
     status = await service.status(refresh=True)
