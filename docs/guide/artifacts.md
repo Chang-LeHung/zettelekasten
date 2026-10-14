@@ -58,9 +58,10 @@ Zett itself cannot publish anything. Only you save.
   on its row. Use **Diff** to check your changes and **Save** or **Update** to
   publish them. Images and PDFs have their own controls.
 - **In the full editor.** Open it from the conversation or from a library card.
-  It is one column of blocks by default, like a Notion page; the layout switch
-  in the top bar turns it into two columns, the Markdown source beside a live
-  preview that scrolls with it. Zett remembers your choice. Press **⌘S** to save.
+  It opens as the two columns it always had, the Markdown source beside a live
+  preview that scrolls with it; the layout switch in the top bar turns it into
+  one column of blocks, like a Notion page. Zett remembers your choice. Press
+  **⌘S** to save.
 - **Blocks.** A block shows rendered until you click it, and then it is the plain
   Markdown, so nothing in the document is ever rewritten behind your back: raw
   HTML, slide markers, formulas, and spacing you did not touch come back exactly
