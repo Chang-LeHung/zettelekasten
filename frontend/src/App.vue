@@ -12,6 +12,8 @@ import AssetPreviewDialog from './components/AssetPreviewDialog.vue'
 import AssetRename from './components/AssetRename.vue'
 import AskUserPrompt from './components/AskUserPrompt.vue'
 import ShellApprovalPrompt from './components/ShellApprovalPrompt.vue'
+import BlockEditor from './components/BlockEditor.vue'
+import LibraryStatusFilter from './components/LibraryStatusFilter.vue'
 import CardStatusMark from './components/CardStatusMark.vue'
 import CardStatusMenu from './components/CardStatusMenu.vue'
 import AgentExecution from './components/AgentExecution.vue'
@@ -22,7 +24,7 @@ import { artifactContentFromLibraryUpdate, artifactEditableContent, hasPendingDr
 import { artifactListsEquivalent, sameArtifactRevision, stabilizeArtifactReferences } from './utils/artifactStability'
 import { diffArtifactContent } from './utils/artifactDiff'
 import { artifactLifecycle, lifecycleClass, lifecycleHint, lifecycleLabel } from './utils/artifactLifecycle'
-import { CARD_STATUSES, STATUS_CARD_TYPES, cardStatusLabel, cardStatusType, isStruck, statusTone, toggleCardStatusFilter } from './utils/cardStatus'
+import { cardStatusLabel, cardStatusType, isStruck, statusTone } from './utils/cardStatus'
 import { addTagPath } from './utils/tagAssignment'
 import { assetOpenAction, isPdfAsset } from './utils/assetOpen'
 import { createAsyncRefreshScheduler } from './utils/asyncRefresh'
@@ -2013,9 +2015,9 @@ async function filterByArtifactType(artifactType: LibraryItem['item_type'] | nul
   await loadLibrary()
 }
 
-/** Toggle one status in the library filter; `null` clears the filter. */
-async function filterByCardStatus(status: CardStatus | null): Promise<void> {
-  selectedCardStatuses.value = status === null ? [] : toggleCardStatusFilter(selectedCardStatuses.value, status)
+/** Replace the library's status filter and reload what it shows. */
+async function setCardStatuses(next: CardStatus[]): Promise<void> {
+  selectedCardStatuses.value = next
   await loadLibrary()
 }
 
@@ -4036,7 +4038,7 @@ onBeforeUnmount(() => {
       />
 
       <template v-if="view === 'library' || view === 'search'">
-        <header class="topbar">
+        <header class="topbar library-topbar">
           <form class="search-field" role="search" @submit.prevent="search">
             <svg><use href="#icon-search" /></svg>
             <input ref="searchInput" v-model="query" :aria-label="$t('search.placeholder')" :placeholder="$t('search.placeholder')" />
@@ -4052,31 +4054,22 @@ onBeforeUnmount(() => {
             <button v-if="selectedTag !== null" class="text-button" type="button" @click="filterByTag(null)">Clear filter</button>
           </div>
 
-          <div class="library-type-filters" aria-label="Artifact type filters">
-            <span>{{ $t('Type') }}</span>
-            <button
-              v-for="filter in libraryTypeFilters"
-              :key="filter.label"
-              :class="{ active: selectedLibraryType === filter.value }"
-              type="button"
-              @click="filterByArtifactType(filter.value)"
-            >{{ $t(filter.label) }}</button>
-          </div>
-
-          <div v-if="selectedLibraryType === null || selectedLibraryType === 'card'" class="library-status-filters" :aria-label="t('cardStatus.filter')">
-            <span>{{ t('cardStatus.filter') }}</span>
-            <button type="button" :class="{ active: !selectedCardStatuses.length }" @click="filterByCardStatus(null)">{{ t('cardStatus.filter.all') }}</button>
-            <div v-for="cardType in STATUS_CARD_TYPES" :key="cardType" class="status-group" role="group" :aria-label="t(cardType)">
-              <em>{{ t(cardType) }}</em>
+          <div class="library-filter-bar">
+            <div class="library-type-filters" aria-label="Artifact type filters">
+              <span>{{ $t('Type') }}</span>
               <button
-                v-for="status in CARD_STATUSES[cardType]"
-                :key="status"
+                v-for="filter in libraryTypeFilters"
+                :key="filter.label"
+                :class="{ active: selectedLibraryType === filter.value }"
                 type="button"
-                :class="[statusTone(status), { active: selectedCardStatuses.includes(status) }]"
-                :aria-pressed="selectedCardStatuses.includes(status)"
-                @click="filterByCardStatus(status)"
-              ><i aria-hidden="true" />{{ t(cardStatusLabel(status)) }}</button>
+                @click="filterByArtifactType(filter.value)"
+              >{{ $t(filter.label) }}</button>
             </div>
+            <LibraryStatusFilter
+              v-if="selectedLibraryType === null || selectedLibraryType === 'card'"
+              :model-value="selectedCardStatuses"
+              @update:model-value="setCardStatuses"
+            />
           </div>
 
           <!--
@@ -4693,7 +4686,7 @@ onBeforeUnmount(() => {
                       <!-- The local key belongs to an uploaded session file, not to this edit: the assistant sets it through upload_asset, so it is shown read-only instead of being typed here. -->
                       <label v-if="artifactContent.asset_path" class="card-summary-control"><span>Local file</span><textarea :value="artifactContent.asset_path" rows="1" readonly /></label>
                     </template>
-                    <label v-else class="card-content-control"><span>{{ artifactContent.artifact_type === 'article' ? 'Article' : artifactContent.artifact_type === 'slides' ? 'Slides' : 'Knowledge' }} · Markdown</span><textarea v-model="artifactContent.content" /></label>
+                    <div v-else class="card-body-editor"><span>{{ artifactContent.artifact_type === 'article' ? 'Article' : artifactContent.artifact_type === 'slides' ? 'Slides' : 'Knowledge' }} · Markdown</span><BlockEditor v-model="artifactContent.content" compact :slides="artifactContent.artifact_type === 'slides'" /></div>
                   </template>
                   <article v-else class="artifact-preview" :class="`artifact-preview-${artifactContent.artifact_type}`">
                     <SlidesPreview v-if="artifactContent.artifact_type === 'slides'" compact :title="artifactContent.title" :content="artifactContent.content" />
@@ -5071,17 +5064,20 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 .close-button { width: 2rem; height: 2rem; border-radius: 50%; color: #606065; background: rgba(224,224,227,.78); font-size: 1.2rem; line-height: 1; }
 
 .content { width: min(100%, 76rem); margin: 0 auto; padding: 2.15rem clamp(1.5rem, 4vw, 4rem) 5rem; }
-.library-view { width: min(100%, 84rem); }
+/* The library is a wall of cards, so it uses the width it is given: little margin, and more columns as the window grows. */
+.library-topbar { padding-inline: clamp(1rem, 2.2vw, 2rem); }
+.library-view { width: 100%; max-width: 120rem; padding-inline: clamp(1rem, 2.2vw, 2rem); }
 .page-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin-bottom: 1.75rem; }
 .eyebrow { margin: 0; color: var(--accent); font-size: .67rem; font-weight: 700; letter-spacing: .075em; text-transform: uppercase; }
 .page-heading h1 { margin: .35rem 0 .3rem; font-size: clamp(1.85rem, 3vw, 2.45rem); line-height: 1.06; letter-spacing: -.032em; }
 .page-heading p:last-child, .settings-intro p, .editor-intro p { margin: 0; color: var(--secondary); font-size: .82rem; line-height: 1.55; }
-.library-type-filters { display: flex; align-items: center; gap: .3rem; margin: -1rem 0 1.15rem; }
+.library-filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .55rem 1.4rem; margin: -1rem 0 1.3rem; }
+.library-type-filters { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; }
 .library-type-filters > span { margin-right: .25rem; color: #8c938f; font-size: .66rem; font-weight: 680; letter-spacing: .045em; text-transform: uppercase; }
 .library-type-filters button { min-height: 1.85rem; padding: 0 .7rem; border: 1px solid transparent; border-radius: .58rem; color: #727975; background: transparent; cursor: pointer; font-size: .7rem; font-weight: 610; }
 .library-type-filters button:hover { color: #435449; background: rgba(255,255,255,.6); }
 .library-type-filters button.active { border-color: rgba(78,111,91,.12); color: #3f604c; background: #edf3ef; box-shadow: inset 0 0 0 1px rgba(255,255,255,.55); }
-.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr)); gap: 1rem; }
+.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr)); gap: clamp(.75rem, 1.2vw, 1.15rem); }
 .library-more { display: grid; min-height: 3.2rem; margin-top: .6rem; place-items: center; color: var(--secondary); font-size: .74rem; }
 /* A filtered grid is remounted, so its cards rise the last few pixels into place.
    `backwards` fill keeps the start state during the stagger delay and hands the
@@ -5490,6 +5486,10 @@ body.marquee-selecting { user-select: none; -webkit-user-select: none; cursor: c
 .card-summary-control textarea { min-height: 4rem; padding: 0; background: transparent; color: #4d5b53; font-size: .82rem; line-height: 1.55; }
 .card-content-control { margin-top: 1.15rem; }
 .card-content-control textarea { min-height: 15rem; padding: .9rem; border: 1px solid #e2e5e3; border-radius: .82rem; background: #fbfcfb; font-size: .84rem; line-height: 1.68; }
+.card-body-editor { display: grid; gap: .42rem; margin-top: 1.15rem; }
+.card-body-editor > span { color: #7c837e; font-size: .64rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
+.card-body-editor > .block-editor { min-height: 12rem; padding: .7rem .8rem .2rem 2.2rem; border: 1px solid #e2e5e3; border-radius: .82rem; background: #fbfcfb; }
+.card-body-editor:focus-within > .block-editor { border-color: rgba(71,105,87,.42); box-shadow: 0 0 0 3px rgba(71,105,87,.08); }
 .card-content-control textarea:focus, .card-summary-control:focus-within { border-color: rgba(71,105,87,.42); box-shadow: 0 0 0 3px rgba(71,105,87,.08); }
 .artifact-preview { min-height: 0; margin-top: .2rem; padding: .35rem .1rem 1rem; }
 .artifact-preview-label { display: inline-flex; margin-bottom: .65rem; padding: .25rem .48rem; border-radius: 2rem; color: #4e6a59; background: #edf3ef; font-size: .56rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }

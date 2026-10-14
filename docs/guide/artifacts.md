@@ -57,9 +57,19 @@ Zett itself cannot publish anything. Only you save.
 - **In the conversation.** Select an artifact to preview it, then use **Edit**
   on its row. Use **Diff** to check your changes and **Save** or **Update** to
   publish them. Images and PDFs have their own controls.
-- **In the full editor.** Open it from the conversation or from a library card
-  for a side-by-side source and preview. The two panes scroll together for
-  Markdown, and slides and PDFs show their rendered pages. Press **⌘S** to save.
+- **In the full editor.** Open it from the conversation or from a library card.
+  It is one column of blocks by default, like a Notion page; the layout switch
+  in the top bar turns it into two columns, the Markdown source beside a live
+  preview that scrolls with it. Zett remembers your choice. Press **⌘S** to save.
+- **Blocks.** A block shows rendered until you click it, and then it is the plain
+  Markdown, so nothing in the document is ever rewritten behind your back: raw
+  HTML, slide markers, formulas, and spacing you did not touch come back exactly
+  as they were. Type **/** for the block menu (headings, lists, to-dos, quotes,
+  code, diagrams, math, tables, images, and slide breaks for a deck), select
+  words for a formatting bar, drag the handle in the margin to move a block, and
+  click its menu to turn it into another kind. Click a to-do's box to tick it.
+  **Enter** starts a new block and continues lists, **⌘Z** undoes a step, and
+  **⌘⇧↑/↓** moves a block.
 - **From the library.** Editing a card you opened from the library changes the
   published version directly.
 

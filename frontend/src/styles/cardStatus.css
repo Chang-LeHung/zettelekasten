@@ -38,17 +38,6 @@
 .artifact-list-item.status-done .artifact-list-copy, .artifact-list-item.status-cancelled .artifact-list-copy,
 .artifact-list-item.status-dropped .artifact-list-copy, .artifact-list-item.status-read .artifact-list-copy { opacity: .68; }
 
-/* Library status filter: the active chip wears its own tone, and each card type is its own group. */
-.library-status-filters { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; margin: -.55rem 0 1.15rem; }
-.library-status-filters > span { margin-right: .25rem; color: #8c938f; font-size: .7rem; font-weight: 600; }
-.library-status-filters .status-group { display: inline-flex; align-items: center; gap: .15rem; padding-left: .55rem; border-left: 1px solid rgba(29, 29, 31, .08); }
-.library-status-filters .status-group > em { margin-right: .2rem; color: #a0a6a2; font-size: .62rem; font-style: normal; font-weight: 650; text-transform: capitalize; }
-.library-status-filters button { display: inline-flex; align-items: center; gap: .38rem; min-height: 1.85rem; padding: 0 .7rem; border: 1px solid transparent; border-radius: .58rem; color: #727975; background: transparent; cursor: pointer; font-size: .7rem; font-weight: 610; }
-.library-status-filters button:hover { color: #435449; background: rgba(255, 255, 255, .6); }
-.library-status-filters button.active { border-color: rgba(78, 111, 91, .12); color: #3f604c; background: #edf3ef; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .55); }
-.library-status-filters button[class*="status-"].active { border-color: var(--status-line); color: var(--status-ink); background: var(--status-soft); }
-.library-status-filters button i { width: .5rem; height: .5rem; border-radius: 50%; background: var(--status-ink); }
-
 /* Library card: the status mark sits in front of the title, and the pill in the footer. */
 .card-title-row { display: flex; align-items: flex-start; gap: .5rem; margin: 1rem 0 .65rem; min-width: 0; }
 .card-title-row .status-mark { margin-top: .08rem; }

@@ -3,7 +3,8 @@ import type MarkdownIt from 'markdown-it'
 /** Turn standalone Markdown images into numbered figures without invalid nested paragraphs. */
 export function markdownFigures(md: InstanceType<typeof MarkdownIt>): void {
   md.core.ruler.after('inline', 'zett_figures', state => {
-    let number = 0
+    // A block editor renders one block at a time, so each starts where the last ended.
+    let number = Number(state.env?.figureStart ?? 0)
     for (let index = 0; index < state.tokens.length - 2; index += 1) {
       const opening = state.tokens[index]
       const inline = state.tokens[index + 1]

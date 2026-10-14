@@ -5,6 +5,7 @@ import { hljs, languageLabelFor, resolveLanguage } from '../utils/markdownCode'
 import { katex } from '@mdit/plugin-katex'
 import MarkdownIt from 'markdown-it'
 import { markdownFigures } from '../utils/markdownFigures'
+import { markdownTasks } from '../utils/markdownTasks'
 import { sanitizeMarkdown } from '../utils/sanitizeMarkdown'
 import { changeDiagramZoom, clampDiagramZoom } from '../utils/diagramZoom'
 import { renderMermaid } from '../utils/mermaidRenderer'
@@ -15,9 +16,12 @@ const props = withDefaults(defineProps<{
   content: string
   allowHtml?: boolean
   presentation?: boolean
+  /** Figures are numbered from here, for a slice of a longer document. */
+  figureStart?: number
 }>(), {
   allowHtml: false,
   presentation: false,
+  figureStart: 0,
 })
 
 const COPY_RESET_DELAY_MS = 1600
@@ -54,6 +58,7 @@ function createRenderer(html: boolean) {
     strict: 'ignore',
   })
   markdownRenderer.use(markdownFigures)
+  markdownRenderer.use(markdownTasks)
 
   markdownRenderer.renderer.rules.link_open = (tokens, index, options, _environment, self) => {
     tokens[index].attrSet('target', '_blank')
@@ -240,7 +245,7 @@ function scheduleMermaidRender(): void {
   void nextTick(() => renderMermaidDiagrams(generation))
 }
 
-const html = computed(() => sanitizeMarkdown((props.allowHtml ? htmlRenderer : renderer).render(props.content)))
+const html = computed(() => sanitizeMarkdown((props.allowHtml ? htmlRenderer : renderer).render(props.content, { figureStart: props.figureStart })))
 
 onMounted(() => {
   scheduleMermaidRender()
@@ -318,6 +323,11 @@ onBeforeUnmount(() => {
   border-left: .22em solid #9bb5a5;
   color: #5f6963;
 }
+.markdown-body :deep(li.task-list-item) { list-style: none; margin-left: -1.45em; }
+.markdown-body :deep(.task-box) { display: inline-block; position: relative; width: 1.05em; height: 1.05em; margin: 0 .5em -.15em 0; border: 1.5px solid #9aa39d; border-radius: .26em; background: #fff; }
+.markdown-body :deep(.task-box.checked) { border-color: #3d7a57; background: #3d7a57; }
+.markdown-body :deep(.task-box.checked::after) { content: ""; position: absolute; left: .3em; top: .08em; width: .26em; height: .52em; border: solid #fff; border-width: 0 .13em .13em 0; transform: rotate(45deg); }
+.markdown-body :deep(.task-done) { color: #8a918c; text-decoration: line-through; text-decoration-color: rgba(138,145,140,.6); }
 .markdown-body :deep(.markdown-figure) { display: block; margin: 1.4em 0; padding: 0; break-inside: avoid; text-align: center; }
 .markdown-body :deep(.markdown-figure img) { display: block; width: auto; max-width: 100%; height: auto; margin: 0 auto; border: 0; border-radius: .2rem; object-fit: contain; box-shadow: none; }
 .markdown-body :deep(figcaption) { max-width: 90%; margin: .65em auto 0; color: #68736c; font-size: .85em; line-height: 1.5; text-align: center; overflow-wrap: anywhere; }
