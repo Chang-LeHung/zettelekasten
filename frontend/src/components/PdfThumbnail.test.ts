@@ -1,11 +1,16 @@
 // @vitest-environment jsdom
 import { createApp, h, nextTick, ref } from 'vue'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { getDocument } from 'pdfjs-dist'
 import { assetClient } from '../api/client'
 import PdfThumbnail from './PdfThumbnail.vue'
 import appSource from '../App.vue?raw'
 import thumbnailSource from './PdfThumbnail.vue?raw'
+
+// The library card's styles live beside the other app styles, not in the component that renders it.
+const appStyles = readFileSync(resolve(process.cwd(), 'src/styles/app/library.css'), 'utf8')
 
 vi.mock('pdfjs-dist', () => ({ GlobalWorkerOptions: {}, getDocument: vi.fn() }))
 vi.mock('../api/client', () => ({
@@ -73,7 +78,7 @@ it('keeps the PDF preview constrained by both the thumbnail and card containers'
   expect(thumbnailSource).toContain('max-width: 100%')
   expect(thumbnailSource).toContain('max-height: 100%')
   expect(appSource).toContain('class="library-pdf-thumbnail"')
-  expect(appSource).toMatch(/\.library-pdf-thumbnail\s*\{[^}]*flex:\s*1 1 0;[^}]*min-height:\s*0;[^}]*overflow:\s*hidden;/u)
+  expect(appStyles).toMatch(/\.library-pdf-thumbnail\s*\{[^}]*flex:\s*1 1 0;[^}]*min-height:\s*0;[^}]*overflow:\s*hidden;/u)
 })
 
 it('renders the first page of a global static PDF', async () => {
