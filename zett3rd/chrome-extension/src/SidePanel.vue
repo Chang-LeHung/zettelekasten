@@ -27,6 +27,7 @@ import type {
   AgentCustomEvent,
   AgentModelUsage,
   AgentSlashCommand,
+  CardStatus,
   MessageImagePart,
   MessagePart,
 } from '../../../frontend/src/api/types'
@@ -34,6 +35,13 @@ import { isReasoningEffort, REASONING_EFFORTS } from '../../../frontend/src/util
 import { addAgentUsage, formatTokenCount, latestAgentUsage, summarizeAgentUsage } from '../../../frontend/src/utils/agentUsage'
 import { buildMessageParts, readMessageImage, type PositionedMessageImage } from '../../../frontend/src/utils/messageParts'
 import { parseUtcTimestamp } from '../../../frontend/src/utils/timestamps'
+import CardStatusMark from '../../../frontend/src/components/CardStatusMark.vue'
+import CardStatusMenu from '../../../frontend/src/components/CardStatusMenu.vue'
+import { i18n } from '../../../frontend/src/i18n'
+import { lifecycleClass, lifecycleLabel, lifecycleOf, type ArtifactLifecycle } from '../../../frontend/src/utils/artifactLifecycle'
+import '../../../frontend/src/styles/cardStatusTone.css'
+import { isStruck, statusTone } from '../../../frontend/src/utils/cardStatus'
+import '../../../frontend/src/styles/artifactLifecycle.css'
 import { SlashCommandInput } from '../../../frontend/src/utils/slashCommand'
 import { AtCommandInput } from '../../../frontend/src/utils/atCommand'
 import type { CommandTokenMatch } from '../../../frontend/src/utils/commandToken'
@@ -397,6 +405,11 @@ function previewImage(image: { name: string; url: string }): void {
   void chrome.tabs.create({ url: image.url })
 }
 
+/** The badge word for one save state, from the same messages the app uses. */
+function lifecycleText(lifecycle: ArtifactLifecycle): string {
+  return i18n.t(lifecycleLabel(lifecycle))
+}
+
 /** The app's rule: an artifact needs saving while its draft is unpublished. */
 function needsSave(artifact: Pick<AgentArtifact, 'status' | 'content' | 'draft_content'>): boolean {
   if (artifact.status !== 'saved') return true
@@ -404,7 +417,7 @@ function needsSave(artifact: Pick<AgentArtifact, 'status' | 'content' | 'draft_c
 }
 
 /** Show one artifact card, updating the card the thread already has for it. */
-function upsertArtifactEntry(card: { id: string; title: string; artifactType: AgentArtifact['artifact_type']; needsSave: boolean }): void {
+function upsertArtifactEntry(card: NonNullable<TranscriptEntry['artifact']>): void {
   const existing = transcript.value.find((entry) => entry.artifact?.id === card.id)
   if (existing) {
     updateEntry(existing.id, { text: card.title, artifact: card })
@@ -419,6 +432,8 @@ function receiptCard(receipt: ArtifactReceipt) {
     title: receipt.title,
     artifactType: receipt.artifact_type,
     needsSave: receipt.status !== 'saved' || receipt.pending_draft,
+    lifecycle: lifecycleOf(receipt.status === 'saved', receipt.pending_draft),
+    cardStatus: receipt.card_status ?? null,
   }
 }
 
@@ -428,6 +443,8 @@ function artifactCard(artifact: AgentArtifact) {
     title: artifact.content?.title ?? artifact.draft_content?.title ?? 'Untitled artifact',
     artifactType: artifact.artifact_type,
     needsSave: needsSave(artifact),
+    lifecycle: lifecycleOf(artifact.status === 'saved' && artifact.content != null, artifact.status === 'saved' && needsSave(artifact)),
+    cardStatus: artifact.card_status ?? null,
   }
 }
 
@@ -1325,6 +1342,25 @@ async function saveOne(artifactId: string): Promise<void> {
   }
 }
 
+/**
+ * Move one card to a new status. It takes effect at once and edits nothing else,
+ * so it never touches a draft the card is waiting to have saved.
+ */
+async function setStatus(artifactId: string, status: CardStatus): Promise<void> {
+  if (!conversationId.value || savingIds.value.includes(artifactId)) return
+  savingIds.value = [...savingIds.value, artifactId]
+  try {
+    const moved = await client.value.setCardStatus(conversationId.value, artifactId, status)
+    const existing = transcript.value.find((entry) => entry.artifact?.id === artifactId)?.artifact
+    // Replace only the status: the card's save state is still what the thread last knew.
+    if (existing) upsertArtifactEntry({ ...existing, cardStatus: moved.card_status ?? null })
+  } catch (error) {
+    notify((error as Error).message, 'error')
+  } finally {
+    savingIds.value = savingIds.value.filter((id) => id !== artifactId)
+  }
+}
+
 /** Publish every artifact of this conversation that still has something to save. */
 async function saveAll(): Promise<void> {
   if (!conversationId.value || busy.value) return
@@ -1526,13 +1562,31 @@ watch(conversationId, (sessionId) => { void loadBrowserApproval(sessionId) })
         <div v-if="entry.text" class="prompt-bubble">{{ entry.text }}</div>
         <p v-if="entry.steering === 'waiting'" class="steering-pending">Will respond after the current tool call or turn finishes.</p>
       </div>
-      <article v-else-if="entry.role === 'artifact' && entry.artifact" class="artifact-card" :class="{ saved: !entry.artifact.needsSave }">
+      <article
+        v-else-if="entry.role === 'artifact' && entry.artifact"
+        class="artifact-card"
+        :class="[lifecycleClass(entry.artifact.lifecycle), entry.artifact.cardStatus ? statusTone(entry.artifact.cardStatus) : '', { saved: !entry.artifact.needsSave }]"
+        :data-lifecycle="entry.artifact.lifecycle"
+      >
+        <CardStatusMark
+          v-if="entry.artifact.cardStatus"
+          :status="entry.artifact.cardStatus"
+          :busy="savingIds.includes(entry.artifact.id) || savingIds.includes('*')"
+          @select="setStatus(entry.artifact.id, $event)"
+        />
         <div class="artifact-copy">
-          <strong>{{ entry.artifact.title }}</strong>
+          <strong :class="{ 'status-struck': entry.artifact.cardStatus && isStruck(entry.artifact.cardStatus) }">{{ entry.artifact.title }}</strong>
           <small>
-            {{ entry.artifact.artifactType }} · {{ entry.artifact.needsSave ? 'unsaved draft' : 'saved' }}
+            <span>{{ entry.artifact.artifactType }}</span>
+            <em class="artifact-life-badge">{{ lifecycleText(entry.artifact.lifecycle) }}</em>
           </small>
         </div>
+        <CardStatusMenu
+          v-if="entry.artifact.cardStatus"
+          :status="entry.artifact.cardStatus"
+          :busy="savingIds.includes(entry.artifact.id) || savingIds.includes('*')"
+          @select="setStatus(entry.artifact.id, $event)"
+        />
         <button
           v-if="entry.artifact.needsSave"
           type="button"
@@ -1958,6 +2012,14 @@ button svg { width: .9rem; height: .9rem; fill: none; stroke: currentColor; stro
 /* One artifact the agent created or changed, with the Save that publishes it. */
 .artifact-card { display: flex; align-items: center; gap: .5rem; padding: .5rem .6rem; border: 1px solid rgba(71, 105, 87, .18); border-radius: .7rem; background: #fafcfb; }
 .artifact-card.saved { border-color: #e6e9e7; background: #fbfbfb; }
+/* The save lifecycle owns the card's edge; a status shows through its mark and title only. */
+.artifact-card.lifecycle-new { border-style: dashed; border-color: var(--life-line); background: repeating-linear-gradient(135deg, #fff, #fff 7px, #fffaf0 7px, #fffaf0 14px); }
+.artifact-card.lifecycle-changed { border-color: var(--life-line); background: #f6f9fd; box-shadow: inset 3px 0 0 var(--life-ink); }
+.artifact-card.lifecycle-saved { border-color: rgba(29, 29, 31, .08); background: #fbfbfb; }
+.artifact-copy small { display: flex; align-items: center; gap: .4rem; text-transform: none; letter-spacing: 0; }
+.artifact-copy small > span { text-transform: capitalize; }
+.artifact-copy small .artifact-life-badge { font-style: normal; }
+.artifact-card .status-pill { padding: 0 .4rem 0 .45rem; }
 .artifact-copy { min-width: 0; flex: 1 1 auto; }
 .artifact-copy strong, .artifact-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .artifact-copy strong { font-size: .72rem; font-weight: 620; }

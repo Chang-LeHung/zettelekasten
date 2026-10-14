@@ -24,6 +24,23 @@ from .errors import UsageError, run
 #: describe them with a title and a body.
 ARTIFACT_TYPES = ("card", "article", "slides")
 STATUSES = ("draft", "saved")
+#: Every status a todo, idea, or reference card can carry. The server checks that a
+#: value belongs to the card's own type; the CLI only refuses a name nobody knows.
+#: A test keeps this list equal to the server's ``CardStatus``.
+CARD_STATUS_CHOICES = (
+    "open",
+    "in_progress",
+    "on_hold",
+    "done",
+    "cancelled",
+    "captured",
+    "exploring",
+    "adopted",
+    "dropped",
+    "unread",
+    "reading",
+    "read",
+)
 #: Longest typed-content document the JSON flags accept, before it is parsed.
 MAX_CONTENT_JSON_CHARS = 1_000_000
 #: Keys each artifact kind's stored content model accepts. Pydantic ignores an
@@ -107,7 +124,28 @@ def build_parser() -> argparse.ArgumentParser:
     listing.add_argument(
         "--limit", type=bounded_int(1, 500), default=20, help="How many to print (default: %(default)s)"
     )
+    listing.add_argument(
+        "--card-status",
+        action="append",
+        choices=CARD_STATUS_CHOICES,
+        dest="card_statuses",
+        help="Keep only cards in this status; repeat the flag to allow several",
+    )
     listing.set_defaults(handler=_list)
+
+    mark = commands.add_parser(
+        "mark",
+        help="Move a todo, idea, or reference card to a new status",
+        description=(
+            "Move one card to a new status: a todo is open, in_progress, on_hold, done, or cancelled; "
+            "an idea is captured, exploring, adopted, or dropped; a reference is unread, reading, or read. "
+            "It takes effect at once and edits nothing else: no draft, no save, and the version stays. "
+            "A note or quote carries no status, and a value from another card type is refused."
+        ),
+    )
+    mark.add_argument("artifact_id", help="Artifact id, as `zett artifact list` lists it")
+    mark.add_argument("status", choices=CARD_STATUS_CHOICES, help="The status to move the card to")
+    mark.set_defaults(handler=_mark)
     return parser
 
 
@@ -156,15 +194,29 @@ def _delete(args: argparse.Namespace) -> int:
     return 0
 
 
+def _mark(args: argparse.Namespace) -> int:
+    """Move one card to a new status; the server checks it belongs to the card's type."""
+    artifact_id = validation.identifier(args.artifact_id, field="artifact id")
+    moved = request_json(
+        "PUT", f"/api/artifacts/{urllib.parse.quote(artifact_id)}/card-status", {"status": args.status}
+    )
+    print(f"{artifact_id} {moved['card_status']}")
+    return 0
+
+
 def _list(args: argparse.Namespace) -> int:
     """Print one line per artifact, newest first."""
     search = validation.query(args.query)
-    query = urllib.parse.urlencode({"q": search, "limit": args.limit}) if search else f"limit={args.limit}"
-    artifacts = request_json("GET", f"/api/artifacts?{query}")
+    pairs: list[tuple[str, str | int]] = [("q", search)] if search else []
+    pairs.append(("limit", args.limit))
+    pairs.extend(("card_statuses", value) for value in dict.fromkeys(args.card_statuses or ()))
+    artifacts = request_json("GET", f"/api/artifacts?{urllib.parse.urlencode(pairs)}")
     for artifact in artifacts:
         content = artifact.get("content") or artifact.get("draft_content") or {}
         title = content.get("title") or "(untitled)"
-        print(f"{artifact['id']}  {artifact['artifact_type']:<10} {artifact['status']:<6} {title}")
+        # The columns stay as they were; a card with a status only gains a suffix.
+        suffix = f"  [{artifact['card_status']}]" if artifact.get("card_status") else ""
+        print(f"{artifact['id']}  {artifact['artifact_type']:<10} {artifact['status']:<6} {title}{suffix}")
     return 0
 
 

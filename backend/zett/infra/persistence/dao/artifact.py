@@ -19,11 +19,14 @@ from ....schemas import (
     ArtifactListOptions,
     ArtifactStatus,
     ArtifactType,
+    CardArtifactContent,
+    CardStatus,
     ImageArtifactContent,
     LatexPdfArtifactContent,
     LatexPdfArtifactCreate,
     TagRefEntity,
     TagTargetType,
+    statuses_for,
 )
 from ...artifacts.latex_projects import create_latex_project, validate_latex_project_path
 from ...artifacts.search import (
@@ -36,6 +39,8 @@ from ...files.object_store import get_object_store
 from ..database import session_scope
 from ..storage import AsyncStorage
 from ..tables import (
+    CARD_STATUS_TO_CODE,
+    CODE_TO_CARD_STATUS,
     CODE_TO_STATUS,
     CODE_TO_TYPE,
     STATUS_TO_CODE,
@@ -82,6 +87,7 @@ def _artifact_out(model: SessionArtifactRow, *, tags: list[TagRefEntity] | None 
         raw_content=model.raw_content,
         version=model.version,
         metadata=_json_load(model.metadata_value, {}),
+        card_status=CODE_TO_CARD_STATUS.get(model.card_status) if model.card_status is not None else None,
         created_at=model.created_at,
         updated_at=model.updated_at,
         tags=tags or [],
@@ -98,6 +104,35 @@ def _content(value: str | None) -> ArtifactContent | None:
 def _store_content(content: ArtifactContent | None) -> str:
     """Encode one content column, using an empty string for "not written yet"."""
     return "" if content is None else content.model_dump_json()
+
+
+def _allowed_statuses(content: ArtifactContent | None) -> tuple[CardStatus, ...]:
+    """The statuses this content's card type carries; empty for anything else."""
+    if not isinstance(content, CardArtifactContent):
+        return ()
+    return statuses_for(content.card_type)
+
+
+def _status_code(content: ArtifactContent | None, requested: CardStatus | None, *kept: int | None) -> int | None:
+    """Pick the stored status for one write.
+
+    Only a card whose type carries a status has one, so changing a card's type
+    keeps the column consistent with its content. A request wins and must belong
+    to the type; otherwise the first value the row already held that the type
+    still accepts is kept, and a card with none starts at its type's default.
+    """
+    allowed = _allowed_statuses(content)
+    if requested is not None:
+        if requested not in allowed:
+            kind = content.card_type.value if isinstance(content, CardArtifactContent) else "this artifact"
+            raise ValueError(f"A {kind} card cannot be {requested.value}")
+        return int(CARD_STATUS_TO_CODE[requested])
+    if not allowed:
+        return None
+    for code in kept:
+        if code is not None and CODE_TO_CARD_STATUS.get(code) in allowed:
+            return code
+    return int(CARD_STATUS_TO_CODE[allowed[0]])
 
 
 def _created_content(
@@ -170,6 +205,9 @@ def _filtered_artifact_statement(
     if options.statuses:
         codes = [int(STATUS_TO_CODE[ArtifactStatus(value)]) for value in options.statuses]
         statement = statement.where(SessionArtifactRow.status.in_(codes))
+    if options.card_statuses:
+        codes = [int(CARD_STATUS_TO_CODE[CardStatus(value)]) for value in options.card_statuses]
+        statement = statement.where(SessionArtifactRow.card_status.in_(codes))
     if options.tag_ids:
         statement = statement.where(
             SessionArtifactRow.id.in_(
@@ -231,6 +269,7 @@ class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifactEntity, str,
                 session_id=entity.session_id,
                 artifact_type=int(TYPE_TO_CODE[described.artifact_type]),
                 status=int(STATUS_TO_CODE[entity.status]),
+                card_status=_status_code(described, entity.card_status),
                 title=described.title,
                 content_json=_store_content(content),
                 draft_content_json=_store_content(draft_content),
@@ -300,6 +339,7 @@ class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifactEntity, str,
                 await session.refresh(model)
             model.artifact_type = int(TYPE_TO_CODE[described.artifact_type])
             model.status = int(STATUS_TO_CODE[entity.status])
+            model.card_status = _status_code(described, entity.card_status, model.card_status)
             model.title = described.title
             model.content_json = _store_content(content)
             model.draft_content_json = _store_content(draft_content)
@@ -316,6 +356,36 @@ class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifactEntity, str,
                 raw_content=entity.raw_content,
             )
             return _artifact_out(model)
+
+    async def set_card_status(self, entity_id: str, status: CardStatus) -> AgentArtifactEntity:
+        """Move one card to a new status without touching its content.
+
+        A status is not an edit of the document, so the draft, the published
+        content, and the revision number stay as they are: an open editor's
+        ``expected_version`` is still valid after someone closes the task. Only
+        ``updated_at`` moves, so recent activity sorts first. The status has to
+        belong to the card's own type: a reference is read, never done.
+        """
+        async with session_scope() as session:
+            model = await session.get(SessionArtifactRow, entity_id)
+            if model is None:
+                raise KeyError(f"Artifact not found: {entity_id}")
+            # The same content every write derives the column from: the published one wins.
+            described = _content(model.content_json) or _content(model.draft_content_json)
+            allowed = _allowed_statuses(described)
+            if not allowed:
+                raise ValueError("This card carries no status")
+            if status not in allowed:
+                kind = described.card_type.value if isinstance(described, CardArtifactContent) else "card"
+                raise ValueError(f"A {kind} card cannot be {status.value}")
+            model.card_status = int(CARD_STATUS_TO_CODE[status])
+            model.updated_at = datetime.now(UTC)
+            await session.flush()
+            artifact = _artifact_out(model)
+        from .tag import tag_storage
+
+        tags = (await tag_storage.tags_for(TagTargetType.ARTIFACT, (entity_id,))).get(entity_id, [])
+        return artifact.model_copy(update={"tags": tags})
 
     async def delete(self, entity_id: str) -> bool:
         async with session_scope() as session:

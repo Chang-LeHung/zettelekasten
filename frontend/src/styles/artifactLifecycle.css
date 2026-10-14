@@ -1,0 +1,57 @@
+/*
+ * How far an artifact is from being saved, drawn the same way everywhere.
+ *
+ * The conversation's artifact pane lists work the model proposed and work the
+ * user kept, and the two must not look alike. The state is derived from the
+ * artifact itself (utils/artifactLifecycle.ts), never stored:
+ *
+ *   new      never saved: a dashed outline and an amber mark, "still a proposal"
+ *   changed  saved, but the draft differs: a blue bar, "newer than what you kept"
+ *   saved    saved and current: green and quiet, nothing left to decide
+ *
+ * `--life-ink`, `--life-soft` and `--life-line` are the only colours. A state
+ * is also spelled out in a badge, so colour is never the only signal.
+ */
+
+.lifecycle-new     { --life-ink: #a1620f; --life-soft: #fdf3df; --life-line: rgba(161, 98, 15, .5); }
+.lifecycle-changed { --life-ink: #3c6ea5; --life-soft: #e8f0fa; --life-line: rgba(60, 110, 165, .5); }
+.lifecycle-saved   { --life-ink: #2f7a4d; --life-soft: #e6f2ea; --life-line: rgba(47, 122, 77, .4); }
+
+/* Badge: one word, one colour, one dot. */
+.artifact-life-badge { display: inline-flex; align-items: center; gap: .3rem; width: fit-content; max-width: 100%; padding: .08rem .42rem; border-radius: 1rem; color: var(--life-ink); background: var(--life-soft); font-size: .58rem; font-weight: 650; line-height: 1.5; white-space: nowrap; }
+.artifact-life-badge::before { content: ""; width: .34rem; height: .34rem; flex: 0 0 auto; border-radius: 50%; background: var(--life-ink); }
+.lifecycle-new .artifact-life-badge::before { background: transparent; box-shadow: inset 0 0 0 1.5px var(--life-ink); }
+
+/* List row. The row keeps its own selection tint; the lifecycle owns the edge. */
+.artifact-list-item.lifecycle-new { border-style: dashed; border-color: var(--life-line); background: repeating-linear-gradient(135deg, #fff, #fff 7px, #fffaf0 7px, #fffaf0 14px); }
+.artifact-list-item.lifecycle-new.active, .artifact-list-item.lifecycle-new:hover:not(.active) { background: var(--life-soft); border-color: var(--life-line); }
+.artifact-list-item.lifecycle-changed { box-shadow: inset 3px 0 0 var(--life-ink); }
+.artifact-list-item.lifecycle-changed.active { border-color: var(--life-line); }
+.artifact-list-item.lifecycle-saved { border-color: rgba(29, 29, 31, .06); }
+.artifact-list-item.lifecycle-saved .artifact-kind-icon { box-shadow: 0 0 0 1.5px var(--life-line); }
+.artifact-list-item.lifecycle-new .artifact-kind-icon { box-shadow: 0 0 0 1.5px var(--life-line); }
+.artifact-list-item.lifecycle-changed .artifact-kind-icon { box-shadow: 0 0 0 1.5px var(--life-line); }
+
+/* Editor: header tint, accent bar, and the state dot follow the lifecycle. */
+.artifact-editor.lifecycle-new .artifact-editor-accent { background: repeating-linear-gradient(90deg, var(--life-ink) 0 10px, transparent 10px 16px); }
+.artifact-editor.lifecycle-changed .artifact-editor-accent { background: linear-gradient(90deg, var(--life-ink) 0 38%, var(--artifact-accent, #527e63) 38%); }
+.artifact-editor.lifecycle-saved .artifact-editor-accent { background: var(--life-ink); }
+.artifact-editor.lifecycle-new .artifact-editor-header { background: linear-gradient(180deg, var(--life-soft), #fff); }
+.artifact-editor.lifecycle-changed .artifact-editor-header { background: linear-gradient(180deg, var(--life-soft), #fff); }
+.artifact-editor .artifact-state > i { background: var(--life-ink); box-shadow: 0 0 0 .28rem var(--life-soft); }
+.artifact-editor.lifecycle-new .artifact-state > i { background: #fff; box-shadow: inset 0 0 0 2px var(--life-ink), 0 0 0 .28rem var(--life-soft); }
+.artifact-editor.lifecycle-changed .artifact-state > i { animation: lifecycle-breathe 2.4s ease-in-out infinite; }
+.artifact-editor .artifact-life-note { color: var(--life-ink); font-weight: 600; }
+@keyframes lifecycle-breathe { 50% { box-shadow: 0 0 0 .4rem var(--life-soft); } }
+
+/* Edits made in the editor that nothing has stored yet. */
+.artifact-editor.editing .artifact-editor-header { box-shadow: inset 0 -2px 0 var(--life-line); }
+.artifact-dirty-badge { display: inline-flex; align-items: center; gap: .3rem; padding: .08rem .42rem; border-radius: 1rem; color: #7a4d0b; background: #fdebc8; font-size: .58rem; font-weight: 650; line-height: 1.5; }
+
+@media (prefers-reduced-motion: reduce) {
+  .artifact-editor.lifecycle-changed .artifact-state > i { animation: none; }
+}
+
+.artifact-list-meta .artifact-life-badge { font-style: normal; text-transform: none; }
+.artifact-state small .artifact-dirty-badge { margin-left: .45rem; font-style: normal; }
+.artifact-state small { text-transform: none; }

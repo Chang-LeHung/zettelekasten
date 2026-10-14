@@ -37,8 +37,12 @@ if TYPE_CHECKING:
         StaticAssetEntity,
     )
     from .cards import (
+        CARD_STATUSES,
+        CardStatus,
         CardType,
+        default_status,
         normalize_card_type,
+        statuses_for,
     )
     from .channels import (
         Channel,
@@ -158,6 +162,10 @@ _EXPORTS = {
     "CardArtifactContent": ".artifacts",
     "CardArtifactPatch": ".artifacts",
     "CardType": ".cards",
+    "CARD_STATUSES": ".cards",
+    "CardStatus": ".cards",
+    "default_status": ".cards",
+    "statuses_for": ".cards",
     "Channel": ".channels",
     "ChannelLogin": ".channels",
     "ChannelLoginStart": ".channels",
@@ -324,12 +332,16 @@ __all__ = [
     "TagListOptions",
     "TagTreeEntity",
     "TagWrite",
+    "CARD_STATUSES",
+    "CardStatus",
     "UsageActivityDayRecord",
     "UpdateInstallResult",
     "UpdateStatus",
     "apply_artifact_patch",
+    "default_status",
     "normalize_card_type",
     "session_type_from_code",
+    "statuses_for",
 ]
 
 

@@ -32,6 +32,7 @@ RECEIPT_FIELDS = {
     "artifact_type",
     "status",
     "version",
+    "card_status",
     "title",
     "pending_draft",
     "tags",
@@ -90,6 +91,7 @@ def test_receipt_carries_identity_state_and_server_assigned_locations() -> None:
     assert receipt.title == "Idea"
     assert receipt.tags == ["Engineering/Python"]
     assert receipt.pending_draft is False
+    assert receipt.card_status is None
     assert receipt.project_path is None and receipt.pdf_name is None and receipt.asset_path is None
     assert "RAW SOURCE" not in receipt.model_dump_json()
     assert "METADATA" not in receipt.model_dump_json()
@@ -135,6 +137,7 @@ def test_document_returns_both_bodies_and_no_stored_noise() -> None:
         "artifact_type",
         "status",
         "version",
+        "card_status",
         "content",
         "draft_content",
         "pending_draft",

@@ -15,6 +15,7 @@ import type {
   AgentSlashCommand,
   AgentSteeringMessage,
   AgentTimelineEntry,
+  CardStatus,
   MessagePart,
 } from '../../../../frontend/src/api/types'
 import type { AgentPersistedMessage } from '../../../../frontend/src/api/types'
@@ -158,6 +159,14 @@ export class ZettClient {
   /** Read every artifact of one conversation, newest first. */
   async listArtifacts(conversationId: string): Promise<AgentArtifact[]> {
     return await this.request<AgentArtifact[]>(`/api/agent/${conversationId}/artifacts`)
+  }
+
+  /** Move a todo, idea, or reference card to a new status: no draft, no save, no new version. */
+  async setCardStatus(conversationId: string, artifactId: string, status: CardStatus): Promise<AgentArtifact> {
+    return await this.request<AgentArtifact>(
+      `/api/agent/${conversationId}/artifacts/${artifactId}/card-status`,
+      { method: 'PUT', body: JSON.stringify({ status }) },
+    )
   }
 
   /** Publish one artifact's pending draft: the user action the app's Save calls. */

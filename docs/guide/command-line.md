@@ -108,6 +108,20 @@ zett artifact get <id>             # the whole item
 zett artifact delete <id>
 ```
 
+Move a todo, idea, or reference card along with `mark`, and filter the list by
+status:
+
+```bash
+zett artifact mark <id> done                  # a todo: open, in_progress, on_hold, done, cancelled
+zett artifact mark <id> adopted               # an idea: captured, exploring, adopted, dropped
+zett artifact mark <id> read                  # a reference: unread, reading, read
+zett artifact list --card-status open --card-status in_progress
+```
+
+`mark` takes effect at once and edits nothing else: no draft, no save, and the
+version stays. It works on any artifact by id, and it refuses a status that
+belongs to another card type, or any status on a note or quote.
+
 `zett artifact list` and `zett artifact delete` cover items created from the
 command line and other integrations. An artifact made in a conversation is
 deleted from that conversation or from its reader in the library.

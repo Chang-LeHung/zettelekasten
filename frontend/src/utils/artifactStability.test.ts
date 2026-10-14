@@ -33,6 +33,14 @@ describe('artifact stability', () => {
     expect(artifactListsEquivalent([original], [refreshed])).toBe(true)
   })
 
+  it('treats a progress change as a new revision even when the timestamp is unchanged', () => {
+    const original = { ...artifact('task'), card_status: 'open' as const }
+    const closed = { ...original, card_status: 'done' as const }
+
+    expect(sameArtifactRevision(original, closed)).toBe(false)
+    expect(stabilizeArtifactReferences([original], [closed])[0]).toBe(closed)
+  })
+
   it('does not reuse references after a version change', () => {
     const original = artifact('paper', 1)
     const updated = artifact('paper', 2)

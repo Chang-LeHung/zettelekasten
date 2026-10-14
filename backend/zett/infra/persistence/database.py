@@ -9,16 +9,18 @@ hopping through a worker thread per DAO call.
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from sqlalchemy import event
+from sqlalchemy import event, or_
+from sqlalchemy import update as sql_update
 from sqlalchemy.engine import URL
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 from sqlalchemy.schema import CreateColumn, CreateIndex
 
 from ...config import settings
+from ...schemas import CARD_STATUSES, ArtifactType, default_status
 from ..artifacts.search import ensure_artifact_search
 from ..log import get_logger
-from .tables import Base
+from .tables import CARD_STATUS_TO_CODE, TYPE_TO_CODE, Base, SessionArtifactRow
 
 logger = get_logger(__name__)
 
@@ -52,7 +54,7 @@ async def ensure_indexes(connection: AsyncConnection) -> None:
 
 #: Columns added after the first release, as ``(table, column)`` names. Their
 #: types come from the ORM model so the DDL cannot drift from the schema.
-_ADDED_COLUMNS = (("session_artifacts", "draft_content_json"),)
+_ADDED_COLUMNS = (("session_artifacts", "draft_content_json"), ("session_artifacts", "card_status"))
 
 #: Columns removed from the ORM after an earlier release. ``create_all`` does
 #: not drop existing columns, so old NOT NULL columns continue to reject inserts
@@ -111,8 +113,42 @@ async def init_db() -> None:
         await ensure_columns(connection)
         await replace_unique_indexes(connection)
         await ensure_indexes(connection)
+        await backfill_card_status(connection)
         await remove_columns(connection)
         await ensure_artifact_search(connection)
+
+
+async def backfill_card_status(connection: AsyncConnection) -> None:
+    """Give every card an older release stored the status its type starts with.
+
+    A card kept no status before ``card_status`` existed, so its column is null
+    after the upgrade and a filter on status would never find it. Each type that
+    carries a status is matched on the encoded ``card_type`` of either copy, and
+    only rows still null are touched, so a rerun changes nothing and a card the
+    user already moved along keeps its status.
+    """
+    backfilled = 0
+    for card_type in CARD_STATUSES:
+        starting = default_status(card_type)
+        if starting is None:
+            continue
+        marker = f'"card_type":"{card_type.value}"'
+        result = await connection.execute(
+            sql_update(SessionArtifactRow)
+            .where(
+                SessionArtifactRow.card_status.is_(None),
+                SessionArtifactRow.artifact_type == int(TYPE_TO_CODE[ArtifactType.CARD]),
+                or_(
+                    SessionArtifactRow.content_json.contains(marker),
+                    SessionArtifactRow.draft_content_json.contains(marker),
+                ),
+            )
+            .values(card_status=int(CARD_STATUS_TO_CODE[starting]))
+            .execution_options(synchronize_session=False)
+        )
+        backfilled += result.rowcount
+    if backfilled:
+        logger.info("Backfilled card status for cards an older database stored; cards=%d", backfilled)
 
 
 async def add_columns_with_default(connection: AsyncConnection) -> None:
