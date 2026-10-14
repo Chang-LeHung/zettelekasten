@@ -3697,7 +3697,10 @@ async function installAvailableUpdate(): Promise<void> {
       return
     }
     showNotice(t('Installed {version} — restart Zett to use it', { version: result.version }))
-    await refreshUpdateStatus(true)
+    // Asked directly: refreshUpdateStatus() refuses while an install is running, and this one
+    // still is until the `finally` below, so going through it left the button offering the
+    // update that had just been installed. The cached answer is enough: what changed is the disk.
+    updateStatus.value = await updateClient.get()
   } catch (error) {
     showNotice(errorMessage(error), 'error')
   } finally {

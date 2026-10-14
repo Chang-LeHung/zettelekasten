@@ -49,8 +49,9 @@ class Installer:
 
     command: tuple[str, ...] | None = None
     detail: str = ""
-    #: Tried only when ``command`` finished cleanly and the release still did not
-    #: arrive, which is what an upgrade does for an environment pinned to one version.
+    #: Tried when ``command`` did not deliver the release: it exited cleanly and
+    #: nothing moved (an upgrade of an environment pinned to one version), or it
+    #: failed outright (an option this installer's release no longer accepts).
     fallback: tuple[str, ...] | None = None
 
     @property
@@ -106,7 +107,9 @@ def detect_installer(
             # `upgrade` is uv's own way to update a tool: it keeps the Python, the packages
             # added with `--with`, and the options given at install time (a mirror's
             # `--index-url`), because it reads them from the receipt.
-            (uv, "tool", "upgrade", "--refresh-package", PROJECT_NAME, PROJECT_NAME),
+            # `--reinstall-package` is the option `upgrade` has for a fresh look at the index
+            # (it implies a refresh of that package): `--refresh-package` is an error here.
+            (uv, "tool", "upgrade", "--reinstall-package", PROJECT_NAME, PROJECT_NAME),
             "Installed by uv; the update runs `uv tool upgrade` for the new release.",
             # An environment installed as `zettelekasten==X` is pinned, and upgrading it is a
             # clean no-op. Reinstalling with a lower bound moves it, keeping what can be kept.

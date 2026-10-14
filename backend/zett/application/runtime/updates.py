@@ -158,14 +158,16 @@ class UpdateService:
             outcome = await self._runner(installer, requirement)
             if outcome.ok:
                 outcome = self._verified(outcome, latest)
-                if not outcome.ok and installer.fallback is not None:
-                    # It ran cleanly and nothing moved: the environment is pinned. Try the
-                    # reinstall that names the new lower bound.
-                    logger.info("The upgrade did not move %s; reinstalling it with a lower bound", latest)
-                    again = replace(installer, command=installer.fallback, fallback=None)
-                    outcome = await self._runner(again, requirement)
-                    if outcome.ok:
-                        outcome = self._verified(outcome, latest)
+            if not outcome.ok and installer.fallback is not None:
+                # The first command did not deliver the release: a pinned environment makes an
+                # upgrade a clean no-op, and an installer release that renamed an option fails
+                # outright. Either way the reinstall that names the new bound is a second,
+                # independent attempt, and its answer is the one worth showing.
+                logger.info("The first installer did not deliver %s (%s); trying the fallback", latest, outcome.detail)
+                again = replace(installer, command=installer.fallback, fallback=None)
+                outcome = await self._runner(again, requirement)
+                if outcome.ok:
+                    outcome = self._verified(outcome, latest)
         if not outcome.ok:
             logger.info("Installing %s failed: %s", latest, outcome.detail)
         return UpdateInstallResult(

@@ -418,19 +418,68 @@ async def test_a_pinned_environment_is_reinstalled_when_the_upgrade_does_not_mov
     assert ran == [("uv", "tool", "upgrade", "zettelekasten"), ("uv", "tool", "install", "--force", "{requirement}")]
 
 
-async def test_a_failed_upgrade_is_not_retried_with_the_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
-    ran: list[int] = []
+async def test_an_upgrade_that_fails_outright_still_gets_the_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    from zett.application.runtime import updates as updates_module
+
+    disk = {"version": "0.0.1"}
+    ran: list[tuple[str, ...] | None] = []
 
     async def runner(installer: installer_module.Installer, requirement: str) -> installer_module.InstallOutcome:
-        ran.append(1)
-        return installer_module.InstallOutcome(False, "The installer exited with 1")
+        ran.append(installer.command)
+        if installer.command == ("uv", "tool", "upgrade", "--no-such-option"):
+            # What uv answers to an option its release does not have.
+            return installer_module.InstallOutcome(False, "The installer exited with 2", ["error: unexpected argument"])
+        disk["version"] = "0.0.3"
+        return installer_module.InstallOutcome(True, "Installed")
 
-    installer = installer_module.Installer(("uv", "tool", "upgrade"), "uv", fallback=("uv", "tool", "install"))
+    monkeypatch.setattr(updates_module, "installed_version", lambda distribution="": disk["version"])
+    installer = installer_module.Installer(
+        ("uv", "tool", "upgrade", "--no-such-option"), "uv", fallback=("uv", "tool", "install", "--force")
+    )
     service = UpdateService(client=FakePypi("0.0.3"), installer_factory=lambda: installer, runner=runner)  # type: ignore[arg-type]
 
     result = await service.install("0.0.3")
-    # A network failure would fail the reinstall just as slowly: only a clean no-op earns a second try.
-    assert result.ok is False and len(ran) == 1
+    assert result.ok is True and result.needs_restart is True
+    assert len(ran) == 2
+
+
+async def test_when_both_attempts_fail_the_last_answer_is_shown(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def runner(installer: installer_module.Installer, requirement: str) -> installer_module.InstallOutcome:
+        return installer_module.InstallOutcome(False, f"failed: {installer.command[1]}", [])  # type: ignore[index]
+
+    installer = installer_module.Installer(("uv", "first"), "uv", fallback=("uv", "second"))
+    service = UpdateService(client=FakePypi("0.0.3"), installer_factory=lambda: installer, runner=runner)  # type: ignore[arg-type]
+    result = await service.install("0.0.3")
+    assert result.ok is False and result.needs_restart is False
+    assert result.detail == "failed: second"
+
+
+def test_the_uv_commands_use_only_options_uv_accepts() -> None:
+    """`uv tool upgrade` has no `--refresh-package`; 0.0.6 shipped that and its update never ran.
+
+    The argv is pinned here because nothing in CI runs uv; the real run is the check.
+    """
+    installer = installer_module.detect_installer(
+        prefix=Path("/Users/x/.local/share/uv/tools/zettelekasten"), which=found
+    )
+    assert installer.command == (
+        "/usr/bin/uv",
+        "tool",
+        "upgrade",
+        "--reinstall-package",
+        "zettelekasten",
+        "zettelekasten",
+    )
+    assert installer.fallback is not None
+    assert installer.fallback[:7] == (
+        "/usr/bin/uv",
+        "tool",
+        "install",
+        "--force",
+        "--refresh-package",
+        "zettelekasten",
+        "--python",
+    )
 
 
 async def test_install_trusts_the_disk_over_the_installers_exit_status(monkeypatch: pytest.MonkeyPatch) -> None:
