@@ -14,28 +14,28 @@ function memoryStorage(): Storage {
 }
 
 describe('editor layout', () => {
-  it('opens in a single column until two columns are chosen', () => {
+  it('opens in two columns until one column is chosen', () => {
     const storage = memoryStorage()
-    expect(readEditorLayout(storage)).toBe('single')
-
-    writeEditorLayout('split', storage)
     expect(readEditorLayout(storage)).toBe('split')
-    expect(storage.getItem(EDITOR_LAYOUT_KEY)).toBe('split')
 
     writeEditorLayout('single', storage)
     expect(readEditorLayout(storage)).toBe('single')
+    expect(storage.getItem(EDITOR_LAYOUT_KEY)).toBe('single')
+
+    writeEditorLayout('split', storage)
+    expect(readEditorLayout(storage)).toBe('split')
     expect(storage.length).toBe(0)
   })
 
   it('treats an unknown stored value as the default', () => {
     const storage = memoryStorage()
     storage.setItem(EDITOR_LAYOUT_KEY, 'wide')
-    expect(readEditorLayout(storage)).toBe('single')
+    expect(readEditorLayout(storage)).toBe('split')
   })
 
   it('survives a storage that throws', () => {
     const broken = { getItem() { throw new Error('blocked') }, setItem() { throw new Error('blocked') }, removeItem() { throw new Error('blocked') } } as unknown as Storage
-    expect(readEditorLayout(broken)).toBe('single')
-    expect(() => writeEditorLayout('split', broken)).not.toThrow()
+    expect(readEditorLayout(broken)).toBe('split')
+    expect(() => writeEditorLayout('single', broken)).not.toThrow()
   })
 })
