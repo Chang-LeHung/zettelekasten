@@ -6,7 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { getDocument } from 'pdfjs-dist'
 import { assetClient } from '../api/client'
 import PdfThumbnail from './PdfThumbnail.vue'
-import appSource from '../App.vue?raw'
+import appSource from '../views/LibraryView.vue?raw'
 import thumbnailSource from './PdfThumbnail.vue?raw'
 
 // The library card's styles live beside the other app styles, not in the component that renders it.
