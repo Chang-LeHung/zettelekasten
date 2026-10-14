@@ -1,0 +1,66 @@
+/*
+ * What a card's status does to the card.
+ *
+ * Statuses fall into a few families, and each family gets one treatment so the
+ * grid reads at a glance:
+ *
+ *   fresh     captured, unread        a bar across the top: not touched yet
+ *   active    in progress, exploring,
+ *             reading                 a bar down the leading edge: under way
+ *   paused    on hold                 a dashed edge
+ *   settled   done, adopted, read     a green wash: nothing left to decide
+ *   dropped   cancelled, dropped      faded, title struck through
+ *
+ * The conversation's artifact pane shows a status through its mark and title
+ * only. Its borders, badges, and accent belong to the save lifecycle
+ * (artifactLifecycle.css), and two states must not fight for the same edge.
+ */
+
+/* Library grid card. `inset` bars keep the card box the same size in every state. */
+.card.status-captured, .card.status-unread { box-shadow: inset 0 3px 0 var(--status-ink), 0 1px 2px rgba(0, 0, 0, .025); }
+.card.status-captured:hover, .card.status-unread:hover { box-shadow: inset 0 3px 0 var(--status-ink), var(--shadow); }
+.card.status-in-progress, .card.status-exploring, .card.status-reading { box-shadow: inset 3px 0 0 var(--status-ink), 0 1px 2px rgba(0, 0, 0, .025); }
+.card.status-in-progress:hover, .card.status-exploring:hover, .card.status-reading:hover { box-shadow: inset 3px 0 0 var(--status-ink), var(--shadow); }
+.card.status-on-hold { border-style: dashed; border-color: var(--status-line); }
+.card.status-done, .card.status-adopted, .card.status-read { background: linear-gradient(180deg, color-mix(in srgb, var(--status-soft) 70%, transparent), var(--surface) 42%); }
+.card.status-cancelled, .card.status-dropped { background: rgba(238, 238, 237, .55); }
+.card.status-done h2, .card.status-read h2 { color: #5d6a62; }
+.card.status-cancelled h2, .card.status-dropped h2,
+.card.status-cancelled > .card-excerpt, .card.status-dropped > .card-excerpt { color: #8e9290; }
+.card.status-done > .card-excerpt, .card.status-read > .card-excerpt { opacity: .72; }
+.card.status-cancelled > .card-excerpt, .card.status-dropped > .card-excerpt { opacity: .8; }
+.card.status-unread h2 { font-weight: 760; }
+
+/* Library card titles are struck through by status class; elsewhere `.status-struck` does it (cardStatusTone.css). */
+.card.status-done h2, .card.status-cancelled h2, .card.status-dropped h2 { text-decoration: line-through; text-decoration-color: var(--status-line); text-decoration-thickness: 1px; }
+
+/* Conversation list row: the title steps back once a card is settled or dropped. */
+.artifact-list-item.status-done .artifact-list-copy, .artifact-list-item.status-cancelled .artifact-list-copy,
+.artifact-list-item.status-dropped .artifact-list-copy, .artifact-list-item.status-read .artifact-list-copy { opacity: .68; }
+
+/* Library status filter: the active chip wears its own tone, and each card type is its own group. */
+.library-status-filters { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; margin: -.55rem 0 1.15rem; }
+.library-status-filters > span { margin-right: .25rem; color: #8c938f; font-size: .7rem; font-weight: 600; }
+.library-status-filters .status-group { display: inline-flex; align-items: center; gap: .15rem; padding-left: .55rem; border-left: 1px solid rgba(29, 29, 31, .08); }
+.library-status-filters .status-group > em { margin-right: .2rem; color: #a0a6a2; font-size: .62rem; font-style: normal; font-weight: 650; text-transform: capitalize; }
+.library-status-filters button { display: inline-flex; align-items: center; gap: .38rem; min-height: 1.85rem; padding: 0 .7rem; border: 1px solid transparent; border-radius: .58rem; color: #727975; background: transparent; cursor: pointer; font-size: .7rem; font-weight: 610; }
+.library-status-filters button:hover { color: #435449; background: rgba(255, 255, 255, .6); }
+.library-status-filters button.active { border-color: rgba(78, 111, 91, .12); color: #3f604c; background: #edf3ef; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .55); }
+.library-status-filters button[class*="status-"].active { border-color: var(--status-line); color: var(--status-ink); background: var(--status-soft); }
+.library-status-filters button i { width: .5rem; height: .5rem; border-radius: 50%; background: var(--status-ink); }
+
+/* Library card: the status mark sits in front of the title, and the pill in the footer. */
+.card-title-row { display: flex; align-items: flex-start; gap: .5rem; margin: 1rem 0 .65rem; min-width: 0; }
+.card-title-row .status-mark { margin-top: .08rem; }
+.card-title-row h2 { flex: 1 1 0; min-width: 0; margin: 0; }
+.card-footer-info > .status-pill { justify-self: start; }
+.detail-header .status-pill { margin-left: .1rem; }
+
+/* Conversation list row: the mark takes the place of the kind icon. The row's own
+   button cannot contain another button, so the mark is its sibling. */
+.artifact-list-item > .artifact-list-check { position: absolute; z-index: 1; top: .66rem; left: .66rem; }
+.artifact-list-item .artifact-kind-icon.status-slot { visibility: hidden; }
+.artifact-list-meta { display: flex !important; align-items: center; gap: .4rem; overflow: hidden; }
+.artifact-list-meta > span { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.artifact-status-tag { flex: 0 0 auto; padding: .08rem .42rem; border-radius: 1rem; color: var(--status-ink); background: var(--status-soft); font-size: .58rem; font-style: normal; font-weight: 650; line-height: 1.5; text-transform: none; }
+.artifact-editor-header .status-pill { flex: 0 0 auto; }

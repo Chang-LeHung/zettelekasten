@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator, model_validator
 
 from .._compat import Self, StrEnum
-from .cards import CardType, normalize_card_type
+from .cards import CardStatus, CardType, normalize_card_type
 from .common import ImageUrl, NonBlankName500
 from .tags import SuggestedTag, TagRefEntity
 
@@ -368,6 +368,13 @@ class AgentArtifactWrite(BaseModel):
     )
     status: ArtifactStatus = Field(default=ArtifactStatus.DRAFT, description="Current artifact lifecycle state")
     metadata: dict[str, object] = Field(default_factory=dict, description="Extensible artifact metadata")
+    card_status: CardStatus | None = Field(
+        default=None,
+        description=(
+            "Initial status of a card, which must belong to its card type. On an update, omitting it keeps "
+            "the current status; a card type with no status refuses one"
+        ),
+    )
 
     @model_validator(mode="after")
     def require_editable_content(self) -> Self:
@@ -413,6 +420,10 @@ class AgentArtifactEntity(BaseModel):
     raw_content: str | None = Field(default=None, description="Original input associated with this artifact")
     version: int = Field(default=1, ge=1, description="Monotonic revision number")
     metadata: dict[str, object] = Field(default_factory=dict, description="Extensible artifact metadata")
+    card_status: CardStatus | None = Field(
+        default=None,
+        description="Status of a card whose type carries one (todo, idea, reference); null otherwise",
+    )
     tags: list[TagRefEntity] = Field(default_factory=list, description="Confirmed persistent library tags")
     # Response-only ObjectStore URL. Example:
     # "/api/files/artifacts/<session_id>/<project>/paper.pdf".

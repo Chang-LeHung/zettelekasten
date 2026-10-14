@@ -35,6 +35,7 @@ from ...schemas import (
     ArtifactStatus,
     ArtifactType,
     CardArtifactContent,
+    CardStatus,
     CardType,
     ImageArtifactContent,
     LatexPdfArtifactContent,
@@ -122,6 +123,7 @@ class AgentArtifactPreview(BaseModel):
     id: str
     session_id: str
     status: ArtifactStatus
+    card_status: CardStatus | None = None
     published_content: ArtifactPreviewContent | None = None
     draft_content: ArtifactPreviewContent | None = None
     version: int = Field(ge=1)
@@ -158,6 +160,7 @@ class ArtifactPruner:
             id=artifact.id,
             session_id=artifact.session_id,
             status=artifact.status,
+            card_status=artifact.card_status,
             published_content=self._project(artifact.content),
             draft_content=self._project(artifact.draft_content),
             version=artifact.version,

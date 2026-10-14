@@ -795,3 +795,46 @@ it('testing the connection does not flash: the label holds, and a failure report
   expect(host.querySelector('.conn-pill')?.textContent).toContain('Can’t reach')
   observer.disconnect()
 })
+
+
+it('shows each artifact card in its save state and lets a todo or reference card move along', async () => {
+  const card = (card_type: string, title: string) => ({ title, content: title, summary: '', artifact_type: 'card', card_type })
+  vi.mocked(ZettClient.prototype.listArtifacts).mockResolvedValue([
+    // Never saved: a proposal, and a task that starts open.
+    { id: 'new-todo', artifact_type: 'card', status: 'draft', card_status: 'open', content: null, draft_content: card('todo', 'Send the invoice'), metadata: {}, tags: [], version: 1 },
+    // Saved before, but a newer draft differs.
+    { id: 'changed-ref', artifact_type: 'card', status: 'saved', card_status: 'unread', content: card('reference', 'Paper v1'), draft_content: card('reference', 'Paper v2'), metadata: {}, tags: [], version: 2 },
+    // A note carries no status at all.
+    { id: 'note', artifact_type: 'card', status: 'draft', card_status: null, content: null, draft_content: card('note', 'Plain note'), metadata: {}, tags: [], version: 1 },
+  ] as never)
+  const setStatus = vi.spyOn(ZettClient.prototype, 'setCardStatus').mockImplementation(async (_conversation, id, status) => (
+    { id, artifact_type: 'card', status: 'draft', card_status: status, content: null, draft_content: null, metadata: {}, tags: [], version: 1 }
+  ))
+  // The panel lists the unsaved artifacts when it reopens a stored conversation.
+  const first = await mountPanel()
+  await send(first.host)
+  finish('Done')
+  await flush()
+  first.close()
+  const { host } = await mountPanel()
+  await flush()
+
+  const cards = [...host.querySelectorAll<HTMLElement>('.artifact-card')]
+  expect(cards.map((entry) => entry.dataset.lifecycle)).toEqual(['new', 'changed', 'new'])
+  expect(cards.map((entry) => entry.querySelector('.artifact-life-badge')?.textContent)).toEqual(['Not saved', 'Unsaved changes', 'Not saved'])
+  // The status lives in a mark and a pill; a note has neither.
+  expect(cards.map((entry) => entry.querySelector('.status-pill')?.textContent?.trim())).toEqual(['To do', 'Unread', undefined])
+  expect(cards[2]!.querySelector('.status-mark')).toBeNull()
+
+  // One click on a task's circle finishes it, and on a reference reads it.
+  cards[0]!.querySelector<HTMLButtonElement>('button.status-mark')!.click()
+  cards[1]!.querySelector<HTMLButtonElement>('button.status-mark')!.click()
+  await flush()
+  expect(setStatus.mock.calls.map(([, id, status]) => [id, status])).toEqual([['new-todo', 'done'], ['changed-ref', 'read']])
+
+  // Moving a card along changes its status only: it is still waiting to be saved.
+  const after = [...host.querySelectorAll<HTMLElement>('.artifact-card')]
+  expect(after[0]!.querySelector('.status-pill')?.textContent?.trim()).toBe('Done')
+  expect(after[0]!.dataset.lifecycle).toBe('new')
+  expect(after[0]!.querySelector('button:not(.status-mark):not(.status-pill)')?.textContent?.trim()).toBe('Save')
+})

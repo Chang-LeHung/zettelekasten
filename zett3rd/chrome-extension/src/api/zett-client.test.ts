@@ -208,3 +208,15 @@ it('aborts the actual response reader and preserves only deltas received before 
   expect(onDelta).toHaveBeenCalledTimes(1)
   expect(stream.locked).toBe(false)
 })
+
+it('moves a card by status through the conversation route, with no body but the status', async () => {
+  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'a', card_status: 'reading' })))
+  vi.stubGlobal('fetch', fetchMock)
+
+  const moved = await new ZettClient('http://127.0.0.1:6280').setCardStatus('session-1', 'artifact-1', 'reading')
+
+  expect(moved.card_status).toBe('reading')
+  const [url, init] = fetchMock.mock.calls[0]!
+  expect(String(url)).toBe('http://127.0.0.1:6280/api/agent/session-1/artifacts/artifact-1/card-status')
+  expect(init).toMatchObject({ method: 'PUT', body: JSON.stringify({ status: 'reading' }) })
+})

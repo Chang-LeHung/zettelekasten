@@ -22,6 +22,7 @@ from ...schemas import (
     ArtifactContent,
     ArtifactStatus,
     ArtifactType,
+    CardStatus,
     ImageArtifactContent,
     LatexPdfArtifactContent,
 )
@@ -44,6 +45,9 @@ class ArtifactReceipt(BaseModel):
     artifact_type: ArtifactType = Field(description="Artifact kind")
     status: ArtifactStatus = Field(description="draft until the user saves it, saved after that")
     version: int = Field(ge=1, description="Monotonic revision number")
+    card_status: CardStatus | None = Field(
+        default=None, description="Status of a todo, idea, or reference card; null when its type carries none"
+    )
     title: str = Field(description="User-facing title the artifact now carries")
     pending_draft: bool = Field(description="The model's draft still differs from the published content")
     tags: list[str] = Field(description="Confirmed tag paths; the complete set set_artifact_tags replaces")
@@ -64,6 +68,9 @@ class ArtifactDocument(BaseModel):
     artifact_type: ArtifactType = Field(description="Artifact kind")
     status: ArtifactStatus = Field(description="draft until the user saves it, saved after that")
     version: int = Field(ge=1, description="Monotonic revision number")
+    card_status: CardStatus | None = Field(
+        default=None, description="Status of a todo, idea, or reference card; null when its type carries none"
+    )
     content: ArtifactContent | None = Field(
         default=None,
         description="What the user published; empty until a user saves",
@@ -89,6 +96,7 @@ def artifact_receipt(artifact: AgentArtifactEntity) -> ArtifactReceipt:
         artifact_type=artifact.artifact_type,
         status=artifact.status,
         version=artifact.version,
+        card_status=artifact.card_status,
         title=content.title if content is not None else artifact.artifact_type.value,
         pending_draft=pending_draft(artifact),
         tags=[tag.path for tag in artifact.tags],
@@ -106,6 +114,7 @@ def artifact_document(artifact: AgentArtifactEntity) -> ArtifactDocument:
         artifact_type=artifact.artifact_type,
         status=artifact.status,
         version=artifact.version,
+        card_status=artifact.card_status,
         content=artifact.content,
         draft_content=artifact.draft_content,
         pending_draft=pending_draft(artifact),

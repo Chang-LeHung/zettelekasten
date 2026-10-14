@@ -54,6 +54,8 @@ export interface CardListOptions {
   query?: string
   tagId?: string | null
   artifactTypes?: LibraryItemType[]
+  /** Keep only cards in these statuses; an empty list applies no status filter. */
+  cardStatuses?: CardStatus[]
   publishedOnly?: boolean
   limit?: number
   offset?: number
@@ -71,6 +73,8 @@ export interface LibraryItem {
   content: string
   raw_content: string | null
   card_type: CardType | null
+  /** Status of a todo, idea, or reference card; null for every other item. */
+  card_status?: CardStatus | null
   status: string
   tags: string[]
   metadata: Record<string, unknown>
@@ -96,6 +100,14 @@ export interface SuggestedTag {
 }
 
 export type CardType = 'note' | 'idea' | 'quote' | 'todo' | 'reference'
+/**
+ * Where a card stands in its own life. Each card type draws from its own slice
+ * (`CARD_STATUSES` in utils/cardStatus.ts); a note or a quote has none.
+ */
+export type CardStatus =
+  | 'open' | 'in_progress' | 'on_hold' | 'done' | 'cancelled'
+  | 'captured' | 'exploring' | 'adopted' | 'dropped'
+  | 'unread' | 'reading' | 'read'
 export type ArtifactType = 'card' | 'article' | 'image' | 'slides' | 'latex_pdf'
 export type ArtifactStatus = 'draft' | 'saved'
 export type SessionAssetType = 'text' | 'image' | 'link' | 'file'
@@ -575,6 +587,8 @@ export interface AgentArtifact {
   raw_content: string | null
   version: number
   metadata: Record<string, unknown>
+  /** Status of a todo, idea, or reference card, independent of its draft; null for every other artifact. */
+  card_status?: CardStatus | null
   tags: Array<{ id: string; path: string; name: string }>
   /**
    * Response-only URL for an artifact that owns a file.

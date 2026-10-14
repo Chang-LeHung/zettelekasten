@@ -6,6 +6,7 @@ export function sameArtifactRevision(left: AgentArtifact, right: AgentArtifact):
     left.id === right.id
     && left.version === right.version
     && left.status === right.status
+    && (left.card_status ?? null) === (right.card_status ?? null)
     && left.updated_at === right.updated_at
     && left.artifact_type === right.artifact_type
   )

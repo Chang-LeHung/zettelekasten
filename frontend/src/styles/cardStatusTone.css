@@ -1,0 +1,29 @@
+/*
+ * The colour of each card status: three custom properties that the status mark,
+ * the status pill, the menu, and the library cards all read. The components
+ * import this file themselves, so every place that shows a status (the web app
+ * and the Chrome panel alike) gets the same tones.
+ *
+ * Todo, idea, and reference each use their own hues, so a glance tells a task
+ * that is under way (amber) from an idea being explored (indigo) or a paper
+ * being read (gold); the finished states of all three share the greens.
+ */
+
+/* todo */
+.status-open        { --status-ink: #5b6872; --status-soft: #edf0f2; --status-line: rgba(91, 104, 114, .34); }
+.status-in-progress { --status-ink: #a1620f; --status-soft: #fbefd9; --status-line: rgba(161, 98, 15, .42); }
+.status-on-hold     { --status-ink: #76608f; --status-soft: #efeaf5; --status-line: rgba(118, 96, 143, .4); }
+.status-done        { --status-ink: #2f7a4d; --status-soft: #e2f1e7; --status-line: rgba(47, 122, 77, .42); }
+.status-cancelled   { --status-ink: #878b88; --status-soft: #eeeeed; --status-line: rgba(135, 139, 136, .4); }
+/* idea */
+.status-captured    { --status-ink: #4d7494; --status-soft: #e6eff6; --status-line: rgba(77, 116, 148, .4); }
+.status-exploring   { --status-ink: #5a63b8; --status-soft: #eceefa; --status-line: rgba(90, 99, 184, .42); }
+.status-adopted     { --status-ink: #237a6e; --status-soft: #dff1ee; --status-line: rgba(35, 122, 110, .42); }
+.status-dropped     { --status-ink: #878b88; --status-soft: #eeeeed; --status-line: rgba(135, 139, 136, .4); }
+/* reference */
+.status-unread      { --status-ink: #b0485f; --status-soft: #fbe9ed; --status-line: rgba(176, 72, 95, .4); }
+.status-reading     { --status-ink: #8a6a12; --status-soft: #f6efd5; --status-line: rgba(138, 106, 18, .42); }
+.status-read        { --status-ink: #5d7f6a; --status-soft: #e8efe9; --status-line: rgba(93, 127, 106, .4); }
+
+/* A card whose story ended without success has its title struck through wherever it is shown. */
+.status-struck { text-decoration: line-through; text-decoration-color: var(--status-line); text-decoration-thickness: 1px; }

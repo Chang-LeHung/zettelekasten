@@ -35,8 +35,18 @@ Nothing reaches your library until you say so.
 4. **Diff** compares the two field by field and highlights what changed.
    **Update** publishes the change.
 
-A conversation with unpublished changes is marked **unsaved draft**, and
-**Save all** in the workspace publishes every pending artifact at once. If one
+Each artifact in the conversation's list shows how far it is from being saved,
+by its look and by a badge, so colour is never the only signal:
+
+| Look | Badge | Meaning |
+| --- | --- | --- |
+| Dashed amber outline | **Not saved** | Never saved; still a proposal |
+| Blue bar on the left | **Unsaved changes** | Saved before, but a newer draft differs |
+| Plain, green mark | **Saved** | Saved and up to date |
+
+The open editor repeats the state in its header, and shows **Editing** while it
+holds changes nothing has stored yet. **Save all** in the workspace publishes
+every pending artifact at once. If one
 of them cannot be saved, the rest still are, and Zett tells you which one
 failed and why.
 
@@ -52,6 +62,34 @@ Zett itself cannot publish anything. Only you save.
   Markdown, and slides and PDFs show their rendered pages. Press **⌘S** to save.
 - **From the library.** Editing a card you opened from the library changes the
   published version directly.
+
+## Track a card's status
+
+Three card types carry a status of their own:
+
+| Card type | Statuses | One click on the mark |
+| --- | --- | --- |
+| **Todo** | To do, In progress, On hold, Done, Cancelled | Finishes it, or reopens a finished one |
+| **Idea** | Captured, Exploring, Adopted, Dropped | Nothing: adopting an idea is a decision, so use the menu |
+| **Reference** | Unread, Reading, Read | Marks it read, or unread again |
+
+Notes and quotes have no status.
+
+- Click the mark in front of the title for the one-click move, or click the
+  status pill to pick any status of that card's type.
+- A status belongs to the card, not to its text. Changing it takes effect at
+  once: it creates no draft, needs no save, and leaves the version alone.
+- Changing a card's type gives it the new type's first status, unless its
+  current one still fits.
+- Each status has its own look. A fresh card has a bar across the top, one
+  under way has a bar on its edge, a paused one a dashed edge, a done, adopted,
+  or read one a soft green wash, and a cancelled or dropped one fades with a
+  struck title.
+- In the library, the **Status** row keeps only cards in the statuses you pick,
+  across all three types, and you can pick several.
+- Zett can read a status and move it with `set_card_status`. It is told to close
+  a task or adopt an idea only when you decided to. The Chrome panel and
+  `zett artifact mark` move it too.
 
 ## LaTeX papers
 

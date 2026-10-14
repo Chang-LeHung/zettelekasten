@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ApiError, aiClient, assetClient, libraryClient, settingsClient, tagClient, updateClient } from './api/client'
-import type { AgentArtifact, AgentAtCommand, AgentCompactionActivity, AgentContextComposition, AgentCustomEvent, AgentModelUsage, AgentModelUsageActivitySeries, AgentPersistedMessage, AgentServerToolActivity, AgentSession, AgentSlashCommand, AgentSteeringMessage, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AgentUsageActivityDay, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageImagePart, MessagePart, ReasoningEffort, RuntimeSettings, SessionAsset, SessionType, ShellApprovalMode, StaticAsset, Tag, UpdateStatus } from './api/types'
+import type { AgentArtifact, AgentAtCommand, AgentCompactionActivity, AgentContextComposition, AgentCustomEvent, AgentModelUsage, AgentModelUsageActivitySeries, AgentPersistedMessage, AgentServerToolActivity, AgentSession, AgentSlashCommand, AgentSteeringMessage, AgentTimelineEntry, AgentTodoState, AgentToolActivity, AgentUsageActivityDay, AIProvider, AIProviderInput, AnalysisMessage, ArtifactContent, CardType, LibraryItem, LibraryItemUpdate, MessageImagePart, MessagePart, ReasoningEffort, RuntimeSettings, SessionAsset, SessionType, ShellApprovalMode, StaticAsset, Tag, CardStatus, UpdateStatus } from './api/types'
 import AgentComposerControls from './components/AgentComposerControls.vue'
 import ArtifactDiffView from './components/ArtifactDiffView.vue'
 import ComposerCommandMenu from './components/ComposerCommandMenu.vue'
@@ -12,6 +12,8 @@ import AssetPreviewDialog from './components/AssetPreviewDialog.vue'
 import AssetRename from './components/AssetRename.vue'
 import AskUserPrompt from './components/AskUserPrompt.vue'
 import ShellApprovalPrompt from './components/ShellApprovalPrompt.vue'
+import CardStatusMark from './components/CardStatusMark.vue'
+import CardStatusMenu from './components/CardStatusMenu.vue'
 import AgentExecution from './components/AgentExecution.vue'
 import UsageActivityGraph from './components/UsageActivityGraph.vue'
 import { addAgentUsage, latestAgentUsage, summarizeAgentUsage } from './utils/agentUsage'
@@ -19,6 +21,8 @@ import { parseUtcTimestamp } from './utils/timestamps'
 import { artifactContentFromLibraryUpdate, artifactEditableContent, hasPendingDraft, libraryItemFromArtifact } from './utils/artifactEditor'
 import { artifactListsEquivalent, sameArtifactRevision, stabilizeArtifactReferences } from './utils/artifactStability'
 import { diffArtifactContent } from './utils/artifactDiff'
+import { artifactLifecycle, lifecycleClass, lifecycleHint, lifecycleLabel } from './utils/artifactLifecycle'
+import { CARD_STATUSES, STATUS_CARD_TYPES, cardStatusLabel, cardStatusType, isStruck, statusTone, toggleCardStatusFilter } from './utils/cardStatus'
 import { addTagPath } from './utils/tagAssignment'
 import { assetOpenAction, isPdfAsset } from './utils/assetOpen'
 import { createAsyncRefreshScheduler } from './utils/asyncRefresh'
@@ -194,6 +198,10 @@ const query = ref('')
 const activeQuery = ref('')
 const selectedTag = ref<string | null>(null)
 const selectedLibraryType = ref<LibraryItem['item_type'] | null>(null)
+//: Card statuses the library keeps; empty means every card regardless of status.
+const selectedCardStatuses = ref<CardStatus[]>([])
+//: Artifact ids whose status change is in flight, so one click cannot double-send.
+const cardStatusUpdatingIds = ref<ReadonlySet<string>>(new Set())
 const view = ref<View>('new')
 const collectionTarget = computed<'artifact' | 'asset'>(() => (view.value === 'assets' ? 'asset' : 'artifact'))
 const raw = ref('')
@@ -309,6 +317,12 @@ const loading = ref(false)
 const workspaceRestoring = ref(true)
 const saving = ref(false)
 const savingAllArtifacts = ref(false)
+//: The editor holds edits nothing has stored yet, so the saved look would overstate it.
+const selectedArtifactDirty = computed(() => {
+  const selected = selectedArtifact.value
+  return Boolean(selected && artifactContent.value
+    && JSON.stringify(artifactContent.value) !== JSON.stringify(artifactEditableContent(selected)))
+})
 const artifactsNeedingSave = computed(() => {
   const pending = pendingArtifactSaves(artifacts.value)
   const selected = selectedArtifact.value
@@ -1393,6 +1407,7 @@ function libraryListFilters() {
     query: view.value === 'search' ? activeQuery.value : '',
     tagId: selectedTag.value,
     artifactTypes: selectedLibraryType.value ? [selectedLibraryType.value] : undefined,
+    cardStatuses: selectedCardStatuses.value.length ? selectedCardStatuses.value : undefined,
   }
 }
 
@@ -1993,7 +2008,68 @@ async function filterByTag(tagId: string | null): Promise<void> {
 
 async function filterByArtifactType(artifactType: LibraryItem['item_type'] | null): Promise<void> {
   selectedLibraryType.value = artifactType
+  // A status belongs to cards, so another type cannot keep a status filter.
+  if (artifactType !== null && artifactType !== 'card') selectedCardStatuses.value = []
   await loadLibrary()
+}
+
+/** Toggle one status in the library filter; `null` clears the filter. */
+async function filterByCardStatus(status: CardStatus | null): Promise<void> {
+  selectedCardStatuses.value = status === null ? [] : toggleCardStatusFilter(selectedCardStatuses.value, status)
+  await loadLibrary()
+}
+
+function markCardStatusUpdating(id: string, updating: boolean): void {
+  const next = new Set(cardStatusUpdatingIds.value)
+  if (updating) next.add(id)
+  else next.delete(id)
+  cardStatusUpdatingIds.value = next
+}
+
+function announceCardStatus(title: string, status: CardStatus): void {
+  showNotice(t('cardStatus.updated', { title, status: t(cardStatusLabel(status)) }))
+}
+
+/** Move a library card to a new status. It takes effect at once: no draft, no save. */
+async function setLibraryCardStatus(item: LibraryItem, status: CardStatus): Promise<void> {
+  if (cardStatusUpdatingIds.value.has(item.id)) return
+  markCardStatusUpdating(item.id, true)
+  try {
+    const updated = await libraryClient.setCardStatus(item.id, status)
+    if (selectedLibraryItem.value?.id === item.id) selectedLibraryItem.value = updated
+    if (selectedCardStatuses.value.length && !selectedCardStatuses.value.includes(status)) {
+      // The card no longer matches the filter, so the grid and its count must be reread.
+      await loadLibrary()
+    } else {
+      libraryItems.value = libraryItems.value.map((candidate) => (candidate.id === item.id ? updated : candidate))
+    }
+    announceCardStatus(item.title, status)
+  } catch (error) {
+    showNotice(errorMessage(error), 'error')
+  } finally {
+    markCardStatusUpdating(item.id, false)
+  }
+}
+
+/** Move a conversation's card to a new status, without touching its draft. */
+async function setConversationCardStatus(artifact: AgentArtifact, status: CardStatus): Promise<void> {
+  const activeConversationId = conversationId.value
+  if (!activeConversationId || cardStatusUpdatingIds.value.has(artifact.id)) return
+  markCardStatusUpdating(artifact.id, true)
+  try {
+    const updated = await aiClient.setAgentCardStatus(activeConversationId, artifact.id, status)
+    if (conversationId.value !== activeConversationId) return
+    const index = artifacts.value.findIndex((candidate) => candidate.id === updated.id)
+    // Replace only the status: a refresh built from this response would also
+    // reset the draft the editor is showing if the model changed it meanwhile.
+    if (index >= 0) artifacts.value.splice(index, 1, { ...artifacts.value[index]!, card_status: updated.card_status, updated_at: updated.updated_at })
+    announceCardStatus(artifactTitle(artifactEditableContent(updated)), status)
+    void loadLibrary()
+  } catch (error) {
+    showNotice(errorMessage(error), 'error')
+  } finally {
+    markCardStatusUpdating(artifact.id, false)
+  }
 }
 
 async function analyze(): Promise<void> {
@@ -3987,6 +4063,22 @@ onBeforeUnmount(() => {
             >{{ $t(filter.label) }}</button>
           </div>
 
+          <div v-if="selectedLibraryType === null || selectedLibraryType === 'card'" class="library-status-filters" :aria-label="t('cardStatus.filter')">
+            <span>{{ t('cardStatus.filter') }}</span>
+            <button type="button" :class="{ active: !selectedCardStatuses.length }" @click="filterByCardStatus(null)">{{ t('cardStatus.filter.all') }}</button>
+            <div v-for="cardType in STATUS_CARD_TYPES" :key="cardType" class="status-group" role="group" :aria-label="t(cardType)">
+              <em>{{ t(cardType) }}</em>
+              <button
+                v-for="status in CARD_STATUSES[cardType]"
+                :key="status"
+                type="button"
+                :class="[statusTone(status), { active: selectedCardStatuses.includes(status) }]"
+                :aria-pressed="selectedCardStatuses.includes(status)"
+                @click="filterByCardStatus(status)"
+              ><i aria-hidden="true" />{{ t(cardStatusLabel(status)) }}</button>
+            </div>
+          </div>
+
           <!--
             Skeleton cards only stand in for a library that has nothing to show yet.
             Replacing an already loaded grid with placeholders made every filter
@@ -4001,7 +4093,7 @@ onBeforeUnmount(() => {
               v-for="(item, index) in libraryItems"
               :key="`${item.item_type}-${item.id}`"
               class="card"
-              :class="[`library-${item.item_type}`, { dragging: draggingLibraryItem?.id === item.id, picked: selectedLibraryIds.has(item.id), picking: selectingLibrary }]"
+              :class="[`library-${item.item_type}`, item.card_status ? statusTone(item.card_status) : '', { dragging: draggingLibraryItem?.id === item.id, picked: selectedLibraryIds.has(item.id), picking: selectingLibrary }]"
               :style="{ animationDelay: cardFloatDelay(index) }"
               :data-library-id="item.id"
               role="button"
@@ -4052,7 +4144,11 @@ onBeforeUnmount(() => {
                   </button>
                 </div>
               </div>
-              <h2 :title="item.title">{{ item.title }}</h2>
+              <div v-if="item.card_status" class="card-title-row">
+                <CardStatusMark :status="item.card_status" :busy="cardStatusUpdatingIds.has(item.id)" @select="setLibraryCardStatus(item, $event)" />
+                <h2 :title="item.title">{{ item.title }}</h2>
+              </div>
+              <h2 v-else :title="item.title">{{ item.title }}</h2>
               <div v-if="item.item_type === 'latex_pdf'" class="library-pdf-thumbnail">
                 <PdfThumbnail :asset="libraryClient.documentReference(item.id)" artifact fit="contain" />
               </div>
@@ -4063,6 +4159,7 @@ onBeforeUnmount(() => {
               <p v-if="item.item_type !== 'latex_pdf'" class="card-excerpt">{{ libraryExcerpt(item) }}</p>
               <div class="card-footer">
                 <div class="card-footer-info">
+                  <CardStatusMenu v-if="item.card_status" :status="item.card_status" :busy="cardStatusUpdatingIds.has(item.id)" @select="setLibraryCardStatus(item, $event)" />
                   <div v-if="item.tags.length" class="card-tags"><span v-for="path in item.tags.slice(0, 2)" :key="path" :title="path">{{ path }}</span></div>
                   <time>{{ formatDate(item.updated_at) }}</time>
                 </div>
@@ -4512,13 +4609,19 @@ onBeforeUnmount(() => {
                 </div>
               </header>
               <div v-if="artifacts.length" class="artifact-list" :style="artifactListHeight === null ? undefined : { height: `${artifactListHeight}px` }" aria-label="Conversation artifacts">
-                <div v-for="artifact in artifacts" :key="artifact.id" class="artifact-list-item" :class="[artifactTone(artifact.artifact_type), { active: artifact.id === selectedArtifactId }]">
+                <div v-for="artifact in artifacts" :key="artifact.id" class="artifact-list-item" :class="[artifactTone(artifact.artifact_type), lifecycleClass(artifactLifecycle(artifact)), artifact.card_status ? statusTone(artifact.card_status) : '', { active: artifact.id === selectedArtifactId }]" :data-lifecycle="artifactLifecycle(artifact)">
+                  <CardStatusMark v-if="artifact.card_status" class="artifact-list-check" :status="artifact.card_status" :busy="cardStatusUpdatingIds.has(artifact.id)" @select="setConversationCardStatus(artifact, $event)" />
                   <button class="artifact-list-select" type="button" :disabled="saving || savingAllArtifacts" @click="selectArtifact(artifact)">
                     <img v-if="artifactListImage(artifact)" class="artifact-list-image" :src="artifactListImage(artifact) || undefined" alt="" />
+                    <span v-else-if="artifact.card_status" class="artifact-kind-icon status-slot" aria-hidden="true" />
                     <span v-else class="artifact-kind-icon">{{ artifact.artifact_type === 'card' ? '◇' : artifact.artifact_type === 'article' ? '¶' : artifact.artifact_type === 'slides' ? '▤' : '▧' }}</span>
                     <span class="artifact-list-copy">
-                      <small>{{ artifact.artifact_type }} · {{ hasPendingDraft(artifact) ? 'unsaved draft' : artifact.status }}</small>
-                      <strong>{{ artifactTitle(artifactEditableContent(artifact)) }}</strong>
+                      <small class="artifact-list-meta">
+                        <span>{{ artifact.card_status ? $t(cardStatusType(artifact.card_status)) : artifact.artifact_type }}</span>
+                        <em class="artifact-life-badge" :title="t(lifecycleHint(artifactLifecycle(artifact)))">{{ t(lifecycleLabel(artifactLifecycle(artifact))) }}</em>
+                        <em v-if="artifact.card_status" class="artifact-status-tag">{{ t(cardStatusLabel(artifact.card_status)) }}</em>
+                      </small>
+                      <strong :class="{ 'status-struck': artifact.card_status && isStruck(artifact.card_status) }">{{ artifactTitle(artifactEditableContent(artifact)) }}</strong>
                       <span class="artifact-list-excerpt">{{ artifactListExcerpt(artifactEditableContent(artifact)) }}</span>
                     </span>
                   </button>
@@ -4553,10 +4656,11 @@ onBeforeUnmount(() => {
                 <h2>{{ $t('No artifacts yet') }}</h2>
                 <p>{{ $t('Keep talking with Zett Agent. Cards, articles, slides, and images will appear here when the conversation produces them.') }}</p>
               </div>
-              <div v-else :key="selectedArtifactId ?? 'artifact-preview'" class="artifact-panel artifact-editor" :class="artifactTone(artifactContent.artifact_type)">
+              <div v-else :key="selectedArtifactId ?? 'artifact-preview'" class="artifact-panel artifact-editor" :class="[artifactTone(artifactContent.artifact_type), selectedArtifact ? lifecycleClass(artifactLifecycle(selectedArtifact)) : '', { editing: selectedArtifactDirty }]">
                 <div class="artifact-editor-accent" />
                 <header class="artifact-editor-header">
-                  <div class="artifact-state"><i :class="{ saved: selectedArtifact?.status === 'saved' }" /><span><strong>{{ selectedArtifact?.artifact_type }} artifact</strong><small>{{ selectedArtifact?.status }} · version {{ selectedArtifact?.version }}{{ selectedArtifact && hasPendingDraft(selectedArtifact) ? ' · unsaved draft' : '' }}</small></span></div>
+                  <div class="artifact-state"><i /><span><strong>{{ selectedArtifact?.card_status ? $t(cardStatusType(selectedArtifact.card_status)) : selectedArtifact?.artifact_type }} artifact</strong><small v-if="selectedArtifact" :title="t(lifecycleHint(artifactLifecycle(selectedArtifact)))"><span class="artifact-life-note">{{ t(lifecycleLabel(artifactLifecycle(selectedArtifact))) }}</span> · version {{ selectedArtifact.version }}<em v-if="selectedArtifactDirty" class="artifact-dirty-badge">{{ t('artifact.editing') }}</em></small></span></div>
+                  <CardStatusMenu v-if="selectedArtifact?.card_status" :status="selectedArtifact.card_status" :busy="cardStatusUpdatingIds.has(selectedArtifact.id)" @select="setConversationCardStatus(selectedArtifact, $event)" />
                   <div v-if="selectedArtifactDiff?.changed || !artifactPreview" class="artifact-mode-switch" :aria-label="$t('Artifact display mode')"><button v-if="selectedArtifactDiff?.changed" type="button" :class="{ active: artifactDiff }" @click="artifactDiff = true; artifactPreview = false">{{ $t('Diff') }}</button><button v-if="!artifactPreview || artifactDiff" type="button" @click="artifactPreview = true; artifactDiff = false">{{ $t('Preview') }}</button></div>
                 </header>
                 <div class="artifact-editor-body">
@@ -4793,7 +4897,7 @@ onBeforeUnmount(() => {
         <div v-if="selectedLibraryItem" class="detail-backdrop" @click.self="selectedLibraryItem = null">
           <aside class="detail-sheet" role="dialog" aria-modal="true" :aria-label="selectedLibraryItem.title">
             <header class="detail-header">
-              <div><span class="card-type">{{ selectedLibraryItem.item_type === 'card' ? selectedLibraryItem.card_type : selectedLibraryItem.item_type }}</span></div>
+              <div><span class="card-type">{{ selectedLibraryItem.item_type === 'card' ? selectedLibraryItem.card_type : selectedLibraryItem.item_type }}</span><CardStatusMenu v-if="selectedLibraryItem.card_status" :status="selectedLibraryItem.card_status" :busy="cardStatusUpdatingIds.has(selectedLibraryItem.id)" @select="setLibraryCardStatus(selectedLibraryItem, $event)" /></div>
               <div class="detail-header-actions">
                 <button class="detail-header-button" type="button" @click="openArtifactSession(selectedLibraryItem)"><svg><use href="#icon-conversation" /></svg>Conversation</button>
                 <button class="detail-header-button" type="button" @click="copyLibraryItemId(selectedLibraryItem)"><svg><use href="#icon-copy" /></svg>Copy ID</button>
@@ -4803,7 +4907,7 @@ onBeforeUnmount(() => {
               </div>
             </header>
             <div class="detail-content">
-              <h1>{{ selectedLibraryItem.title }}</h1>
+              <h1 :class="selectedLibraryItem.card_status ? [statusTone(selectedLibraryItem.card_status), { 'status-struck': isStruck(selectedLibraryItem.card_status) }] : undefined">{{ selectedLibraryItem.title }}</h1>
               <p v-if="selectedLibraryItem.item_type !== 'card' && selectedLibraryItem.subtitle" class="detail-subtitle">{{ selectedLibraryItem.subtitle }}</p>
               <MarkdownContent v-if="selectedLibraryItem.summary" class="detail-summary" :content="selectedLibraryItem.summary" />
               <div v-if="selectedLibraryItem.tags.length" class="detail-tags"><span v-for="path in selectedLibraryItem.tags" :key="path">{{ path }}</span></div>

@@ -14,6 +14,7 @@ from ...schemas import (
     ArtifactContent,
     ArtifactCreateContent,
     ArtifactStatus,
+    CardStatus,
     HttpUrl,
     NonBlankName100,
     NonBlankName200,
@@ -137,6 +138,15 @@ class ArtifactCreateIn(BaseModel):
     raw_content: str | None = Field(default=None, max_length=1_000_000)
     status: ArtifactStatus = ArtifactStatus.DRAFT
     metadata: dict[str, Any] = Field(default_factory=dict)
+    card_status: CardStatus | None = Field(
+        default=None, description="Initial status of a card; a new card starts at its type's first status"
+    )
+
+
+class CardStatusIn(BaseModel):
+    """The status one card moves to; it must belong to that card's type."""
+
+    status: CardStatus
 
 
 class ArtifactUpdateIn(BaseModel):

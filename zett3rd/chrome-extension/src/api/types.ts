@@ -7,7 +7,8 @@
  * it, so a shape change surfaces as a type error at the call site.
  */
 
-import type { AgentTimelineEntry, AgentToolActivity, AIProvider, AgentModelUsage, MessagePart } from '../../../../frontend/src/api/types'
+import type { AgentTimelineEntry, AgentToolActivity, AIProvider, AgentModelUsage, CardStatus, MessagePart } from '../../../../frontend/src/api/types'
+import type { ArtifactLifecycle } from '../../../../frontend/src/utils/artifactLifecycle'
 
 export type ArtifactType = 'card' | 'article' | 'slides'
 
@@ -48,6 +49,8 @@ export interface AgentArtifact {
   id: string
   artifact_type: ArtifactType
   status: 'draft' | 'saved'
+  /** Status of a todo, idea, or reference card, independent of its draft; null otherwise. */
+  card_status?: CardStatus | null
   content: { title: string; summary?: string; content?: string } | null
   draft_content: { title: string; summary?: string; content?: string } | null
   metadata: Record<string, unknown>
@@ -67,6 +70,7 @@ export interface ArtifactReceipt {
   artifact_type: ArtifactType
   status: 'draft' | 'saved'
   version: number
+  card_status?: CardStatus | null
   title: string
   pending_draft: boolean
   tags: string[]
@@ -80,7 +84,7 @@ export interface ArtifactReceipt {
 export type ToolOutcome = AgentToolActivity
 
 /** The tools that answer with an artifact receipt, so the panel can show a card. */
-export const ARTIFACT_TOOLS = ['create_artifact', 'update_artifact', 'set_artifact_tags'] as const
+export const ARTIFACT_TOOLS = ['create_artifact', 'update_artifact', 'set_artifact_tags', 'set_card_status'] as const
 
 /** One page as the panel read it out of the tab. */
 export interface PageSnapshot {
@@ -117,5 +121,9 @@ export interface TranscriptEntry {
     title: string
     artifactType: ArtifactType
     needsSave: boolean
+    /** How far the artifact is from saved; drives the card's look and its badge. */
+    lifecycle: ArtifactLifecycle
+    /** Status of a todo, idea, or reference card; absent for every other artifact. */
+    cardStatus?: CardStatus | null
   }
 }

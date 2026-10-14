@@ -63,6 +63,7 @@ class ArtifactQueryModel:
             "get_artifact",
             "query_artifacts",
             "update_artifact",
+            "set_card_status",
         }
         match self.step:
             case 0:

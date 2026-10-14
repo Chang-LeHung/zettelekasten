@@ -30,6 +30,7 @@ from ...schemas import (
     ArtifactListOptions,
     ArtifactStatus,
     ArtifactType,
+    CardStatus,
     apply_artifact_patch,
 )
 
@@ -110,6 +111,7 @@ class ArtifactExtension(AgentExtension):
             query: str | None = None,
             artifact_types: tuple[ArtifactType, ...] = (),
             statuses: tuple[ArtifactStatus, ...] = (),
+            card_statuses: tuple[CardStatus, ...] = (),
             all_sessions: bool = False,
             limit: Annotated[int, Field(ge=1, le=500)] = 20,
         ) -> list[AgentArtifactPreview]:
@@ -122,12 +124,14 @@ class ArtifactExtension(AgentExtension):
                 query: Case-insensitive text matched against artifact titles.
                 artifact_types: Optional kinds such as card, article, image, slides, or latex_pdf.
                 statuses: Optional lifecycle states such as draft or saved.
+                card_statuses: Optional card status such as open, in_progress, exploring, or unread; any value keeps only cards that carry one.
                 all_sessions: When true, search across every session instead of only this conversation.
                 limit: Maximum number of artifacts to return.
 
             Snippet:
                 query_artifacts(query="paper", statuses=["saved"])
                 query_artifacts(artifact_types=["card"], all_sessions=True)
+                query_artifacts(card_statuses=["open", "in_progress"], all_sessions=True)
 
             Guidelines:
                 - Use it to find an artifact ID before reading or updating one, and set all_sessions when the user asks about other conversations.
@@ -138,6 +142,7 @@ class ArtifactExtension(AgentExtension):
                     session_id=None if all_sessions else session_id,
                     artifact_types=tuple(item.value for item in artifact_types),
                     statuses=tuple(item.value for item in statuses),
+                    card_statuses=card_statuses,
                     query=query,
                     limit=limit,
                 )
@@ -198,6 +203,31 @@ class ArtifactExtension(AgentExtension):
             )
 
         @tool
+        async def set_card_status(artifact_id: str, status: CardStatus) -> ArtifactReceipt:
+            """Move one todo, idea, or reference card to a new status, including a card from another conversation.
+
+            Args:
+                artifact_id: Stable ID of a card whose card_type is todo, idea, or reference.
+                status: A todo is open, in_progress, on_hold, done, or cancelled. An idea is captured, exploring, adopted, or dropped. A reference is unread, reading, or read.
+
+            Snippet:
+                set_card_status(artifact_id="...", status="in_progress")
+                set_card_status(artifact_id="...", status="read")
+
+            Guidelines:
+                - The status belongs to the card, not to its text: this takes effect at once, creates no draft, and needs no save.
+                - Use it when the user says they started, finished, paused, dropped, adopted, or read something, or when you completed the work a todo describes. Never close a task or adopt an idea the user has not decided on.
+                - Use cancelled or dropped for something that will not happen and on_hold for something paused; every status leaves the card in the library.
+                - A value from another card type is refused, and so is a note or quote, which carry no status; change its card_type with update_artifact first when it should become a todo, idea, or reference.
+            """
+            current = await artifact_storage.get(artifact_id)
+            if current is None:
+                raise ValueError(f"Artifact not found: {artifact_id}")
+            if current.card_status is None:
+                raise ValueError(f"Artifact is not a todo, idea, or reference card: {artifact_id}")
+            return artifact_receipt(await artifact_storage.set_card_status(artifact_id, status))
+
+        @tool
         async def delete_artifact(artifact_id: str) -> bool:
             """Delete one artifact from this conversation.
 
@@ -213,7 +243,7 @@ class ArtifactExtension(AgentExtension):
             await self._artifact(session_id, artifact_id)
             return await artifact_storage.delete(artifact_id)
 
-        registered_tools = [create_artifact, get_artifact, query_artifacts, update_artifact]
+        registered_tools = [create_artifact, get_artifact, query_artifacts, update_artifact, set_card_status]
         if self.allow_delete:
             registered_tools.append(delete_artifact)
         for registered in registered_tools:

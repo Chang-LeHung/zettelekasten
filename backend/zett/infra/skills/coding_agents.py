@@ -73,6 +73,8 @@ cat notes.md | zett artifact create --type article --title "Notes" --body-file -
 zett artifact create --type slides --title "Deck" --body "# One\\n---\\n# Two" --source claude
 zett artifact list --query notes
 zett artifact list --limit 50
+zett artifact list --card-status in_progress --card-status open   # todo cards still live
+zett artifact mark <artifact-id> done                             # move a card along
 zett artifact get <artifact-id>
 zett artifact delete <artifact-id>
 ```
@@ -90,6 +92,12 @@ Rules that matter:
   `--source` and cannot be repeated here.
 - `delete` only removes an artifact that belongs to no conversation: one a
   conversation owns answers 403 and stays, and its conversation deletes it.
+- A todo, idea, or reference card carries a status, and `mark` moves it at once
+  without a draft or a save. A todo is `open`, `in_progress`, `on_hold`, `done`,
+  or `cancelled`; an idea is `captured`, `exploring`, `adopted`, or `dropped`; a
+  reference is `unread`, `reading`, or `read`. A value from another card type is
+  refused, and a note or quote has no status. Mark a task `done` only when the
+  user finished it or asked, and adopt an idea only when they decided to.
 
 ## Tags
 

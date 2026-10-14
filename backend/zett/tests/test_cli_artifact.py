@@ -270,3 +270,48 @@ def test_importing_the_artifact_command_imports_no_server_dependency() -> None:
 
     assert result.returncode == 0
     assert result.stdout.strip() == "[]"
+
+
+def test_list_filters_by_card_status_and_marks_cards_that_carry_one(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    recorder = Recorder([{**_card(), "card_status": "reading"}, _card("artifact-2")])
+    monkeypatch.setattr(artifact, "request_json", recorder)
+
+    exit_code = artifact.main(
+        ["list", "--card-status", "reading", "--card-status", "unread", "--card-status", "reading"]
+    )
+
+    assert exit_code == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].endswith("Piped  [reading]")
+    assert lines[1].endswith("Piped")
+    # A repeated value is sent once, and the request stays a plain query string.
+    assert recorder.calls[0][1] == "/api/artifacts?limit=20&card_statuses=reading&card_statuses=unread"
+
+
+def test_mark_moves_a_card_by_id_and_prints_the_new_status(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    recorder = Recorder({**_card("artifact-1?x"), "card_status": "done"})
+    monkeypatch.setattr(artifact, "request_json", recorder)
+
+    exit_code = artifact.main(["mark", "artifact-1?x", "done"])
+
+    assert exit_code == 0
+    assert capsys.readouterr().out == "artifact-1?x done\n"
+    assert recorder.calls == [("PUT", "/api/artifacts/artifact-1%3Fx/card-status", {"status": "done"})]
+
+
+@pytest.mark.parametrize("argv", [["mark", "artifact-1", "later"], ["mark", "artifact-1"], ["mark", "bad id", "done"]])
+def test_mark_refuses_an_unknown_status_or_id_before_any_request(
+    monkeypatch: pytest.MonkeyPatch, argv: list[str]
+) -> None:
+    recorder = Recorder({})
+    monkeypatch.setattr(artifact, "request_json", recorder)
+
+    with pytest.raises(SystemExit) as exit_info:
+        artifact.main(argv)
+
+    assert exit_info.value.code == 2
+    assert recorder.calls == []

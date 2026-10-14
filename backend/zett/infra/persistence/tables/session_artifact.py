@@ -14,7 +14,7 @@ from enum import IntEnum
 from sqlalchemy import Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ....schemas import ArtifactStatus, ArtifactType
+from ....schemas import ArtifactStatus, ArtifactType, CardStatus
 from .base import Base
 
 
@@ -35,6 +35,27 @@ class ArtifactStatusCode(IntEnum):
     SAVED = 2
 
 
+class CardStatusCode(IntEnum):
+    """Persisted value of ``session_artifacts.card_status``.
+
+    The tens digit names the card type (0 todo, 1 idea, 2 reference), so a stored
+    code is never ambiguous and a new type gets a block of its own.
+    """
+
+    OPEN = 1
+    IN_PROGRESS = 2
+    ON_HOLD = 3
+    DONE = 4
+    CANCELLED = 5
+    CAPTURED = 11
+    EXPLORING = 12
+    ADOPTED = 13
+    DROPPED = 14
+    UNREAD = 21
+    READING = 22
+    READ = 23
+
+
 TYPE_TO_CODE = {
     ArtifactType.CARD: ArtifactTypeCode.CARD,
     ArtifactType.ARTICLE: ArtifactTypeCode.ARTICLE,
@@ -48,6 +69,8 @@ STATUS_TO_CODE = {
     ArtifactStatus.SAVED: ArtifactStatusCode.SAVED,
 }
 CODE_TO_STATUS = {int(code): status for status, code in STATUS_TO_CODE.items()}
+CARD_STATUS_TO_CODE = {status: CardStatusCode[status.name] for status in CardStatus}
+CODE_TO_CARD_STATUS = {int(code): status for status, code in CARD_STATUS_TO_CODE.items()}
 
 
 class SessionArtifactRow(Base):
@@ -64,6 +87,10 @@ class SessionArtifactRow(Base):
     # ArtifactStatusCode: draft=1, saved=2. Draft is the pre-publish lifecycle
     # state; it does not describe whether a draft edit is pending.
     status: Mapped[int] = mapped_column(Integer, index=True)
+    # CardStatusCode: todo 1-5, idea 11-14, reference 21-23. Null for every
+    # artifact whose card type carries no status. It belongs to the artifact
+    # rather than to its content, so moving a card along never creates a draft.
+    card_status: Mapped[int | None] = mapped_column(Integer, index=True, default=None)
     # Searchable title: the content title, or the PDF name without its extension.
     title: Mapped[str] = mapped_column(String(500), index=True)
     # Published content, written only by a user action (artifact save or editor).

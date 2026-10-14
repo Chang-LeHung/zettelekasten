@@ -2,6 +2,7 @@
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .cards import CardStatus
 from .sessions import SessionType
 from .tags import TagTargetType
 
@@ -24,6 +25,9 @@ class ArtifactListOptions(BaseModel):
     artifact_types: tuple[str, ...] = Field(default=(), description="Artifact kinds included in the result")
     statuses: tuple[str, ...] = Field(default=(), description="Lifecycle states included in the result")
     tag_ids: tuple[str, ...] = Field(default=(), description="Assigned tag UUIDs included in the result")
+    card_statuses: tuple[CardStatus, ...] = Field(
+        default=(), description="Card statuses included in the result; any value keeps only cards that carry a status"
+    )
     query: str | None = Field(default=None, description="Text matched against artifact titles")
     published_only: bool = Field(
         default=False,

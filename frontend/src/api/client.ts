@@ -45,6 +45,7 @@ import type {
   Tag,
   TagCreateInput,
   TagRecord,
+  CardStatus,
   SessionAsset,
   UpdateInstallResult,
   UpdateStatus,
@@ -149,6 +150,7 @@ function libraryQueryParams(options: CardListOptions, paged: boolean): URLSearch
     params.append('artifact_types', artifactType)
   }
   params.append('statuses', 'saved')
+  for (const cardStatus of options.cardStatuses ?? []) params.append('card_statuses', cardStatus)
   if (options.tagId) params.append('tag_ids', options.tagId)
   if (options.publishedOnly) params.set('published_only', 'true')
   if (paged && options.limit !== undefined) params.set('limit', String(options.limit))
@@ -223,6 +225,20 @@ export const libraryClient = {
       if (result.ok) artifactIndex.delete(itemId)
       return result
     })
+  },
+
+  /**
+   * Move a card to a new status. A status is not a document edit, so it
+   * takes effect at once with no draft, no save, and no version change.
+   */
+  async setCardStatus(itemId: string, status: CardStatus): Promise<LibraryItem> {
+    const artifact = requireIndexedArtifact(itemId)
+    const updated = await request<AgentArtifact>(
+      `/agent/${artifact.session_id}/artifacts/${encodeURIComponent(itemId)}/card-status`,
+      { method: 'PUT', body: JSON.stringify({ status }) },
+    )
+    artifactIndex.set(updated.id, updated)
+    return artifactToLibraryItem(updated)
   },
 
   async update(itemType: LibraryItemType, itemId: string, payload: LibraryItemUpdate): Promise<LibraryItem> {
@@ -673,6 +689,14 @@ export const aiClient = {
     return request<{ ok: boolean }>(`/agent/${conversationId}/artifacts/${artifactId}`, { method: 'DELETE' })
   },
 
+  /** Move a card to a new status without editing or publishing it. */
+  setAgentCardStatus(conversationId: string, artifactId: string, status: CardStatus): Promise<AgentArtifact> {
+    return request<AgentArtifact>(`/agent/${conversationId}/artifacts/${artifactId}/card-status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    })
+  },
+
   saveAgentArtifact(conversationId: string, artifactId: string): Promise<AgentArtifact> {
     return request<AgentArtifact>(`/agent/${conversationId}/artifacts/${artifactId}/save`, { method: 'POST' })
   },
@@ -900,6 +924,7 @@ function artifactToLibraryItem(artifact: AgentArtifact): LibraryItem {
     content: content.artifact_type === 'latex_pdf' ? '' : content.content,
     raw_content: artifact.raw_content,
     card_type: content.artifact_type === 'card' ? content.card_type : null,
+    card_status: artifact.card_status ?? null,
     status: artifact.status,
     tags: artifact.tags?.map((tag) => tag.path) ?? [],
     metadata: artifact.metadata,

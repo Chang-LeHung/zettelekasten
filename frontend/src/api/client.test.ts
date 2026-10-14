@@ -944,3 +944,49 @@ it('loads the latest context composition for a historical session', async () => 
     expect.any(Object),
   )
 })
+
+it('filters the library by card status and moves a card without a draft or version change', async () => {
+  const todo = {
+    id: 'todo-1', session_id: 'session-1', artifact_type: 'card', status: 'saved',
+    content: { artifact_type: 'card', card_type: 'todo', title: 'Ship', summary: '', content: 'Do it', suggested_tags: [], keywords: [] },
+    draft_content: null, raw_content: null, version: 3, metadata: {}, card_status: 'open', tags: [],
+    created_at: '', updated_at: '', content_url: null,
+  }
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify([todo])))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ ...todo, card_status: 'done' })))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ ...todo, card_status: 'cancelled' })))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ count: 0 })))
+  vi.stubGlobal('fetch', fetchMock)
+
+  const [item] = await libraryClient.list({ cardStatuses: ['open', 'in_progress'] })
+  const listed = new URL(String(fetchMock.mock.calls[0]?.[0]), 'http://localhost')
+  expect(listed.searchParams.getAll('card_statuses')).toEqual(['open', 'in_progress'])
+  expect(item).toMatchObject({ id: 'todo-1', card_type: 'todo', card_status: 'open' })
+
+  const done = await libraryClient.setCardStatus('todo-1', 'done')
+  expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/agent/session-1/artifacts/todo-1/card-status', expect.objectContaining({
+    method: 'PUT',
+    body: JSON.stringify({ status: 'done' }),
+  }))
+  expect(done.card_status).toBe('done')
+
+  const cancelled = await aiClient.setAgentCardStatus('session-1', 'todo-1', 'cancelled')
+  expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/agent/session-1/artifacts/todo-1/card-status', expect.objectContaining({ method: 'PUT' }))
+  expect(cancelled.card_status).toBe('cancelled')
+
+  await libraryClient.count({ cardStatuses: ['done'] })
+  const counted = new URL(String(fetchMock.mock.calls[3]?.[0]), 'http://localhost')
+  expect(counted.searchParams.getAll('card_statuses')).toEqual(['done'])
+  expect(counted.searchParams.has('limit')).toBe(false)
+})
+
+it('applies no status filter by default, so a library with no stateful cards is unchanged', async () => {
+  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify([])))
+  vi.stubGlobal('fetch', fetchMock)
+
+  await libraryClient.list()
+
+  const url = new URL(String(fetchMock.mock.calls[0]?.[0]), 'http://localhost')
+  expect(url.searchParams.has('card_statuses')).toBe(false)
+})

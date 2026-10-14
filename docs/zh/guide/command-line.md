@@ -96,6 +96,17 @@ zett artifact get <id>             # 完整的条目
 zett artifact delete <id>
 ```
 
+用 `mark` 推进待办、想法或参考卡片的状态，并可按状态筛选列表：
+
+```bash
+zett artifact mark <id> done                  # 待办：open、in_progress、on_hold、done、cancelled
+zett artifact mark <id> adopted               # 想法：captured、exploring、adopted、dropped
+zett artifact mark <id> read                  # 参考：unread、reading、read
+zett artifact list --card-status open --card-status in_progress
+```
+
+`mark` 立即生效，且不会改动其他内容：没有草稿，不需要保存，版本号也不变。它只需要 id 即可作用于任意产物，并会拒绝属于其他卡片类型的状态，也会拒绝对笔记或引用设置任何状态。
+
 `zett artifact list` 和 `zett artifact delete` 适用于从命令行和其他集成创建的条目。在会话中生成的产物，需要在该会话中删除，或在产物库的阅读器中删除。
 
 目前还不能在这里创建图片和 LaTeX PDF；请让 Agent 来做。

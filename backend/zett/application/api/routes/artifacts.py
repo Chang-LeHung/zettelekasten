@@ -4,11 +4,18 @@ from fastapi import APIRouter, HTTPException, Query, status
 
 from ....infra.persistence.dao import artifact_storage, session_storage
 from ....infra.persistence.dao.artifact import ArtifactVersionConflictError
-from ....schemas import AgentArtifactEntity, AgentArtifactWrite, ArtifactListOptions, ArtifactStatus, ArtifactType
+from ....schemas import (
+    AgentArtifactEntity,
+    AgentArtifactWrite,
+    ArtifactListOptions,
+    ArtifactStatus,
+    ArtifactType,
+    CardStatus,
+)
 from ...artifacts.library import library_session_service
 from ...artifacts.versioning import UncommittedLatexProjectError, artifact_versioning
 from ...tags.tagging import tag_service
-from ..schemas import ArtifactCountOut, ArtifactCreateIn, ArtifactUpdateIn, DeleteResponse
+from ..schemas import ArtifactCountOut, ArtifactCreateIn, ArtifactUpdateIn, CardStatusIn, DeleteResponse
 
 router = APIRouter(tags=["artifacts"])
 
@@ -19,6 +26,7 @@ async def _library_options(
     statuses: list[ArtifactStatus],
     tag_ids: list[str],
     published_only: bool,
+    card_statuses: list[CardStatus],
     *,
     limit: int | None = None,
     offset: int = 0,
@@ -39,6 +47,7 @@ async def _library_options(
         "statuses": tuple(item.value for item in statuses),
         "tag_ids": expanded_tag_ids,
         "published_only": published_only,
+        "card_statuses": tuple(card_statuses),
     }
     if limit is None:
         return ArtifactListOptions(**filters)
@@ -59,12 +68,18 @@ async def list_all_artifacts(
     artifact_types: list[ArtifactType] = Query(default=[]),
     statuses: list[ArtifactStatus] = Query(default=[]),
     tag_ids: list[str] = Query(default=[]),
+    card_statuses: list[CardStatus] = Query(default=[]),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     published_only: bool = False,
 ) -> list[AgentArtifactEntity]:
-    """Search artifacts across sessions for the library UI."""
-    options = await _library_options(q, artifact_types, statuses, tag_ids, published_only, limit=limit, offset=offset)
+    """Search artifacts across sessions for the library UI.
+
+    ``card_statuses`` keeps only todo cards in those states.
+    """
+    options = await _library_options(
+        q, artifact_types, statuses, tag_ids, published_only, card_statuses, limit=limit, offset=offset
+    )
     return await artifact_storage.list(options)
 
 
@@ -74,6 +89,7 @@ async def count_all_artifacts(
     artifact_types: list[ArtifactType] = Query(default=[]),
     statuses: list[ArtifactStatus] = Query(default=[]),
     tag_ids: list[str] = Query(default=[]),
+    card_statuses: list[CardStatus] = Query(default=[]),
     published_only: bool = False,
 ) -> ArtifactCountOut:
     """Count the artifacts one library filter matches, for its item total.
@@ -81,7 +97,7 @@ async def count_all_artifacts(
     Declared before ``/artifacts/{artifact_id}`` so the path is never read as
     an artifact id.
     """
-    options = await _library_options(q, artifact_types, statuses, tag_ids, published_only)
+    options = await _library_options(q, artifact_types, statuses, tag_ids, published_only, card_statuses)
     return ArtifactCountOut(count=await artifact_storage.count(options))
 
 
@@ -148,6 +164,7 @@ async def _create_artifact(session_id: str, payload: ArtifactCreateIn) -> AgentA
         raw_content=payload.raw_content,
         status=payload.status,
         metadata=payload.metadata,
+        card_status=payload.card_status,
     )
     try:
         created = await artifact_storage.create(entity)
@@ -256,6 +273,50 @@ async def update_artifact_draft(
         return await artifact_storage.update(artifact_id, entity)
     except (ValueError, FileNotFoundError) as error:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
+
+
+async def _move_card(artifact: AgentArtifactEntity, status_: CardStatus) -> AgentArtifactEntity:
+    """Move one card to a new status, refusing a card or a value its type cannot take."""
+    if artifact.card_status is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "This card carries no status")
+    try:
+        return await artifact_storage.set_card_status(artifact.id, status_)
+    except KeyError as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Artifact not found") from error
+    except ValueError as error:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
+
+
+@router.put("/agent/{session_id}/artifacts/{artifact_id}/card-status", response_model=AgentArtifactEntity)
+async def update_artifact_card_status(
+    session_id: str,
+    artifact_id: str,
+    payload: CardStatusIn,
+) -> AgentArtifactEntity:
+    """Move one card to a new status without editing or publishing it.
+
+    Closing a task or marking a reference read is not a document edit, so it
+    neither creates a draft nor needs a save, and it leaves the revision number
+    alone. The conversation and the library change status through this route.
+    """
+    current = await artifact_storage.get_for_session(session_id, artifact_id)
+    if current is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Artifact not found")
+    return await _move_card(current, payload.status)
+
+
+@router.put("/artifacts/{artifact_id}/card-status", response_model=AgentArtifactEntity)
+async def update_library_card_status(artifact_id: str, payload: CardStatusIn) -> AgentArtifactEntity:
+    """Move one card to a new status by id alone, whichever session owns it.
+
+    A shell or script has no session id to name, the way ``GET /artifacts/{id}``
+    needs none, and moving a card along changes no content, so ownership does
+    not gate it the way deletion does.
+    """
+    current = await artifact_storage.get(artifact_id)
+    if current is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Artifact not found")
+    return await _move_card(current, payload.status)
 
 
 @router.post("/agent/{session_id}/artifacts/{artifact_id}/save", response_model=AgentArtifactEntity)
