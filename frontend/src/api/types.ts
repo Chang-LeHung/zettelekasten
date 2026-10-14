@@ -715,3 +715,8 @@ export interface UpdateInstallResult {
   detail: string
   output_tail: string[]
 }
+
+export interface UpdateRestartResult {
+  ok: boolean
+  detail: string
+}

@@ -2,7 +2,8 @@
 
 from fastapi import APIRouter
 
-from ....schemas import UpdateInstallResult, UpdateStatus
+from ....schemas import UpdateInstallResult, UpdateRestartResult, UpdateStatus
+from ...runtime import RuntimeService
 from ...runtime.updates import update_service
 from ..schemas import UpdateInstallIn
 
@@ -24,3 +25,14 @@ async def install_update(payload: UpdateInstallIn) -> UpdateInstallResult:
     ``ok=false`` with the reason, because the sidebar shows it as written.
     """
     return await update_service.install(payload.version)
+
+
+@router.post("/restart", response_model=UpdateRestartResult)
+async def restart_server() -> UpdateRestartResult:
+    """Restart this server so an installed release replaces the running code.
+
+    The answer only says a detached helper was started: that helper stops this
+    process, so the client polls ``GET /api/updates`` until the new one answers.
+    A server that ``zett start`` did not record is refused with the reason.
+    """
+    return await RuntimeService().request_restart()

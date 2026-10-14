@@ -9,6 +9,7 @@ import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import BinaryIO
 
 import httpx
 
@@ -22,6 +23,25 @@ logger = get_logger(__name__)
 #: Console output of a detached ``zett start`` server. Nothing is attached to
 #: that process' stdout, so startup lines and tracebacks have to land in a file.
 BACKGROUND_LOG_FILE_NAME = "background.log"
+
+
+#: A supervised child writes its own log once it is running, but anything that
+#: kills it before that (an import error, a schema failure) goes to stderr. That
+#: output is kept per role, and appended to, because the supervisor restarts the
+#: child and a healthy replacement must not overwrite the evidence of the crash.
+CHILD_STARTUP_LOG_SUFFIX = ".startup.log"
+CHILD_STARTUP_LOG_MAX_BYTES = 512 * 1024
+
+
+def _open_child_startup_log(role: ProcessRole) -> BinaryIO:
+    """Open the file a supervised child's stderr is kept in, bounded in size."""
+    path = settings.log_directory / f"{role.value}{CHILD_STARTUP_LOG_SUFFIX}"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        oversized = path.stat().st_size > CHILD_STARTUP_LOG_MAX_BYTES
+    except OSError:
+        oversized = False
+    return path.open("wb" if oversized else "ab")
 
 
 @dataclass(slots=True)
@@ -57,14 +77,15 @@ class SubprocessLauncher:
             "--instance-id",
             instance_id,
         ]
-        process = subprocess.Popen(  # noqa: S603
-            command,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            close_fds=True,
-            **process_platform.spawn_kwargs(),
-        )
+        with _open_child_startup_log(role) as stderr:
+            process = subprocess.Popen(  # noqa: S603
+                command,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=stderr,
+                close_fds=True,
+                **process_platform.spawn_kwargs(),
+            )
         return ManagedProcess(role=role, instance_id=instance_id, process=process)
 
 
@@ -126,6 +147,51 @@ def launch_background_server(
         pid = process.pid
         del process
     logger.info("Started background Zett server; pid=%d log_file=%s", pid, log_path)
+    return BackgroundServerProcess(pid=pid, log_path=log_path)
+
+
+def launch_restart_helper(
+    *,
+    host: str,
+    port: int,
+    reload: bool,
+    log_path: Path,
+    delay_seconds: float,
+) -> BackgroundServerProcess:
+    """Detach ``zett restart`` so it outlives the server that asked for it.
+
+    The helper stops the very process that spawned it, so it runs from a new
+    session with its output in the server's console log: a restart that fails
+    leaves a reason there, because nothing is attached to read it.
+    """
+    command = [
+        sys.executable,
+        "-m",
+        "zett.cli",
+        "restart",
+        "--host",
+        host,
+        "--port",
+        str(port),
+        "--delay",
+        f"{delay_seconds:g}",
+    ]
+    if reload:
+        command.append("--reload")
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("ab") as stream, warnings.catch_warnings():
+        warnings.simplefilter("ignore", ResourceWarning)
+        process = subprocess.Popen(  # noqa: S603
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=stream,
+            stderr=subprocess.STDOUT,
+            close_fds=True,
+            **process_platform.background_spawn_kwargs(),
+        )
+        pid = process.pid
+        del process
+    logger.info("Started restart helper; pid=%d port=%d log_file=%s", pid, port, log_path)
     return BackgroundServerProcess(pid=pid, log_path=log_path)
 
 

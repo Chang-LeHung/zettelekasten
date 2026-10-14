@@ -33,3 +33,12 @@ class UpdateInstallResult(BaseModel):
     needs_restart: bool = Field(default=True, description="Whether the running process still runs the old code")
     detail: str = ""
     output_tail: list[str] = Field(default_factory=list, description="Last lines the installer wrote")
+
+
+class UpdateRestartResult(BaseModel):
+    """Whether a restart of this server was handed to a detached helper."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    ok: bool
+    detail: str = ""

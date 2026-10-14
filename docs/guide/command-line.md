@@ -10,6 +10,8 @@ for the list of commands, or `zett <command> --help` for one command's options.
 zett start      # start Zett in the background and return to the shell
 zett status     # is it running, and where
 zett stop       # stop it
+zett restart    # stop it and start it again on the same address
+zett --version  # which release is installed
 ```
 
 `zett start` prints the address to open, usually `http://127.0.0.1:6280`, and
@@ -27,6 +29,12 @@ Console log: /Users/you/.zettelekasten/logs/background.log
 | `-p`, `--port PORT` | Use another port (default `6280`). |
 | `-f`, `--foreground` | Keep Zett attached to this terminal, with its logs on screen. Stop it with `Ctrl+C`. |
 | `-b`, `--background` | Detach and return to the shell. This is the default. |
+
+`zett restart` brings Zett back the way it was running, with the same address
+and reload mode, and starts it if nothing was running. The **Restart Zett**
+button that appears in the sidebar after an update runs the same thing. It
+always leaves Zett running in the background, so a server you started with
+`--foreground` continues detached.
 
 `zett status` lists the parts of Zett that keep working while no browser is
 open. All three should read `running`:

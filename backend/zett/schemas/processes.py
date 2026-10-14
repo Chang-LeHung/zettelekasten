@@ -82,7 +82,11 @@ class ServerRuntimeState(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     server_pid: int | None = Field(default=None, ge=1)
+    # Set only by `zett start`: a server started any other way (`uvicorn zett.main:app`,
+    # a container) leaves no host, which is how a restart knows it must not take over.
+    host: str | None = Field(default=None, min_length=1, max_length=255)
     port: int | None = Field(default=None, ge=1, le=65_535)
+    reload: bool = False
     scheduler_pids: list[int] = Field(default_factory=list)
     worker_pids: list[int] = Field(default_factory=list)
     started_at: datetime | None = None

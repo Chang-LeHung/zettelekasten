@@ -102,7 +102,9 @@ def run_server(*, host: str, port: int, reload: bool) -> int:
         RuntimeStateStore().write(
             ServerRuntimeState(
                 server_pid=os.getpid(),
+                host=host,
                 port=port,
+                reload=reload,
                 started_at=datetime.now(UTC),
             )
         )

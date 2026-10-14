@@ -78,16 +78,15 @@ leaves it running without the terminal, `zett status` reports it, and
 Zett checks PyPI for a newer release (the answer is cached for six hours) and,
 when one exists and this copy was installed with `uv tool`, `pipx`, or `pip`,
 shows **Update to X** above Settings in the sidebar. One click runs that
-installer for the new release, and the sidebar then asks you to restart Zett:
+installer for the new release, keeping the Python and any extensions you added
+beside Zett, and the same spot then becomes **Restart Zett to use X**. Click it:
+Zett restarts itself on the same address and the page reloads into the new
+release. The running process keeps the old code until then.
 
-```bash
-zett stop && zett start
-```
-
-The running process keeps the old code until you do. A checkout never shows the
-button; update it with `git pull && make install`. To update by hand, run
-`uv tool install --force --refresh-package zettelekasten zettelekasten` (or
-`pipx upgrade zettelekasten`).
+The terminal does the same: `zett restart`, and `zett --version` shows what is
+installed. A checkout never shows the button; update it with
+`git pull && make install`. To update by hand, run `uv tool upgrade zettelekasten`
+(or `pipx upgrade zettelekasten`), then `zett restart`.
 
 ## First steps
 

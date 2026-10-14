@@ -8,6 +8,8 @@
 zett start      # 在后台启动 Zett 并返回 shell
 zett status     # 是否在运行，运行在哪里
 zett stop       # 停止它
+zett restart    # 停止后在同一地址重新启动
+zett --version  # 当前安装的是哪个版本
 ```
 
 `zett start` 会打印要打开的地址（通常是 `http://127.0.0.1:6280`）和控制台日志的路径：
@@ -24,6 +26,8 @@ Console log: /Users/you/.zettelekasten/logs/background.log
 | `-p`, `--port PORT` | 使用其他端口（默认 `6280`）。 |
 | `-f`, `--foreground` | 让 Zett 保持在当前终端中运行，并在屏幕上显示日志。用 `Ctrl+C` 停止。 |
 | `-b`, `--background` | 脱离终端并返回 shell。这是默认行为。 |
+
+`zett restart` 会按原样把 Zett 带回来，地址和重载模式都不变；如果当时没有在运行，就直接启动。更新之后侧边栏出现的**重启 Zett**按钮执行的就是它。它总是让 Zett 在后台运行，所以用 `--foreground` 启动的服务器重启后会转到后台继续运行。
 
 `zett status` 会列出在没有打开浏览器时仍持续工作的各个部分。三项都应显示 `running`：
 

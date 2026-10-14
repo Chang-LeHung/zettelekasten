@@ -415,3 +415,135 @@ def _recording_start(calls: list[dict[str, object]]):
         )
 
     return start_in_background
+
+
+class FakeRestartLauncher:
+    """Record the detached ``zett restart`` helper a server asks for."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def __call__(
+        self, *, host: str, port: int, reload: bool, log_path: Path, delay_seconds: float
+    ) -> BackgroundServerProcess:
+        self.calls.append(
+            {"host": host, "port": port, "reload": reload, "log_path": log_path, "delay_seconds": delay_seconds}
+        )
+        return BackgroundServerProcess(pid=os.getpid(), log_path=log_path)
+
+
+async def test_restart_helper_is_started_for_the_server_that_zett_start_recorded(tmp_path: Path) -> None:
+    store = RuntimeStateStore(tmp_path / "runtime.json")
+    await store.write(ServerRuntimeState(server_pid=os.getpid(), host="0.0.0.0", port=6312, reload=True))
+    restart = FakeRestartLauncher()
+    service = RuntimeService(
+        controller=RuntimeProcessController(store),
+        restart_launcher=restart,
+    )
+
+    result = await service.request_restart()
+
+    assert result.ok is True
+    # What was running comes back as it was: same address, same reload mode, and a
+    # head start so this process can still finish answering the request.
+    assert len(restart.calls) == 1
+    call = restart.calls[0]
+    assert (call["host"], call["port"], call["reload"]) == ("0.0.0.0", 6312, True)
+    assert float(call["delay_seconds"]) > 0  # type: ignore[arg-type]
+    assert Path(str(call["log_path"])).name == BACKGROUND_LOG_FILE_NAME
+
+
+async def test_restart_is_refused_for_a_server_zett_start_did_not_record(tmp_path: Path) -> None:
+    store = RuntimeStateStore(tmp_path / "runtime.json")
+    restart = FakeRestartLauncher()
+    service = RuntimeService(controller=RuntimeProcessController(store), restart_launcher=restart)
+
+    # No state at all: nothing says how this server was started.
+    nothing = await service.request_restart()
+    assert nothing.ok is False and "zett start" in nothing.detail
+
+    # `uvicorn zett.main:app` records itself without a host.
+    await store.write(ServerRuntimeState(server_pid=os.getpid(), port=6312))
+    unmanaged = await service.request_restart()
+    assert unmanaged.ok is False and "zett start" in unmanaged.detail
+
+    # The file names another process: the helper kills what the file names, so it must not run.
+    await store.write(ServerRuntimeState(server_pid=999_999_991, host="127.0.0.1", port=6312))
+    other = await service.request_restart()
+    assert other.ok is False and "another process" in other.detail
+
+    assert restart.calls == []
+
+
+async def test_restart_reports_a_helper_that_cannot_spawn(tmp_path: Path) -> None:
+    store = RuntimeStateStore(tmp_path / "runtime.json")
+    await store.write(ServerRuntimeState(server_pid=os.getpid(), host="127.0.0.1", port=6312))
+
+    def broken(**_: object) -> BackgroundServerProcess:
+        raise OSError("no fork")
+
+    service = RuntimeService(controller=RuntimeProcessController(store), restart_launcher=broken)
+    result = await service.request_restart()
+    assert result.ok is False and "no fork" in result.detail
+
+
+async def test_restart_in_background_stops_the_recorded_server_and_starts_on_its_address(tmp_path: Path) -> None:
+    store = RuntimeStateStore(tmp_path / "runtime.json")
+    sleeper = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    port = _free_port()
+    await store.write(ServerRuntimeState(server_pid=sleeper.pid, host="127.0.0.1", port=port, reload=False))
+    launcher = FakeLauncher(pid=os.getpid(), listen=True)
+    try:
+        result = await _service(tmp_path, launcher=launcher).restart_in_background(stop_timeout=5.0)
+        # The old process is gone before the new one starts, and the address is the recorded one.
+        assert sleeper.wait(timeout=5) is not None
+    finally:
+        launcher.close()
+        if sleeper.poll() is None:
+            sleeper.kill()
+
+    assert result.port == port
+    assert launcher.calls[0]["host"] == "127.0.0.1" and launcher.calls[0]["port"] == port
+
+
+async def test_restart_in_background_just_starts_when_nothing_runs(tmp_path: Path) -> None:
+    port = _free_port()
+    launcher = FakeLauncher(pid=os.getpid(), listen=True)
+    try:
+        result = await _service(tmp_path, launcher=launcher).restart_in_background(host="127.0.0.1", port=port)
+    finally:
+        launcher.close()
+    assert result.port == port
+
+
+def test_restart_and_version_are_user_commands(capsys: pytest.CaptureFixture[str]) -> None:
+    assert "restart" in cli.command_names()
+    assert "Stop the running Zett server and start it again" in cli.parser_help()
+
+    assert main(["--version"]) == 0
+    printed = capsys.readouterr().out.strip()
+    assert printed.startswith("zett ") and printed != "zett "
+    assert main(["-V"]) == 0
+    assert capsys.readouterr().out.strip() == printed
+
+
+def test_a_supervised_child_keeps_what_it_wrote_to_stderr_before_it_could_log(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A child that dies before configuring its own log used to vanish without a trace."""
+    monkeypatch.setattr(settings, "log_directory", tmp_path / "logs")
+    path = tmp_path / "logs" / "worker.startup.log"
+
+    first = processes._open_child_startup_log(ProcessRole.WORKER)
+    first.write(b"first crash\n")
+    first.close()
+    # The replacement the supervisor starts appends: it must not erase the crash.
+    second = processes._open_child_startup_log(ProcessRole.WORKER)
+    second.write(b"healthy start\n")
+    second.close()
+    assert path.read_text(encoding="utf-8") == "first crash\nhealthy start\n"
+
+    # Bounded, so a crash loop never fills the disk.
+    path.write_bytes(b"x" * (processes.CHILD_STARTUP_LOG_MAX_BYTES + 1))
+    processes._open_child_startup_log(ProcessRole.WORKER).close()
+    assert path.stat().st_size == 0

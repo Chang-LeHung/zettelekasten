@@ -24,6 +24,7 @@ PROGRAM_DESCRIPTION = (
     "conversations, links, and assets into reusable knowledge."
 )
 HELP_OPTIONS = frozenset({"-h", "--help"})
+VERSION_OPTIONS = frozenset({"-V", "--version"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +45,7 @@ COMMANDS: tuple[Command, ...] = (
     Command("start", "zett.cli.start", "Serve the API and the frontend, detached by default"),
     Command("status", "zett.cli.status", "Report whether Zett is running"),
     Command("stop", "zett.cli.stop", "Stop the running Zett server"),
+    Command("restart", "zett.cli.restart", "Stop the running Zett server and start it again"),
     Command("artifact", "zett.cli.artifact", "Create, read, and list artifacts that belong to no conversation"),
     Command("tag", "zett.cli.tag", "Manage library tags and the tags an artifact carries"),
     Command("install", "zett.cli.install", "Install Zett's skill into Claude Code, Codex, or another agent"),
@@ -70,6 +72,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not arguments or arguments[0] in HELP_OPTIONS:
         print(parser_help())
         return 0
+    if arguments[0] in VERSION_OPTIONS:
+        print(f"{PROGRAM_NAME} {installed_version()}")
+        return 0
     command = COMMANDS_BY_NAME.get(arguments[0])
     if command is None:
         print(f"{PROGRAM_NAME}: error: unknown command {arguments[0]!r}", file=sys.stderr)
@@ -80,6 +85,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     configure_logging()
     entry: Callable[[Sequence[str] | None], int] = getattr(importlib.import_module(command.module), command.entry)
     return entry(arguments[1:])
+
+
+def installed_version() -> str:
+    """Return the installed release, or ``unknown`` for a copy with no metadata."""
+    from importlib import metadata
+
+    try:
+        return metadata.version("zettelekasten")
+    except metadata.PackageNotFoundError:
+        return "unknown"
 
 
 def parser_help() -> str:
@@ -95,6 +110,7 @@ def build_parser() -> argparse.ArgumentParser:
     every command without importing one.
     """
     parser = argparse.ArgumentParser(prog=PROGRAM_NAME, description=PROGRAM_DESCRIPTION)
+    parser.add_argument("-V", "--version", action="version", version=f"%(prog)s {installed_version()}")
     subcommands = parser.add_subparsers(dest="command", metavar="COMMAND")
     for command in COMMANDS:
         if command.help is not None:

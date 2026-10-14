@@ -48,6 +48,7 @@ import type {
   CardStatus,
   SessionAsset,
   UpdateInstallResult,
+  UpdateRestartResult,
   UpdateStatus,
 } from './types'
 import { artifactEditableContent } from '../utils/artifactEditor'
@@ -787,6 +788,14 @@ export const updateClient = {
       method: 'POST',
       body: JSON.stringify({ version }),
     })
+  },
+
+  /**
+   * Ask this server to restart itself. The answer only says a helper was started: the
+   * helper stops the very process that answered, so the page waits for the new one.
+   */
+  restart(): Promise<UpdateRestartResult> {
+    return request<UpdateRestartResult>('/updates/restart', { method: 'POST' })
   },
 }
 

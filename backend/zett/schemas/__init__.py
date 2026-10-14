@@ -127,6 +127,7 @@ if TYPE_CHECKING:
     )
     from .updates import (
         UpdateInstallResult,
+        UpdateRestartResult,
         UpdateStatus,
     )
     from .usage_activity import (
@@ -235,6 +236,7 @@ _EXPORTS = {
     "TagWrite": ".tags",
     "UsageActivityDayRecord": ".usage_activity",
     "UpdateInstallResult": ".updates",
+    "UpdateRestartResult": ".updates",
     "UpdateStatus": ".updates",
     "apply_artifact_patch": ".artifacts",
     "normalize_card_type": ".cards",
@@ -336,6 +338,7 @@ __all__ = [
     "CardStatus",
     "UsageActivityDayRecord",
     "UpdateInstallResult",
+    "UpdateRestartResult",
     "UpdateStatus",
     "apply_artifact_patch",
     "default_status",

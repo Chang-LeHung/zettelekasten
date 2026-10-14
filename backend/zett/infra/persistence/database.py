@@ -6,12 +6,14 @@ database. Both are asynchronous, so routes await one engine each instead of
 hopping through a worker thread per DAO call.
 """
 
+import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from sqlalchemy import event, or_
 from sqlalchemy import update as sql_update
 from sqlalchemy.engine import URL
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 from sqlalchemy.schema import CreateColumn, CreateIndex
@@ -99,23 +101,61 @@ async def remove_columns(connection: AsyncConnection) -> None:
         await connection.exec_driver_sql(f'ALTER TABLE "{table_name}" DROP COLUMN "{column_name}"')
 
 
+#: The server, the scheduler, and every worker prepare the same schema when they start
+#: together. Each step looks at what exists and then changes it, so two of them
+#: interleaving can both see an index and both try to drop it; the loser crashed with
+#: "no such index" and was restarted by the supervisor with no trace of why. Taking the
+#: write lock before the first look makes the look and the change one atomic step, and
+#: the process that waits then finds the work already done.
+INIT_ATTEMPTS = 8
+INIT_RETRY_SECONDS = 0.25
+
+
 async def init_db() -> None:
     """Create the current schema and repair the shapes an older release wrote.
 
-    The steps run in this order for a reason: a column has to exist before an
-    index can name it, and a uniqueness rule a newer release changed has to be
-    replaced before ``ensure_indexes`` sees the old index under the same name.
+    Several processes run this at once on a first start, so the preparation is
+    serialized across them, and a lock that outlasts ``busy_timeout`` is retried
+    instead of crashing the process that waited.
     """
     settings.database_path.parent.mkdir(parents=True, exist_ok=True)
-    async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.create_all)
-        await add_columns_with_default(connection)
-        await ensure_columns(connection)
-        await replace_unique_indexes(connection)
-        await ensure_indexes(connection)
-        await backfill_card_status(connection)
-        await remove_columns(connection)
-        await ensure_artifact_search(connection)
+    for attempt in range(1, INIT_ATTEMPTS + 1):
+        try:
+            await _prepare_schema()
+            return
+        except OperationalError as error:
+            if "locked" not in str(error).lower() or attempt == INIT_ATTEMPTS:
+                raise
+            logger.info("Schema preparation waited on a locked database; attempt=%d/%d", attempt, INIT_ATTEMPTS)
+            await asyncio.sleep(INIT_RETRY_SECONDS * attempt)
+
+
+async def _prepare_schema() -> None:
+    """Run the schema steps in one write transaction taken up front.
+
+    ``BEGIN IMMEDIATE`` has no ORM equivalent: SQLAlchemy's own transaction
+    starts deferred, as a reader, and is refused the moment it turns into a
+    writer behind another process. The steps run in this order for a reason: a
+    column has to exist before an index can name it, and a uniqueness rule a
+    newer release changed has to be replaced before ``ensure_indexes`` sees the
+    old index under the same name.
+    """
+    async with engine.connect() as raw:
+        connection = await raw.execution_options(isolation_level="AUTOCOMMIT")
+        await connection.exec_driver_sql("BEGIN IMMEDIATE")
+        try:
+            await connection.run_sync(Base.metadata.create_all)
+            await add_columns_with_default(connection)
+            await ensure_columns(connection)
+            await replace_unique_indexes(connection)
+            await ensure_indexes(connection)
+            await backfill_card_status(connection)
+            await remove_columns(connection)
+            await ensure_artifact_search(connection)
+        except BaseException:
+            await connection.exec_driver_sql("ROLLBACK")
+            raise
+        await connection.exec_driver_sql("COMMIT")
 
 
 async def backfill_card_status(connection: AsyncConnection) -> None:

@@ -9,6 +9,7 @@ owns ``runtime.json`` and the launcher that spawns a detached CLI process.
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -18,7 +19,7 @@ from ...config import settings
 from ...infra.log import get_logger
 from ...infra.scheduler import process_platform
 from ...infra.scheduler.runtime_state import RuntimeProcessController
-from ...schemas import RuntimeStatus, ServerStartResult
+from ...schemas import RuntimeStatus, ServerStartResult, UpdateRestartResult
 
 if TYPE_CHECKING:
     from ...infra.scheduler.processes import BackgroundServerProcess
@@ -27,6 +28,10 @@ logger = get_logger(__name__)
 
 #: Lines of the detached console log reprinted when startup fails.
 START_FAILURE_LOG_LINES = 20
+
+#: How long a restart helper waits before it stops the server that spawned it, so
+#: the HTTP answer that asked for the restart reaches the browser first.
+RESTART_DELAY_SECONDS = 1.0
 
 
 class BackgroundStartError(RuntimeError):
@@ -41,6 +46,7 @@ class RuntimeService:
         *,
         controller: RuntimeProcessController | None = None,
         launcher: Callable[..., BackgroundServerProcess] | None = None,
+        restart_launcher: Callable[..., BackgroundServerProcess] | None = None,
         timeout_seconds: float = settings.background_start_timeout_seconds,
         poll_seconds: float = 0.2,
     ) -> None:
@@ -48,6 +54,7 @@ class RuntimeService:
         # does not need for `zett status`, so it is resolved where it is used.
         self.controller = controller or RuntimeProcessController()
         self.launcher = launcher
+        self.restart_launcher = restart_launcher
         self.timeout_seconds = max(0.1, timeout_seconds)
         self.poll_seconds = max(0.01, poll_seconds)
 
@@ -79,6 +86,62 @@ class RuntimeService:
             url=f"http://{process_platform.dialable_host(host)}:{port}",
             log_path=str(log_path),
         )
+
+    async def restart_in_background(
+        self,
+        *,
+        host: str | None = None,
+        port: int | None = None,
+        reload: bool | None = None,
+        stop_timeout: float = 10.0,
+    ) -> ServerStartResult:
+        """Stop the recorded server, then detach a new one on the same address.
+
+        What is left unsaid is read from the runtime state the running server
+        recorded, so a bare ``zett restart`` brings back what was running: the
+        same host, port, and reload mode. With nothing running it simply starts.
+        """
+        state = await self.controller.store.read()
+        host = host or (state.host if state else None) or settings.host
+        port = port or (state.port if state else None) or settings.port
+        if reload is None:
+            reload = state.reload if state else False
+        await self.controller.stop(timeout=stop_timeout)
+        return await self.start_in_background(host=host, port=port, reload=reload)
+
+    async def request_restart(self) -> UpdateRestartResult:
+        """Hand a restart of *this* server to a detached helper and return at once.
+
+        Only a server that ``zett start`` recorded can be restarted, and only by
+        itself: the helper kills whatever the state file names, so a state that
+        belongs to another process must never be acted on from here.
+        """
+        state = await self.controller.store.read()
+        if state is None or state.host is None or state.port is None:
+            return UpdateRestartResult(
+                ok=False,
+                detail="This server was not started with `zett start`; restart it the way you started it.",
+            )
+        if state.server_pid not in {os.getpid(), os.getppid()}:
+            return UpdateRestartResult(
+                ok=False,
+                detail="The recorded server is another process; run `zett restart` from a terminal.",
+            )
+        from ...infra.scheduler.processes import BACKGROUND_LOG_FILE_NAME, launch_restart_helper
+
+        log_path = settings.log_directory / BACKGROUND_LOG_FILE_NAME
+        try:
+            launcher = self.restart_launcher or launch_restart_helper
+            launcher(
+                host=state.host,
+                port=state.port,
+                reload=state.reload,
+                log_path=log_path,
+                delay_seconds=RESTART_DELAY_SECONDS,
+            )
+        except OSError as error:
+            return UpdateRestartResult(ok=False, detail=f"Could not start the restart helper: {error}")
+        return UpdateRestartResult(ok=True, detail="Restarting")
 
     async def status(self) -> RuntimeStatus:
         """Report the recorded server and child processes.

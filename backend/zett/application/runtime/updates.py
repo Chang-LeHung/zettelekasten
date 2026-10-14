@@ -13,6 +13,7 @@ import asyncio
 import importlib.metadata
 import re
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from datetime import datetime, timedelta
 
 from ..._compat import UTC
@@ -129,21 +130,33 @@ class UpdateService:
         """Let this copy's installer install ``version`` while it is still the newest."""
         installer = self._installer_factory()
         if not installer.can_install:
-            return UpdateInstallResult(ok=False, version=version, detail=installer.detail)
+            return self._refused(version, installer.detail)
         if self._install_lock.locked():
-            return UpdateInstallResult(ok=False, version=version, detail="An update is already being installed")
+            return self._refused(version, "An update is already being installed")
         async with self._install_lock:
+            latest = version
             try:
                 latest = await self._client.latest_version()
             except PypiError as error:
-                return UpdateInstallResult(ok=False, version=version, detail=str(error))
-            if version_key(latest) != version_key(version):
-                return UpdateInstallResult(
-                    ok=False,
-                    version=version,
-                    detail=f"PyPI now publishes {latest}; check for updates again",
-                )
-            outcome = await self._runner(installer, f"{self._distribution}>={latest}")
+                # The check that offered this release already succeeded. Failing the install
+                # on a second, slow lookup would turn a flaky link into "cannot update", and
+                # the installer resolves the lower bound from the index itself.
+                logger.info("Skipping the pre-install lookup: %s", error)
+            else:
+                if version_key(latest) != version_key(version):
+                    return self._refused(version, f"PyPI now publishes {latest}; check for updates again")
+            requirement = f"{self._distribution}>={latest}"
+            outcome = await self._runner(installer, requirement)
+            if outcome.ok:
+                outcome = self._verified(outcome, latest)
+                if not outcome.ok and installer.fallback is not None:
+                    # It ran cleanly and nothing moved: the environment is pinned. Try the
+                    # reinstall that names the new lower bound.
+                    logger.info("The upgrade did not move %s; reinstalling it with a lower bound", latest)
+                    again = replace(installer, command=installer.fallback, fallback=None)
+                    outcome = await self._runner(again, requirement)
+                    if outcome.ok:
+                        outcome = self._verified(outcome, latest)
         if not outcome.ok:
             logger.info("Installing %s failed: %s", latest, outcome.detail)
         return UpdateInstallResult(
@@ -152,6 +165,28 @@ class UpdateService:
             needs_restart=outcome.ok,
             detail=outcome.detail,
             output_tail=outcome.output_tail,
+        )
+
+    @staticmethod
+    def _refused(version: str, detail: str) -> UpdateInstallResult:
+        """Answer an install that never ran: nothing changed, so nothing needs a restart."""
+        return UpdateInstallResult(ok=False, version=version, needs_restart=False, detail=detail)
+
+    def _verified(self, outcome: InstallOutcome, latest: str) -> InstallOutcome:
+        """Trust the disk over the installer's exit status.
+
+        Some installers exit cleanly without moving (`pipx upgrade` when a mirror has
+        not synced the release yet), and a restart would then promise a version that
+        was never installed.
+        """
+        installed = installed_version(self._distribution)
+        if version_key(installed) >= version_key(latest):
+            return outcome
+        return InstallOutcome(
+            False,
+            f"The installer finished, but {installed} is still installed; "
+            f"{latest} may not be available from your package index yet.",
+            outcome.output_tail,
         )
 
     async def _remembered(self) -> tuple[str, datetime] | None:

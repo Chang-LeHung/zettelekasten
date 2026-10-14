@@ -26,6 +26,7 @@ import { diffArtifactContent } from './utils/artifactDiff'
 import { artifactLifecycle, lifecycleClass, lifecycleHint, lifecycleLabel } from './utils/artifactLifecycle'
 import { cardStatusLabel, cardStatusType, isStruck, statusTone } from './utils/cardStatus'
 import { addTagPath } from './utils/tagAssignment'
+import { waitForRestart } from './utils/serverRestart'
 import { assetOpenAction, isPdfAsset } from './utils/assetOpen'
 import { createAsyncRefreshScheduler } from './utils/asyncRefresh'
 import { AtCommandInput, type AtCommandMatch } from './utils/atCommand'
@@ -393,6 +394,7 @@ const agentPermissionSaving = ref<'agent_may_delete_artifacts' | 'agent_may_dele
 const updateStatus = ref<UpdateStatus | null>(null)
 const updateChecking = ref(false)
 const updateInstalling = ref(false)
+const updateRestarting = ref(false)
 const usageActivity = ref<AgentUsageActivityDay[]>([])
 const modelUsageActivity = ref<AgentModelUsageActivitySeries[]>([])
 const usageActivityLoading = ref(false)
@@ -3703,6 +3705,37 @@ async function installAvailableUpdate(): Promise<void> {
   }
 }
 
+/**
+ * Restart this server so the release that was just installed is the one running.
+ * A helper stops the process that answers, so the page waits until a server that no
+ * longer asks for a restart answers, and then reloads to pick up its interface.
+ */
+async function restartZett(): Promise<void> {
+  if (updateRestarting.value) return
+  updateRestarting.value = true
+  try {
+    const result = await updateClient.restart()
+    if (!result.ok) {
+      showNotice(result.detail || t('Zett could not restart itself'), 'error')
+      return
+    }
+    const back = await waitForRestart({
+      now: () => Date.now(),
+      sleep: (milliseconds) => new Promise((resolve) => window.setTimeout(resolve, milliseconds)),
+      stillNeedsRestart: async () => (await updateClient.get()).restart_required,
+    })
+    if (back) {
+      window.location.reload()
+      return
+    }
+    showNotice(t('Zett did not come back; run `zett start` in a terminal'), 'error')
+  } catch (error) {
+    showNotice(errorMessage(error), 'error')
+  } finally {
+    updateRestarting.value = false
+  }
+}
+
 async function selectProvider(provider: AIProvider): Promise<void> {
   const generation = ++providerSelectionGeneration
   providerLoading.value = true
@@ -3977,17 +4010,22 @@ onBeforeUnmount(() => {
         <!--
           The update lives where the reader already looks for the running copy:
           one line above Settings, absent until PyPI has something newer that this copy
-          can install (a source checkout never shows it), and a click installs it.
+          can install (a source checkout never shows it), and a click installs it. Once
+          installed, the same spot becomes the button that restarts Zett into it.
         -->
-        <div
+        <button
           v-if="updateStatus?.restart_required"
           class="update-callout restart"
-          role="status"
+          type="button"
+          :disabled="updateRestarting"
+          :aria-busy="updateRestarting"
           :title="$t('Installed {version} — restart Zett to use it', { version: updateStatus.installed })"
+          @click="restartZett"
         >
           <svg><use href="#icon-refresh" /></svg>
-          <span>{{ $t('Restart Zett to use {version}', { version: updateStatus.installed }) }}</span>
-        </div>
+          <span>{{ updateRestarting ? $t('Restarting…') : $t('Restart Zett to use {version}', { version: updateStatus.installed }) }}</span>
+          <span v-if="updateRestarting" class="button-spinner" aria-hidden="true" />
+        </button>
         <button
           v-else-if="updateStatus?.can_install"
           class="update-callout"
@@ -5027,9 +5065,10 @@ kbd { margin-left: auto; padding: 0.12rem 0.34rem; border: 1px solid rgba(29,29,
 /* The update sits in the sidebar footer, right above Settings: it appears only
    while PyPI has a newer release, and the whole row is the install button. */
 .update-callout { display: flex; align-items: center; gap: .5rem; width: 100%; margin-bottom: .5rem; padding: .5rem .6rem; border: 1px solid rgba(63,96,76,.18); border-radius: .72rem; color: #33513f; background: linear-gradient(180deg, #eef5f0, #e4eee8); cursor: pointer; font-size: .72rem; font-weight: 600; text-align: left; transition: background 160ms ease, transform 160ms ease; }
-.update-callout.restart { cursor: default; color: #7a5a1d; border-color: rgba(122,90,29,.2); background: linear-gradient(180deg, #faf3e3, #f3e9cf); }
+.update-callout.restart { color: #7a5a1d; border-color: rgba(122,90,29,.2); background: linear-gradient(180deg, #faf3e3, #f3e9cf); }
 .update-callout:hover:not(:disabled) { background: linear-gradient(180deg, #e6f1ea, #d9e8e0); transform: translateY(-1px); }
-.update-callout.restart:hover { background: linear-gradient(180deg, #faf3e3, #f3e9cf); transform: none; }
+.update-callout.restart:hover:not(:disabled) { background: linear-gradient(180deg, #f6edd4, #eddfbc); transform: translateY(-1px); }
+.update-callout.restart .button-spinner { border-color: rgba(122,90,29,.3); border-top-color: #7a5a1d; }
 .update-callout:disabled { cursor: progress; opacity: .8; }
 .update-callout svg { width: .95rem; height: .95rem; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .update-callout span:not(.button-spinner) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

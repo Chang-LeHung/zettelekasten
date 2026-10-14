@@ -57,7 +57,9 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
         await runtime_state_store.write(
             ServerRuntimeState(
                 server_pid=server_pid,
+                host=existing_state.host if existing_state is not None else None,
                 port=settings.port,
+                reload=existing_state.reload if existing_state is not None else False,
                 scheduler_pids=existing_state.scheduler_pids if existing_state is not None else [],
                 worker_pids=existing_state.worker_pids if existing_state is not None else [],
                 started_at=datetime.now(UTC),
