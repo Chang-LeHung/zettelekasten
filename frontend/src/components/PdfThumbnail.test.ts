@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { createApp, h, nextTick, ref } from 'vue'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { getDocument } from 'pdfjs-dist'
 import { assetClient } from '../api/client'
@@ -9,8 +9,25 @@ import PdfThumbnail from './PdfThumbnail.vue'
 import appSource from '../views/LibraryView.vue?raw'
 import thumbnailSource from './PdfThumbnail.vue?raw'
 
-// The library card's styles live beside the other app styles, not in the component that renders it.
-const appStyles = readFileSync(resolve(process.cwd(), 'src/styles/app/library.css'), 'utf8')
+/**
+ * The library card's styles live beside the other app styles, not in the component
+ * that renders it. Look in this package and beside it, so the file is found whether
+ * the suite runs from `frontend/` or from the repository root.
+ */
+function readAppStyle(name: string): string {
+  const relative = join('src', 'styles', 'app', name)
+  const candidates: string[] = []
+  let directory = process.cwd()
+  for (let level = 0; level < 4; level += 1) {
+    candidates.push(join(directory, relative), join(directory, 'frontend', relative))
+    directory = dirname(directory)
+  }
+  const found = candidates.find((candidate) => existsSync(candidate))
+  if (!found) throw new Error(`src/styles/app/${name} was not found above ${process.cwd()}`)
+  return readFileSync(found, 'utf8')
+}
+
+const appStyles = readAppStyle('library.css')
 
 vi.mock('pdfjs-dist', () => ({ GlobalWorkerOptions: {}, getDocument: vi.fn() }))
 vi.mock('../api/client', () => ({
