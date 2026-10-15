@@ -1,0 +1,111 @@
+.primary-nav button small, .tag-list small { font-size: .73rem; }
+kbd, .card-type, .card-tags span { font-size: .69rem; }
+.sidebar-heading { font-size: .72rem; }
+.tag-list button { font-size: .84rem; }
+.sidebar-empty { font-size: .79rem; line-height: 1.45; }
+.chat-topbar-title { font-size: .82rem; }
+.search-field input { font-size: .91rem; }
+.primary-action, .secondary-action, .text-button { font-size: .87rem; }
+.eyebrow { font-size: .72rem; }
+.page-heading p:last-child, .settings-intro p, .editor-intro p { font-size: .89rem; }
+.card time { font-size: .71rem; }
+.card h2 { font-size: 1.14rem; }
+.card > .card-excerpt, .empty-state p { font-size: .86rem; }
+.agent-identity strong { font-size: .86rem; }
+.agent-identity small, .streaming-status { font-size: .66rem; }
+.agent-welcome > p { font-size: .84rem; }
+.prompt-hints button { font-size: .72rem; }
+.agent-input textarea, .composer-input-mirror { font-size: .88rem; }
+.agent-input-footer small { font-size: .63rem; }
+.artifact-placeholder p { font-size: .78rem; }
+.provider-picker { font-size: .68rem; }
+.provider-picker select, .conversation-heading select { font-size: .78rem; }
+.composer-footer > span, .conversation-heading > span { font-size: .74rem; }
+.message-content, .message-body > p { font-size: .82rem; }
+.chat-composer textarea { font-size: .82rem; }
+.chat-composer > small { font-size: .63rem; }
+.ai-badge { font-size: .72rem; }
+.field, .suggestions > span { font-size: .8rem; }
+.field input, .field select, .field textarea { font-size: .88rem; }
+.field > small { font-size: .72rem; }
+.suggestion-list label { font-size: .74rem; }
+.suggestion-list small, .provider-list small { font-size: .65rem; }
+.provider-list strong { font-size: .8rem; }
+.settings-actions > span, .switch small { font-size: .75rem; }
+.danger-button { font-size: .77rem; }
+.detail-loading, .detail-tags span { font-size: .7rem; }
+.detail-summary { font-size: .94rem; }
+.detail-subtitle { margin: -.55rem 0 1rem; color: var(--secondary); font-size: .9rem; line-height: 1.5; }
+.detail-section h2 { font-size: .71rem; }
+.detail-section p, .detail-body { font-size: .92rem; }
+.raw-section .detail-body { font-size: .83rem; }
+.detail-metadata dt { font-size: .65rem; }
+.detail-metadata dd { font-size: .76rem; }
+.toast { font-size: .82rem; }
+
+@media (max-width: 760px) {
+  .app-shell { display: block; padding-bottom: 4.6rem; }
+  .sidebar { position: fixed; top: auto; bottom: 0; width: 100%; height: 4.25rem; display: block; padding: .45rem max(.65rem, env(safe-area-inset-right)) max(.45rem, env(safe-area-inset-bottom)) max(.65rem, env(safe-area-inset-left)); border: 0; border-top: 1px solid rgba(255,255,255,.7); box-shadow: 0 -1px rgba(29,29,31,.07); }
+  .brand, .sidebar-section { display: none; }
+  .primary-nav { display: grid; grid-template-columns: repeat(4, 1fr); width: 67%; }
+  .primary-nav button, .sidebar-footer button { height: 3.25rem; flex-direction: column; justify-content: center; gap: .2rem; padding: 0; font-size: .68rem; }
+  .primary-nav button small, .primary-nav kbd, .status-dot { display: none; }
+  .primary-nav button svg, .sidebar-footer button svg { width: 1.15rem; height: 1.15rem; }
+  .sidebar-footer { position: absolute; right: .65rem; bottom: max(.45rem, env(safe-area-inset-bottom)); width: calc((100% - 1.3rem) / 3); display: grid; grid-template-columns: repeat(2, 1fr); padding: 0; border: 0; }
+  .sidebar-footer .channels-nav-button { margin-bottom: 0; }
+  /* The update row spans the two icon columns above the Settings button. */
+  .sidebar-footer .update-callout { grid-column: 1 / -1; margin-bottom: .35rem; justify-content: center; }
+  .sidebar-footer .update-callout span:not(.button-spinner) { display: none; }
+  .topbar { min-height: 4.5rem; padding: .8rem 1rem; }
+  .topbar .primary-action { width: 2.65rem; padding: 0; font-size: 0; }
+  .topbar .primary-action svg { width: 1rem; height: 1rem; }
+  .content { padding: 1.3rem 1rem 3rem; }
+  .card-grid { grid-template-columns: 1fr; }
+  .card { min-height: 13rem; }
+  .form-grid, .taxonomy-form { grid-template-columns: 1fr; }
+  .artifact-pane .form-grid { grid-template-columns: 1fr; }
+  .assets-header-actions .asset-import-action { width: 1.72rem; padding: 0; }
+  .asset-import-action span { display: none; }
+  .refinement-workspace { grid-template-columns: 1fr; }
+  .initial-agent-layout.streaming { grid-template-columns: 1fr; }
+  .agent-workspace { height: auto; min-height: 0; grid-template-columns: 1fr; }
+  .assets-pane { min-height: 28rem; max-height: 70vh; }
+  .agent-chat { min-height: 70vh; }
+  .artifact-pane { min-height: 30rem; }
+  .composer-submit small { display: none; }
+  .conversation-panel { position: static; }
+  .field.full { grid-column: auto; }
+  .settings-actions, .panel-heading { align-items: flex-start; }
+  .settings-actions { flex-direction: column; }
+  .settings-actions .primary-action, .taxonomy-form .primary-action { width: 100%; }
+  .toast { left: 50%; width: max-content; max-width: calc(100% - 2rem); }
+  .detail-sheet { width: 100%; }
+  .detail-content { padding: 1rem 1.2rem 5rem; }
+  .detail-metadata { grid-template-columns: 1fr; }
+}
+
+@media (min-width: 761px) and (max-width: 1180px) {
+  .refinement-workspace { grid-template-columns: 1fr; }
+  .initial-agent-layout.streaming { grid-template-columns: 1fr; }
+  .agent-workspace { height: auto; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); align-items: stretch; }
+  .agent-chat { grid-column: 1; grid-row: 1; min-height: 42rem; }
+  .artifact-pane { grid-column: 2; grid-row: 1; min-height: 42rem; }
+  .assets-pane { grid-column: 1 / -1; grid-row: 2; min-height: 14rem; max-height: 28rem; }
+  .conversation-panel { position: static; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 120ms !important; }
+  .card:hover { transform: none; }
+  .material-enter-from, .material-leave-to { transform: none; filter: none; }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .sidebar, .topbar, .card, .artifact-panel, .toast { background: #f6f6f8; backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .settings-card, .composer { background: #fff; }
+}
+
+@media (prefers-contrast: more) {
+  :root { --line: rgba(0,0,0,.35); }
+  .sidebar, .topbar, .card, .settings-card, .composer, .artifact-panel { border-color: rgba(0,0,0,.35); background: #fff; }
+}
