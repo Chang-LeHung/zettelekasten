@@ -22,13 +22,13 @@ const request = { conversationId: 's', providerId: 'p', reasoningEffort: 'medium
 it('keeps arguments and reverse parallel results on the right call, not the tool name', async () => {
   mockStream([
     ['tool_started', { tool_calls: [
-      { id: 'slow', name: 'run_shell', arguments: { command: 'echo slow' } },
-      { id: 'fast', name: 'run_shell', arguments: { command: 'echo fast' } },
-      { id: 'skip', name: 'run_shell', arguments: { command: 'echo skip' } },
+      { id: 'slow', name: 'bash', arguments: { command: 'echo slow' } },
+      { id: 'fast', name: 'bash', arguments: { command: 'echo fast' } },
+      { id: 'skip', name: 'bash', arguments: { command: 'echo skip' } },
     ] }],
-    ['tool_completed', { message: { tool_call_id: 'fast', name: 'run_shell', success: true, output: 'fast output' } }],
-    ['tool_failed', { message: { tool_call_id: 'slow', name: 'run_shell', success: false }, error: { message: 'command failed' } }],
-    ['tool_skipped', { message: { tool_call_id: 'skip', name: 'run_shell', output: 'skipped' } }],
+    ['tool_completed', { message: { tool_call_id: 'fast', name: 'bash', success: true, output: 'fast output' } }],
+    ['tool_failed', { message: { tool_call_id: 'slow', name: 'bash', success: false }, error: { message: 'command failed' } }],
+    ['tool_skipped', { message: { tool_call_id: 'skip', name: 'bash', output: 'skipped' } }],
   ])
   let timeline: AgentTimelineEntry[] = []
   await new ZettClient().streamTurn({ ...request, onEvent: event => { timeline = updateTimeline(timeline, event) } })
@@ -43,8 +43,8 @@ it('separates thinking and intermediate text from the final answer using the web
     ['reasoning_delta', { delta: '先检查' }],
     ['reasoning_delta', { delta: '页面。' }],
     ['text_delta', { delta: 'I will check.' }],
-    ['tool_started', { tool_calls: [{ id: '1', name: 'run_shell', arguments: {} }] }],
-    ['tool_completed', { message: { tool_call_id: '1', name: 'run_shell', success: true, output: 'ok' } }],
+    ['tool_started', { tool_calls: [{ id: '1', name: 'bash', arguments: {} }] }],
+    ['tool_completed', { message: { tool_call_id: '1', name: 'bash', success: true, output: 'ok' } }],
     ['text_delta', { delta: 'Final ' }],
     ['text_delta', { delta: 'answer.' }],
   ])

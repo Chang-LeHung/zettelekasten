@@ -528,7 +528,7 @@ it('uses expandable web tool rows and preserves their open state when a result a
   const host = await mount()
   await send(host)
   options.onEvent?.({ id: 'thinking', type: 'reasoning', content: 'Inspect the page first.' })
-  options.onEvent?.({ id: 'tool-1', type: 'tool', activity: { id: '1', name: 'run_shell', state: 'started', arguments: { command: 'echo hello' } } })
+  options.onEvent?.({ id: 'tool-1', type: 'tool', activity: { id: '1', name: 'bash', state: 'started', arguments: { command: 'echo hello' } } })
   await nextTick()
   const tool = host.querySelector<HTMLDetailsElement>('.tool-activity')!
   tool.querySelector('summary')!.click()
@@ -536,7 +536,7 @@ it('uses expandable web tool rows and preserves their open state when a result a
   expect(tool.open).toBe(true)
   expect(tool.textContent).toContain('echo hello')
   expect(tool.textContent).toContain('Waiting for result')
-  options.onEvent?.({ id: 'tool-1', type: 'tool', activity: { id: '1', name: 'run_shell', state: 'succeeded', output: 'hello' } })
+  options.onEvent?.({ id: 'tool-1', type: 'tool', activity: { id: '1', name: 'bash', state: 'succeeded', output: 'hello' } })
   options.onEvent?.({ id: 'answer', type: 'message', content: '**Final answer**' })
   await nextTick()
   expect(host.querySelectorAll('.tool-activity')).toHaveLength(1)
@@ -578,7 +578,7 @@ it('keeps a manually collapsed running turn collapsed and preserves text typed f
 it('retains failed-turn details and stops showing abandoned tools as running', async () => {
   const host = await mount()
   await send(host)
-  options.onEvent?.({ id: 'tool-1', type: 'tool', activity: { id: '1', name: 'run_shell', state: 'started', arguments: { command: 'echo hello' } } })
+  options.onEvent?.({ id: 'tool-1', type: 'tool', activity: { id: '1', name: 'bash', state: 'started', arguments: { command: 'echo hello' } } })
   fail(new Error('Connection lost'))
   await flush()
   expect(host.querySelector('.tool-activity.cancelled')).not.toBeNull()
