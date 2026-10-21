@@ -16,10 +16,10 @@ from zett_agent.tools.base import (
     tool,
 )
 
-from ..._compat import Self
-from ...application.scheduled_tasks import scheduled_task_service
-from ...infra.persistence.dao import provider_storage
-from ...schemas import (
+from zett._compat import Self
+from zett.application.scheduled_tasks import scheduled_task_service
+from zett.infra.persistence.dao import provider_storage
+from zett.schemas import (
     AGENT_PROMPT_ACTION_KIND,
     AgentPromptAction,
     CronSchedule,

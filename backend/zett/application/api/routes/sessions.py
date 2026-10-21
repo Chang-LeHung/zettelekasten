@@ -5,11 +5,15 @@ import asyncio
 from fastapi import APIRouter, HTTPException, Query, status
 from zett_agent.extensions.shell_approval import ShellApprovalMode
 
-from ....agent.config import SYSTEM_PROMPT
-from ....infra.agent.runtime import get_agent_runtime_storage
-from ....infra.agent.shell_approval import shell_approval_storage
-from ....infra.persistence.dao import artifact_storage, session_asset_storage, session_storage
-from ....schemas import (
+from zett.agent.config import SYSTEM_PROMPT
+from zett.application.agent.presentation import message_out, session_out
+from zett.application.agent.session_context import SessionContextComposition, session_context_composition_service
+from zett.application.agent.session_preferences import SessionModelPreference, session_model_preference_service
+from zett.application.agent.session_titles import DEFAULT_SESSION_TITLE
+from zett.infra.agent.runtime import get_agent_runtime_storage
+from zett.infra.agent.shell_approval import shell_approval_storage
+from zett.infra.persistence.dao import artifact_storage, session_asset_storage, session_storage
+from zett.schemas import (
     AgentSessionCreate,
     AgentSessionTitleUpdate,
     ArtifactListOptions,
@@ -17,10 +21,7 @@ from ....schemas import (
     SessionListOptions,
     SessionType,
 )
-from ...agent.presentation import message_out, session_out
-from ...agent.session_context import SessionContextComposition, session_context_composition_service
-from ...agent.session_preferences import SessionModelPreference, session_model_preference_service
-from ...agent.session_titles import DEFAULT_SESSION_TITLE
+
 from ..schemas import AgentStartOut, DeleteResponse, PersistedMessageOut, SessionOut, ShellApprovalSettings
 
 router = APIRouter(prefix="/agent", tags=["sessions"])

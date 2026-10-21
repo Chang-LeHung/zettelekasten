@@ -3,8 +3,9 @@
 from pathlib import Path
 from uuid import UUID
 
-from ...application.files.object_store import ObjectKey, latex_project_key
-from ...schemas import LatexPdfArtifactContent, LatexPdfArtifactCreate
+from zett.application.files.object_store import ObjectKey, latex_project_key
+from zett.schemas import LatexPdfArtifactContent, LatexPdfArtifactCreate
+
 from ..files.object_store import get_object_store
 
 

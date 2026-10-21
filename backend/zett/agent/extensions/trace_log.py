@@ -34,7 +34,7 @@ from zett_agent.model import (
 )
 from zett_agent.tools.base import ToolResult
 
-from ...infra.log import LOG_PREVIEW_CHARS, get_logger, log_preview
+from zett.infra.log import LOG_PREVIEW_CHARS, get_logger, log_preview
 
 logger = get_logger(__name__)
 

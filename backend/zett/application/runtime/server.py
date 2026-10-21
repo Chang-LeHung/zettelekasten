@@ -15,14 +15,14 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ...config import settings
-from ...infra.log import get_logger
-from ...infra.scheduler import process_platform
-from ...infra.scheduler.runtime_state import RuntimeProcessController
-from ...schemas import RuntimeStatus, ServerStartResult, UpdateRestartResult
+from zett.config import settings
+from zett.infra.log import get_logger
+from zett.infra.scheduler import process_platform
+from zett.infra.scheduler.runtime_state import RuntimeProcessController
+from zett.schemas import RuntimeStatus, ServerStartResult, UpdateRestartResult
 
 if TYPE_CHECKING:
-    from ...infra.scheduler.processes import BackgroundServerProcess
+    from zett.infra.scheduler.processes import BackgroundServerProcess
 
 logger = get_logger(__name__)
 
@@ -67,7 +67,7 @@ class RuntimeService:
         and reported with the tail of its console log, because a detached
         process has no other way to explain itself.
         """
-        from ...infra.scheduler.processes import BACKGROUND_LOG_FILE_NAME, launch_background_server
+        from zett.infra.scheduler.processes import BACKGROUND_LOG_FILE_NAME, launch_background_server
 
         await self.controller.prepare_start(port=port)
         log_path = settings.log_directory / BACKGROUND_LOG_FILE_NAME
@@ -127,7 +127,7 @@ class RuntimeService:
                 ok=False,
                 detail="The recorded server is another process; run `zett restart` from a terminal.",
             )
-        from ...infra.scheduler.processes import BACKGROUND_LOG_FILE_NAME, launch_restart_helper
+        from zett.infra.scheduler.processes import BACKGROUND_LOG_FILE_NAME, launch_restart_helper
 
         log_path = settings.log_directory / BACKGROUND_LOG_FILE_NAME
         try:

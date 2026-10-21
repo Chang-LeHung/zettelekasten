@@ -2,12 +2,13 @@
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
-from ....infra.log import get_logger, log_preview
-from ....infra.persistence.dao import session_asset_storage, session_storage
-from ....schemas import SessionAssetCreate, SessionAssetEntity, SessionAssetListOptions, SessionAssetType
-from ...assets.asset_names import AssetRenameIn, rename_asset
-from ...assets.static_assets import static_asset_service
-from ...runtime.settings import runtime_settings_service
+from zett.application.assets.asset_names import AssetRenameIn, rename_asset
+from zett.application.assets.static_assets import static_asset_service
+from zett.application.runtime.settings import runtime_settings_service
+from zett.infra.log import get_logger, log_preview
+from zett.infra.persistence.dao import session_asset_storage, session_storage
+from zett.schemas import SessionAssetCreate, SessionAssetEntity, SessionAssetListOptions, SessionAssetType
+
 from ..schemas import DeleteResponse, LinkAssetIn, TextAssetIn
 
 router = APIRouter(prefix="/agent/{session_id}/assets", tags=["assets"])

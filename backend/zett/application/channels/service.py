@@ -16,10 +16,10 @@ import qrcode
 from qrcode.image.svg import SvgPathImage
 from zett_agent.ids import new_uuid7
 
-from ..._compat import UTC
-from ...infra.log import get_logger, log_preview
-from ...infra.plugins import PluginRegistry, ZettKVStorage, build_registry
-from ...plugins import (
+from zett._compat import UTC
+from zett.infra.log import get_logger, log_preview
+from zett.infra.plugins import PluginRegistry, ZettKVStorage, build_registry
+from zett.plugins import (
     MAX_CHANNEL_MEDIA_BYTES,
     MAX_CHANNEL_MEDIA_ITEMS,
     MAX_CHANNEL_MEDIA_TOTAL_BYTES,
@@ -32,7 +32,7 @@ from ...plugins import (
     PluginError,
     PluginLoadError,
 )
-from ...schemas import (
+from zett.schemas import (
     Channel,
     ChannelLogin,
     ChannelLoginStart,
@@ -41,6 +41,7 @@ from ...schemas import (
     ChannelType,
     ChannelUpdate,
 )
+
 from .agent import AgentClient, AgentEventKind, AgentTurnRequest, ZettIMAgentClient
 from .store import ChannelDraft, ChannelRuntime, ChannelStore
 

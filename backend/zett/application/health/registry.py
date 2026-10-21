@@ -5,8 +5,8 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 
-from ..._compat import UTC
-from ...schemas import (
+from zett._compat import UTC
+from zett.schemas import (
     ProcessHeartbeatIn,
     ProcessHeartbeatRecord,
     ProcessHeartbeatStatus,

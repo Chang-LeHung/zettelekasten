@@ -2,10 +2,11 @@
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
-from ....infra.log import get_logger, log_preview
-from ....schemas import StaticAssetEntity, StaticAssetListOptions
-from ...assets.static_assets import static_asset_service
-from ...tags.tagging import tag_service
+from zett.application.assets.static_assets import static_asset_service
+from zett.application.tags.tagging import tag_service
+from zett.infra.log import get_logger, log_preview
+from zett.schemas import StaticAssetEntity, StaticAssetListOptions
+
 from ..schemas import DeleteResponse
 
 router = APIRouter(prefix="/assets", tags=["assets"])

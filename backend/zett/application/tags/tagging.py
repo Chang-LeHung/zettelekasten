@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ...infra.persistence.dao import artifact_storage, static_asset_storage, tag_storage
-from ...schemas import (
+from zett.infra.persistence.dao import artifact_storage, static_asset_storage, tag_storage
+from zett.schemas import (
     AgentArtifactEntity,
     ArtifactContent,
     ArtifactStatus,

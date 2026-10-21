@@ -6,12 +6,13 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from time import monotonic
 
-from ..._compat import UTC, timeout
-from ...schemas import (
+from zett._compat import UTC, timeout
+from zett.schemas import (
     ScheduledTaskEntity,
     ScheduledTaskRunStatus,
     ScheduledTaskTrigger,
 )
+
 from ..log import get_logger
 from ..persistence.dao import ScheduledTaskStorage, scheduled_task_storage
 from .contracts import (

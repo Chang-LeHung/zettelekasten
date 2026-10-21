@@ -19,10 +19,11 @@ from datetime import datetime
 from mimetypes import guess_extension
 from pathlib import Path
 
-from ..._compat import UTC
-from ...infra.files.object_store import get_object_store
-from ...infra.log import get_logger
-from ...messages import FrontUserMessage, MessagePartCodec
+from zett._compat import UTC
+from zett.infra.files.object_store import get_object_store
+from zett.infra.log import get_logger
+from zett.messages import FrontUserMessage, MessagePartCodec
+
 from ..files.object_store import session_directory_key, session_upload_key
 
 logger = get_logger(__name__)

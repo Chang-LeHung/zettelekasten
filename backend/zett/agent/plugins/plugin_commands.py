@@ -8,7 +8,8 @@ register under another owner's namespace or collide with a built-in.
 
 from __future__ import annotations
 
-from ...plugins import AgentCommandRegistry
+from zett.plugins import AgentCommandRegistry
+
 from ..at_command import AtCommandDefinition, AtCommandHandler, AtCommandSource
 from ..container import ZettelkastenContainer
 from ..slash import SlashCommandDefinition, SlashCommandHandler

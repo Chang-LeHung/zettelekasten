@@ -5,7 +5,7 @@ from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
 
-from ...config import settings
+from zett.config import settings
 
 
 def _read_or_create_key(path: Path) -> bytes:

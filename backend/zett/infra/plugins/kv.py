@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from ...plugins import JsonValue, KVStorage
+from zett.plugins import JsonValue, KVStorage
+
 from ..persistence.dao import KeyValueStorage, key_value_storage
 
 

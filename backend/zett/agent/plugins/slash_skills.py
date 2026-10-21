@@ -18,7 +18,8 @@ from zett_agent.messages import (
     UserMessage,
 )
 
-from ...messages import MessagePartCodec
+from zett.messages import MessagePartCodec
+
 from ..container import ZettelkastenContainer, ZettelkastenExt
 from ..slash import SlashCommandInvocation
 

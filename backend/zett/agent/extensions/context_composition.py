@@ -27,7 +27,7 @@ from zett_agent.model import (
     ModelResponse,
 )
 
-from ..._compat import TypeAliasType
+from zett._compat import TypeAliasType
 
 CONTEXT_COMPOSITION_EVENT = "context_composition"
 #: The o200k BPE table costs about a tenth of a second to load, and a process

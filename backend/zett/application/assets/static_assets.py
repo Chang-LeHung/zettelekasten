@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ...infra.persistence.dao import session_asset_storage, static_asset_storage
-from ...schemas import StaticAssetCreate, StaticAssetEntity, StaticAssetListOptions
+from zett.infra.persistence.dao import session_asset_storage, static_asset_storage
+from zett.schemas import StaticAssetCreate, StaticAssetEntity, StaticAssetListOptions
+
 from ..runtime.settings import runtime_settings_service
 
 

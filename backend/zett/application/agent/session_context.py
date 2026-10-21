@@ -13,8 +13,8 @@ from zett_agent.storage import (
     SQLiteSessionStorage,
 )
 
-from ...agent.extensions.context_composition import context_composition
-from ...infra.persistence.dao import KeyValueStorage, key_value_storage
+from zett.agent.extensions.context_composition import context_composition
+from zett.infra.persistence.dao import KeyValueStorage, key_value_storage
 
 SESSION_CONTEXT_KEY_PREFIX = "sessions.context-composition."
 

@@ -3,9 +3,9 @@
 from collections.abc import Callable
 from datetime import datetime
 
-from ..._compat import UTC
-from ...config import settings
-from ...schemas import (
+from zett._compat import UTC
+from zett.config import settings
+from zett.schemas import (
     ProcessHealthReport,
     ProcessHeartbeatRecord,
     ProcessHeartbeatStatus,
@@ -13,6 +13,7 @@ from ...schemas import (
     ProcessRole,
     ProcessRoleHealth,
 )
+
 from .registry import ProcessHeartbeatRegistry, process_heartbeat_registry
 
 

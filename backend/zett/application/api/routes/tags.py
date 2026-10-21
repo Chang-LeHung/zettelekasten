@@ -2,8 +2,9 @@
 
 from fastapi import APIRouter, HTTPException, Query, status
 
-from ....schemas import AgentArtifactEntity, StaticAssetEntity, TagEntity, TagTargetType, TagTreeEntity
-from ...tags.tagging import tag_service
+from zett.application.tags.tagging import tag_service
+from zett.schemas import AgentArtifactEntity, StaticAssetEntity, TagEntity, TagTargetType, TagTreeEntity
+
 from ..schemas import ArtifactTagsIn, AssetTagsIn, TagCreateIn, TagUpdateIn
 
 router = APIRouter(prefix="/library/tags", tags=["library-tags"])

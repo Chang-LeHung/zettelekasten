@@ -37,8 +37,8 @@ from zett_agent.tools.base import (
     AgentTool,
 )
 
-from ...infra.log import get_logger
-from ...plugins import AgentPlugin, PluginError
+from zett.infra.log import get_logger
+from zett.plugins import AgentPlugin, PluginError
 
 logger = get_logger(__name__)
 

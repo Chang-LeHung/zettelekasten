@@ -10,8 +10,9 @@ from weakref import WeakKeyDictionary
 from sqlalchemy import select
 from zett_agent.ids import new_uuid7
 
-from ...._compat import UTC
-from ....schemas import JsonValue, KeyValueRecord
+from zett._compat import UTC
+from zett.schemas import JsonValue, KeyValueRecord
+
 from ..database import session_scope
 from ..tables import KeyValueRow
 

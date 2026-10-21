@@ -28,7 +28,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
-from ...schemas import (
+from zett.schemas import (
     AgentArtifactEntity,
     ArticleArtifactContent,
     ArtifactContent,

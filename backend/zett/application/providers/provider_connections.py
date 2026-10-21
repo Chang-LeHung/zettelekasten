@@ -11,10 +11,10 @@ from zett_agent.model import (
     ReasoningEffort,
 )
 
-from ..._compat import timeout
-from ...agent.model_factory import create_model
-from ...infra.log import get_logger
-from ...schemas import ProviderConnection
+from zett._compat import timeout
+from zett.agent.model_factory import create_model
+from zett.infra.log import get_logger
+from zett.schemas import ProviderConnection
 
 logger = get_logger(__name__)
 

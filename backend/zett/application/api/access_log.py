@@ -23,8 +23,8 @@ from time import monotonic
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from ...config import settings
-from ...infra.log import get_logger, log_preview
+from zett.config import settings
+from zett.infra.log import get_logger, log_preview
 
 logger = get_logger(__name__)
 

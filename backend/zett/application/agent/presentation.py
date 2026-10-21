@@ -11,8 +11,9 @@ from zett_agent.messages import (
     UserMessage,
 )
 
-from ...messages import FrontMessagePart, MessagePartCodec
-from ...schemas import session_type_from_code
+from zett.messages import FrontMessagePart, MessagePartCodec
+from zett.schemas import session_type_from_code
+
 from ..api.schemas import (
     PersistedMessageOut,
     PersistedToolCallOut,

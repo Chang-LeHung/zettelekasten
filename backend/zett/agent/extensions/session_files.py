@@ -10,8 +10,8 @@ from zett_agent.messages import (
     SystemMessage,
 )
 
-from ...application.files.object_store import session_directory_key
-from ...infra.files.object_store import get_object_store
+from zett.application.files.object_store import session_directory_key
+from zett.infra.files.object_store import get_object_store
 
 
 class SessionFilesExtension(AgentExtension):

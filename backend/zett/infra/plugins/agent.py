@@ -10,8 +10,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from importlib.metadata import EntryPoint, entry_points
 
-from ...infra.log import get_logger
-from ...plugins import (
+from zett.infra.log import get_logger
+from zett.plugins import (
     AGENT_PLUGIN_API_VERSION,
     AGENT_PLUGIN_ENTRY_POINT_GROUP,
     AgentPlugin,

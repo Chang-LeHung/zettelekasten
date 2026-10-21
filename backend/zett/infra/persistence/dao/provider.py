@@ -9,9 +9,10 @@ from enum import IntEnum
 from sqlalchemy import or_, select
 from zett_agent.ids import new_uuid7
 
-from ...._compat import UTC
-from ....schemas import ProviderConnection, ProviderEntity, ProviderListOptions, ProviderType, ProviderWrite
-from ...security.secrets import decrypt_secret, encrypt_secret
+from zett._compat import UTC
+from zett.infra.security.secrets import decrypt_secret, encrypt_secret
+from zett.schemas import ProviderConnection, ProviderEntity, ProviderListOptions, ProviderType, ProviderWrite
+
 from ..database import session_scope
 from ..storage import AsyncStorage
 from ..tables import ProviderRow
