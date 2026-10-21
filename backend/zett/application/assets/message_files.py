@@ -1,7 +1,7 @@
 """Persist the files that arrived with one conversation turn.
 
 The browser submits pasted images as base64 data URLs inside the user message,
-so the model receives pixels but no file it can hand to ``view_image``, LaTeX, or
+so the model receives pixels but no file it can hand to ``read``, LaTeX, or
 a shell command. This service writes those same bytes below the owning session's
 directory when the message is submitted, which is the location the session-files
 system message names for the model.
@@ -19,10 +19,11 @@ from datetime import datetime
 from mimetypes import guess_extension
 from pathlib import Path
 
-from ..._compat import UTC
-from ...infra.files.object_store import get_object_store
-from ...infra.log import get_logger
-from ...messages import FrontUserMessage, MessagePartCodec
+from zett._compat import UTC
+from zett.infra.files.object_store import get_object_store
+from zett.infra.log import get_logger
+from zett.messages import FrontUserMessage, MessagePartCodec
+
 from ..files.object_store import session_directory_key, session_upload_key
 
 logger = get_logger(__name__)

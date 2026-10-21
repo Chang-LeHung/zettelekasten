@@ -6,7 +6,8 @@ from enum import IntEnum
 from sqlalchemy import Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ....schemas import TagTargetType
+from zett.schemas import TagTargetType
+
 from .base import Base
 
 

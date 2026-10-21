@@ -29,21 +29,8 @@ if TYPE_CHECKING:
         SlidesArtifactPatch,
         apply_artifact_patch,
     )
-    from .assets import (
-        SessionAssetCreate,
-        SessionAssetEntity,
-        SessionAssetType,
-        StaticAssetCreate,
-        StaticAssetEntity,
-    )
-    from .cards import (
-        CARD_STATUSES,
-        CardStatus,
-        CardType,
-        default_status,
-        normalize_card_type,
-        statuses_for,
-    )
+    from .assets import SessionAssetCreate, SessionAssetEntity, SessionAssetType, StaticAssetCreate, StaticAssetEntity
+    from .cards import CARD_STATUSES, CardStatus, CardType, default_status, normalize_card_type, statuses_for
     from .channels import (
         Channel,
         ChannelLogin,
@@ -53,15 +40,7 @@ if TYPE_CHECKING:
         ChannelType,
         ChannelUpdate,
     )
-    from .common import (
-        DataImageUrl,
-        HttpUrl,
-        ImageUrl,
-        JsonValue,
-        NonBlankName100,
-        NonBlankName200,
-        NonBlankName500,
-    )
+    from .common import DataImageUrl, HttpUrl, ImageUrl, JsonValue, NonBlankName100, NonBlankName200, NonBlankName500
     from .key_value import KeyValueRecord
     from .options import (
         ArtifactListOptions,
@@ -84,17 +63,8 @@ if TYPE_CHECKING:
         ServerRuntimeState,
         ServerStartResult,
     )
-    from .providers import (
-        ProviderChoice,
-        ProviderConnection,
-        ProviderEntity,
-        ProviderType,
-        ProviderWrite,
-    )
-    from .scheduled_actions import (
-        AGENT_PROMPT_ACTION_KIND,
-        AgentPromptAction,
-    )
+    from .providers import ProviderChoice, ProviderConnection, ProviderEntity, ProviderType, ProviderWrite
+    from .scheduled_actions import AGENT_PROMPT_ACTION_KIND, AgentPromptAction
     from .scheduled_tasks import (
         CronSchedule,
         ScheduledTaskAction,
@@ -117,23 +87,9 @@ if TYPE_CHECKING:
         SessionType,
         session_type_from_code,
     )
-    from .tags import (
-        SuggestedTag,
-        TagEntity,
-        TagRefEntity,
-        TagTargetType,
-        TagTreeEntity,
-        TagWrite,
-    )
-    from .updates import (
-        UpdateInstallResult,
-        UpdateRestartResult,
-        UpdateStatus,
-    )
-    from .usage_activity import (
-        ModelUsageActivitySeries,
-        UsageActivityDayRecord,
-    )
+    from .tags import SuggestedTag, TagEntity, TagRefEntity, TagTargetType, TagTreeEntity, TagWrite
+    from .updates import UpdateInstallResult, UpdateRestartResult, UpdateStatus
+    from .usage_activity import ModelUsageActivitySeries, UsageActivityDayRecord
 
 #: Every re-export and the module that defines it. Importing this package used
 #: to import all fourteen schema domains — artifacts, tags, providers, scheduled

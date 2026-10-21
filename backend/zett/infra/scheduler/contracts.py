@@ -7,8 +7,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 
-from ..._compat import StrEnum
-from ...schemas import JsonValue, ScheduledTaskTrigger
+from zett._compat import StrEnum
+from zett.schemas import JsonValue, ScheduledTaskTrigger
 
 
 class ActionExecutionStatus(StrEnum):

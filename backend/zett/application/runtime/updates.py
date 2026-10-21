@@ -16,10 +16,10 @@ from collections.abc import Awaitable, Callable
 from dataclasses import replace
 from datetime import datetime, timedelta
 
-from ..._compat import UTC
-from ...infra.log import get_logger
-from ...infra.persistence.dao import KeyValueStorage, key_value_storage
-from ...infra.updates import (
+from zett._compat import UTC
+from zett.infra.log import get_logger
+from zett.infra.persistence.dao import KeyValueStorage, key_value_storage
+from zett.infra.updates import (
     PROJECT_NAME,
     Installer,
     InstallOutcome,
@@ -28,7 +28,7 @@ from ...infra.updates import (
     detect_installer,
     run_installer,
 )
-from ...schemas import UpdateInstallResult, UpdateStatus
+from zett.schemas import UpdateInstallResult, UpdateStatus
 
 logger = get_logger(__name__)
 

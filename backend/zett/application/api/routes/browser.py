@@ -7,7 +7,7 @@ import re
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
-from ...agent.browser import MAX_BROWSER_MESSAGE, BrowserReply, BrowserUnavailableError, browser_bridge
+from zett.application.agent.browser import MAX_BROWSER_MESSAGE, BrowserReply, BrowserUnavailableError, browser_bridge
 
 router = APIRouter(prefix="/agent", tags=["browser"])
 

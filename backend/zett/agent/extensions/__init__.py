@@ -10,6 +10,7 @@ from .artifacts import ArtifactExtension
 from .assets import AssetDetails, AssetExtension, AssetInput
 from .context_composition import CONTEXT_COMPOSITION_EVENT, ContextCompositionExtension, context_composition
 from .deferred_tools import DeferredToolExtension
+from .file_tools import FileToolsExtension
 from .plugin_host import AgentPluginExtension
 from .scheduled_tasks import ScheduledTaskDraft, ScheduledTaskExtension, ScheduledTaskPatch
 from .session_files import SessionFilesExtension
@@ -26,6 +27,7 @@ __all__ = [
     "ContextCompositionExtension",
     "DeferredToolExtension",
     "AgentPluginExtension",
+    "FileToolsExtension",
     "ScheduledTaskDraft",
     "ScheduledTaskExtension",
     "ScheduledTaskPatch",

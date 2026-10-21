@@ -2,9 +2,12 @@
 
 from fastapi import APIRouter, HTTPException, Query, status
 
-from ....infra.persistence.dao import artifact_storage, session_storage
-from ....infra.persistence.dao.artifact import ArtifactVersionConflictError
-from ....schemas import (
+from zett.application.artifacts.library import library_session_service
+from zett.application.artifacts.versioning import UncommittedLatexProjectError, artifact_versioning
+from zett.application.tags.tagging import tag_service
+from zett.infra.persistence.dao import artifact_storage, session_storage
+from zett.infra.persistence.dao.artifact import ArtifactVersionConflictError
+from zett.schemas import (
     AgentArtifactEntity,
     AgentArtifactWrite,
     ArtifactListOptions,
@@ -12,9 +15,7 @@ from ....schemas import (
     ArtifactType,
     CardStatus,
 )
-from ...artifacts.library import library_session_service
-from ...artifacts.versioning import UncommittedLatexProjectError, artifact_versioning
-from ...tags.tagging import tag_service
+
 from ..schemas import ArtifactCountOut, ArtifactCreateIn, ArtifactUpdateIn, CardStatusIn, DeleteResponse
 
 router = APIRouter(tags=["artifacts"])

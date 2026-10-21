@@ -11,10 +11,11 @@ from sqlalchemy import delete as sql_delete
 from sqlalchemy import func, or_, select
 from zett_agent.ids import new_uuid7
 
-from ...._compat import UTC
-from ....application.files.object_store import session_asset_key
-from ....schemas import SessionAssetCreate, SessionAssetEntity, SessionAssetListOptions, SessionAssetType
-from ...files.object_store import get_object_store
+from zett._compat import UTC
+from zett.application.files.object_store import session_asset_key
+from zett.infra.files.object_store import get_object_store
+from zett.schemas import SessionAssetCreate, SessionAssetEntity, SessionAssetListOptions, SessionAssetType
+
 from ..database import session_scope
 from ..storage import AsyncStorage
 from ..tables import SessionAssetRow
@@ -95,7 +96,7 @@ class SessionAssetStorage(AsyncStorage[SessionAssetCreate, SessionAssetEntity, s
     async def create(self, entity: SessionAssetCreate) -> SessionAssetEntity:
         """Store one asset after confirming its Agent session exists."""
         _validate_payload(entity)
-        from ...agent.runtime import get_agent_runtime_storage
+        from zett.infra.agent.runtime import get_agent_runtime_storage
 
         if await get_agent_runtime_storage().get_session(entity.session_id) is None:
             raise KeyError(f"Agent session not found: {entity.session_id}")

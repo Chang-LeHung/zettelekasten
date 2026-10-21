@@ -3,22 +3,16 @@
 from typing import Annotated
 
 from pydantic import Field
-from zett_agent.agent import (
-    AgentRunContext,
-)
-from zett_agent.extensions.base import (
-    AgentExtension,
-)
-from zett_agent.tools.base import (
-    tool,
-)
+from zett_agent.agent import AgentRunContext
+from zett_agent.extensions.base import AgentExtension
+from zett_agent.tools.base import tool
 
-from ...application.artifacts.artifact_views import ArtifactReceipt, artifact_receipt
-from ...application.assets.asset_views import StaticAssetReceipt, static_asset_receipt
-from ...application.assets.static_assets import static_asset_service
-from ...application.tags.tagging import tag_service
-from ...infra.persistence.dao import artifact_storage
-from ...schemas import TagEntity, TagTargetType, TagTreeEntity
+from zett.application.artifacts.artifact_views import ArtifactReceipt, artifact_receipt
+from zett.application.assets.asset_views import StaticAssetReceipt, static_asset_receipt
+from zett.application.assets.static_assets import static_asset_service
+from zett.application.tags.tagging import tag_service
+from zett.infra.persistence.dao import artifact_storage
+from zett.schemas import TagEntity, TagTargetType, TagTreeEntity
 
 
 class TagExtension(AgentExtension):

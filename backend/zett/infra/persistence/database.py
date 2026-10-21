@@ -18,8 +18,9 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, async_sessionm
 from sqlalchemy.pool import NullPool
 from sqlalchemy.schema import CreateColumn, CreateIndex
 
-from ...config import settings
-from ...schemas import CARD_STATUSES, ArtifactType, default_status
+from zett.config import settings
+from zett.schemas import CARD_STATUSES, ArtifactType, default_status
+
 from ..artifacts.search import ensure_artifact_search
 from ..log import get_logger
 from .tables import CARD_STATUS_TO_CODE, TYPE_TO_CODE, Base, SessionArtifactRow

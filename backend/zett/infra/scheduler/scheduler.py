@@ -7,14 +7,15 @@ from datetime import datetime, timedelta
 
 from zett_agent.ids import new_uuid7
 
-from ..._compat import UTC, TypeAliasType
-from ...schemas import (
+from zett._compat import UTC, TypeAliasType
+from zett.schemas import (
     CronSchedule,
     ScheduledTaskEntity,
     ScheduledTaskRunCreate,
     ScheduledTaskRunStatus,
     ScheduledTaskTrigger,
 )
+
 from ..log import get_logger
 from ..persistence.dao import ScheduledTaskStorage, scheduled_task_storage
 from .schedule import next_run_after

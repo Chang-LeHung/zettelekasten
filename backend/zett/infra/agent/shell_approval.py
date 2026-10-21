@@ -6,7 +6,8 @@ from weakref import WeakKeyDictionary
 
 from zett_agent.extensions.shell_approval import ShellApprovalMode
 
-from ...schemas import JsonValue
+from zett.schemas import JsonValue
+
 from ..persistence.dao import KeyValueStorage, key_value_storage
 
 ALLOWED_SHELL_COMMANDS_KEY = "shell_approval.allowed_commands"

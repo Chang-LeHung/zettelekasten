@@ -4,52 +4,20 @@ import asyncio
 import re
 from collections.abc import AsyncIterator
 
-from zett_agent.agent import (
-    Agent,
-    AgentRunConfig,
-)
-from zett_agent.client import (
-    AgentClient,
-)
-from zett_agent.dispatcher import (
-    AgentEventDispatcher,
-)
-from zett_agent.events import (
-    AgentEvent,
-)
-from zett_agent.extensions.ask_user import (
-    AskUserExtension,
-)
-from zett_agent.extensions.coding import (
-    CodingExtension,
-)
-from zett_agent.extensions.compaction import (
-    CompactionExtension,
-)
-from zett_agent.extensions.external import (
-    ExternalEvent,
-)
-from zett_agent.extensions.model_request_trace import (
-    ModelRequestTraceExtension,
-)
-from zett_agent.extensions.session_persistence import (
-    SessionPersistenceExtension,
-)
-from zett_agent.extensions.shell_approval import (
-    ShellApprovalExtension,
-)
-from zett_agent.extensions.skill import (
-    SkillExtension,
-)
-from zett_agent.extensions.todo import (
-    TodoWriteExtension,
-)
-from zett_agent.extensions.tool_guidelines import (
-    ToolGuidelinesExtension,
-)
-from zett_agent.extensions.usage_activity import (
-    UsageActivityExtension,
-)
+from zett_agent.agent import Agent, AgentRunConfig
+from zett_agent.client import AgentClient
+from zett_agent.dispatcher import AgentEventDispatcher
+from zett_agent.events import AgentEvent
+from zett_agent.extensions.ask_user import AskUserExtension
+from zett_agent.extensions.compaction import CompactionExtension
+from zett_agent.extensions.external import ExternalEvent
+from zett_agent.extensions.model_request_trace import ModelRequestTraceExtension
+from zett_agent.extensions.session_persistence import SessionPersistenceExtension
+from zett_agent.extensions.shell_approval import ShellApprovalExtension
+from zett_agent.extensions.skill import SkillExtension
+from zett_agent.extensions.todo import TodoWriteExtension
+from zett_agent.extensions.tool_guidelines import ToolGuidelinesExtension
+from zett_agent.extensions.usage_activity import UsageActivityExtension
 
 from .._compat import Self
 from ..infra.agent.runtime import get_agent_runtime_storage
@@ -71,6 +39,7 @@ from .extensions import (
     AssetExtension,
     ContextCompositionExtension,
     DeferredToolExtension,
+    FileToolsExtension,
     ScheduledTaskExtension,
     SessionFilesExtension,
     StaticAssetExtension,
@@ -79,12 +48,7 @@ from .extensions import (
 )
 from .extensions.mcp import build_mcp_extension
 from .plugins import PluginCommandRegistry, SessionReferenceExtension
-from .slash import (
-    SlashCommandDefinition,
-    SlashCommandHandler,
-    SlashCommandInvocation,
-    stable_slash_command_id,
-)
+from .slash import SlashCommandDefinition, SlashCommandHandler, SlashCommandInvocation, stable_slash_command_id
 
 _SLASH_NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _AT_COMMAND_KIND = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -139,13 +103,21 @@ class ZettelkastenAgent(ZettelkastenContainer):
             # this middleware passes shell calls straight through there and keeps
             # asking the browser in an interactive conversation.
             extensions.append(ShellApprovalExtension(config.shell_approval_storage))
-            extensions.append(CodingExtension())
+            # Zett registers its own file tools: `read` covers text and a local
+            # image, so `read_file` and `view_image` are not offered beside it.
+            extensions.append(FileToolsExtension(multimodal=config.multimodal))
         if config.interactive:
             extensions.append(AskUserExtension())
         if config.browser_connection is not None:
             from .extensions.browser import BrowserExtension
 
             extensions.append(BrowserExtension(config.browser_connection))
+        if config.server_tools:
+            # Declared like any tool, but the provider runs it: zett-agent does not
+            # dispatch it locally and reports it as server-tool events.
+            from zett_agent.extensions.server_tools.base import ServerToolExtension
+
+            extensions.append(ServerToolExtension(config.server_tools, name="HostedServerTools"))
         if config.usage_activity_storage is not None:
             extensions.append(UsageActivityExtension(config.usage_activity_storage))
         # One adapter, appended last: plugins run inside every built-in

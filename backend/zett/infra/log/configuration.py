@@ -4,7 +4,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from threading import Lock
 
-from ...config import settings
+from zett.config import settings
 
 LOGGER_NAMESPACE = "zett"
 LOG_FILE_NAME = "zett.log"

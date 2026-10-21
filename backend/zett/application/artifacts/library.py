@@ -12,8 +12,8 @@ from __future__ import annotations
 import asyncio
 from weakref import WeakKeyDictionary
 
-from ...infra.persistence.dao import KeyValueStorage, SessionStorage, key_value_storage, session_storage
-from ...schemas import AgentSessionCreate, SessionType
+from zett.infra.persistence.dao import KeyValueStorage, SessionStorage, key_value_storage, session_storage
+from zett.schemas import AgentSessionCreate, SessionType
 
 #: Key-value key that records the owning session id.
 LIBRARY_SESSION_KEY = "library:session"

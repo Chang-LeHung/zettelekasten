@@ -5,8 +5,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from croniter import croniter
 
-from ..._compat import UTC
-from ...schemas import CronSchedule
+from zett._compat import UTC
+from zett.schemas import CronSchedule
 
 
 def validate_schedule(schedule: CronSchedule) -> ZoneInfo:

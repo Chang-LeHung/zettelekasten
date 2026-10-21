@@ -13,9 +13,9 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from ..._compat import Self, timeout
-from ...infra.log import get_logger
-from ...infra.persistence.dao import session_storage
+from zett._compat import Self, timeout
+from zett.infra.log import get_logger
+from zett.infra.persistence.dao import session_storage
 
 logger = get_logger(__name__)
 MAX_BROWSER_MESSAGE = 100_000

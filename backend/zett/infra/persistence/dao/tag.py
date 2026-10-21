@@ -16,8 +16,9 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from zett_agent.ids import new_uuid7
 
-from ...._compat import UTC
-from ....schemas import TagEntity, TagListOptions, TagRefEntity, TagTargetType, TagWrite
+from zett._compat import UTC
+from zett.schemas import TagEntity, TagListOptions, TagRefEntity, TagTargetType, TagWrite
+
 from ..database import session_scope
 from ..storage import AsyncStorage
 from ..tables import CODE_TO_TARGET, TARGET_TO_CODE, TagLinkRow, TagRow

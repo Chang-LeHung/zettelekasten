@@ -44,6 +44,69 @@ export function toolOutputParts(value: unknown): ToolOutputPart[] | null {
   return parts.every((part): part is ToolOutputPart => part !== null) ? parts : null
 }
 
+export interface ServerToolView {
+  /** Short name for the tool the provider ran, such as "Web search" or "Code execution". */
+  label: string
+  /** One line describing what happened, e.g. the queries that ran. */
+  summary: string
+  /** Pages the hosted tool cited, already projected by the backend. */
+  pages: Array<{ url: string; title?: string }>
+  /** Readable text the hosted tool returned, or the provider's error code. */
+  text: string
+  error: string
+}
+
+const serverToolLabels: Readonly<Record<string, string>> = {
+  web_search: 'Web search',
+  web_fetch: 'Web fetch',
+  google_search: 'Google Search',
+  url_context: 'URL context',
+  code_execution: 'Code execution',
+}
+
+/** Name a provider-hosted tool the way a reader thinks of it, keeping an unknown type visible. */
+export function serverToolLabel(name: string): string {
+  return serverToolLabels[name] ?? (name.replaceAll('_', ' ') || 'Provider tool')
+}
+
+/**
+ * Project one hosted tool result for the transcript.
+ *
+ * The backend already dropped sealed payloads and capped lengths; this only picks the
+ * shape each tool returns: a search reports pages and queries, a fetch reports text, and
+ * a failed call reports its own error code instead of an empty result.
+ */
+export function serverToolView(name: string, output: unknown, errorCode: string | null | undefined): ServerToolView {
+  const label = serverToolLabel(name)
+  const error = errorCode || ''
+  if (!output || typeof output !== 'object' || Array.isArray(output)) {
+    return { label, summary: '', pages: [], text: typeof output === 'string' ? output : '', error }
+  }
+  const value = output as Record<string, unknown>
+  const pages = Array.isArray(value.pages)
+    ? value.pages.flatMap((page) => {
+        if (!page || typeof page !== 'object') return []
+        const item = page as Record<string, unknown>
+        if (typeof item.url !== 'string') return []
+        return [{ url: item.url, title: typeof item.title === 'string' ? item.title : undefined }]
+      })
+    : []
+  const queries = Array.isArray(value.queries) ? value.queries.filter((query): query is string => typeof query === 'string') : []
+  const text = typeof value.text === 'string' ? value.text : ''
+  const summary = queries.length
+    ? queries.join(' · ')
+    : pages.length
+      ? `${pages.length} page${pages.length === 1 ? '' : 's'}`
+      : typeof value.status === 'string' ? value.status : ''
+  return {
+    label,
+    summary,
+    pages: pages.slice(0, 8),
+    text,
+    error: error || (typeof value.error === 'string' ? value.error : ''),
+  }
+}
+
 /** Interpret task progress only in the presentation layer, never in the SSE protocol. */
 export function todoFromTool(activity: AgentToolActivity): AgentTodoState | null {
   if (activity.name !== 'todo_write' || activity.state !== 'succeeded') return null

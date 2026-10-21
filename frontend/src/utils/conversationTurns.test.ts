@@ -115,7 +115,7 @@ describe('splitTurnTimeline', () => {
       {
         id: 'tool',
         type: 'tool',
-        activity: { id: 'call-1', name: 'run_shell', state: 'started' },
+        activity: { id: 'call-1', name: 'bash', state: 'started' },
       },
     ])
 

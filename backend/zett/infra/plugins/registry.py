@@ -8,8 +8,8 @@ untrusted: a broken entry point is skipped, and a failing factory surfaces as
 from collections.abc import Callable, Mapping
 from importlib.metadata import entry_points
 
-from ...infra.log import get_logger
-from ...plugins import (
+from zett.infra.log import get_logger
+from zett.plugins import (
     AGENT_PLUGIN_ENTRY_POINT_GROUP,
     JsonValue,
     KVStorage,

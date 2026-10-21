@@ -8,27 +8,11 @@ from datetime import datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import update
-from zett_agent.events import (
-    AgentEvent,
-    AgentEventType,
-)
-from zett_agent.extensions.shell_approval import (
-    ShellApprovalMode,
-)
-from zett_agent.ids import (
-    new_uuid7,
-)
-from zett_agent.messages import (
-    AssistantMessage,
-    ToolCall,
-    ToolMessage,
-    UserMessage,
-)
-from zett_agent.model import (
-    ModelEvent,
-    ModelRequest,
-    ModelResponse,
-)
+from zett_agent.events import AgentEvent, AgentEventType
+from zett_agent.extensions.shell_approval import ShellApprovalMode
+from zett_agent.ids import new_uuid7
+from zett_agent.messages import AssistantMessage, ToolCall, ToolMessage, UserMessage
+from zett_agent.model import ModelEvent, ModelRequest, ModelResponse
 
 from zett._compat import UTC
 from zett.application.scheduled_tasks import ScheduledTaskService

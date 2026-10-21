@@ -27,11 +27,7 @@ from .plugins import (
     SessionReferenceExtension,
     SkillSlashCommandExtension,
 )
-from .slash import (
-    SlashCommandDefinition,
-    SlashCommandHandler,
-    SlashCommandInvocation,
-)
+from .slash import SlashCommandDefinition, SlashCommandHandler, SlashCommandInvocation
 from .zettelkasten import ZettelkastenAgent
 
 __all__ = [

@@ -18,14 +18,7 @@ from .errors import (
     MessagePartError,
     UnsupportedMessagePartError,
 )
-from .front import (
-    IMAGE_MIME_PATTERN,
-    FrontImagePart,
-    FrontMessagePart,
-    FrontPart,
-    FrontTextPart,
-    FrontUserMessage,
-)
+from .front import IMAGE_MIME_PATTERN, FrontImagePart, FrontMessagePart, FrontPart, FrontTextPart, FrontUserMessage
 
 __all__ = [
     "DecodedImage",

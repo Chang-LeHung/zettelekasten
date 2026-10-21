@@ -173,12 +173,12 @@ describe('restorePersistedConversation', () => {
       record(1, 'agent', { content: 'internal' }),
       record(2, 'user', { content: 'Run it' }),
       record(3, 'assistant', {
-        tool_calls: [{ id: 'call-2', name: 'shell', arguments: { command: 'false' } }],
+        tool_calls: [{ id: 'call-2', name: 'bash', arguments: { command: 'false' } }],
       }),
       record(4, 'tool', {
         content: 'command failed',
         tool_call_id: 'call-2',
-        tool_name: 'shell',
+        tool_name: 'bash',
         tool_success: false,
       }),
     ])

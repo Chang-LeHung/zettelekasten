@@ -12,6 +12,8 @@
 .secret-input button { position: absolute; top: 50%; right: .35rem; display: grid; place-items: center; width: 2rem; height: 2rem; padding: 0; border: 0; border-radius: .5rem; color: #7d8781; background: transparent; cursor: pointer; transform: translateY(-50%); }
 .secret-input button:hover { color: var(--accent-dark); background: var(--accent-soft); }
 .secret-input button svg { width: 1rem; height: 1rem; }
+.field .switch { width: fit-content; }
+.field .switch input { width: 1px; height: 1px; padding: 0; border: 0; box-shadow: none; }
 .mode-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .28rem; padding: .2rem; border: 1px solid rgba(29,29,31,.1); border-radius: .68rem; background: #f3f4f3; }
 .mode-options button { min-height: 2.2rem; padding: 0 .6rem; border: 0; border-radius: .52rem; color: #6f7772; background: transparent; cursor: pointer; font-size: .7rem; font-weight: 580; transition: color 150ms ease, background 150ms ease, box-shadow 150ms ease; }
 .mode-options button:hover { color: #455d50; }

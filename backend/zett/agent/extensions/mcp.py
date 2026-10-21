@@ -14,7 +14,7 @@ from pathlib import Path
 
 from zett_agent.extensions.mcp import McpExtension, McpServer
 
-from ...infra.log import get_logger
+from zett.infra.log import get_logger
 
 logger = get_logger(__name__)
 

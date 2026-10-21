@@ -2,8 +2,8 @@
 
 from fastapi import APIRouter, status
 
-from ....schemas import ProcessHealthReport, ProcessHeartbeatIn, ProcessHeartbeatRecord
-from ...health import process_health_service, process_heartbeat_registry
+from zett.application.health import process_health_service, process_heartbeat_registry
+from zett.schemas import ProcessHealthReport, ProcessHeartbeatIn, ProcessHeartbeatRecord
 
 router = APIRouter(prefix="/health", tags=["health"])
 

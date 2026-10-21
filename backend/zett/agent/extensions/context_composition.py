@@ -3,16 +3,9 @@
 import json
 from collections.abc import Awaitable, Callable, Sequence
 
-from zett_agent.agent import (
-    AgentRunContext,
-)
-from zett_agent.events import (
-    AgentEvent,
-    AgentEventType,
-)
-from zett_agent.extensions.base import (
-    AgentExtension,
-)
+from zett_agent.agent import AgentRunContext
+from zett_agent.events import AgentEvent, AgentEventType
+from zett_agent.extensions.base import AgentExtension
 from zett_agent.messages import (
     AgentMessage,
     AssistantMessage,
@@ -22,12 +15,9 @@ from zett_agent.messages import (
     ToolMessage,
     UserMessage,
 )
-from zett_agent.model import (
-    ModelRequest,
-    ModelResponse,
-)
+from zett_agent.model import ModelRequest, ModelResponse
 
-from ..._compat import TypeAliasType
+from zett._compat import TypeAliasType
 
 CONTEXT_COMPOSITION_EVENT = "context_composition"
 #: The o200k BPE table costs about a tenth of a second to load, and a process

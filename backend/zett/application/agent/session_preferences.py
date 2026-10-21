@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict
 
-from ...infra.persistence.dao import KeyValueStorage, key_value_storage
-from ...schemas import ProviderConnection, ProviderType
+from zett.infra.persistence.dao import KeyValueStorage, key_value_storage
+from zett.schemas import ProviderConnection, ProviderType
 
 SESSION_MODEL_KEY_PREFIX = "sessions.model."
 

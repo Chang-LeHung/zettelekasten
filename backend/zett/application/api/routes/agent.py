@@ -8,33 +8,16 @@ from dataclasses import dataclass, replace
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
-from zett_agent.agent import (
-    AgentRunConfig,
-)
-from zett_agent.client import (
-    AgentClient,
-)
-from zett_agent.events import (
-    AgentEvent,
-    AgentEventType,
-)
-from zett_agent.extensions.external import (
-    ExternalEvent,
-)
-from zett_agent.extensions.shell_approval import (
-    ShellApprovalMode,
-)
-from zett_agent.extensions.steering import (
-    STEERING_MESSAGE_EVENT_NAME,
-)
-from zett_agent.messages import (
-    UserMessage,
-)
-from zett_agent.model import (
-    ReasoningEffort,
-)
+from zett_agent.agent import AgentRunConfig
+from zett_agent.client import AgentClient
+from zett_agent.events import AgentEvent, AgentEventType
+from zett_agent.extensions.external import ExternalEvent
+from zett_agent.extensions.shell_approval import ShellApprovalMode
+from zett_agent.extensions.steering import STEERING_MESSAGE_EVENT_NAME
+from zett_agent.messages import UserMessage
+from zett_agent.model import ReasoningEffort
 
-from ....agent import (
+from zett.agent import (
     AtCommandInvocation,
     SlashCommandInvocation,
     ZettelkastenAgent,
@@ -43,20 +26,23 @@ from ....agent import (
     encode_sse,
     event_payload,
 )
-from ....agent.model_factory import ProviderAdapter, create_model
-from ....infra.agent.runtime import get_agent_runtime_storage
-from ....infra.agent.shell_approval import shell_approval_storage
-from ....infra.log import get_logger, log_preview
-from ....infra.persistence.dao import model_usage_activity_storage, provider_storage, session_storage
-from ....messages import MessageImageSizeExceeded, MessagePartCodec, MessagePartError
-from ....schemas import ProviderConnection
-from ...agent.browser import BrowserUnavailableError, browser_bridge
-from ...agent.session_context import session_context_composition_service
-from ...agent.session_preferences import session_model_preference_service
-from ...agent.session_titles import generate_initial_session_title
-from ...agent.turns import AgentTurn
-from ...assets.message_files import store_message_images
-from ...runtime.settings import RuntimeSettings, runtime_settings_service
+from zett.agent.model_factory import ProviderAdapter, create_model
+from zett.agent.web_search import web_search_tools
+from zett.application.agent.browser import BrowserUnavailableError, browser_bridge
+from zett.application.agent.session_context import session_context_composition_service
+from zett.application.agent.session_preferences import session_model_preference_service
+from zett.application.agent.session_titles import generate_initial_session_title
+from zett.application.agent.turns import AgentTurn
+from zett.application.assets.message_files import store_message_images
+from zett.application.runtime.settings import RuntimeSettings, runtime_settings_service
+from zett.infra.agent.runtime import get_agent_runtime_storage
+from zett.infra.agent.shell_approval import shell_approval_storage
+from zett.infra.log import get_logger, log_preview
+from zett.infra.persistence.dao import model_usage_activity_storage, provider_storage, session_storage
+from zett.messages import MessageImageSizeExceeded, MessagePartCodec, MessagePartError
+from zett.schemas import ProviderConnection
+from zett.schemas.providers import supports_images
+
 from ..schemas import (
     AnalyzeRequest,
     AtCommandOut,
@@ -256,7 +242,11 @@ async def _prepare_agent_request(session_id: str, payload: AnalyzeRequest) -> _P
 
         # Reserve the session before binding the Agent, allowing each new Agent
         # instance to apply the latest configuration immediately.
-        agent_config = _agent_config(session_id, runtime_settings)
+        agent_config = replace(
+            _agent_config(session_id, runtime_settings),
+            server_tools=web_search_tools(connection),
+            multimodal=supports_images(connection.metadata),
+        )
         if browser_connection is not None:
             agent_config = replace(agent_config, browser_connection=browser_connection)
         agent = ZettelkastenAgent(agent_config)

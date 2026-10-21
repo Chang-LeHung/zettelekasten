@@ -4,15 +4,8 @@ from collections.abc import AsyncIterator
 
 import pytest
 from fastapi.testclient import TestClient
-from zett_agent.messages import (
-    AssistantMessage,
-    SystemMessage,
-)
-from zett_agent.model import (
-    ModelEvent,
-    ModelRequest,
-    ModelResponse,
-)
+from zett_agent.messages import AssistantMessage, SystemMessage
+from zett_agent.model import ModelEvent, ModelRequest, ModelResponse
 
 from zett.application.api.routes import agent as agent_routes
 from zett.config import settings

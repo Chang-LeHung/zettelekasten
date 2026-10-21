@@ -3,21 +3,13 @@
 import mimetypes
 from pathlib import Path
 
-from zett_agent.agent import (
-    AgentRunContext,
-)
-from zett_agent.extensions.base import (
-    AgentExtension,
-)
-from zett_agent.messages import (
-    SystemMessage,
-)
-from zett_agent.tools.base import (
-    tool,
-)
+from zett_agent.agent import AgentRunContext
+from zett_agent.extensions.base import AgentExtension
+from zett_agent.messages import SystemMessage
+from zett_agent.tools.base import tool
 
-from ...application.assets.asset_views import StaticAssetReceipt, static_asset_receipt
-from ...application.assets.static_assets import static_asset_service
+from zett.application.assets.asset_views import StaticAssetReceipt, static_asset_receipt
+from zett.application.assets.static_assets import static_asset_service
 
 
 class StaticAssetExtension(AgentExtension):

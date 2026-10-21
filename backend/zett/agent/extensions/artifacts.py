@@ -3,26 +3,20 @@
 from typing import Annotated
 
 from pydantic import Field
-from zett_agent.agent import (
-    AgentRunContext,
-)
-from zett_agent.extensions.base import (
-    AgentExtension,
-)
-from zett_agent.tools.base import (
-    tool,
-)
+from zett_agent.agent import AgentRunContext
+from zett_agent.extensions.base import AgentExtension
+from zett_agent.tools.base import tool
 
-from ...application.artifacts.artifact_pruner import AgentArtifactPreview, ArtifactPruner
-from ...application.artifacts.artifact_views import (
+from zett.application.artifacts.artifact_pruner import AgentArtifactPreview, ArtifactPruner
+from zett.application.artifacts.artifact_views import (
     ArtifactDocument,
     ArtifactReceipt,
     artifact_document,
     artifact_receipt,
 )
-from ...application.tags.tagging import tag_service
-from ...infra.persistence.dao import artifact_storage
-from ...schemas import (
+from zett.application.tags.tagging import tag_service
+from zett.infra.persistence.dao import artifact_storage
+from zett.schemas import (
     AgentArtifactEntity,
     AgentArtifactWrite,
     ArtifactContentPatch,

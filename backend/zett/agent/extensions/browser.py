@@ -4,7 +4,7 @@ from zett_agent.agent import AgentRunContext
 from zett_agent.extensions.base import AgentExtension
 from zett_agent.tools.base import tool
 
-from ...application.agent.browser import (
+from zett.application.agent.browser import (
     BrowserConnection,
     BrowserDOMPatch,
     BrowserInteraction,

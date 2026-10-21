@@ -82,12 +82,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def _install(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     """Resolve the target skill root, install into it, and report what happened."""
-    from ..infra.skills.coding_agents import (
-        CODING_AGENTS,
-        SkillRefusedError,
-        find_agent,
-        install_skill,
-    )
+    from ..infra.skills.coding_agents import CODING_AGENTS, SkillRefusedError, find_agent, install_skill
 
     if args.list_agents:
         if args.agent is not None or args.directory is not None:

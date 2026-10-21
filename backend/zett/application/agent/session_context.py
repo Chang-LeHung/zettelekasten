@@ -3,18 +3,12 @@
 from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from zett_agent.messages import (
-    SystemMessage,
-)
-from zett_agent.model import (
-    ModelRequest,
-)
-from zett_agent.storage import (
-    SQLiteSessionStorage,
-)
+from zett_agent.messages import SystemMessage
+from zett_agent.model import ModelRequest
+from zett_agent.storage import SQLiteSessionStorage
 
-from ...agent.extensions.context_composition import context_composition
-from ...infra.persistence.dao import KeyValueStorage, key_value_storage
+from zett.agent.extensions.context_composition import context_composition
+from zett.infra.persistence.dao import KeyValueStorage, key_value_storage
 
 SESSION_CONTEXT_KEY_PREFIX = "sessions.context-composition."
 

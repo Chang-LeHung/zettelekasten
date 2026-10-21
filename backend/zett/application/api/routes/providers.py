@@ -3,18 +3,17 @@
 import asyncio
 
 from fastapi import APIRouter, HTTPException, Query, status
-from zett_agent.providers.base import (
-    ProviderAuthError,
-    ProviderResponseError,
-)
+from zett_agent.providers.base import ProviderAuthError, ProviderResponseError
 
-from ....infra.log import get_logger
-from ....infra.persistence.dao import provider_storage
-from ....schemas import ProviderConnection, ProviderEntity, ProviderListOptions, ProviderWrite
-from ...agent.session_preferences import session_model_preference_service
-from ...channels import channel_service
-from ...providers.provider_connections import ProviderConnectionTestError, verify_provider_connection
-from ...scheduled_tasks import scheduled_task_service
+from zett.application.agent.session_preferences import session_model_preference_service
+from zett.application.channels import channel_service
+from zett.application.providers.provider_connections import ProviderConnectionTestError, verify_provider_connection
+from zett.application.scheduled_tasks import scheduled_task_service
+from zett.infra.log import get_logger
+from zett.infra.persistence.dao import provider_storage
+from zett.schemas import ProviderConnection, ProviderEntity, ProviderListOptions, ProviderWrite
+from zett.schemas.providers import default_web_search_name, supports_images, web_search_hint
+
 from ..schemas import DeleteResponse, ProviderDetailResponse, ProviderIn, ProviderResponse
 
 router = APIRouter(prefix="/ai/providers", tags=["providers"])
@@ -24,6 +23,10 @@ logger = get_logger(__name__)
 def _response(provider: ProviderEntity) -> ProviderResponse:
     temperature = provider.metadata.get("temperature")
     response = provider.metadata.get("response", False)
+    multimodal = supports_images(provider.metadata)
+    web_search = provider.metadata.get("web_search", False)
+    web_search_name = provider.metadata.get("web_search_name")
+    uses_responses = response if isinstance(response, bool) else False
     return ProviderResponse(
         id=provider.id,
         name=provider.name,
@@ -33,6 +36,11 @@ def _response(provider: ProviderEntity) -> ProviderResponse:
         api_key_configured=provider.api_key_configured,
         temperature=float(temperature) if isinstance(temperature, int | float) else None,
         response=response if isinstance(response, bool) else False,
+        multimodal=multimodal,
+        web_search=web_search if isinstance(web_search, bool) else False,
+        web_search_name=web_search_name if isinstance(web_search_name, str) and web_search_name else None,
+        web_search_default_name=default_web_search_name(provider.provider, provider.model, response=uses_responses),
+        web_search_hint=web_search_hint(provider.provider, provider.model, response=uses_responses),
         enabled=provider.enabled,
         created_at=provider.created_at,
         updated_at=provider.updated_at,
@@ -56,6 +64,11 @@ async def _write(payload: ProviderIn, *, existing_id: str | None = None) -> Prov
     if payload.temperature is not None:
         metadata["temperature"] = payload.temperature
     metadata["response"] = payload.response
+    metadata["multimodal"] = payload.multimodal
+    if payload.web_search:
+        metadata["web_search"] = True
+        if payload.web_search_name:
+            metadata["web_search_name"] = payload.web_search_name
     return ProviderWrite(
         name=payload.name,
         provider=payload.provider,

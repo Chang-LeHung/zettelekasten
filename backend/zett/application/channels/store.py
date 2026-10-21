@@ -12,10 +12,10 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 from zett_agent.ids import new_uuid7
 
-from ..._compat import UTC
-from ...infra.security import decrypt_secret, encrypt_secret
-from ...plugins import JsonValue, KVStorage
-from ...schemas import Channel, ChannelLogin, ChannelType, ChannelUpdate
+from zett._compat import UTC
+from zett.infra.security import decrypt_secret, encrypt_secret
+from zett.plugins import JsonValue, KVStorage
+from zett.schemas import Channel, ChannelLogin, ChannelType, ChannelUpdate
 
 CHANNEL_PREFIX = "im:channel:"
 LOGIN_PREFIX = "im:login:"

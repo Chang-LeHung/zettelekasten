@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ...schemas import StaticAssetEntity
+from zett.schemas import StaticAssetEntity
 
 
 class StaticAssetReceipt(BaseModel):

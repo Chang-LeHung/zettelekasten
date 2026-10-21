@@ -6,20 +6,9 @@ from collections.abc import Awaitable, Callable
 from dataclasses import asdict
 from enum import Enum
 
-from zett_agent.dispatcher import (
-    AgentEventDispatcher,
-)
-from zett_agent.events import (
-    AgentEvent,
-)
-from zett_agent.messages import (
-    AssistantMessage,
-    ImageContent,
-    ImageUrlSource,
-    ToolCall,
-    ToolMessage,
-    UserMessage,
-)
+from zett_agent.dispatcher import AgentEventDispatcher
+from zett_agent.events import AgentEvent
+from zett_agent.messages import AssistantMessage, ImageContent, ImageUrlSource, ToolCall, ToolMessage, UserMessage
 
 from .._compat import TypeAliasType
 from ..messages import FrontMessagePart, MessagePartCodec

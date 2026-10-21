@@ -13,8 +13,9 @@ from typing import BinaryIO
 
 import httpx
 
-from ...config import settings
-from ...schemas import ProcessHeartbeatIn, ProcessHeartbeatStatus, ProcessRole
+from zett.config import settings
+from zett.schemas import ProcessHeartbeatIn, ProcessHeartbeatStatus, ProcessRole
+
 from ..log import get_logger
 from . import process_platform
 

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { defaultProviderBaseUrl, providerBaseUrlHelp, providerIgnoresTemperature } from './providerDefaults'
+import {
+  defaultProviderBaseUrl,
+  defaultWebSearchName,
+  providerBaseUrlHelp,
+  providerIgnoresTemperature,
+  webSearchHint,
+  webSearchUnavailableReason,
+} from './providerDefaults'
 
 describe('provider defaults', () => {
   it.each([
@@ -38,4 +45,39 @@ it('knows Anthropic-compatible services need an address, and which adapters igno
   expect(providerIgnoresTemperature('anthropic')).toBe(true)
   expect(providerIgnoresTemperature('anthropic_compatible')).toBe(true)
   expect(providerIgnoresTemperature('openai')).toBe(false)
+})
+
+describe('web search defaults', () => {
+  it('picks the search tool each protocol understands', () => {
+    expect(defaultWebSearchName('openai', 'gpt-4.1', true)).toBe('web_search')
+    // OpenAI-style adapters send a hosted tool on Chat Completions too.
+    expect(defaultWebSearchName('openai', 'gpt-4.1', false)).toBe('web_search')
+    expect(defaultWebSearchName('openai_compatible', 'm')).toBe('web_search')
+    expect(defaultWebSearchName('anthropic', 'claude-sonnet')).toBe('web_search_20260318')
+    expect(defaultWebSearchName('anthropic_compatible', 'deepseek-flash')).toBe('web_search_20250305')
+    expect(defaultWebSearchName('google', 'gemini')).toBe('google_search')
+    expect(defaultWebSearchName('ollama', 'llama')).toBe('')
+  })
+
+  it('lets DeepSeek search only through the Anthropic API on a flash model', () => {
+    expect(webSearchUnavailableReason('anthropic_compatible', 'deepseek-flash')).toBe('')
+    expect(webSearchUnavailableReason('responses_compatible', 'deepseek-flash')).toContain('Anthropic API')
+    expect(webSearchUnavailableReason('deepseek', 'deepseek-v4-flash', true)).toContain('Anthropic API')
+    expect(webSearchUnavailableReason('anthropic_compatible', 'deepseek-pro')).toContain('flash')
+  })
+
+  it('explains protocols that cannot search unless a tool is named', () => {
+    expect(webSearchUnavailableReason('ollama', 'llama')).toContain('Ollama')
+    expect(webSearchUnavailableReason('openai_compatible', 'm')).toBe('')
+    expect(webSearchUnavailableReason('openai_compatible', 'm', false, 'gateway:search')).toBe('')
+    expect(webSearchUnavailableReason('anthropic_compatible', 'gateway-model')).toBe('')
+  })
+
+  it('names the tool and the result shape each protocol uses', () => {
+    expect(webSearchHint('anthropic', 'claude-sonnet')).toContain('web_search_20260318')
+    expect(webSearchHint('anthropic_compatible', 'deepseek-flash')).toContain('web_search_20250305')
+    expect(webSearchHint('openai', 'gpt-4.1', true)).toContain('Responses API')
+    expect(webSearchHint('google', 'gemini')).toContain('google_search')
+    expect(webSearchHint('ollama', 'llama')).toContain('no search tool')
+  })
 })

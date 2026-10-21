@@ -52,12 +52,15 @@ dev: backend-install frontend-build
 	uv run --directory backend zett start --foreground --host $(HOST) --port $(PORT) --reload
 
 ruff-check:
-	uv run --directory backend ruff format --check zett
-	uv run --directory backend ruff check zett
-	uv run --directory backend/agim ruff format --check src tests
-	uv run --directory backend/agim ruff check src tests
-	uv run --directory backend/zett-weixin ruff format --check src tests
-	uv run --directory backend/zett-weixin ruff check src tests
+	# --no-sync: a lint run must not resolve or rewrite a lock file. Without it,
+	# the pre-commit hook modifies uv.lock while it runs and fails the commit it
+	# was supposed to check.
+	uv run --directory backend --no-sync ruff format --check zett
+	uv run --directory backend --no-sync ruff check zett
+	uv run --directory backend/agim --no-sync ruff format --check src tests
+	uv run --directory backend/agim --no-sync ruff check src tests
+	uv run --directory backend/zett-weixin --no-sync ruff format --check src tests
+	uv run --directory backend/zett-weixin --no-sync ruff check src tests
 
 typecheck:
 	npm --prefix frontend run typecheck

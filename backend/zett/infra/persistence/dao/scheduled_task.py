@@ -10,8 +10,8 @@ from sqlalchemy import or_, select, update
 from sqlalchemy.exc import IntegrityError
 from zett_agent.ids import new_uuid7
 
-from ...._compat import UTC
-from ....schemas import (
+from zett._compat import UTC
+from zett.schemas import (
     ScheduledTaskAction,
     ScheduledTaskEntity,
     ScheduledTaskListOptions,
@@ -23,6 +23,7 @@ from ....schemas import (
     ScheduledTaskTrigger,
     ScheduledTaskWrite,
 )
+
 from ..database import session_scope
 from ..storage import AsyncStorage
 from ..tables import ScheduledTaskRow, ScheduledTaskRunRow

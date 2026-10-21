@@ -12,10 +12,11 @@ from sqlalchemy import delete as sql_delete
 from sqlalchemy import select
 from zett_agent.ids import new_uuid7
 
-from ...._compat import UTC
-from ....application.files.object_store import static_asset_key
-from ....schemas import StaticAssetCreate, StaticAssetEntity, StaticAssetListOptions, TagRefEntity, TagTargetType
-from ...files.object_store import get_object_store
+from zett._compat import UTC
+from zett.application.files.object_store import static_asset_key
+from zett.infra.files.object_store import get_object_store
+from zett.schemas import StaticAssetCreate, StaticAssetEntity, StaticAssetListOptions, TagRefEntity, TagTargetType
+
 from ..database import session_scope
 from ..storage import AsyncStorage
 from ..tables import TARGET_TO_CODE, StaticAssetRow, TagLinkRow

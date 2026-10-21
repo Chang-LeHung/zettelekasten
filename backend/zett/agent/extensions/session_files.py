@@ -1,17 +1,11 @@
 """Name the directory that holds one conversation's submitted files."""
 
-from zett_agent.agent import (
-    AgentRunContext,
-)
-from zett_agent.extensions.base import (
-    AgentExtension,
-)
-from zett_agent.messages import (
-    SystemMessage,
-)
+from zett_agent.agent import AgentRunContext
+from zett_agent.extensions.base import AgentExtension
+from zett_agent.messages import SystemMessage
 
-from ...application.files.object_store import session_directory_key
-from ...infra.files.object_store import get_object_store
+from zett.application.files.object_store import session_directory_key
+from zett.infra.files.object_store import get_object_store
 
 
 class SessionFilesExtension(AgentExtension):
@@ -19,7 +13,7 @@ class SessionFilesExtension(AgentExtension):
 
     Images and other files submitted with a message are also written below the
     session directory, which gives the model a path it can hand to
-    ``view_image``, a LaTeX build, or a shell command. Those tools need an
+    ``read``, a LaTeX build, or a shell command. Those tools need an
     absolute path: the files live under ``storage_root`` rather than the working
     directory the filesystem tools otherwise start from.
 

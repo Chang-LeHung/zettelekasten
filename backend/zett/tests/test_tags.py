@@ -5,12 +5,7 @@ from collections.abc import AsyncIterator
 
 import pytest
 from fastapi.testclient import TestClient
-from zett_agent.agent import (
-    Agent,
-    AgentRunConfig,
-    AgentRunContext,
-    AgentState,
-)
+from zett_agent.agent import Agent, AgentRunConfig, AgentRunContext, AgentState
 from zett_agent.messages import AssistantMessage, ToolCall, ToolMessage
 from zett_agent.model import ModelEvent, ModelRequest, ModelResponse
 

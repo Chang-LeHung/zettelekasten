@@ -1,10 +1,10 @@
 """Background orchestration for first-response conversation titles."""
 
-from ...agent.model_factory import create_model
-from ...agent.session_title import SessionTitleAgent
-from ...infra.log import get_logger
-from ...infra.persistence.dao import session_storage
-from ...schemas import AgentSessionCreate, ProviderConnection
+from zett.agent.model_factory import create_model
+from zett.agent.session_title import SessionTitleAgent
+from zett.infra.log import get_logger
+from zett.infra.persistence.dao import session_storage
+from zett.schemas import AgentSessionCreate, ProviderConnection
 
 logger = get_logger(__name__)
 DEFAULT_SESSION_TITLE = "新会话"

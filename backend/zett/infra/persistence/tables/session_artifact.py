@@ -14,7 +14,8 @@ from enum import IntEnum
 from sqlalchemy import Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ....schemas import ArtifactStatus, ArtifactType, CardStatus
+from zett.schemas import ArtifactStatus, ArtifactType, CardStatus
+
 from .base import Base
 
 

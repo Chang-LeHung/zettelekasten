@@ -2,9 +2,10 @@
 
 from fastapi import APIRouter
 
-from ....schemas import UpdateInstallResult, UpdateRestartResult, UpdateStatus
-from ...runtime import RuntimeService
-from ...runtime.updates import update_service
+from zett.application.runtime import RuntimeService
+from zett.application.runtime.updates import update_service
+from zett.schemas import UpdateInstallResult, UpdateRestartResult, UpdateStatus
+
 from ..schemas import UpdateInstallIn
 
 router = APIRouter(prefix="/updates", tags=["updates"])

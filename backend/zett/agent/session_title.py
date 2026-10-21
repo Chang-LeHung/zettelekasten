@@ -3,22 +3,11 @@
 from typing import Annotated
 
 from pydantic import Field
-from zett_agent.agent import (
-    Agent,
-)
-from zett_agent.extensions.persistence import (
-    RawMessageRecord,
-)
-from zett_agent.messages import (
-    AssistantMessage,
-    UserMessage,
-)
-from zett_agent.model import (
-    AgentModel,
-)
-from zett_agent.tools.base import (
-    tool,
-)
+from zett_agent.agent import Agent
+from zett_agent.extensions.persistence import RawMessageRecord
+from zett_agent.messages import AssistantMessage, UserMessage
+from zett_agent.model import AgentModel
+from zett_agent.tools.base import tool
 
 TITLE_SYSTEM_PROMPT = """You name a new conversation from its first completed exchange.
 Choose a specific, natural title in the user's language. Capture the central topic or intended outcome, not generic

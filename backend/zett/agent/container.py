@@ -12,11 +12,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .at_command import (
-        AtCommandDefinition,
-        AtCommandHandler,
-        AtCommandSource,
-    )
+    from .at_command import AtCommandDefinition, AtCommandHandler, AtCommandSource
     from .slash import SlashCommandDefinition, SlashCommandHandler
 
 
