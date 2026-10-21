@@ -14,7 +14,7 @@ from pathlib import Path
 from zett_agent.agent import AgentRunContext
 from zett_agent.extensions.base import AgentExtension
 from zett_agent.messages import SystemMessage
-from zett_agent.tools.coding import bash, delete_file, edit, glob, grep, read, read_file, write_file
+from zett_agent.tools.coding import bash, edit, glob, grep, read, read_file, write_file
 
 
 class FileToolsExtension(AgentExtension):
@@ -23,6 +23,9 @@ class FileToolsExtension(AgentExtension):
     ``read`` covers text and a local image, which only helps a model that reads
     images. For a text-only model the extension offers ``read_file`` instead, so
     the model is never handed pixels it cannot use.
+
+    There is no ``delete_file``: removing a file is a shell command, and one way
+    to do it is enough to explain in the guidelines.
     """
 
     def __init__(self, *, multimodal: bool = True) -> None:
@@ -35,7 +38,6 @@ class FileToolsExtension(AgentExtension):
         context.register_tool(grep)
         context.register_tool(write_file)
         context.register_tool(edit)
-        context.register_tool(delete_file)
         context.register_tool(bash)
 
     async def on_state(self, context: AgentRunContext) -> None:

@@ -10,7 +10,7 @@ from zett_agent.model import ModelEvent, ModelRequest, ModelResponse
 from zett.application.api.routes import agent as agent_routes
 from zett.main import app
 
-FILE_TOOLS = {"read", "glob", "grep", "write_file", "edit", "delete_file", "bash"}
+FILE_TOOLS = {"read", "glob", "grep", "write_file", "edit", "bash"}
 
 
 class RecordingModel:
@@ -64,6 +64,8 @@ def test_read_replaces_read_file_and_covers_local_images(monkeypatch: pytest.Mon
     # `read` returns text and a local image, so neither single-purpose tool is offered.
     assert "read_file" not in names
     assert "view_image" not in names
+    # Removing a file is `bash`, so no separate delete tool competes with it.
+    assert "delete_file" not in names
     environment = [text for text in instructions if text.startswith("# Filesystem environment")]
     assert len(environment) == 1
     assert "`read` returns a text line range or" in environment[0]
