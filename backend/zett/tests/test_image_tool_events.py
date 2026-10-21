@@ -4,12 +4,7 @@ import asyncio
 import json
 
 from fastapi.testclient import TestClient
-from zett_agent.messages import (
-    ImageBytesSource,
-    ImageContent,
-    TextContent,
-    ToolMessage,
-)
+from zett_agent.messages import ImageBytesSource, ImageContent, TextContent, ToolMessage
 
 from zett.agent.dispatcher import _message, encode_sse
 from zett.infra.agent.runtime import get_agent_runtime_storage

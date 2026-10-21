@@ -3,16 +3,9 @@
 import json
 from collections.abc import Awaitable, Callable, Sequence
 
-from zett_agent.agent import (
-    AgentRunContext,
-)
-from zett_agent.events import (
-    AgentEvent,
-    AgentEventType,
-)
-from zett_agent.extensions.base import (
-    AgentExtension,
-)
+from zett_agent.agent import AgentRunContext
+from zett_agent.events import AgentEvent, AgentEventType
+from zett_agent.extensions.base import AgentExtension
 from zett_agent.messages import (
     AgentMessage,
     AssistantMessage,
@@ -22,10 +15,7 @@ from zett_agent.messages import (
     ToolMessage,
     UserMessage,
 )
-from zett_agent.model import (
-    ModelRequest,
-    ModelResponse,
-)
+from zett_agent.model import ModelRequest, ModelResponse
 
 from zett._compat import TypeAliasType
 

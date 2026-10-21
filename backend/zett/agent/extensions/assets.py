@@ -7,15 +7,9 @@ from pathlib import Path
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from zett_agent.agent import (
-    AgentRunContext,
-)
-from zett_agent.extensions.base import (
-    AgentExtension,
-)
-from zett_agent.tools.base import (
-    tool,
-)
+from zett_agent.agent import AgentRunContext
+from zett_agent.extensions.base import AgentExtension
+from zett_agent.tools.base import tool
 
 from zett._compat import Self
 from zett.application.files.object_store import session_directory_key

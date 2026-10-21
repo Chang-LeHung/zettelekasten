@@ -8,31 +8,14 @@ from dataclasses import dataclass, replace
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
-from zett_agent.agent import (
-    AgentRunConfig,
-)
-from zett_agent.client import (
-    AgentClient,
-)
-from zett_agent.events import (
-    AgentEvent,
-    AgentEventType,
-)
-from zett_agent.extensions.external import (
-    ExternalEvent,
-)
-from zett_agent.extensions.shell_approval import (
-    ShellApprovalMode,
-)
-from zett_agent.extensions.steering import (
-    STEERING_MESSAGE_EVENT_NAME,
-)
-from zett_agent.messages import (
-    UserMessage,
-)
-from zett_agent.model import (
-    ReasoningEffort,
-)
+from zett_agent.agent import AgentRunConfig
+from zett_agent.client import AgentClient
+from zett_agent.events import AgentEvent, AgentEventType
+from zett_agent.extensions.external import ExternalEvent
+from zett_agent.extensions.shell_approval import ShellApprovalMode
+from zett_agent.extensions.steering import STEERING_MESSAGE_EVENT_NAME
+from zett_agent.messages import UserMessage
+from zett_agent.model import ReasoningEffort
 
 from ....agent import (
     AtCommandInvocation,

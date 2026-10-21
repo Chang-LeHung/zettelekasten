@@ -18,11 +18,7 @@ from zett.schemas import (
     SessionAssetType,
 )
 
-from ..at_command import (
-    AtCommandItem,
-    AtCommandSource,
-    reference_handler,
-)
+from ..at_command import AtCommandItem, AtCommandSource, reference_handler
 from ..container import ZettelkastenContainer, ZettelkastenExt
 
 #: One conversation lists at most this many referenceable resources per kind.

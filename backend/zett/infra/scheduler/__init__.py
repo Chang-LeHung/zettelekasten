@@ -65,13 +65,7 @@ import importlib
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .contracts import (
-        ActionExecutionStatus,
-        ActionExecutor,
-        ActionExecutorRegistry,
-        ActionResult,
-        ExecutionContext,
-    )
+    from .contracts import ActionExecutionStatus, ActionExecutor, ActionExecutorRegistry, ActionResult, ExecutionContext
     from .schedule import next_run_after, validate_schedule
     from .scheduler import SchedulerRunner, SchedulerTickResult
     from .worker import WorkerRunner, WorkerTickResult

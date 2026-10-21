@@ -5,18 +5,9 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Sequence
 from pathlib import Path
 
-from zett_agent.events import (
-    AgentEvent,
-)
-from zett_agent.extensions.skill import (
-    READ_SKILL_TOOL_NAME,
-    SkillExtension,
-)
-from zett_agent.messages import (
-    ImageContent,
-    TextContent,
-    UserMessage,
-)
+from zett_agent.events import AgentEvent
+from zett_agent.extensions.skill import READ_SKILL_TOOL_NAME, SkillExtension
+from zett_agent.messages import ImageContent, TextContent, UserMessage
 
 from zett.messages import MessagePartCodec
 

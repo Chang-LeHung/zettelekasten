@@ -15,11 +15,7 @@ from fastapi.testclient import TestClient
 
 from zett._compat import UTC
 from zett.config import settings
-from zett.infra.scheduler.runtime_state import (
-    RuntimeProcessController,
-    RuntimeStateStore,
-    RuntimeWatchdog,
-)
+from zett.infra.scheduler.runtime_state import RuntimeProcessController, RuntimeStateStore, RuntimeWatchdog
 from zett.main import app
 from zett.schemas import ProcessRole, ServerRuntimeState
 

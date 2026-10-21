@@ -14,11 +14,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from zett.infra.artifacts.git_projects import (
-    GitProjectError,
-    is_repository,
-    project_changes,
-)
+from zett.infra.artifacts.git_projects import GitProjectError, is_repository, project_changes
 from zett.infra.files.object_store import get_object_store
 from zett.infra.log import get_logger
 from zett.schemas import AgentArtifactEntity, ArtifactType, LatexPdfArtifactContent

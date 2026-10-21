@@ -3,10 +3,7 @@
 import asyncio
 
 from fastapi import APIRouter, HTTPException, Query, status
-from zett_agent.providers.base import (
-    ProviderAuthError,
-    ProviderResponseError,
-)
+from zett_agent.providers.base import ProviderAuthError, ProviderResponseError
 
 from ....infra.log import get_logger
 from ....infra.persistence.dao import provider_storage

@@ -5,13 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from zett.application.channels import channel_service
 from zett.infra.persistence.dao import provider_storage
 from zett.plugins import PluginError
-from zett.schemas import (
-    Channel,
-    ChannelLogin,
-    ChannelLoginStart,
-    ChannelPluginInfo,
-    ChannelUpdate,
-)
+from zett.schemas import Channel, ChannelLogin, ChannelLoginStart, ChannelPluginInfo, ChannelUpdate
 
 router = APIRouter(prefix="/channels", tags=["channels"])
 

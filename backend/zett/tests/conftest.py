@@ -6,14 +6,8 @@ import pytest
 from sqlalchemy.engine import URL
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
-from zett_agent.messages import (
-    AssistantMessage,
-)
-from zett_agent.model import (
-    ModelEvent,
-    ModelRequest,
-    ModelResponse,
-)
+from zett_agent.messages import AssistantMessage
+from zett_agent.model import ModelEvent, ModelRequest, ModelResponse
 
 from zett import config
 from zett.agent import config as agent_config

@@ -10,9 +10,17 @@ from sqlalchemy import delete as sql_delete
 from sqlalchemy import update as sql_update
 from zett_agent.ids import new_uuid7
 
-from ...._compat import UTC
-from ....application.files.object_store import InvalidObjectKey, ObjectKey, session_directory_key
-from ....schemas import (
+from zett._compat import UTC
+from zett.application.files.object_store import InvalidObjectKey, ObjectKey, session_directory_key
+from zett.infra.artifacts.latex_projects import create_latex_project, validate_latex_project_path
+from zett.infra.artifacts.search import (
+    build_fts_query,
+    delete_artifact_search,
+    delete_artifacts_search,
+    upsert_artifact_search,
+)
+from zett.infra.files.object_store import get_object_store
+from zett.schemas import (
     AgentArtifactEntity,
     AgentArtifactWrite,
     ArtifactContent,
@@ -28,14 +36,7 @@ from ....schemas import (
     TagTargetType,
     statuses_for,
 )
-from ...artifacts.latex_projects import create_latex_project, validate_latex_project_path
-from ...artifacts.search import (
-    build_fts_query,
-    delete_artifact_search,
-    delete_artifacts_search,
-    upsert_artifact_search,
-)
-from ...files.object_store import get_object_store
+
 from ..database import session_scope
 from ..storage import AsyncStorage
 from ..tables import (
@@ -255,7 +256,7 @@ class ArtifactStorage(AsyncStorage[AgentArtifactWrite, AgentArtifactEntity, str,
 
     async def create(self, entity: AgentArtifactWrite) -> AgentArtifactEntity:
         """Persist one artifact after confirming its Agent session exists."""
-        from ...agent.runtime import get_agent_runtime_storage
+        from zett.infra.agent.runtime import get_agent_runtime_storage
 
         if await get_agent_runtime_storage().get_session(entity.session_id) is None:
             raise KeyError(f"Agent session not found: {entity.session_id}")

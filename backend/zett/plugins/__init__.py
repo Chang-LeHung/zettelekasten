@@ -5,12 +5,7 @@ pulling in Zett application or infrastructure modules so plugins (for example
 ``zett-weixin``) can depend on it without import cycles.
 """
 
-from .agent import (
-    AGENT_PLUGIN_API_VERSION,
-    AGENT_PLUGIN_ENTRY_POINT_GROUP,
-    AgentCommandRegistry,
-    AgentPlugin,
-)
+from .agent import AGENT_PLUGIN_API_VERSION, AGENT_PLUGIN_ENTRY_POINT_GROUP, AgentCommandRegistry, AgentPlugin
 from .channels import (
     MAX_CHANNEL_MEDIA_BYTES,
     MAX_CHANNEL_MEDIA_ITEMS,

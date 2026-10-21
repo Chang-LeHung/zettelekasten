@@ -22,15 +22,8 @@ from dataclasses import dataclass, replace
 from typing import Any
 from uuid import UUID, uuid5
 
-from zett_agent.events import (
-    AgentEvent,
-)
-from zett_agent.messages import (
-    ImageContent,
-    TextContent,
-    UserContentPart,
-    UserMessage,
-)
+from zett_agent.events import AgentEvent
+from zett_agent.messages import ImageContent, TextContent, UserContentPart, UserMessage
 
 from .._compat import TypeAliasType
 from ..application.agent.turns import AgentTurn

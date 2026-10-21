@@ -8,34 +8,16 @@ from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
-from zett_agent.extensions.shell_approval import (
-    ShellApprovalMode,
-)
-from zett_agent.messages import (
-    AssistantMessage,
-    ImageBytesSource,
-    ImageContent,
-    TextContent,
-    ToolCall,
-)
-from zett_agent.model import (
-    ModelEvent,
-    ModelRequest,
-    ModelResponse,
-)
+from zett_agent.extensions.shell_approval import ShellApprovalMode
+from zett_agent.messages import AssistantMessage, ImageBytesSource, ImageContent, TextContent, ToolCall
+from zett_agent.model import ModelEvent, ModelRequest, ModelResponse
 
 from zett._compat import UTC
 from zett.application.agent import headless as headless_module
 from zett.application.channels import agent as im_agent_module
 from zett.application.channels import channel_service
 from zett.application.channels import service as channel_service_module
-from zett.application.channels.agent import (
-    AgentClient,
-    AgentEvent,
-    AgentEventKind,
-    AgentTurnRequest,
-    ZettIMAgentClient,
-)
+from zett.application.channels.agent import AgentClient, AgentEvent, AgentEventKind, AgentTurnRequest, ZettIMAgentClient
 from zett.application.channels.service import ChannelService
 from zett.application.channels.store import ChannelDraft, ChannelStore
 from zett.infra.agent.shell_approval import shell_approval_storage

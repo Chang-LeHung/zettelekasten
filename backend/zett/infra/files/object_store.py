@@ -6,13 +6,7 @@ import os
 import tempfile
 from pathlib import Path, PurePosixPath
 
-from zett.application.files.object_store import (
-    ObjectKey,
-    ObjectStore,
-    StoredObject,
-    content_digest,
-    object_url,
-)
+from zett.application.files.object_store import ObjectKey, ObjectStore, StoredObject, content_digest, object_url
 from zett.config import settings
 
 

@@ -4,52 +4,21 @@ import asyncio
 import re
 from collections.abc import AsyncIterator
 
-from zett_agent.agent import (
-    Agent,
-    AgentRunConfig,
-)
-from zett_agent.client import (
-    AgentClient,
-)
-from zett_agent.dispatcher import (
-    AgentEventDispatcher,
-)
-from zett_agent.events import (
-    AgentEvent,
-)
-from zett_agent.extensions.ask_user import (
-    AskUserExtension,
-)
-from zett_agent.extensions.coding import (
-    CodingExtension,
-)
-from zett_agent.extensions.compaction import (
-    CompactionExtension,
-)
-from zett_agent.extensions.external import (
-    ExternalEvent,
-)
-from zett_agent.extensions.model_request_trace import (
-    ModelRequestTraceExtension,
-)
-from zett_agent.extensions.session_persistence import (
-    SessionPersistenceExtension,
-)
-from zett_agent.extensions.shell_approval import (
-    ShellApprovalExtension,
-)
-from zett_agent.extensions.skill import (
-    SkillExtension,
-)
-from zett_agent.extensions.todo import (
-    TodoWriteExtension,
-)
-from zett_agent.extensions.tool_guidelines import (
-    ToolGuidelinesExtension,
-)
-from zett_agent.extensions.usage_activity import (
-    UsageActivityExtension,
-)
+from zett_agent.agent import Agent, AgentRunConfig
+from zett_agent.client import AgentClient
+from zett_agent.dispatcher import AgentEventDispatcher
+from zett_agent.events import AgentEvent
+from zett_agent.extensions.ask_user import AskUserExtension
+from zett_agent.extensions.coding import CodingExtension
+from zett_agent.extensions.compaction import CompactionExtension
+from zett_agent.extensions.external import ExternalEvent
+from zett_agent.extensions.model_request_trace import ModelRequestTraceExtension
+from zett_agent.extensions.session_persistence import SessionPersistenceExtension
+from zett_agent.extensions.shell_approval import ShellApprovalExtension
+from zett_agent.extensions.skill import SkillExtension
+from zett_agent.extensions.todo import TodoWriteExtension
+from zett_agent.extensions.tool_guidelines import ToolGuidelinesExtension
+from zett_agent.extensions.usage_activity import UsageActivityExtension
 
 from .._compat import Self
 from ..infra.agent.runtime import get_agent_runtime_storage
@@ -79,12 +48,7 @@ from .extensions import (
 )
 from .extensions.mcp import build_mcp_extension
 from .plugins import PluginCommandRegistry, SessionReferenceExtension
-from .slash import (
-    SlashCommandDefinition,
-    SlashCommandHandler,
-    SlashCommandInvocation,
-    stable_slash_command_id,
-)
+from .slash import SlashCommandDefinition, SlashCommandHandler, SlashCommandInvocation, stable_slash_command_id
 
 _SLASH_NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _AT_COMMAND_KIND = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")

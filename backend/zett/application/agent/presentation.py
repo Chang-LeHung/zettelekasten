@@ -1,24 +1,12 @@
 """Typed projections from zett-agent persistence records to HTTP models."""
 
-from zett_agent.extensions.persistence import (
-    RawMessageRecord,
-    SessionSummary,
-)
-from zett_agent.messages import (
-    AgentMessage,
-    AssistantMessage,
-    ToolMessage,
-    UserMessage,
-)
+from zett_agent.extensions.persistence import RawMessageRecord, SessionSummary
+from zett_agent.messages import AgentMessage, AssistantMessage, ToolMessage, UserMessage
 
 from zett.messages import FrontMessagePart, MessagePartCodec
 from zett.schemas import session_type_from_code
 
-from ..api.schemas import (
-    PersistedMessageOut,
-    PersistedToolCallOut,
-    SessionOut,
-)
+from ..api.schemas import PersistedMessageOut, PersistedToolCallOut, SessionOut
 
 _CODEC = MessagePartCodec()
 

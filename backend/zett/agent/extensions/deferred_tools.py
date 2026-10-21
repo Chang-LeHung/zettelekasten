@@ -7,21 +7,10 @@ from contextlib import aclosing
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from zett_agent.agent import (
-    AgentRunContext,
-)
-from zett_agent.extensions.base import (
-    AgentExtension,
-    ModelRequestNext,
-)
-from zett_agent.messages import (
-    SystemMessage,
-)
-from zett_agent.model import (
-    ModelEvent,
-    ModelRequest,
-    ToolDefinition,
-)
+from zett_agent.agent import AgentRunContext
+from zett_agent.extensions.base import AgentExtension, ModelRequestNext
+from zett_agent.messages import SystemMessage
+from zett_agent.model import ModelEvent, ModelRequest, ToolDefinition
 
 from ..model_factory import uses_responses_api
 

@@ -12,12 +12,8 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import select
-from zett_agent.agent import (
-    AgentRunConfig,
-)
-from zett_agent.extensions.external import (
-    ExternalEvent,
-)
+from zett_agent.agent import AgentRunConfig
+from zett_agent.extensions.external import ExternalEvent
 from zett_agent.messages import (
     AssistantMessage,
     ImageContent,
@@ -27,11 +23,7 @@ from zett_agent.messages import (
     ToolMessage,
     UserMessage,
 )
-from zett_agent.model import (
-    ModelEvent,
-    ModelRequest,
-    ModelResponse,
-)
+from zett_agent.model import ModelEvent, ModelRequest, ModelResponse
 
 from zett.application.agent.session_context import SESSION_CONTEXT_KEY_PREFIX
 from zett.application.agent.session_preferences import SESSION_MODEL_KEY_PREFIX

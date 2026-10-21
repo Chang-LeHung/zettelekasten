@@ -19,21 +19,10 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, ClassVar
 
-from zett_agent.agent import (
-    AgentRunContext,
-)
-from zett_agent.messages import (
-    AssistantMessage,
-    ToolCall,
-    ToolMessage,
-)
-from zett_agent.model import (
-    ModelRequest,
-    ModelResponse,
-)
-from zett_agent.tools.base import (
-    AgentTool,
-)
+from zett_agent.agent import AgentRunContext
+from zett_agent.messages import AssistantMessage, ToolCall, ToolMessage
+from zett_agent.model import ModelRequest, ModelResponse
+from zett_agent.tools.base import AgentTool
 
 from .contract import Plugin, PluginKind
 

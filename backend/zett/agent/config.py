@@ -5,19 +5,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from zett_agent.extensions.mcp import (
-    DEFAULT_MCP_SERVER_KEYS,
-    McpServer,
-)
-from zett_agent.extensions.shell_approval import (
-    ShellApprovalStorage,
-)
-from zett_agent.extensions.usage_activity import (
-    ModelUsageActivityStorage,
-)
-from zett_agent.storage import (
-    SQLiteSessionStorage,
-)
+from zett_agent.extensions.mcp import DEFAULT_MCP_SERVER_KEYS, McpServer
+from zett_agent.extensions.shell_approval import ShellApprovalStorage
+from zett_agent.extensions.usage_activity import ModelUsageActivityStorage
+from zett_agent.storage import SQLiteSessionStorage
 
 from ..config import settings
 from ..plugins import AgentPlugin

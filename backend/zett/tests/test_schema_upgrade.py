@@ -8,11 +8,7 @@ from zett._compat import UTC
 from zett.infra.persistence import database
 from zett.infra.persistence.dao import scheduled_task_storage
 from zett.infra.persistence.database import init_db, session_scope
-from zett.schemas import (
-    CronSchedule,
-    ScheduledTaskAction,
-    ScheduledTaskWrite,
-)
+from zett.schemas import CronSchedule, ScheduledTaskAction, ScheduledTaskWrite
 
 
 async def _columns(table: str) -> set[str]:

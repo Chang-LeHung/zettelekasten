@@ -2,22 +2,11 @@
 
 from collections.abc import Mapping
 
-from zett_agent.agent import (
-    AgentRunConfig,
-)
-from zett_agent.extensions.shell_approval import (
-    ShellApprovalMode,
-)
-from zett_agent.json_types import (
-    JsonValue,
-)
-from zett_agent.messages import (
-    UserContent,
-    UserMessage,
-)
-from zett_agent.model import (
-    ReasoningEffort,
-)
+from zett_agent.agent import AgentRunConfig
+from zett_agent.extensions.shell_approval import ShellApprovalMode
+from zett_agent.json_types import JsonValue
+from zett_agent.messages import UserContent, UserMessage
+from zett_agent.model import ReasoningEffort
 
 from ...agent.config import ZettelkastenAgentConfig
 from ...agent.model_factory import create_model

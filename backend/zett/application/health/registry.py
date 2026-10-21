@@ -6,12 +6,7 @@ import asyncio
 from datetime import datetime
 
 from zett._compat import UTC
-from zett.schemas import (
-    ProcessHeartbeatIn,
-    ProcessHeartbeatRecord,
-    ProcessHeartbeatStatus,
-    ProcessRole,
-)
+from zett.schemas import ProcessHeartbeatIn, ProcessHeartbeatRecord, ProcessHeartbeatStatus, ProcessRole
 
 
 def _normalize(value: datetime) -> datetime:

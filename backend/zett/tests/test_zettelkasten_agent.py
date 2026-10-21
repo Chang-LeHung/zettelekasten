@@ -7,25 +7,11 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
-from zett_agent.agent import (
-    Agent,
-    AgentRunConfig,
-)
-from zett_agent.events import (
-    AgentEvent,
-    AgentEventType,
-)
-from zett_agent.extensions.mcp import (
-    DEFAULT_MCP_SERVER_KEYS,
-    McpExtension,
-    McpHttpServer,
-)
-from zett_agent.extensions.persistence import (
-    RawMessageRecord,
-)
-from zett_agent.extensions.skill import (
-    SkillExtension,
-)
+from zett_agent.agent import Agent, AgentRunConfig
+from zett_agent.events import AgentEvent, AgentEventType
+from zett_agent.extensions.mcp import DEFAULT_MCP_SERVER_KEYS, McpExtension, McpHttpServer
+from zett_agent.extensions.persistence import RawMessageRecord
+from zett_agent.extensions.skill import SkillExtension
 from zett_agent.messages import (
     AgentMessage,
     AssistantMessage,
@@ -38,19 +24,9 @@ from zett_agent.messages import (
     ToolMessage,
     UserMessage,
 )
-from zett_agent.model import (
-    ModelEvent,
-    ModelRequest,
-    ModelResponse,
-    ModelUsage,
-    ToolDefinition,
-)
-from zett_agent.storage import (
-    SQLiteSessionStorage,
-)
-from zett_agent.tools.base import (
-    tool,
-)
+from zett_agent.model import ModelEvent, ModelRequest, ModelResponse, ModelUsage, ToolDefinition
+from zett_agent.storage import SQLiteSessionStorage
+from zett_agent.tools.base import tool
 
 from zett._compat import UTC
 from zett.agent import (
@@ -506,11 +482,7 @@ def test_steering_projection_preserves_ordered_multimodal_parts():
 
 
 def test_server_tool_lifecycle_is_forwarded_without_local_tool_message():
-    from zett_agent.model import (
-        ServerToolCall,
-        ServerToolInputDelta,
-        ServerToolResult,
-    )
+    from zett_agent.model import ServerToolCall, ServerToolInputDelta, ServerToolResult
 
     started = event_payload(
         AgentEvent(

@@ -3,25 +3,12 @@
 from collections.abc import Mapping
 from datetime import datetime
 
-from zett_agent.agent import (
-    AgentRunConfig,
-)
-from zett_agent.dispatcher import (
-    AgentEventDispatcher,
-)
-from zett_agent.events import (
-    AgentEvent,
-)
-from zett_agent.extensions.shell_approval import (
-    ShellApprovalMode,
-)
-from zett_agent.messages import (
-    ToolMessage,
-    UserMessage,
-)
-from zett_agent.model import (
-    ReasoningEffort,
-)
+from zett_agent.agent import AgentRunConfig
+from zett_agent.dispatcher import AgentEventDispatcher
+from zett_agent.events import AgentEvent
+from zett_agent.extensions.shell_approval import ShellApprovalMode
+from zett_agent.messages import ToolMessage, UserMessage
+from zett_agent.model import ReasoningEffort
 
 from ...agent.config import ZettelkastenAgentConfig
 from ...agent.model_factory import create_model
@@ -31,18 +18,8 @@ from ...application.runtime.settings import runtime_settings_service
 from ...infra.agent.runtime import get_agent_runtime_storage
 from ...infra.agent.shell_approval import shell_approval_storage
 from ...infra.log import get_logger, log_preview
-from ...infra.persistence.dao import (
-    model_usage_activity_storage,
-    provider_storage,
-    session_storage,
-)
-from ...schemas import (
-    AGENT_PROMPT_ACTION_KIND,
-    AgentPromptAction,
-    AgentSessionCreate,
-    JsonValue,
-    SessionType,
-)
+from ...infra.persistence.dao import model_usage_activity_storage, provider_storage, session_storage
+from ...schemas import AGENT_PROMPT_ACTION_KIND, AgentPromptAction, AgentSessionCreate, JsonValue, SessionType
 from .contracts import ActionExecutionStatus, ActionExecutor, ActionResult, ExecutionContext
 
 logger = get_logger(__name__)

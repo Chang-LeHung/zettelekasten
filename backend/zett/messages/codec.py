@@ -30,13 +30,7 @@ from .errors import (
     MessagePartBytesError,
     UnsupportedMessagePartError,
 )
-from .front import (
-    IMAGE_MIME_PATTERN,
-    FrontImagePart,
-    FrontMessagePart,
-    FrontTextPart,
-    FrontUserMessage,
-)
+from .front import IMAGE_MIME_PATTERN, FrontImagePart, FrontMessagePart, FrontTextPart, FrontUserMessage
 
 _BYTE_TYPES = (bytes, bytearray, memoryview)
 _BASE64 = re.compile(r"^[A-Za-z0-9+/]+={0,2}$")
