@@ -10,16 +10,19 @@ from zett_agent.extensions.shell_approval import ShellApprovalMode
 from zett_agent.messages import ToolMessage, UserMessage
 from zett_agent.model import ReasoningEffort
 
-from ...agent.config import ZettelkastenAgentConfig
-from ...agent.model_factory import create_model
-from ...agent.zettelkasten import ZettelkastenAgent
-from ...application.agent.session_context import session_context_composition_service
-from ...application.runtime.settings import runtime_settings_service
-from ...infra.agent.runtime import get_agent_runtime_storage
-from ...infra.agent.shell_approval import shell_approval_storage
-from ...infra.log import get_logger, log_preview
-from ...infra.persistence.dao import model_usage_activity_storage, provider_storage, session_storage
-from ...schemas import AGENT_PROMPT_ACTION_KIND, AgentPromptAction, AgentSessionCreate, JsonValue, SessionType
+from zett.agent.config import ZettelkastenAgentConfig
+from zett.agent.model_factory import create_model
+from zett.agent.web_search import web_search_tools
+from zett.agent.zettelkasten import ZettelkastenAgent
+from zett.application.agent.session_context import session_context_composition_service
+from zett.application.runtime.settings import runtime_settings_service
+from zett.infra.agent.runtime import get_agent_runtime_storage
+from zett.infra.agent.shell_approval import shell_approval_storage
+from zett.infra.log import get_logger, log_preview
+from zett.infra.persistence.dao import model_usage_activity_storage, provider_storage, session_storage
+from zett.schemas import AGENT_PROMPT_ACTION_KIND, AgentPromptAction, AgentSessionCreate, JsonValue, SessionType
+from zett.schemas.providers import supports_images
+
 from .contracts import ActionExecutionStatus, ActionExecutor, ActionResult, ExecutionContext
 
 logger = get_logger(__name__)
@@ -149,6 +152,8 @@ class AgentPromptExecutor(ActionExecutor):
                     interactive=False,
                     coding_enabled=False,
                     allow_direct_artifact_edits=True,
+                    server_tools=web_search_tools(connection),
+                    multimodal=supports_images(connection.metadata),
                 )
             )
             await agent.initialize()

@@ -1,7 +1,7 @@
 """Persist the files that arrived with one conversation turn.
 
 The browser submits pasted images as base64 data URLs inside the user message,
-so the model receives pixels but no file it can hand to ``view_image``, LaTeX, or
+so the model receives pixels but no file it can hand to ``read``, LaTeX, or
 a shell command. This service writes those same bytes below the owning session's
 directory when the message is submitted, which is the location the session-files
 system message names for the model.

@@ -43,3 +43,31 @@ describe('toolOutputParts', () => {
     expect(toolOutputParts([])).toBeNull()
   })
 })
+
+import { serverToolLabel, serverToolView } from './toolPresentation'
+
+describe('server tool presentation', () => {
+  it('names a hosted tool the way a reader thinks of it', () => {
+    expect(serverToolLabel('web_search')).toBe('Web search')
+    expect(serverToolLabel('google_search')).toBe('Google Search')
+    expect(serverToolLabel('vendor_search')).toBe('vendor search')
+  })
+
+  it('shows the queries a search ran and the pages it cited', () => {
+    const view = serverToolView(
+      'web_search',
+      { queries: ['latest python'], pages: [{ url: 'https://python.org', title: 'Python' }] },
+      null,
+    )
+    expect(view.label).toBe('Web search')
+    expect(view.summary).toBe('latest python')
+    expect(view.pages).toEqual([{ url: 'https://python.org', title: 'Python' }])
+  })
+
+  it('counts pages when the provider reported no query, and keeps a failure visible', () => {
+    const pages = serverToolView('web_search', { pages: [{ url: 'https://a' }, { url: 'https://b' }] }, null)
+    expect(pages.summary).toBe('2 pages')
+    const failed = serverToolView('code_execution', { error: 'too_many_requests' }, 'too_many_requests')
+    expect(failed.error).toBe('too_many_requests')
+  })
+})

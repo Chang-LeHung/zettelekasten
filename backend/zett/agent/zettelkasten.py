@@ -9,7 +9,6 @@ from zett_agent.client import AgentClient
 from zett_agent.dispatcher import AgentEventDispatcher
 from zett_agent.events import AgentEvent
 from zett_agent.extensions.ask_user import AskUserExtension
-from zett_agent.extensions.coding import CodingExtension
 from zett_agent.extensions.compaction import CompactionExtension
 from zett_agent.extensions.external import ExternalEvent
 from zett_agent.extensions.model_request_trace import ModelRequestTraceExtension
@@ -40,6 +39,7 @@ from .extensions import (
     AssetExtension,
     ContextCompositionExtension,
     DeferredToolExtension,
+    FileToolsExtension,
     ScheduledTaskExtension,
     SessionFilesExtension,
     StaticAssetExtension,
@@ -103,13 +103,21 @@ class ZettelkastenAgent(ZettelkastenContainer):
             # this middleware passes shell calls straight through there and keeps
             # asking the browser in an interactive conversation.
             extensions.append(ShellApprovalExtension(config.shell_approval_storage))
-            extensions.append(CodingExtension())
+            # Zett registers its own file tools: `read` covers text and a local
+            # image, so `read_file` and `view_image` are not offered beside it.
+            extensions.append(FileToolsExtension(multimodal=config.multimodal))
         if config.interactive:
             extensions.append(AskUserExtension())
         if config.browser_connection is not None:
             from .extensions.browser import BrowserExtension
 
             extensions.append(BrowserExtension(config.browser_connection))
+        if config.server_tools:
+            # Declared like any tool, but the provider runs it: zett-agent does not
+            # dispatch it locally and reports it as server-tool events.
+            from zett_agent.extensions.server_tools.base import ServerToolExtension
+
+            extensions.append(ServerToolExtension(config.server_tools, name="HostedServerTools"))
         if config.usage_activity_storage is not None:
             extensions.append(UsageActivityExtension(config.usage_activity_storage))
         # One adapter, appended last: plugins run inside every built-in

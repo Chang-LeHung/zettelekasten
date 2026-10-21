@@ -1,12 +1,18 @@
 <script setup lang="ts">
-import { defineAsyncComponent } from 'vue'
+import { computed, defineAsyncComponent } from 'vue'
 import { locale } from '../app/i18n'
 import { ai, apiKeyVisible, editingProviderId, newProvider, providerLoading, providerSaving, providers, removeProvider, saveAI, selectProvider, selectProviderKind, setResponseMode } from '../app/providers'
 import { agentPermissionSaving, agentPermissions, changeLocale, closeSettings, maxAssetSizeMb, modelUsageActivity, runtimeSettings, runtimeSettingsSaving, saveRuntimeSettings, selectSettingsSection, setAgentPermission, settingsOpen, settingsSection, usageActivity, usageActivityLoading } from '../app/settings'
 import UsageActivityGraph from '../components/UsageActivityGraph.vue'
-import { providerBaseUrlHelp, providerIgnoresTemperature } from '../utils/providerDefaults'
+import { defaultWebSearchName, providerBaseUrlHelp, providerIgnoresTemperature, webSearchHint, webSearchUnavailableReason } from '../utils/providerDefaults'
 
 const ModelUsageTrend = defineAsyncComponent(() => import('../components/ModelUsageTrend.vue'))
+
+const searchUnavailable = computed(() => webSearchUnavailableReason(ai.value.provider, ai.value.model, ai.value.response, ai.value.web_search_name ?? ''))
+const searchDefaultName = computed(() => defaultWebSearchName(ai.value.provider, ai.value.model, ai.value.response))
+// Each protocol declares its own search tool and returns its own kind of result, so the
+// hint names the tool the user will actually get instead of one generic sentence.
+const searchHint = computed(() => webSearchHint(ai.value.provider, ai.value.model, ai.value.response))
 </script>
 
 <template>
@@ -60,6 +66,8 @@ const ModelUsageTrend = defineAsyncComponent(() => import('../components/ModelUs
           <label v-if="!providerIgnoresTemperature(ai.provider)" class="field temperature-field"><span>{{ $t('Temperature') }} <output>{{ typeof ai.temperature === 'number' ? ai.temperature.toFixed(1) : '—' }}</output></span><input v-model.number="ai.temperature" type="range" min="0" max="2" step="0.1" /></label>
           <div v-if="ai.provider === 'responses_compatible'" class="field"><span>{{ $t('API mode') }}</span><strong>Responses API</strong><small>This compatible connection always uses the Responses protocol.</small></div>
           <div v-else-if="['openai', 'openai_compatible', 'deepseek'].includes(ai.provider)" class="field"><span>{{ $t('API mode') }}</span><div class="mode-options" role="group" :aria-label="$t('API mode')"><button type="button" :class="{ active: !ai.response }" @click="setResponseMode(false)">Chat Completions</button><button type="button" :class="{ active: ai.response }" @click="setResponseMode(true)">Responses API</button></div><small>Responses mode enables provider-hosted tools such as web search.</small></div>
+          <div class="field full"><span>{{ $t('Multimodal') }}</span><label class="switch"><input v-model="ai.multimodal" type="checkbox" /><span /><small>{{ ai.multimodal ? 'On' : 'Off' }}</small></label><small>{{ ai.multimodal ? 'The model reads images: files are opened with read, which returns pictures.' : 'Text only: files are opened with read_file and images are not sent to the model.' }}</small></div>
+          <div class="field full web-search-field"><span>{{ $t('Web search') }}</span><label class="switch"><input v-model="ai.web_search" type="checkbox" :disabled="!ai.web_search && Boolean(searchUnavailable)" /><span /><small>{{ ai.web_search ? 'On' : 'Off' }}</small></label><input v-if="ai.web_search" v-model="ai.web_search_name" :placeholder="searchDefaultName || 'Search tool name'" :aria-label="$t('Search tool name')" /><small>{{ searchUnavailable || searchHint }}</small></div>
         </div>
         <div class="settings-actions"><button v-if="editingProviderId !== null" class="danger-button" type="button" @click="removeProvider">Delete provider</button><span v-else>Credentials are encrypted in your local database.</span><div><label class="switch"><input v-model="ai.enabled" type="checkbox" /><span /><small>{{ ai.enabled ? 'Enabled' : 'Disabled' }}</small></label><button class="primary-action" :disabled="providerSaving || providerLoading || !ai.name || !ai.model" :aria-busy="providerSaving" type="submit"><span v-if="providerSaving" class="button-spinner" aria-hidden="true" /><span>{{ providerSaving ? 'Testing…' : editingProviderId === null ? 'Add provider' : 'Save provider' }}</span></button></div></div>
       </form>

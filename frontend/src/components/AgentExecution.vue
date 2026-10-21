@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { AgentTimelineEntry } from '../api/types'
+import { serverToolView } from '../utils/toolPresentation'
 import ToolResult from './ToolResult.vue'
 
 defineProps<{
@@ -65,11 +66,28 @@ function formatToolValue(value: unknown): string {
             </div>
           </details>
           <details v-else-if="entry.type === 'server_tool'" class="tool-activity server-tool-activity" :class="entry.activity.state">
-            <summary><i /><span>{{ entry.activity.name.replaceAll('_', ' ') }}</span><small>Provider tool · {{ entry.activity.state }}</small></summary>
-            <div class="tool-activity-details">
-              <div><strong>Input</strong><pre>{{ entry.activity.input_delta || (entry.activity.input === null ? 'Waiting for streamed input…' : formatToolValue(entry.activity.input)) }}</pre></div>
-              <div v-if="entry.activity.output !== undefined || entry.activity.error_code"><strong>{{ entry.activity.error_code ? 'Error' : 'Result' }}</strong><pre :class="{ error: entry.activity.error_code }">{{ entry.activity.error_code || formatToolValue(entry.activity.output) }}</pre></div>
-            </div>
+            <template v-for="view in [serverToolView(entry.activity.name, entry.activity.output, entry.activity.error_code)]" :key="'view'">
+              <summary>
+                <i />
+                <span>{{ view.label }}</span>
+                <small v-if="view.summary" class="server-tool-summary">{{ view.summary }}</small>
+                <small v-else>Provider tool · {{ entry.activity.state }}</small>
+              </summary>
+              <div class="tool-activity-details">
+                <div v-if="entry.activity.input !== null || entry.activity.input_delta"><strong>Input</strong><pre>{{ entry.activity.input_delta || formatToolValue(entry.activity.input) }}</pre></div>
+                <div v-if="view.pages.length">
+                  <strong>Sources</strong>
+                  <ul class="server-tool-pages">
+                    <li v-for="page in view.pages" :key="page.url">
+                      <a :href="page.url" target="_blank" rel="noreferrer noopener">{{ page.title || page.url }}</a>
+                      <small v-if="page.title">{{ page.url }}</small>
+                    </li>
+                  </ul>
+                </div>
+                <div v-if="view.text"><strong>Result</strong><pre>{{ view.text }}</pre></div>
+                <div v-if="view.error"><strong>Error</strong><pre class="error">{{ view.error }}</pre></div>
+              </div>
+            </template>
           </details>
         </template>
       </div>
@@ -88,8 +106,7 @@ function formatToolValue(value: unknown): string {
 .running .turn-state-icon i { animation: activity-pulse 1.15s ease-in-out infinite; }
 .turn-execution-copy { min-width: 0; display: grid; gap: .16rem; }
 .turn-execution-copy strong { overflow: hidden; color: #59635d; font-size: .68rem; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
-.running .turn-execution-copy strong { color: #355b45; }
-.turn-execution-copy small { color: #929995; font-size: .56rem; font-variant-numeric: tabular-nums; }
+.running .turn-execution-copy strong { color: #355b45; }.turn-execution-copy small { color: #929995; font-size: .56rem; font-variant-numeric: tabular-nums; }
 .turn-execution-metrics { min-width: 0; display: flex; align-items: center; justify-content: flex-end; }
 .turn-chevron { color: #8e9892; font-size: 1.05rem; line-height: 1; transition: transform 160ms ease; }
 .turn-execution[open] > summary .turn-chevron { transform: rotate(90deg); }
@@ -113,6 +130,13 @@ function formatToolValue(value: unknown): string {
 .tool-activity-details strong { display: block; margin-bottom: .28rem; color: #78827c; font-size: .56rem; letter-spacing: .055em; text-transform: uppercase; }
 .tool-activity-details pre { max-height: 11rem; margin: 0; padding: .32rem 0; overflow: auto; border: 0; color: #465049; background: transparent; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: .62rem; line-height: 1.48; text-transform: none; white-space: pre-wrap; overflow-wrap: anywhere; }
 .tool-activity-details pre.error { color: #8d4040; }
+.tool-activity summary small.server-tool-summary { max-width: 60%; margin-left: auto; overflow: hidden; color: #6f7a73; text-overflow: ellipsis; white-space: nowrap; text-transform: none; }
+.server-tool-pages { display: grid; gap: .28rem; margin: 0; padding: 0; list-style: none; }
+.server-tool-pages li { display: grid; gap: .08rem; padding-left: .7rem; position: relative; }
+.server-tool-pages li::before { content: '·'; position: absolute; left: .18rem; color: #92a099; }
+.server-tool-pages a { overflow: hidden; color: #355b45; font-size: .64rem; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
+.server-tool-pages a:hover { text-decoration: underline; }
+.server-tool-pages small { overflow: hidden; color: var(--tertiary); font-size: .56rem; text-overflow: ellipsis; white-space: nowrap; }
 .reasoning-panel { width: 100%; min-width: 0; margin: 0; color: #5d6961; background: transparent; }
 .reasoning-panel summary { display: flex; align-items: center; gap: .42rem; min-height: 1.7rem; padding: .12rem .08rem; cursor: pointer; list-style: none; font-size: .68rem; font-weight: 630; user-select: none; }
 .reasoning-panel summary::-webkit-details-marker { display: none; }

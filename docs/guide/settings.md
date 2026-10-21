@@ -29,6 +29,26 @@ channel.
 | **OpenAI**, **Anthropic**, **Google Gemini**, **DeepSeek**, **Ollama** | Those services directly. Ollama runs models on your own computer. |
 | **OpenAI compatible**, **Responses compatible** | Any other service that offers an OpenAI-style or Responses-style API. |
 
+### Web search
+
+Turn on **Web search** in a provider so the model can look things up on the web
+itself and cite what it found. The service runs the search, so it works only
+where the service offers one:
+
+- the **Responses API** of OpenAI and compatible services,
+- **Anthropic** and Anthropic-compatible services, and
+- **Google Gemini**.
+
+DeepSeek is the exception: only its **flash** models search, and only through
+an **Anthropic compatible** connection. Zett refuses to save the switch for any
+other DeepSeek setup, because those endpoints accept the request and then
+answer from memory without searching.
+
+Leave the **search tool name** blank to use the default for the service, or type
+the name your service documents, such as `web_search_20250305`. A service can
+limit how often it searches, so a search can fail on its side; the model then
+says it could not look the answer up.
+
 Your API key is encrypted on this computer and is never shown again. When you
 edit a provider, leave the key empty to keep the one you saved.
 

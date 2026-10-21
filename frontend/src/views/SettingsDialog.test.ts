@@ -33,7 +33,7 @@ it('opens a provider that has no temperature instead of failing to render', asyn
   // dialog used to call toFixed on it, which blanked the whole application.
   providers.value = [{ id: 'p1', name: 'Local', provider: 'openai_compatible', model: 'm', enabled: true } as never]
   selectedProviderId.value = 'p1'
-  ai.value = { name: 'Local', provider: 'openai_compatible', model: 'm', base_url: '', api_key: '', temperature: null as never, response: false, enabled: true }
+  ai.value = { name: 'Local', provider: 'openai_compatible', model: 'm', base_url: '', api_key: '', temperature: null as never, response: false, multimodal: true, web_search: false, web_search_name: null, enabled: true }
   settingsSection.value = 'providers'
   settingsOpen.value = true
 

@@ -139,7 +139,7 @@ Submitting a message with images writes those images to the session's own
 directory as well, under `assets/sessions/<session-id>/uploads/`, named by
 submission time. The user message keeps its inline data URL, so the browser
 still renders from the message and the raw log stays a complete immutable
-record; the files are the handle a model needs for `view_image`, a LaTeX build,
+record; the files are the handle a model needs for `read`, a LaTeX build,
 or a shell command. They are not Session Assets: nothing is listed by
 `list_assets`, and deleting the session removes the whole session directory, so
 uploads no row points at cannot leak.
@@ -166,6 +166,23 @@ protocols reject client-side search. `uses_responses_api` in
 adapter speaks. The rewrite runs at priority 90, ahead of zett-agent's search
 extension at the default 100, because a filter that ran first would strip the
 definitions this protocol still offers.
+
+Web search is a provider setting, not a Zett tool. A provider's `metadata`
+carries `web_search` (bool) and an optional `web_search_name`, the wire type of
+the search tool the model endpoint runs itself. `zett/schemas/providers.py`
+holds the rules (`default_web_search_name`, `web_search_error`) and
+`ProviderWrite` enforces them before persistence: the Responses API declares
+`web_search`, Anthropic `web_search_20260318`, Google `google_search`, and a
+DeepSeek model searches only on the Anthropic API and only when it is a flash
+model, where it answers the older `web_search_20250305` (DeepSeek's chat and
+Responses endpoints accept the tool and then do not search). A chat-completions
+or Ollama configuration is refused unless the user names a tool.
+`zett/agent/web_search.py` turns the stored setting into a `ServerToolDefinition`
+(adding the `name` Anthropic's schema requires), every caller that holds the
+request's `ProviderConnection` passes it as `ZettelkastenAgentConfig.server_tools`,
+and `ZettelkastenAgent` registers it through zett-agent's `ServerToolExtension`.
+The provider runs it, so the runtime reports it only as `server_tool_*` events
+and never dispatches it locally.
 
 Artifact creation writes the supplied content directly to `content_json`
 because there is no existing user version to protect. Later model updates write

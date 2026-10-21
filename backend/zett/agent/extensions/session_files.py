@@ -13,7 +13,7 @@ class SessionFilesExtension(AgentExtension):
 
     Images and other files submitted with a message are also written below the
     session directory, which gives the model a path it can hand to
-    ``view_image``, a LaTeX build, or a shell command. Those tools need an
+    ``read``, a LaTeX build, or a shell command. Those tools need an
     absolute path: the files live under ``storage_root`` rather than the working
     directory the filesystem tools otherwise start from.
 

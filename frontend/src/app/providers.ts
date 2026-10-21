@@ -20,6 +20,9 @@ export const ai = ref<AIProviderInput>({
   api_key: '',
   temperature: 0.2,
   response: false,
+  multimodal: true,
+  web_search: false,
+  web_search_name: null,
   enabled: true,
 })
 let providerSelectionGeneration = 0
@@ -59,6 +62,9 @@ export async function selectProvider(provider: AIProvider): Promise<void> {
       api_key: detail.api_key || '',
       temperature: detail.temperature,
       response: detail.response,
+      multimodal: detail.multimodal,
+      web_search: detail.web_search,
+      web_search_name: detail.web_search_name,
       enabled: detail.enabled,
     }
   } catch (error) {
@@ -72,7 +78,7 @@ export function newProvider(): void {
   providerLoading.value = false
   editingProviderId.value = null
   apiKeyVisible.value = true
-  ai.value = { name: '', provider: 'openai_compatible', model: '', base_url: '', api_key: '', temperature: 0.2, response: false, enabled: true }
+  ai.value = { name: '', provider: 'openai_compatible', model: '', base_url: '', api_key: '', temperature: 0.2, response: false, multimodal: true, web_search: false, web_search_name: null, enabled: true }
 }
 export function selectProviderKind(): void {
   if (ai.value.provider === 'responses_compatible') ai.value.response = true

@@ -86,6 +86,9 @@ it('lists scheduled tasks, runs, and creates an Agent prompt task', async () => 
     enabled: true,
     temperature: 0.2,
     response: false,
+    multimodal: true,
+  web_search: false,
+    web_search_name: null,
     created_at: '',
     updated_at: '',
   }])

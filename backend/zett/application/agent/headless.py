@@ -8,12 +8,15 @@ from zett_agent.json_types import JsonValue
 from zett_agent.messages import UserContent, UserMessage
 from zett_agent.model import ReasoningEffort
 
-from ...agent.config import ZettelkastenAgentConfig
-from ...agent.model_factory import create_model
-from ...agent.zettelkasten import ZettelkastenAgent
-from ...infra.agent.runtime import get_agent_runtime_storage
-from ...infra.agent.shell_approval import shell_approval_storage
-from ...infra.persistence.dao import model_usage_activity_storage, provider_storage
+from zett.agent.config import ZettelkastenAgentConfig
+from zett.agent.model_factory import create_model
+from zett.agent.web_search import web_search_tools
+from zett.agent.zettelkasten import ZettelkastenAgent
+from zett.infra.agent.runtime import get_agent_runtime_storage
+from zett.infra.agent.shell_approval import shell_approval_storage
+from zett.infra.persistence.dao import model_usage_activity_storage, provider_storage
+from zett.schemas.providers import supports_images
+
 from ..runtime.settings import runtime_settings_service
 from .session_context import session_context_composition_service
 
@@ -64,6 +67,8 @@ async def run_headless_prompt(
                 context_composition_recorder=_remember_context_composition,
                 interactive=False,
                 coding_enabled=allow_coding,
+                server_tools=web_search_tools(connection),
+                multimodal=supports_images(connection.metadata),
             )
         )
         await agent.initialize()

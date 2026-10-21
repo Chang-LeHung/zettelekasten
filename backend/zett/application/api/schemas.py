@@ -8,8 +8,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from ...messages import FrontMessagePart, FrontUserMessage
-from ...schemas import (
+from zett.messages import FrontMessagePart, FrontUserMessage
+from zett.schemas import (
     AgentArtifactEntity,
     ArtifactContent,
     ArtifactCreateContent,
@@ -24,6 +24,7 @@ from ...schemas import (
     SessionType,
     TagTargetType,
 )
+from zett.schemas.providers import web_search_error
 
 
 class DeleteResponse(BaseModel):
@@ -219,6 +220,13 @@ class ProviderIn(BaseModel):
     api_key: str | None = Field(default=None, max_length=10_000)
     temperature: float | None = Field(default=None, ge=0, le=2)
     response: bool = Field(default=False, description="Use a Responses API endpoint instead of chat completions")
+    multimodal: bool = Field(default=True, description="The model reads images, so the file tool may return them")
+    web_search: bool = Field(default=False, description="Let the model endpoint search the web for each turn")
+    web_search_name: str | None = Field(
+        default=None,
+        max_length=100,
+        description="Provider-side search tool type; blank selects the protocol's default",
+    )
     enabled: bool = True
 
     @field_validator("provider", mode="before")
@@ -239,6 +247,14 @@ class ProviderIn(BaseModel):
     def empty_string_is_none(cls, value: object) -> object:
         return None if value == "" else value
 
+    @field_validator("web_search_name", mode="before")
+    @classmethod
+    def blank_search_name_is_none(cls, value: object) -> object:
+        """Treat a blank or padded name as unset so the protocol default applies."""
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
+
     @model_validator(mode="after")
     def responses_api_requires_compatible_provider(self) -> ProviderIn:
         """Reject a Responses mode that the selected native adapter cannot use."""
@@ -256,6 +272,10 @@ class ProviderIn(BaseModel):
             raise ValueError("Anthropic-compatible providers require a base URL")
         if self.response and self.provider not in supported:
             raise ValueError(f"Responses API is not supported by {self.provider.value}")
+        if self.web_search:
+            error = web_search_error(self.provider, self.model, response=self.response, name=self.web_search_name)
+            if error is not None:
+                raise ValueError(error)
         return self
 
 
@@ -270,6 +290,13 @@ class ProviderResponse(BaseModel):
     api_key_configured: bool
     temperature: float | None = None
     response: bool = False
+    multimodal: bool = True
+    web_search: bool = False
+    web_search_name: str | None = None
+    #: The tool type the protocol uses when the saved name is blank.
+    web_search_default_name: str | None = None
+    #: What an answer from this protocol's search holds, for the settings form.
+    web_search_hint: str = ""
     enabled: bool
     created_at: datetime
     updated_at: datetime
