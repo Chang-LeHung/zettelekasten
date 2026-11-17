@@ -119,3 +119,28 @@ it('cancellation clears a pending approval', async () => {
   expect(consent).toBeNull()
   expect(execute).not.toHaveBeenCalled()
 })
+
+it('asks before an attribute change, and never for an accessibility audit', async () => {
+  const attribute = {
+    type: 'command', id: 'd'.repeat(32), operation: 'attribute',
+    change: null, query: null, interaction: null, inspect: null, wait: null, probe: null,
+    attribute: { name: 'alt', selector: '#chart', value: 'A chart', description: 'Describe the chart' },
+  }
+  socket.emit(attribute)
+  await flush()
+  expect(consent?.command.attribute?.name).toBe('alt')
+  expect(execute).not.toHaveBeenCalled()
+  consent!.approve()
+  await flush()
+  expect(execute).toHaveBeenCalledWith(expect.objectContaining({ operation: 'attribute' }))
+
+  const audit = {
+    type: 'command', id: 'e'.repeat(32), operation: 'audit',
+    change: null, query: null, interaction: null, inspect: null, wait: null, probe: null, attribute: null,
+  }
+  execute.mockClear()
+  socket.emit(audit)
+  await flush()
+  expect(consent).toBeNull()
+  expect(execute).toHaveBeenCalledTimes(1)
+})

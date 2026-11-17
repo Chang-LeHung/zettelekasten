@@ -171,6 +171,13 @@ const consentDetails = computed(() => {
     value: typeof change.value === 'string' ? change.value : String(change.value),
     extra: '',
   }
+  const attribute = browserConsent.value?.command.attribute
+  if (attribute) return {
+    action: `${attribute.name} attribute`,
+    target: attribute.selector,
+    value: attribute.value === null ? '(remove)' : attribute.value,
+    extra: '',
+  }
   const interaction = browserConsent.value?.command.interaction
   if (!interaction) return null
   return {
@@ -293,7 +300,7 @@ const consentSecondsLeft = computed(() => {
 /** Reads change nothing and fills only edit a field; the rest can submit, navigate or publish. */
 const consentRisk = computed<'edit' | 'act'>(() => {
   const consent = browserConsent.value
-  if (consent?.command.change) return 'edit'
+  if (consent?.command.change || consent?.command.attribute) return 'edit'
   const action = consent?.command.interaction?.action
   return action && ['hover', 'focus', 'scroll'].includes(action) ? 'edit' : 'act'
 })

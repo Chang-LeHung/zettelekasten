@@ -517,3 +517,51 @@ it('waits for the address to change only when the page navigates', async () => {
   const receipt = JSON.parse((await pending).result!)
   expect(receipt.matched).toBe(true)
 })
+
+function attributeCommand(change: Partial<BrowserCommand['attribute']>): BrowserCommand {
+  return {
+    type: 'command', id: 'f'.repeat(32), operation: 'attribute',
+    change: null, query: null, interaction: null, inspect: null, wait: null, probe: null,
+    attribute: { name: 'alt', selector: '#chart', value: 'A chart', description: 'Describe the chart', ...change },
+  } as BrowserCommand
+}
+
+it('sets and removes one allowlisted accessibility attribute', () => {
+  document.body.innerHTML = '<img id="chart" src="a.png">'
+  expect(JSON.parse(applyDOMCommand(attributeCommand({})).result!)).toMatchObject({ applied: true, value: 'A chart' })
+  expect(document.querySelector('#chart')!.getAttribute('alt')).toBe('A chart')
+
+  const removed = JSON.parse(applyDOMCommand(attributeCommand({ value: null })).result!)
+  expect(removed).toMatchObject({ applied: true, value: null })
+  expect(document.querySelector('#chart')!.hasAttribute('alt')).toBe(false)
+})
+
+it('refuses an attribute outside the allowlist even at the content script', () => {
+  document.body.innerHTML = '<img id="chart" src="a.png">'
+  const forged = {
+    ...attributeCommand({}),
+    attribute: { name: 'href', selector: '#chart', value: 'javascript:alert(1)', description: 'Rewrite the link' },
+  } as unknown as BrowserCommand
+  expect(() => applyDOMCommand(forged)).toThrow()
+  expect(document.querySelector('#chart')!.hasAttribute('href')).toBe(false)
+})
+
+it('audits the accessibility problems a static pass can name', () => {
+  document.body.innerHTML = '<img id="noalt" src="a.png"><img id="ok" src="b.png" alt="B">'
+    + '<input id="bare"><button id="silent"><svg></svg></button>'
+    + '<div aria-hidden="true"><button id="hidden-btn">x</button></div>'
+    + '<span tabindex="3">x</span><h1>Title</h1><h3>Skip</h3>'
+  const report = JSON.parse(applyDOMCommand({
+    type: 'command', id: 'e'.repeat(32), operation: 'audit',
+    change: null, query: null, interaction: null, inspect: null, wait: null, probe: null, attribute: null,
+  } as BrowserCommand).result!)
+  const byId = Object.fromEntries(report.checks.map((check: { id: string }) => [check.id, check]))
+  expect(byId.image_without_alt).toMatchObject({ count: 1, examples: ['#noalt'] })
+  expect(byId.control_without_name.count).toBeGreaterThanOrEqual(1)
+  expect(byId.control_without_text.count).toBeGreaterThanOrEqual(1)
+  expect(byId.aria_hidden_focusable.count).toBe(1)
+  expect(byId.positive_tabindex.count).toBe(1)
+  expect(byId.heading_level_skipped.count).toBe(1)
+  expect(byId.missing_lang.count).toBe(1)
+  expect(report.notice).toContain('contrast')
+})

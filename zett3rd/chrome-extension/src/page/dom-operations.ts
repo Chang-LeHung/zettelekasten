@@ -1,4 +1,7 @@
-import { encodeResult, validateCommand, type BrowserCommand, type BrowserResult, type BrowserWaitQuery } from './browser-protocol'
+import {
+  ALLOWED_ATTRIBUTES, encodeResult, validateCommand,
+  type BrowserAttributeName, type BrowserCommand, type BrowserResult, type BrowserWaitQuery,
+} from './browser-protocol'
 import { PANEL_HOST_ID } from './panel-host'
 
 const TEXT_INPUTS = new Set(['text', 'search', 'email', 'tel', 'url', 'number', 'date', 'datetime-local', 'month', 'week', 'time'])
@@ -642,12 +645,107 @@ export async function waitFor(query: BrowserWaitQuery): Promise<BrowserResult> {
   })
 }
 
+/**
+ * Every edit is code owned by the extension; remote values remain plain data.
+ *
+ * `attribute` is here rather than in the update payload because it is a
+ * different promise to the user: one allowlisted accessibility attribute, not a
+ * value a control reads.
+ */
+export function applyAttribute(command: BrowserCommand): BrowserResult {
+  const item = command.attribute!
+  if (!ALLOWED_ATTRIBUTES.includes(item.name)) throw new Error('Unsupported attribute name')
+  const element = target(item.selector)
+  if (item.value === null) element.removeAttribute(item.name)
+  else element.setAttribute(item.name, item.value)
+  const applied = element.getAttribute(item.name)
+  return encodeResult({
+    selector: item.selector,
+    name: item.name,
+    value: applied,
+    applied: applied === item.value,
+    notice: 'The attribute changed. Read the page again to confirm how it now renders.',
+  })
+}
+
+/** Elements a keyboard user can reach, used by the focusability checks. */
+const FOCUSABLE = 'a[href],button,input:not([type="hidden"]),select,textarea,[tabindex]:not([tabindex="-1"]),[contenteditable="true"]'
+const AUDIT_EXAMPLES = 3
+
+function auditFinding(id: string, problem: string, elements: Element[]) {
+  return {
+    id, problem, count: elements.length,
+    examples: elements.slice(0, AUDIT_EXAMPLES).map(element => selectorFor(element).slice(0, 120)),
+  }
+}
+
+/**
+ * The accessibility problems a static DOM pass can name.
+ *
+ * It answers what it can see — missing `alt`, unnamed controls, `aria-hidden`
+ * over something focusable, positive tabindex, skipped heading levels, a missing
+ * `lang` — and never claims contrast, reading order, or whether a label makes
+ * sense, which need a person.
+ */
+export function auditAccessibility(): BrowserResult {
+  const images = Array.from(document.querySelectorAll('img:not([alt])'))
+  const unnamed = Array.from(document.querySelectorAll(
+    'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]),textarea,select',
+  )).filter(element => {
+    const control = element as HTMLInputElement
+    const label = element.getAttribute('aria-label') || element.getAttribute('aria-labelledby')
+      || element.getAttribute('title') || control.placeholder || control.labels?.[0]?.textContent || ''
+    return !label.trim()
+  })
+  const unlabeledControls = Array.from(document.querySelectorAll('button,a[href]')).filter(element => {
+    const text = (element.textContent ?? '').replace(/\s+/g, ' ').trim()
+    const named = element.getAttribute('aria-label') || element.getAttribute('aria-labelledby')
+      || element.getAttribute('title') || element.querySelector('img[alt]:not([alt=""])')
+    return !text && !named
+  })
+  const hiddenFocusable = Array.from(document.querySelectorAll('[aria-hidden="true"]'))
+    .filter(element => element.matches(FOCUSABLE) || element.querySelector(FOCUSABLE) !== null)
+  const positiveTabindex = Array.from(document.querySelectorAll('[tabindex]'))
+    .filter(element => Number(element.getAttribute('tabindex')) > 0)
+
+  const headings = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6'))
+  const skipped: Element[] = []
+  let previous = 0
+  for (const heading of headings) {
+    const level = Number(heading.tagName.slice(1))
+    if (previous > 0 && level > previous + 1) skipped.push(heading)
+    previous = level
+  }
+
+  const lang = document.documentElement.getAttribute('lang') ?? document.documentElement.getAttribute('xml:lang')
+  const checks = [
+    auditFinding('image_without_alt', 'Image has no alt attribute', images),
+    auditFinding('control_without_name', 'Form control has no label, name, or placeholder', unnamed),
+    auditFinding('control_without_text', 'Button or link has no text and no accessible name', unlabeledControls),
+    auditFinding('aria_hidden_focusable', 'aria-hidden hides something a keyboard user can focus', hiddenFocusable),
+    auditFinding('positive_tabindex', 'Positive tabindex overrides the natural focus order', positiveTabindex),
+    auditFinding('heading_level_skipped', 'Heading level skips a level', skipped),
+    ...(lang && lang.trim() ? [] : [{
+      id: 'missing_lang', problem: 'The document has no lang attribute', count: 1,
+      examples: ['html'],
+    }]),
+  ]
+  return encodeResult({
+    url: location.href.slice(0, 2000),
+    title: document.title.slice(0, 300),
+    checks,
+    notice: 'A static DOM check only: contrast, reading order, and whether a label makes sense are not judged.',
+  })
+}
+
 /** Every edit is code owned by the extension; remote values remain plain data. */
 export function applyDOMCommand(command: BrowserCommand): BrowserResult {
   validateCommand(command)
   if (command.operation === 'snapshot') return snapshot(command.query?.selector, command.query?.text)
   if (command.operation === 'inspect') return inspect(command.inspect!)
   if (command.operation === 'interact') return interact(command)
+  if (command.operation === 'audit') return auditAccessibility()
+  if (command.operation === 'attribute') return applyAttribute(command)
   // Explicit, not an else: a new operation must never fall through into an edit.
   if (command.operation !== 'update') throw new Error('Unknown browser operation')
   const patch = command.change!

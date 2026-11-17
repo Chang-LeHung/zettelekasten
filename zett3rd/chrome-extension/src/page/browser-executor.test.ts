@@ -42,7 +42,9 @@ it('same-URL reload failure never retries against the new document', async () =>
   sendMessage.mockRejectedValue(new Error('No document with ID doc-1'))
   await expect(executor.execute(command)).rejects.toThrow('doc-1')
   expect(sendMessage.mock.calls.filter(call => call[1].type === 'command')).toHaveLength(1)
-  expect(chrome.scripting.executeScript).toHaveBeenCalledTimes(1)
+  const injected = chrome.scripting.executeScript.mock.calls
+    .filter(call => (call[0] as { files?: string[] }).files?.includes('content-script.js'))
+  expect(injected).toHaveLength(1)
 })
 
 it('prohibits executable payloads and browser-internal targets', () => {
@@ -155,4 +157,29 @@ it('describes a pending target without ever throwing', async () => {
   expect(await executor.describe('#pay')).toEqual({ matched: 1, tag: 'button', label: 'Pay now', href: undefined })
   sendMessage.mockRejectedValue(new Error('gone'))
   expect(await executor.describe('#pay')).toBeNull()
+})
+
+it('injects the page probe on connect and reads diagnostics from the page world', async () => {
+  const executeScript = vi.fn(async (details: { files?: string[] }) => (
+    details.files ? [{ documentId: 'doc-1' }] : [{ result: { installed: true, entries: [] } }]
+  ))
+  vi.stubGlobal('chrome', {
+    tabs: { get: vi.fn().mockResolvedValue({ url }), sendMessage },
+    scripting: { executeScript },
+  })
+  const executor = new BrowserExecutor(5)
+  await executor.connect()
+  expect(executeScript.mock.calls.some(call => (
+    call[0].files?.includes('page-probe.js') && call[0].world === 'MAIN'
+  ))).toBe(true)
+
+  const probe = {
+    type: 'command', id: 'e'.repeat(32), operation: 'probe',
+    change: null, query: null, interaction: null, inspect: null, wait: null,
+    probe: { kind: 'console', limit: 5 },
+  } as const
+  const result = await executor.execute(probe)
+  expect(JSON.parse(result.result!)).toMatchObject({ installed: true })
+  const read = executeScript.mock.calls.find(call => typeof call[0].func === 'function')
+  expect(read?.[0]).toMatchObject({ world: 'MAIN', args: ['console', 5] })
 })

@@ -19,6 +19,7 @@ from zett.agent.extensions.browser import BrowserExtension
 from zett.agent.zettelkasten import ZettelkastenAgent
 from zett.application.agent.browser import (
     SCREENSHOT_PREFIX,
+    BrowserAttributeChange,
     BrowserBridge,
     BrowserCommand,
     BrowserConnection,
@@ -26,6 +27,7 @@ from zett.application.agent.browser import (
     BrowserInspectQuery,
     BrowserInteraction,
     BrowserPageQuery,
+    BrowserProbeQuery,
     BrowserReply,
     BrowserResult,
     BrowserUnavailableError,
@@ -320,6 +322,85 @@ def test_wait_arguments_are_bounded(payload) -> None:
         BrowserWaitQuery.model_validate(payload)
 
 
+def test_a_probe_read_is_bounded_and_carries_only_its_kind() -> None:
+    probe = BrowserProbeQuery(kind="console", limit=5)
+    assert BrowserCommand(id="a" * 32, operation="probe", probe=probe).probe == probe
+    with pytest.raises(ValidationError):
+        BrowserProbeQuery(kind="console", limit=51)
+    with pytest.raises(ValidationError):
+        BrowserProbeQuery(kind="storage")
+    with pytest.raises(ValidationError):
+        BrowserCommand(id="a" * 32, operation="probe")
+    with pytest.raises(ValidationError):
+        BrowserCommand(id="a" * 32, operation="probe", probe=probe, query=BrowserPageQuery(selector="#x"))
+
+
+async def test_the_diagnostic_tools_ask_for_one_kind_each() -> None:
+    queue = asyncio.Queue()
+    peer = BrowserConnection("session", "token", queue.put)
+    context = AgentRunContext(config=AgentRunConfig(session_id="session"), state=AgentState(), tools={})
+    await BrowserExtension(peer).on_tool(context)
+    for tool_name, kind in (
+        ("get_browser_console", "console"),
+        ("get_browser_network", "network"),
+        ("get_browser_metrics", "metrics"),
+    ):
+        task = asyncio.create_task(context.tools[tool_name].handler())
+        command = await queue.get()
+        assert command["operation"] == "probe"
+        assert command["probe"]["kind"] == kind
+        assert "change" not in command and "query" not in command and "wait" not in command
+        peer.resolve(BrowserReply(type="result", id=command["id"], ok=True, result='{"installed":true}'))
+        assert (await task).ok is True
+
+
+def test_an_attribute_change_is_allowlisted_and_removable() -> None:
+    change = BrowserAttributeChange(name="alt", selector="#chart", value="A chart", description="Describe the chart")
+    command = BrowserCommand(id="a" * 32, operation="attribute", attribute=change)
+    assert command.attribute is not None and command.attribute.value == "A chart"
+    assert BrowserAttributeChange(name="role", selector="#chart", value=None, description="Drop the role").value is None
+    for payload in (
+        {"name": "href", "selector": "#chart", "value": "javascript:alert(1)", "description": "Rewrite"},
+        {"name": "alt", "selector": "#chart", "value": "x" * 201, "description": "Too long"},
+        {"name": "alt", "selector": " ", "value": "x", "description": "Blank selector"},
+        {"name": "alt", "selector": "#chart", "value": "x"},
+    ):
+        with pytest.raises(ValidationError):
+            BrowserAttributeChange.model_validate(payload)
+    with pytest.raises(ValidationError):
+        BrowserCommand(
+            id="a" * 32,
+            operation="attribute",
+            attribute=change,
+            wait=BrowserWaitQuery(condition="appear", selector="#chart"),
+        )
+    with pytest.raises(ValidationError):
+        BrowserCommand(id="a" * 32, operation="audit", attribute=change)
+
+
+async def test_attribute_and_audit_tools_send_one_payload_each() -> None:
+    queue = asyncio.Queue()
+    peer = BrowserConnection("session", "token", queue.put)
+    context = AgentRunContext(config=AgentRunConfig(session_id="session"), state=AgentState(), tools={})
+    await BrowserExtension(peer).on_tool(context)
+
+    change = {"name": "alt", "selector": "#chart", "value": "A chart", "description": "Describe the chart"}
+    task = asyncio.create_task(context.tools["set_browser_attribute"].handler(change=change))
+    command = await queue.get()
+    assert command["operation"] == "attribute"
+    assert command["attribute"] == change
+    assert "change" not in command and "probe" not in command
+    peer.resolve(BrowserReply(type="result", id=command["id"], ok=True, result='{"applied":true}'))
+    assert (await task).ok is True
+
+    audit = asyncio.create_task(context.tools["audit_browser_accessibility"].handler())
+    command = await queue.get()
+    assert command["operation"] == "audit"
+    assert "attribute" not in command and "change" not in command
+    peer.resolve(BrowserReply(type="result", id=command["id"], ok=True, result='{"checks":[]}'))
+    assert (await audit).ok is True
+
+
 def test_browser_interaction_accepts_bounded_actions() -> None:
     assert (
         BrowserInteraction(
@@ -435,9 +516,14 @@ async def test_agent_browser_tool_roundtrip() -> None:
             assert {tool.name for tool in request.tools} == {
                 "get_browser_page",
                 "get_browser_screenshot",
+                "get_browser_console",
+                "get_browser_network",
+                "get_browser_metrics",
                 "inspect_browser_element",
+                "audit_browser_accessibility",
                 "wait_for_browser",
                 "update_browser_dom",
+                "set_browser_attribute",
                 "interact_with_browser",
             }
             if self.step == 0:

@@ -1,4 +1,5 @@
-import { allowedPage, sameDocumentUrl, validateCommand, type BrowserCommand, type BrowserResult } from './browser-protocol'
+import { allowedPage, encodeResult, sameDocumentUrl, validateCommand, type BrowserCommand, type BrowserResult } from './browser-protocol'
+import { readProbe } from './probe-read'
 export { allowedPage, sameDocumentUrl, validateCommand } from './browser-protocol'
 export type { BrowserCommand, BrowserResult } from './browser-protocol'
 
@@ -25,10 +26,34 @@ export class BrowserExecutor {
       world: 'ISOLATED',
     })
     if (!injection?.documentId) throw new Error('Chrome did not return a document ID')
+    await this.installProbe()
     const nonce = crypto.randomUUID()
     const ready = await chrome.tabs.sendMessage(this.tabId, { channel: 'zett-dom', type: 'connect', nonce }, { documentId: injection.documentId })
     if (ready?.ok !== true || !sameDocumentUrl(String(ready.url), tab.url)) throw new Error('Page changed while connecting')
     this.binding = { documentId: injection.documentId, nonce, url: ready.url }
+  }
+
+  /** Install the page-world probe. Best effort: diagnostics then say it is absent. */
+  private async installProbe(): Promise<void> {
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: this.tabId, frameIds: [0] }, files: ['page-probe.js'], world: 'MAIN',
+      })
+    } catch {
+      // A page that refuses MAIN-world injection still gets every DOM tool.
+    }
+  }
+
+  /** Read the page's own console, network, or timing data from its world. */
+  async diagnostics(kind: 'console' | 'network' | 'metrics', limit: number): Promise<BrowserResult> {
+    const binding = this.binding
+    if (!binding) throw new Error('Browser is disconnected')
+    const [injected] = await chrome.scripting.executeScript({
+      target: { tabId: this.tabId, frameIds: [0] }, world: 'MAIN', func: readProbe, args: [kind, limit],
+    })
+    const data = injected?.result
+    if (!data || typeof data !== 'object') throw new Error('The page returned no diagnostics')
+    return encodeResult(data)
   }
 
   async disconnect(): Promise<void> {
@@ -101,6 +126,7 @@ export class BrowserExecutor {
       throw new Error('The page navigated, so the page tools were closed. The panel reconnects on its own; read the new page before acting.')
     }
     if (command.operation === 'screenshot') return await this.capture(tab, binding)
+    if (command.operation === 'probe') return await this.diagnostics(command.probe!.kind, command.probe!.limit)
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
       const result = await Promise.race([

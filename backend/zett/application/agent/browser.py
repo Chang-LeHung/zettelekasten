@@ -128,6 +128,35 @@ class BrowserWaitQuery(BaseModel):
         return self
 
 
+class BrowserProbeQuery(BaseModel):
+    """Read one slice of what the page-world probe observed, bounded on both ends."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    kind: Literal["console", "network", "metrics"]
+    limit: int = Field(default=30, ge=1, le=50)
+
+
+#: Attributes whose value changes accessibility and nothing else. A page's own
+#: behaviour is never driven by these, so a wrong edit is visible and reversible
+#: rather than a silent rewrite of a link or a handler.
+class BrowserAttributeChange(BaseModel):
+    """Set or remove one allowlisted accessibility attribute on one element."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    name: Literal["alt", "title", "aria-label", "aria-labelledby", "aria-hidden", "role"]
+    selector: str = Field(min_length=1, max_length=500)
+    #: New value, or None to remove the attribute.
+    value: str | None = Field(default=None, max_length=200)
+    description: str = Field(min_length=1, max_length=300)
+
+    @field_validator("selector", "description")
+    @classmethod
+    def nonblank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Must not be blank")
+        return value
+
+
 class BrowserInteraction(BaseModel):
     """A single user-like action with bounded, explicit parameters."""
 
@@ -172,12 +201,14 @@ class BrowserCommand(BaseModel):
 
     type: Literal["command"] = "command"
     id: str
-    operation: Literal["snapshot", "update", "interact", "inspect", "wait", "screenshot"]
+    operation: Literal["snapshot", "update", "interact", "inspect", "wait", "screenshot", "probe", "attribute", "audit"]
     change: BrowserDOMPatch | None = None
     query: BrowserPageQuery | None = None
     interaction: BrowserInteraction | None = None
     inspect: BrowserInspectQuery | None = None
     wait: BrowserWaitQuery | None = None
+    probe: BrowserProbeQuery | None = None
+    attribute: BrowserAttributeChange | None = None
 
     @model_validator(mode="after")
     def require_operation_payload(self) -> Self:
@@ -188,17 +219,26 @@ class BrowserCommand(BaseModel):
             "interaction": self.interaction,
             "inspect": self.inspect,
             "wait": self.wait,
+            "probe": self.probe,
+            "attribute": self.attribute,
         }
         present = [field for field, value in payloads.items() if value is not None]
         if self.operation == "snapshot":
             if present not in ([], ["query"]):
-                raise ValueError("snapshot cannot carry a change, interaction, inspection, or wait")
+                raise ValueError("snapshot cannot carry a change, interaction, inspection, wait, probe, or attribute")
             return self
-        if self.operation == "screenshot":
+        if self.operation in ("screenshot", "audit"):
             if present:
-                raise ValueError("screenshot is read-only and carries no payload")
+                raise ValueError(f"{self.operation} is read-only and carries no payload")
             return self
-        required = {"update": "change", "interact": "interaction", "inspect": "inspect", "wait": "wait"}[self.operation]
+        required = {
+            "update": "change",
+            "interact": "interaction",
+            "inspect": "inspect",
+            "wait": "wait",
+            "probe": "probe",
+            "attribute": "attribute",
+        }[self.operation]
         if present != [required]:
             found = ", ".join(present) if present else "none"
             raise ValueError(f"{self.operation} carries only its own payload, but this command sent: {found}")
@@ -273,26 +313,43 @@ class BrowserConnection:
 
     async def call(
         self,
-        operation: Literal["snapshot", "update", "interact", "inspect", "wait", "screenshot"],
+        operation: Literal[
+            "snapshot", "update", "interact", "inspect", "wait", "screenshot", "probe", "attribute", "audit"
+        ],
         change: BrowserDOMPatch | None = None,
         *,
         query: BrowserPageQuery | None = None,
         interaction: BrowserInteraction | None = None,
         inspect: BrowserInspectQuery | None = None,
         wait: BrowserWaitQuery | None = None,
+        probe: BrowserProbeQuery | None = None,
+        attribute: BrowserAttributeChange | None = None,
     ) -> BrowserResult:
         async with self._turn:
-            return await self._call(operation, change, query=query, interaction=interaction, inspect=inspect, wait=wait)
+            return await self._call(
+                operation,
+                change,
+                query=query,
+                interaction=interaction,
+                inspect=inspect,
+                wait=wait,
+                probe=probe,
+                attribute=attribute,
+            )
 
     async def _call(
         self,
-        operation: Literal["snapshot", "update", "interact", "inspect", "wait", "screenshot"],
+        operation: Literal[
+            "snapshot", "update", "interact", "inspect", "wait", "screenshot", "probe", "attribute", "audit"
+        ],
         change: BrowserDOMPatch | None,
         *,
         query: BrowserPageQuery | None,
         interaction: BrowserInteraction | None,
         inspect: BrowserInspectQuery | None = None,
         wait: BrowserWaitQuery | None = None,
+        probe: BrowserProbeQuery | None = None,
+        attribute: BrowserAttributeChange | None = None,
     ) -> BrowserResult:
         if not self.active:
             raise BrowserUnavailableError(DISCONNECTED)
@@ -304,6 +361,8 @@ class BrowserConnection:
             interaction=interaction,
             inspect=inspect,
             wait=wait,
+            probe=probe,
+            attribute=attribute,
         )
         future: asyncio.Future[BrowserResult] = asyncio.get_running_loop().create_future()
         self.pending[command.id] = future

@@ -37,7 +37,7 @@ The application validates the live connection before constructing the Agent;
 missing, stale, or cross-session tokens fail with 409. Without a token there are
 no browser tools, including in normal Web, CLI, scheduled, and channel turns.
 
-`BrowserExtension` exposes six tools:
+`BrowserExtension` exposes eleven tools:
 
 - `get_browser_page(selector=None)`: the connected document's title, URL, bounded
   visible text and form-control descriptions with usable CSS selectors. An
@@ -53,6 +53,23 @@ no browser tools, including in normal Web, CLI, scheduled, and channel turns.
   `url_change` by selector or text) for up to eight seconds. A timeout answers
   `matched: false` with a notice, so a page that did not change informs the model
   instead of reading as a failed call.
+- `get_browser_console(limit=30)`: the page's recent console errors and warnings
+  with source, line, and a repeat `count`, from a `world: "MAIN"` probe injected
+  when the panel connects.
+- `get_browser_network(limit=30)`: the newest resource entries (name, type,
+  start, duration, transfer/encoded bytes, and a response status when the page
+  exposes it). Headers are never available.
+- `get_browser_metrics()`: largest-contentful-paint, cumulative layout shift,
+  long-task totals, navigation timing, and document size.
+- `audit_browser_accessibility()`: the mechanical checks a static DOM pass can
+  make — image `alt`, named form controls, controls with text, `aria-hidden` over
+  something focusable, positive `tabindex`, skipped heading levels, and a missing
+  `lang` — each with a count and up to three example selectors. Contrast, reading
+  order, and whether a label makes sense are explicitly out of scope.
+- `set_browser_attribute(change)`: set or remove (`value: null`) exactly one of
+  `alt`, `title`, `aria-label`, `aria-labelledby`, `aria-hidden`, or `role`, after
+  the same review card as any other mutation. Link targets, sources, handlers,
+  styles, and arbitrary attributes are unreachable on purpose.
 - `inspect_browser_element(selector)`: a read-only diagnosis of one element. It
   reports the box and spacing, the computed layout style, the viewport, why the
   element is not rendered, why page tools exclude it (aria-hidden, password,

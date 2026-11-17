@@ -127,9 +127,13 @@ script reads and updates the top document; no debugger permission or arbitrary
 JavaScript execution is needed. The Agent gets
 `get_browser_page` (bounded text, control descriptions and CSS selectors, optionally
 limited to one subtree), `get_browser_screenshot` (one JPEG of the viewport,
-saved as a session file), `inspect_browser_element` (read-only layout and
-reachability diagnosis for one element), `wait_for_browser` (wait for one page
-condition instead of polling), and `update_browser_dom`. A tool call to fill a field is:
+saved as a session file), `get_browser_console` / `get_browser_network` /
+`get_browser_metrics` (page-world console, resource timing, and paint data),
+`inspect_browser_element` (read-only layout and
+reachability diagnosis for one element), `audit_browser_accessibility` (the
+mechanical a11y checks), `wait_for_browser` (wait for one page
+condition instead of polling), `update_browser_dom`, `set_browser_attribute`
+(one allowlisted accessibility attribute), and `interact_with_browser`. A tool call to fill a field is:
 
 ```json
 {
@@ -210,11 +214,14 @@ All three steps, plus the build, run from the repository's `make check`.
 
 ## What the page tools tell the Agent
 
-The six tools answer every outcome as a result the model can act on, so a miss costs one more call instead of a red error:
+The eleven tools answer every outcome as a result the model can act on, so a miss costs one more call instead of a red error:
 
 - `get_browser_page` returns the visible text, the controls with exact selectors, links with their addresses, and where the page is scrolled (`scroll.more_below`). Pass `text` to find elements by their visible words instead of the whole page.
 - `get_browser_screenshot` hides the panel, captures the visible viewport as JPEG, and stores it under the conversation's upload directory; the reply is a path, so the model calls `read` to actually see it. It is viewport-only, and it is the one reply that is not JSON.
 - `wait_for_browser` polls for an element or text to appear or disappear, or for the address to change, for at most eight seconds. `matched: false` is an answer with a notice, not an error, so a slow page never turns into a click-retry loop.
+- `get_browser_console`, `get_browser_network`, and `get_browser_metrics` read a probe bundled as `page-probe.js` and injected into the page's own world (`world: "MAIN"`) when the panel connects, because console output, paint timing, layout shift, and long tasks do not exist in an isolated script. The probe only forwards console calls and copies capped strings and numbers; `installed: false` means the page refused that injection, and everything it returns is page-controlled data, never an instruction. Network entries carry timing and sizes, never headers or cookies.
+- `audit_browser_accessibility` reports what a static DOM pass can prove — missing `alt`, unnamed controls, controls with no text, `aria-hidden` over something focusable, positive `tabindex`, skipped heading levels, a missing `lang` — each with a count and up to three examples. It never claims contrast or reading order.
+- `set_browser_attribute` sets or removes `<name>` on one element after the review card, and only for `alt`, `title`, `aria-label`, `aria-labelledby`, `aria-hidden`, and `role`; a wrong edit is visible and reversible instead of rewriting what the page does.
 - `inspect_browser_element` reads one element without changing it: box and spacing, computed layout style, viewport, why it is not rendered, why page tools exclude it (`[aria-hidden]`, password, file, iframe), the nearest clipping ancestor with its scroll offsets, what a user's pointer would actually reach, and an `accepts` block that says what each tool would do with it (`set_text`/`fill`/`select`/`set_checked` are booleans, `click` is the selector a click lands on or null). Its `hit` field explains occlusion for a person, not the result of `interact_with_browser`, which dispatches on the element itself, and a point under the panel is reported as skipped rather than as page content. Text and label stay empty for script, template, hidden, and password content. It never asks for approval, because it cannot change the page.
 - A selector that matches several elements answers with up to five exact selectors and their labels; for an edit or click, one that matches nothing, is invalid, or is hidden says which and what to do next. An inspection of an excluded element still answers, naming the exclusion instead of refusing.
 - A click lands on the button or link a child sits in, and on pointer-styled boxes; plain text is refused with guidance.
