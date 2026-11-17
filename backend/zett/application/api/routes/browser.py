@@ -7,7 +7,13 @@ import re
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
-from zett.application.agent.browser import MAX_BROWSER_MESSAGE, BrowserReply, BrowserUnavailableError, browser_bridge
+from zett.application.agent.browser import (
+    MAX_BROWSER_IMAGE_FRAME,
+    MAX_BROWSER_MESSAGE,
+    BrowserReply,
+    BrowserUnavailableError,
+    browser_bridge,
+)
 
 router = APIRouter(prefix="/agent", tags=["browser"])
 
@@ -36,13 +42,20 @@ async def browser_socket(socket: WebSocket, session_id: str) -> None:
         await send({"type": "ready", "token": connection.token})
         while True:
             text = await asyncio.wait_for(socket.receive_text(), timeout=50)
-            if len(text.encode("utf-8")) > MAX_BROWSER_MESSAGE:
+            # One capture replies with a JPEG data URL, so an image frame is allowed
+            # to be larger than a command; anything larger than that hard cap is
+            # refused before it is parsed.
+            if len(text) > MAX_BROWSER_IMAGE_FRAME:
                 await socket.close(code=1009)
                 break
             payload = json.loads(text)
             if payload == {"type": "ping"}:
                 await send({"type": "pong"})
                 continue
+            carries_image = isinstance(payload, dict) and isinstance(payload.get("image"), str)
+            if len(text) > (MAX_BROWSER_IMAGE_FRAME if carries_image else MAX_BROWSER_MESSAGE):
+                await socket.close(code=1009)
+                break
             reply = BrowserReply.model_validate(payload)
             connection.resolve(reply)
     except BrowserUnavailableError:

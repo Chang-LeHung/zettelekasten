@@ -1,4 +1,4 @@
-import { applyDOMCommand, describeSelector } from './dom-operations'
+import { applyDOMCommand, describeSelector, waitFor } from './dom-operations'
 import { allowedPage, sameDocumentUrl, validateCommand } from './browser-protocol'
 import { PANEL_HOST_ID } from './panel-host'
 
@@ -212,6 +212,13 @@ if (!scope.__zettDOMBridgeInstalled) {
         respond({ ok: true, target: describeSelector(String(message.selector ?? '').slice(0, 500)) })
         return
       }
+      if (message.type === 'hide-panel' || message.type === 'show-panel') {
+        // A capture must show the page, not the panel that is talking about it.
+        if (!panel) throw new Error('No panel is mounted on this page')
+        panel.style.visibility = message.type === 'hide-panel' ? 'hidden' : ''
+        respond({ ok: true })
+        return
+      }
       if (message.type !== 'command') throw new Error('Unknown page message')
       if (!Number.isFinite(message.expiresAt) || Date.now() > message.expiresAt || message.expiresAt > Date.now() + 11000) {
         throw new Error('DOM command expired')
@@ -219,6 +226,14 @@ if (!scope.__zettDOMBridgeInstalled) {
       const command = validateCommand(message.command)
       if (binding.seen.has(command.id) || binding.seen.size >= 1000) throw new Error('Duplicate command or connection limit reached')
       binding.seen.add(command.id)
+      if (command.operation === 'wait') {
+        // A wait answers after its own deadline, so the listener must keep the
+        // reply channel open instead of responding synchronously.
+        waitFor(command.wait!)
+          .then(respond)
+          .catch(error => respond({ ok: false, error: (error as Error).message.slice(0, 1000) }))
+        return true
+      }
       respond(applyDOMCommand(command))
     } catch (error) {
       respond({ ok: false, error: (error as Error).message.slice(0, 1000) })

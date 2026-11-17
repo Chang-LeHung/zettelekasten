@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { applyDOMCommand } from './dom-operations'
-import type { BrowserCommand, BrowserDOMPatch } from './browser-protocol'
+import { applyDOMCommand, waitFor } from './dom-operations'
+import type { BrowserCommand, BrowserDOMPatch, BrowserWaitQuery } from './browser-protocol'
 
 function edit(change: Partial<BrowserDOMPatch> = {}) {
   return applyDOMCommand({
@@ -486,4 +486,34 @@ it('does not promise a click through a control that is disabled', () => {
   const receipt = JSON.parse(applyDOMCommand(inspectElement('#lib')).result!)
   expect(receipt.accepts.click).toBeNull()
   expect(receipt.findings.join(' ')).toContain('disabled')
+})
+
+function waitQuery(partial: Partial<BrowserWaitQuery>): BrowserWaitQuery {
+  return { condition: 'appear', selector: null, text: null, timeout_ms: 500, ...partial }
+}
+
+it('waits for a condition that already holds without spending the timeout', async () => {
+  document.body.innerHTML = '<p id="saved">Saved</p>'
+  const bySelector = JSON.parse((await waitFor(waitQuery({ selector: '#saved' }))).result!)
+  expect(bySelector).toMatchObject({ matched: true, condition: 'appear' })
+  expect(bySelector.waited_ms).toBeLessThan(400)
+  const byText = JSON.parse((await waitFor(waitQuery({ text: 'SAVED' }))).result!)
+  expect(byText.matched).toBe(true)
+  const alreadyGone = JSON.parse((await waitFor(waitQuery({ condition: 'disappear', selector: '#missing' }))).result!)
+  expect(alreadyGone.matched).toBe(true)
+})
+
+it('answers a timeout as information, not as a failed call', async () => {
+  document.body.innerHTML = '<p id="saved">Saved</p>'
+  const receipt = JSON.parse((await waitFor(waitQuery({ selector: '#missing' }))).result!)
+  expect(receipt).toMatchObject({ matched: false, condition: 'appear' })
+  expect(receipt.notice).toContain('did not hold')
+  expect(receipt.waited_ms).toBeGreaterThanOrEqual(400)
+})
+
+it('waits for the address to change only when the page navigates', async () => {
+  const pending = waitFor(waitQuery({ condition: 'url_change', timeout_ms: 1500 }))
+  setTimeout(() => window.history.pushState({}, '', `${location.href}#moved`), 100)
+  const receipt = JSON.parse((await pending).result!)
+  expect(receipt.matched).toBe(true)
 })

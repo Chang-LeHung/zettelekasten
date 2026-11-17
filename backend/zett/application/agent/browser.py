@@ -5,6 +5,8 @@ connections and pending futures, never DOM patches or page data in storage.
 """
 
 import asyncio
+import base64
+import binascii
 import json
 import secrets
 from collections.abc import Awaitable, Callable
@@ -20,6 +22,10 @@ from zett.infra.persistence.dao import session_storage
 logger = get_logger(__name__)
 MAX_BROWSER_MESSAGE = 100_000
 MAX_BROWSER_RESULT = 64_000
+#: One capture replies with a JPEG data URL, so that frame is larger than a command.
+MAX_BROWSER_IMAGE_FRAME = 8_000_000
+MAX_BROWSER_IMAGE_BYTES = 4_000_000
+SCREENSHOT_PREFIX = "data:image/jpeg;base64,"
 
 
 def _reject_json_constant(value: str) -> None:
@@ -95,6 +101,33 @@ class BrowserInspectQuery(BaseModel):
         return value
 
 
+class BrowserWaitQuery(BaseModel):
+    """Wait, briefly, until the page reaches one observable condition."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    condition: Literal["appear", "disappear", "url_change"]
+    selector: str | None = Field(default=None, min_length=1, max_length=500)
+    text: str | None = Field(default=None, min_length=1, max_length=200)
+    timeout_ms: int = Field(default=5000, ge=500, le=8000)
+
+    @field_validator("selector", "text")
+    @classmethod
+    def nonblank(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("selector and text must not be blank")
+        return value
+
+    @model_validator(mode="after")
+    def arguments_match_condition(self) -> Self:
+        if self.condition == "url_change":
+            if self.selector is not None or self.text is not None:
+                raise ValueError("url_change accepts neither a selector nor text")
+            return self
+        if (self.selector is None) == (self.text is None):
+            raise ValueError(f"{self.condition} needs exactly one of selector or text")
+        return self
+
+
 class BrowserInteraction(BaseModel):
     """A single user-like action with bounded, explicit parameters."""
 
@@ -139,11 +172,12 @@ class BrowserCommand(BaseModel):
 
     type: Literal["command"] = "command"
     id: str
-    operation: Literal["snapshot", "update", "interact", "inspect"]
+    operation: Literal["snapshot", "update", "interact", "inspect", "wait", "screenshot"]
     change: BrowserDOMPatch | None = None
     query: BrowserPageQuery | None = None
     interaction: BrowserInteraction | None = None
     inspect: BrowserInspectQuery | None = None
+    wait: BrowserWaitQuery | None = None
 
     @model_validator(mode="after")
     def require_operation_payload(self) -> Self:
@@ -153,13 +187,18 @@ class BrowserCommand(BaseModel):
             "query": self.query,
             "interaction": self.interaction,
             "inspect": self.inspect,
+            "wait": self.wait,
         }
         present = [field for field, value in payloads.items() if value is not None]
         if self.operation == "snapshot":
             if present not in ([], ["query"]):
-                raise ValueError("snapshot cannot carry a change, interaction, or inspection")
+                raise ValueError("snapshot cannot carry a change, interaction, inspection, or wait")
             return self
-        required = {"update": "change", "interact": "interaction", "inspect": "inspect"}[self.operation]
+        if self.operation == "screenshot":
+            if present:
+                raise ValueError("screenshot is read-only and carries no payload")
+            return self
+        required = {"update": "change", "interact": "interaction", "inspect": "inspect", "wait": "wait"}[self.operation]
         if present != [required]:
             found = ", ".join(present) if present else "none"
             raise ValueError(f"{self.operation} carries only its own payload, but this command sent: {found}")
@@ -167,24 +206,51 @@ class BrowserCommand(BaseModel):
 
 
 class BrowserResult(BaseModel):
-    """Bounded JSON text from the page, or a user-visible execution error."""
+    """Bounded JSON text from the page, a JPEG capture, or a user-visible error."""
 
     model_config = ConfigDict(extra="forbid", strict=True)
     ok: bool
     result: str | None = Field(default=None, max_length=MAX_BROWSER_RESULT)
+    image: str | None = Field(default=None, max_length=MAX_BROWSER_IMAGE_FRAME)
     error: str | None = Field(default=None, max_length=1000)
 
     @model_validator(mode="after")
     def valid_result(self) -> Self:
-        if self.ok:
-            if self.result is None or self.error is not None:
-                raise ValueError("Successful result needs JSON text and no error")
+        if not self.ok:
+            if not self.error or not self.error.strip():
+                raise ValueError("Failed execution needs an error")
+            return self
+        if self.error is not None:
+            raise ValueError("Successful result needs no error")
+        if (self.result is None) == (self.image is None):
+            raise ValueError("A successful result carries exactly one of JSON text or an image")
+        if self.result is not None:
             if len(self.result.encode("utf-8")) > MAX_BROWSER_RESULT:
                 raise ValueError("Browser result exceeds 64 KB")
             json.loads(self.result, parse_constant=_reject_json_constant)
-        elif not self.error or not self.error.strip():
-            raise ValueError("Failed execution needs an error")
+        if self.image is not None:
+            self.screenshot_bytes()
         return self
+
+    def screenshot_bytes(self) -> bytes:
+        """Decode and bound-check one captured JPEG.
+
+        Validation lives here so a malformed or oversized capture is refused at
+        the transport, before any tool can write it into a session directory.
+        """
+        if self.image is None:
+            raise ValueError("This result carries no image")
+        if not self.image.startswith(SCREENSHOT_PREFIX):
+            raise ValueError("A browser image must be a JPEG data URL")
+        try:
+            data = base64.b64decode(self.image[len(SCREENSHOT_PREFIX) :], validate=True)
+        except (binascii.Error, ValueError) as error:
+            raise ValueError("A browser image must be valid base64") from error
+        if len(data) > MAX_BROWSER_IMAGE_BYTES:
+            raise ValueError(f"A browser image may not exceed {MAX_BROWSER_IMAGE_BYTES} bytes")
+        if not data.startswith(b"\xff\xd8\xff"):
+            raise ValueError("A browser image must be a JPEG")
+        return data
 
 
 class BrowserReply(BrowserResult):
@@ -207,24 +273,26 @@ class BrowserConnection:
 
     async def call(
         self,
-        operation: Literal["snapshot", "update", "interact", "inspect"],
+        operation: Literal["snapshot", "update", "interact", "inspect", "wait", "screenshot"],
         change: BrowserDOMPatch | None = None,
         *,
         query: BrowserPageQuery | None = None,
         interaction: BrowserInteraction | None = None,
         inspect: BrowserInspectQuery | None = None,
+        wait: BrowserWaitQuery | None = None,
     ) -> BrowserResult:
         async with self._turn:
-            return await self._call(operation, change, query=query, interaction=interaction, inspect=inspect)
+            return await self._call(operation, change, query=query, interaction=interaction, inspect=inspect, wait=wait)
 
     async def _call(
         self,
-        operation: Literal["snapshot", "update", "interact", "inspect"],
+        operation: Literal["snapshot", "update", "interact", "inspect", "wait", "screenshot"],
         change: BrowserDOMPatch | None,
         *,
         query: BrowserPageQuery | None,
         interaction: BrowserInteraction | None,
         inspect: BrowserInspectQuery | None = None,
+        wait: BrowserWaitQuery | None = None,
     ) -> BrowserResult:
         if not self.active:
             raise BrowserUnavailableError(DISCONNECTED)
@@ -235,6 +303,7 @@ class BrowserConnection:
             query=query,
             interaction=interaction,
             inspect=inspect,
+            wait=wait,
         )
         future: asyncio.Future[BrowserResult] = asyncio.get_running_loop().create_future()
         self.pending[command.id] = future
@@ -273,7 +342,7 @@ class BrowserConnection:
         future = self.pending.get(reply.id)
         if future is None or future.done():
             return  # Late/duplicate results cannot complete another call.
-        future.set_result(BrowserResult(ok=reply.ok, result=reply.result, error=reply.error))
+        future.set_result(BrowserResult(ok=reply.ok, result=reply.result, image=reply.image, error=reply.error))
 
     def close(self) -> None:
         self.active = False

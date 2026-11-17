@@ -5,6 +5,10 @@ export type { BrowserCommand, BrowserResult } from './browser-protocol'
 /** What a pending action would touch, in the page's own words. */
 export interface BrowserTarget { matched: number; tag?: string; label?: string; href?: string }
 
+/** A JPEG viewport capture, bounded so one frame still fits the server's limit. */
+const MAX_CAPTURE_CHARS = 8_000_000
+const CAPTURE_QUALITY = 60
+
 /** Data-only messages to a bundled content script, pinned to a Chrome document.
  * No debugger permission, eval, Runtime.evaluate, or model-authored source.
  */
@@ -56,6 +60,37 @@ export class BrowserExecutor {
     } catch { return null }
   }
 
+  /** Hide or restore the panel's host element in the page, for one capture. */
+  private async setPanelHidden(binding: { documentId: string; nonce: string; url: string }, hidden: boolean): Promise<void> {
+    await chrome.tabs.sendMessage(this.tabId, {
+      channel: 'zett-dom', type: hidden ? 'hide-panel' : 'show-panel', nonce: binding.nonce,
+    }, { documentId: binding.documentId })
+  }
+
+  /** Capture the visible viewport as a JPEG data URL, without the panel in the shot. */
+  private async capture(
+    tab: chrome.tabs.Tab,
+    binding: { documentId: string; nonce: string; url: string },
+  ): Promise<BrowserResult> {
+    let hidden = false
+    try {
+      await this.setPanelHidden(binding, true)
+      hidden = true
+    } catch {
+      // The panel may not be mounted on this page; the capture still works.
+    }
+    try {
+      const image = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: CAPTURE_QUALITY })
+      if (typeof image !== 'string' || !image.startsWith('data:image/jpeg;base64,')) {
+        throw new Error('Chrome returned no JPEG image for this tab')
+      }
+      if (image.length > MAX_CAPTURE_CHARS) throw new Error('The capture is too large; make the window smaller and try again')
+      return { ok: true, image }
+    } finally {
+      if (hidden) await this.setPanelHidden(binding, false).catch(() => {})
+    }
+  }
+
   async execute(command: BrowserCommand): Promise<BrowserResult> {
     validateCommand(command)
     const binding = this.binding
@@ -65,6 +100,7 @@ export class BrowserExecutor {
       await this.disconnect()
       throw new Error('The page navigated, so the page tools were closed. The panel reconnects on its own; read the new page before acting.')
     }
+    if (command.operation === 'screenshot') return await this.capture(tab, binding)
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
       const result = await Promise.race([

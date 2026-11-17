@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
-let listener: (message: unknown, sender: unknown, respond: (result: unknown) => void) => void
+let listener: (message: unknown, sender: unknown, respond: (result: unknown) => void) => unknown
 const sender = { id: 'extension', url: 'chrome-extension://extension/sidepanel.html' }
 const nonce = 'a'.repeat(8) + '-aaaa-aaaa-aaaa-' + 'a'.repeat(12)
 const background = { id: 'extension', url: 'chrome-extension://extension/background.js' }
@@ -24,6 +24,8 @@ beforeEach(async () => {
   await import('./content-script')
 })
 afterEach(() => {
+  // The panel host lives on documentElement, which beforeEach does not reset.
+  document.querySelectorAll('#zettelekasten-panel-host').forEach(node => node.remove())
   vi.unstubAllGlobals()
   delete (globalThis as { __zettDOMBridgeInstalled?: boolean }).__zettDOMBridgeInstalled
 })
@@ -61,6 +63,34 @@ it('rejects arbitrary source even when a command reaches the content script', ()
   expect(document.querySelector('h1')!.textContent).toBe('Old title')
 })
 
+it('hides the panel for one capture and restores it afterwards', () => {
+  expect(send({ type: 'toggle-panel', tabId: 7 }, background)).toMatchObject({ open: true })
+  expect(send({ type: 'connect' })).toMatchObject({ ok: true })
+  const host = document.querySelector<HTMLElement>('#zettelekasten-panel-host')!
+  expect(send({ type: 'hide-panel' })).toEqual({ ok: true })
+  expect(host.style.visibility).toBe('hidden')
+  expect(send({ type: 'show-panel' })).toEqual({ ok: true })
+  expect(host.style.visibility).toBe('')
+})
+
+it('answers a wait after its deadline instead of closing the reply channel', async () => {
+  send({ type: 'connect' })
+  const wait = {
+    type: 'command', id: 'c'.repeat(32), operation: 'wait',
+    change: null, query: null, interaction: null, inspect: null,
+    wait: { condition: 'appear', selector: '#title', text: null, timeout_ms: 500 },
+  }
+  let response: unknown
+  const keptOpen = listener(
+    { channel: 'zett-dom', nonce, type: 'command', command: wait, url: location.href, expiresAt: Date.now() + 10000 },
+    sender,
+    result => { response = result },
+  )
+  expect(keptOpen).toBe(true)
+  await new Promise(resolve => setTimeout(resolve, 150))
+  expect(response).toMatchObject({ ok: true })
+})
+
 it('mounts an embedded panel only from the toolbar and closes it only from the matching frame', () => {
   expect(send({ type: 'toggle-panel', tabId: 7 }, sender)).toBeUndefined()
   expect(document.querySelector('#zettelekasten-panel-host')).toBeNull()
@@ -75,8 +105,7 @@ it('mounts an embedded panel only from the toolbar and closes it only from the m
   expect(document.querySelector('#zettelekasten-panel-host')).toBeNull()
 })
 
-it('moves and resizes the floating panel without covering the whole viewport', () => {
-  const original = HTMLElement.prototype.attachShadow
+it('moves and resizes the floating panel without covering the whole viewport', () => {  const original = HTMLElement.prototype.attachShadow
   let shadow: ShadowRoot | undefined
   const attach = vi.spyOn(HTMLElement.prototype, 'attachShadow').mockImplementation(function (this: HTMLElement, init) {
     shadow = original.call(this, { ...init, mode: 'open' })

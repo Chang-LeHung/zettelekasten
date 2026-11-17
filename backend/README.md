@@ -37,12 +37,22 @@ The application validates the live connection before constructing the Agent;
 missing, stale, or cross-session tokens fail with 409. Without a token there are
 no browser tools, including in normal Web, CLI, scheduled, and channel turns.
 
-`BrowserExtension` exposes four tools:
+`BrowserExtension` exposes six tools:
 
 - `get_browser_page(selector=None)`: the connected document's title, URL, bounded
   visible text and form-control descriptions with usable CSS selectors. An
   optional selector reads exactly one subtree. Hidden, password, file-input,
   and script contents are excluded.
+- `get_browser_screenshot()`: one JPEG capture of the visible viewport, with the
+  panel hidden for the shot. It is the only reply that is not JSON text: the
+  transport validates the data URL (prefix, base64, JPEG signature, 4 MB) and the
+  tool writes it below the session's upload directory, answering with a path the
+  model opens through `read`. Capture is viewport-only; a longer page needs a
+  scroll and another capture.
+- `wait_for_browser(query)`: poll one condition (`appear`, `disappear`, or
+  `url_change` by selector or text) for up to eight seconds. A timeout answers
+  `matched: false` with a notice, so a page that did not change informs the model
+  instead of reading as a failed call.
 - `inspect_browser_element(selector)`: a read-only diagnosis of one element. It
   reports the box and spacing, the computed layout style, the viewport, why the
   element is not rendered, why page tools exclude it (aria-hidden, password,

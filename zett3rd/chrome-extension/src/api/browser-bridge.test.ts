@@ -88,6 +88,19 @@ it('runs a read-only inspection without asking for consent', async () => {
   expect(socket.sent).toContainEqual({ type: 'result', id: inspect.id, ok: true, result: '1' })
 })
 
+it('forwards a captured image without asking for consent', async () => {
+  const image = 'data:image/jpeg;base64,AAAA'
+  execute.mockResolvedValue({ ok: true, image })
+  const shot = {
+    type: 'command', id: 'e'.repeat(32), operation: 'screenshot',
+    change: null, query: null, interaction: null, inspect: null, wait: null,
+  }
+  socket.emit(shot)
+  await flush()
+  expect(consent).toBeNull()
+  expect(socket.sent).toContainEqual({ type: 'result', id: shot.id, ok: true, image })
+})
+
 it('a disconnect cancels consent and prevents stale approval execution', async () => {
   socket.emit(command)
   const old = consent!

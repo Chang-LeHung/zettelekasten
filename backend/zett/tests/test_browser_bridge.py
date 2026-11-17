@@ -1,7 +1,9 @@
 """Browser RPC isolation and WebSocket tests; all sessions use temporary SQLite."""
 
 import asyncio
+import base64
 import json
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
@@ -16,6 +18,7 @@ from zett.agent.config import ZettelkastenAgentConfig
 from zett.agent.extensions.browser import BrowserExtension
 from zett.agent.zettelkasten import ZettelkastenAgent
 from zett.application.agent.browser import (
+    SCREENSHOT_PREFIX,
     BrowserBridge,
     BrowserCommand,
     BrowserConnection,
@@ -26,6 +29,7 @@ from zett.application.agent.browser import (
     BrowserReply,
     BrowserResult,
     BrowserUnavailableError,
+    BrowserWaitQuery,
     browser_bridge,
 )
 from zett.application.api.routes import agent as agent_routes
@@ -33,6 +37,9 @@ from zett.application.api.schemas import AnalyzeRequest
 from zett.infra.persistence.dao import session_storage
 from zett.main import app
 from zett.schemas import AgentSessionCreate
+
+JPEG = b"\xff\xd8\xff\xe0" + b"0" * 16
+SCREENSHOT = SCREENSHOT_PREFIX + base64.b64encode(JPEG).decode()
 
 
 async def test_connection_is_live_session_bound_and_not_replaced() -> None:
@@ -210,6 +217,109 @@ async def test_the_inspect_tool_is_registered_and_reaches_the_panel() -> None:
     assert result.ok is True
 
 
+async def test_the_wait_tool_sends_only_its_own_condition() -> None:
+    queue = asyncio.Queue()
+    peer = BrowserConnection("session", "token", queue.put)
+    context = AgentRunContext(config=AgentRunConfig(session_id="session"), state=AgentState(), tools={})
+    await BrowserExtension(peer).on_tool(context)
+    assert "wait_for_browser" in context.tools
+
+    task = asyncio.create_task(
+        context.tools["wait_for_browser"].handler(query={"condition": "appear", "text": "Saved", "timeout_ms": 800})
+    )
+    command = await queue.get()
+    assert command["operation"] == "wait"
+    assert command["wait"] == {"condition": "appear", "text": "Saved", "timeout_ms": 800}
+    assert "change" not in command and "query" not in command and "inspect" not in command
+    peer.resolve(BrowserReply(type="result", id=command["id"], ok=True, result='{"matched":true}'))
+    assert (await task).ok is True
+
+
+async def test_the_screenshot_tool_writes_the_capture_below_the_session() -> None:
+    queue = asyncio.Queue()
+    peer = BrowserConnection("session", "token", queue.put)
+    context = AgentRunContext(config=AgentRunConfig(session_id="session"), state=AgentState(), tools={})
+    await BrowserExtension(peer).on_tool(context)
+    assert "get_browser_screenshot" in context.tools
+
+    task = asyncio.create_task(context.tools["get_browser_screenshot"].handler())
+    command = await queue.get()
+    assert command["operation"] == "screenshot"
+    assert "change" not in command and "query" not in command and "inspect" not in command and "wait" not in command
+    peer.resolve(BrowserReply(type="result", id=command["id"], ok=True, image=SCREENSHOT))
+    result = await task
+
+    assert result.ok is True and result.result is not None
+    payload = json.loads(result.result)
+    assert payload["bytes"] == len(JPEG)
+    assert payload["key"].startswith("assets/sessions/session/uploads/")
+    stored = Path(payload["path"])
+    assert stored.exists() and stored.read_bytes() == JPEG
+
+
+async def test_a_capture_that_cannot_be_written_answers_instead_of_raising(monkeypatch) -> None:
+    async def unwritable(*_args, **_kwargs):
+        return [None]
+
+    monkeypatch.setattr("zett.application.agent.browser_screenshot.store_session_files", unwritable)
+    queue = asyncio.Queue()
+    peer = BrowserConnection("session", "token", queue.put)
+    context = AgentRunContext(config=AgentRunConfig(session_id="session"), state=AgentState(), tools={})
+    await BrowserExtension(peer).on_tool(context)
+
+    task = asyncio.create_task(context.tools["get_browser_screenshot"].handler())
+    command = await queue.get()
+    peer.resolve(BrowserReply(type="result", id=command["id"], ok=True, image=SCREENSHOT))
+    result = await task
+    assert result.ok is False
+    assert "could not save" in (result.error or "")
+
+
+def test_a_capture_result_is_a_validated_jpeg_and_never_another_payload() -> None:
+    assert BrowserResult(ok=True, image=SCREENSHOT).screenshot_bytes() == JPEG
+    for image in (
+        "data:image/png;base64," + base64.b64encode(JPEG).decode(),
+        SCREENSHOT_PREFIX + "not base64!!",
+        SCREENSHOT_PREFIX + base64.b64encode(b"GIF89a").decode(),
+    ):
+        with pytest.raises(ValidationError):
+            BrowserResult(ok=True, image=image)
+    with pytest.raises(ValidationError):
+        BrowserResult(ok=True, image=SCREENSHOT, result="{}")
+
+
+def test_wait_and_screenshot_keep_the_one_payload_rule() -> None:
+    wait = BrowserWaitQuery(condition="appear", selector="#saved")
+    assert BrowserCommand(id="a" * 32, operation="wait", wait=wait).wait == wait
+    with pytest.raises(ValidationError):
+        BrowserCommand(id="a" * 32, operation="wait")
+    with pytest.raises(ValidationError):
+        BrowserCommand(
+            id="a" * 32,
+            operation="wait",
+            wait=wait,
+            change=BrowserDOMPatch(action="set_text", selector="#saved", value="x", description="Edit"),
+        )
+    with pytest.raises(ValidationError):
+        BrowserCommand(id="a" * 32, operation="screenshot", query=BrowserPageQuery(selector="#buy"))
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"condition": "appear"},
+        {"condition": "appear", "selector": "#a", "text": "b"},
+        {"condition": "url_change", "selector": "#a"},
+        {"condition": "appear", "text": "saved", "timeout_ms": 9000},
+        {"condition": "appear", "text": "saved", "timeout_ms": 100},
+        {"condition": "navigate", "text": "saved"},
+    ],
+)
+def test_wait_arguments_are_bounded(payload) -> None:
+    with pytest.raises(ValidationError):
+        BrowserWaitQuery.model_validate(payload)
+
+
 def test_browser_interaction_accepts_bounded_actions() -> None:
     assert (
         BrowserInteraction(
@@ -324,7 +434,9 @@ async def test_agent_browser_tool_roundtrip() -> None:
         async def stream(self, request):
             assert {tool.name for tool in request.tools} == {
                 "get_browser_page",
+                "get_browser_screenshot",
                 "inspect_browser_element",
+                "wait_for_browser",
                 "update_browser_dom",
                 "interact_with_browser",
             }

@@ -75,8 +75,11 @@ it('refuses every command that carries a payload belonging to another operation'
       target_selector: null, key: null, direction: null, distance: null,
     },
     inspect: { selector: '#pay' },
+    wait: { condition: 'appear', selector: '#pay', text: null, timeout_ms: 1000 },
   }
-  const owner: Record<string, string> = { snapshot: 'query', update: 'change', interact: 'interaction', inspect: 'inspect' }
+  const owner: Record<string, string | null> = {
+    snapshot: 'query', update: 'change', interact: 'interaction', inspect: 'inspect', wait: 'wait', screenshot: null,
+  }
   for (const [operation, own] of Object.entries(owner)) {
     for (const field of Object.keys(payloads)) {
       const carried = Object.fromEntries(Object.entries(payloads).map(([name, item]) => [name, name === field ? item : null]))
@@ -84,10 +87,54 @@ it('refuses every command that carries a payload belonging to another operation'
       if (field === own) {
         expect(() => validateCommand(candidate)).not.toThrow()
       } else {
-        expect(() => validateCommand(candidate)).toThrow('cannot include')
+        expect(() => validateCommand(candidate)).toThrow(/cannot include|carries no payload/)
       }
     }
   }
+})
+
+it('bounds a wait query and a screenshot command', () => {
+  const base = { type: 'command' as const, id: 'd'.repeat(32), change: null, query: null, interaction: null, inspect: null }
+  const wait = { condition: 'appear', selector: '#saved', text: null, timeout_ms: 1000 }
+  expect(validateCommand({ ...base, operation: 'wait', wait })).toMatchObject({ operation: 'wait' })
+  expect(() => validateCommand({ ...base, operation: 'wait', wait: { ...wait, timeout_ms: 9000 } })).toThrow('timeout')
+  expect(() => validateCommand({ ...base, operation: 'wait', wait: { ...wait, condition: 'navigate' } })).toThrow('condition')
+  expect(() => validateCommand({ ...base, operation: 'screenshot', wait })).toThrow('carries no payload')
+})
+
+it('captures the viewport with the panel hidden, then restores it', async () => {
+  const captureVisibleTab = vi.fn().mockResolvedValue('data:image/jpeg;base64,AAAA')
+  vi.stubGlobal('chrome', {
+    tabs: { get: vi.fn().mockResolvedValue({ url, windowId: 3 }), sendMessage, captureVisibleTab },
+    scripting: { executeScript: vi.fn().mockResolvedValue([{ documentId: 'doc-1' }]) },
+  })
+  const executor = new BrowserExecutor(5)
+  await executor.connect()
+  const shot = {
+    type: 'command', id: 'e'.repeat(32), operation: 'screenshot',
+    change: null, query: null, interaction: null, inspect: null, wait: null,
+  } as const
+  expect(await executor.execute(shot)).toEqual({ ok: true, image: 'data:image/jpeg;base64,AAAA' })
+  const types = sendMessage.mock.calls.map(call => call[1].type)
+  expect(types).toContain('hide-panel')
+  expect(types).toContain('show-panel')
+  expect(types.indexOf('hide-panel')).toBeLessThan(types.indexOf('show-panel'))
+  expect(captureVisibleTab).toHaveBeenCalledWith(3, { format: 'jpeg', quality: 60 })
+})
+
+it('refuses a capture that is not a JPEG and still restores the panel', async () => {
+  const captureVisibleTab = vi.fn().mockResolvedValue('data:image/png;base64,AAAA')
+  vi.stubGlobal('chrome', {
+    tabs: { get: vi.fn().mockResolvedValue({ url, windowId: 3 }), sendMessage, captureVisibleTab },
+    scripting: { executeScript: vi.fn().mockResolvedValue([{ documentId: 'doc-1' }]) },
+  })
+  const executor = new BrowserExecutor(5)
+  await executor.connect()
+  await expect(executor.execute({
+    type: 'command', id: 'f'.repeat(32), operation: 'screenshot',
+    change: null, query: null, interaction: null, inspect: null, wait: null,
+  } as never)).rejects.toThrow('no JPEG image')
+  expect(sendMessage.mock.calls.map(call => call[1].type)).toContain('show-panel')
 })
 
 it('treats a fragment-only change as the same document, but not a different path', async () => {

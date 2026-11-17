@@ -1,4 +1,4 @@
-import { encodeResult, validateCommand, type BrowserCommand, type BrowserResult } from './browser-protocol'
+import { encodeResult, validateCommand, type BrowserCommand, type BrowserResult, type BrowserWaitQuery } from './browser-protocol'
 import { PANEL_HOST_ID } from './panel-host'
 
 const TEXT_INPUTS = new Set(['text', 'search', 'email', 'tel', 'url', 'number', 'date', 'datetime-local', 'month', 'week', 'time'])
@@ -594,6 +594,51 @@ function interact(command: BrowserCommand): BrowserResult {
   return encodeResult({
     ...receipt,
     notice: 'Event dispatched; inspect the page to confirm the intended effect before reporting success.',
+  })
+}
+
+/** How often a wait re-checks the page; short enough to feel immediate, cheap enough to poll. */
+const WAIT_POLL_MS = 100
+
+function waitConditionMet(query: BrowserWaitQuery, startUrl: string): boolean {
+  if (query.condition === 'url_change') return location.href !== startUrl
+  if (!query.selector) {
+    const body = document.body
+    // `innerText` is what the page shows; it is absent only in DOM emulators,
+    // where textContent is the closest available answer.
+    const visible = (body?.innerText ?? body?.textContent ?? '').toLowerCase()
+    const found = visible.includes((query.text ?? '').toLowerCase())
+    return query.condition === 'appear' ? found : !found
+  }
+  const found = document.querySelector(query.selector) !== null
+  return query.condition === 'appear' ? found : !found
+}
+
+/**
+ * Wait until the page reaches one condition, or report the timeout as an answer.
+ *
+ * A timeout is `ok: true` with `matched: false`: a page that stays unchanged is
+ * information the model acts on, not a tool failure that invites a blind retry.
+ * The bound is the deadline the query itself carries (at most eight seconds).
+ */
+export async function waitFor(query: BrowserWaitQuery): Promise<BrowserResult> {
+  const started = Date.now()
+  const startUrl = location.href
+  while (Date.now() < started + query.timeout_ms) {
+    if (waitConditionMet(query, startUrl)) {
+      return encodeResult({ matched: true, condition: query.condition, waited_ms: Date.now() - started })
+    }
+    const remaining = query.timeout_ms - (Date.now() - started)
+    await new Promise(resolve => setTimeout(resolve, Math.max(0, Math.min(WAIT_POLL_MS, remaining))))
+  }
+  const matched = waitConditionMet(query, startUrl)
+  return encodeResult({
+    matched,
+    condition: query.condition,
+    waited_ms: Date.now() - started,
+    ...(matched ? {} : {
+      notice: 'The condition did not hold before the timeout. The page may still be loading: read it before retrying.',
+    }),
   })
 }
 
