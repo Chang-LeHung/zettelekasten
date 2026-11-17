@@ -107,7 +107,12 @@ it('bounds a wait query and a screenshot command', () => {
 it('captures the viewport with the panel hidden, then restores it', async () => {
   const captureVisibleTab = vi.fn().mockResolvedValue('data:image/jpeg;base64,AAAA')
   vi.stubGlobal('chrome', {
-    tabs: { get: vi.fn().mockResolvedValue({ url, windowId: 3 }), sendMessage, captureVisibleTab },
+    tabs: {
+      get: vi.fn().mockResolvedValue({ url, windowId: 3 }),
+      query: vi.fn().mockResolvedValue([{ id: 5 }]),
+      sendMessage,
+      captureVisibleTab,
+    },
     scripting: { executeScript: vi.fn().mockResolvedValue([{ documentId: 'doc-1' }]) },
   })
   const executor = new BrowserExecutor(5)
@@ -124,10 +129,35 @@ it('captures the viewport with the panel hidden, then restores it', async () => 
   expect(captureVisibleTab).toHaveBeenCalledWith(3, { format: 'jpeg', quality: 60 })
 })
 
+it('refuses to capture a tab the window is not showing', async () => {
+  const captureVisibleTab = vi.fn().mockResolvedValue('data:image/jpeg;base64,AAAA')
+  vi.stubGlobal('chrome', {
+    tabs: {
+      get: vi.fn().mockResolvedValue({ url, windowId: 3 }),
+      query: vi.fn().mockResolvedValue([{ id: 99 }]),
+      sendMessage,
+      captureVisibleTab,
+    },
+    scripting: { executeScript: vi.fn().mockResolvedValue([{ documentId: 'doc-1' }]) },
+  })
+  const executor = new BrowserExecutor(5)
+  await executor.connect()
+  await expect(executor.execute({
+    type: 'command', id: 'd'.repeat(32), operation: 'screenshot',
+    change: null, query: null, interaction: null, inspect: null, wait: null,
+  } as never)).rejects.toThrow('not the visible one')
+  expect(captureVisibleTab).not.toHaveBeenCalled()
+})
+
 it('refuses a capture that is not a JPEG and still restores the panel', async () => {
   const captureVisibleTab = vi.fn().mockResolvedValue('data:image/png;base64,AAAA')
   vi.stubGlobal('chrome', {
-    tabs: { get: vi.fn().mockResolvedValue({ url, windowId: 3 }), sendMessage, captureVisibleTab },
+    tabs: {
+      get: vi.fn().mockResolvedValue({ url, windowId: 3 }),
+      query: vi.fn().mockResolvedValue([{ id: 5 }]),
+      sendMessage,
+      captureVisibleTab,
+    },
     scripting: { executeScript: vi.fn().mockResolvedValue([{ documentId: 'doc-1' }]) },
   })
   const executor = new BrowserExecutor(5)
@@ -148,6 +178,21 @@ it('treats a fragment-only change as the same document, but not a different path
   await expect(executor.execute(command)).rejects.toThrow('navigated')
 })
 
+it('keeps the connection while an address wait watches the address move', async () => {
+  const executor = new BrowserExecutor(5)
+  await executor.connect()
+  vi.mocked(chrome.tabs.get).mockResolvedValue({ url: `${url}?page=2` } as chrome.tabs.Tab)
+  sendMessage.mockResolvedValueOnce({ ok: true, result: '{"matched":true,"condition":"url_change"}' })
+  const wait = {
+    type: 'command', id: 'b'.repeat(32), operation: 'wait',
+    change: null, query: null, interaction: null, inspect: null, probe: null, attribute: null,
+    wait: { condition: 'url_change', selector: null, text: null, timeout_ms: 1000 },
+  } as const
+  expect(await executor.execute(wait)).toMatchObject({ ok: true })
+  // The next ordinary command still refuses the moved address.
+  await expect(executor.execute(command)).rejects.toThrow('navigated')
+})
+
 it('describes a pending target without ever throwing', async () => {
   const executor = new BrowserExecutor(5)
   expect(await executor.describe('#pay')).toBeNull()
@@ -159,9 +204,14 @@ it('describes a pending target without ever throwing', async () => {
   expect(await executor.describe('#pay')).toBeNull()
 })
 
-it('injects the page probe on connect and reads diagnostics from the page world', async () => {
-  const executeScript = vi.fn(async (details: { files?: string[] }) => (
-    details.files ? [{ documentId: 'doc-1' }] : [{ result: { installed: true, entries: [] } }]
+it('installs the page probe under a private key and reads with that key', async () => {
+  const executeScript = vi.fn(async (details: { files?: string[]; args?: unknown[] }) => (
+    details.files
+      ? [{ documentId: 'doc-1' }]
+      // The install call passes one argument and answers whether it armed the page.
+      : details.args?.length === 1
+        ? [{ result: true }]
+        : [{ result: { probe_found: true, entries: [] } }]
   ))
   vi.stubGlobal('chrome', {
     tabs: { get: vi.fn().mockResolvedValue({ url }), sendMessage },
@@ -169,9 +219,11 @@ it('injects the page probe on connect and reads diagnostics from the page world'
   })
   const executor = new BrowserExecutor(5)
   await executor.connect()
-  expect(executeScript.mock.calls.some(call => (
-    call[0].files?.includes('page-probe.js') && call[0].world === 'MAIN'
-  ))).toBe(true)
+  const worldCalls = executeScript.mock.calls.filter(call => call[0].world === 'MAIN')
+  // The page cannot pre-seed a buffer when the key is chosen per connection.
+  const key = worldCalls[0]?.[0].args?.[0]
+  expect(typeof key).toBe('string')
+  expect(key.length).toBeGreaterThan(10)
 
   const probe = {
     type: 'command', id: 'e'.repeat(32), operation: 'probe',
@@ -179,7 +231,7 @@ it('injects the page probe on connect and reads diagnostics from the page world'
     probe: { kind: 'console', limit: 5 },
   } as const
   const result = await executor.execute(probe)
-  expect(JSON.parse(result.result!)).toMatchObject({ installed: true })
-  const read = executeScript.mock.calls.find(call => typeof call[0].func === 'function')
-  expect(read?.[0]).toMatchObject({ world: 'MAIN', args: ['console', 5] })
+  expect(JSON.parse(result.result!)).toMatchObject({ probe_found: true })
+  const reads = executeScript.mock.calls.filter(call => call[0].world === 'MAIN')
+  expect(reads[reads.length - 1]?.[0].args).toEqual([key, 'console', 5, true])
 })

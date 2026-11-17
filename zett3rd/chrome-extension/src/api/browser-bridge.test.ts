@@ -124,7 +124,7 @@ it('asks before an attribute change, and never for an accessibility audit', asyn
   const attribute = {
     type: 'command', id: 'd'.repeat(32), operation: 'attribute',
     change: null, query: null, interaction: null, inspect: null, wait: null, probe: null,
-    attribute: { name: 'alt', selector: '#chart', value: 'A chart', description: 'Describe the chart' },
+    attribute: { name: 'alt', selector: '#chart', value: 'A chart', remove: false, description: 'Describe the chart' },
   }
   socket.emit(attribute)
   await flush()

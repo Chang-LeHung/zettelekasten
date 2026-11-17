@@ -602,37 +602,43 @@ function interact(command: BrowserCommand): BrowserResult {
 
 /** How often a wait re-checks the page; short enough to feel immediate, cheap enough to poll. */
 const WAIT_POLL_MS = 100
+/** Text conditions rebuild the page's visible text, so they check less often. */
+const WAIT_TEXT_POLL_MS = 250
 
 function waitConditionMet(query: BrowserWaitQuery, startUrl: string): boolean {
   if (query.condition === 'url_change') return location.href !== startUrl
-  if (!query.selector) {
+  let present: boolean
+  if (query.selector) {
+    const element = document.querySelector(query.selector)
+    // "Appeared" means painted, not merely parsed: a hidden toast has not appeared.
+    present = element !== null && notDisplayed(element) === null
+  } else {
     const body = document.body
     // `innerText` is what the page shows; it is absent only in DOM emulators,
     // where textContent is the closest available answer.
     const visible = (body?.innerText ?? body?.textContent ?? '').toLowerCase()
-    const found = visible.includes((query.text ?? '').toLowerCase())
-    return query.condition === 'appear' ? found : !found
+    present = visible.includes((query.text ?? '').toLowerCase())
   }
-  const found = document.querySelector(query.selector) !== null
-  return query.condition === 'appear' ? found : !found
+  return query.condition === 'appear' ? present : !present
 }
 
 /**
  * Wait until the page reaches one condition, or report the timeout as an answer.
  *
- * A timeout is `ok: true` with `matched: false`: a page that stays unchanged is
- * information the model acts on, not a tool failure that invites a blind retry.
- * The bound is the deadline the query itself carries (at most eight seconds).
+ * `startUrl` is the address the panel connected to, so an address change that
+ * happened between the click and this call still counts. A timeout is
+ * `ok: true` with `matched: false`: a page that stays unchanged is information
+ * the model acts on, not a tool failure that invites a blind retry.
  */
-export async function waitFor(query: BrowserWaitQuery): Promise<BrowserResult> {
+export async function waitFor(query: BrowserWaitQuery, startUrl: string = location.href): Promise<BrowserResult> {
   const started = Date.now()
-  const startUrl = location.href
+  const interval = query.text && !query.selector ? WAIT_TEXT_POLL_MS : WAIT_POLL_MS
   while (Date.now() < started + query.timeout_ms) {
     if (waitConditionMet(query, startUrl)) {
       return encodeResult({ matched: true, condition: query.condition, waited_ms: Date.now() - started })
     }
     const remaining = query.timeout_ms - (Date.now() - started)
-    await new Promise(resolve => setTimeout(resolve, Math.max(0, Math.min(WAIT_POLL_MS, remaining))))
+    await new Promise(resolve => setTimeout(resolve, Math.max(0, Math.min(interval, remaining))))
   }
   const matched = waitConditionMet(query, startUrl)
   return encodeResult({
@@ -655,15 +661,21 @@ export async function waitFor(query: BrowserWaitQuery): Promise<BrowserResult> {
 export function applyAttribute(command: BrowserCommand): BrowserResult {
   const item = command.attribute!
   if (!ALLOWED_ATTRIBUTES.includes(item.name)) throw new Error('Unsupported attribute name')
-  const element = target(item.selector)
-  if (item.value === null) element.removeAttribute(item.name)
-  else element.setAttribute(item.name, item.value)
+  // `target()` refuses an excluded element, and the attribute this tool exists to
+  // fix — `aria-hidden` — is exactly such an exclusion, so only rendering is
+  // required here: writing `alt` or an `aria-*` value into an excluded subtree is
+  // the intended repair, and a non-HTML element (an `<svg>` image) has attributes.
+  const element = singleMatch(item.selector)
+  const notRendered = notDisplayed(element)
+  if (notRendered) throw new Error(`Cannot use "${item.selector.slice(0, 120)}": ${notRendered}. Read the page again.`)
+  if (item.remove) element.removeAttribute(item.name)
+  else element.setAttribute(item.name, item.value ?? '')
   const applied = element.getAttribute(item.name)
   return encodeResult({
     selector: item.selector,
     name: item.name,
     value: applied,
-    applied: applied === item.value,
+    applied: item.remove ? applied === null : applied === item.value,
     notice: 'The attribute changed. Read the page again to confirm how it now renders.',
   })
 }
@@ -672,11 +684,40 @@ export function applyAttribute(command: BrowserCommand): BrowserResult {
 const FOCUSABLE = 'a[href],button,input:not([type="hidden"]),select,textarea,[tabindex]:not([tabindex="-1"]),[contenteditable="true"]'
 const AUDIT_EXAMPLES = 3
 
+/**
+ * One finding with selectors the model can actually use.
+ *
+ * `selectorFor` can outgrow the 500-character limit on deep elements, and a
+ * truncated selector is worse than none: copying it only produces "not a valid
+ * CSS selector". An element whose selector does not fit is counted, not shown.
+ */
 function auditFinding(id: string, problem: string, elements: Element[]) {
-  return {
-    id, problem, count: elements.length,
-    examples: elements.slice(0, AUDIT_EXAMPLES).map(element => selectorFor(element).slice(0, 120)),
+  const examples: string[] = []
+  for (const element of elements) {
+    if (examples.length >= AUDIT_EXAMPLES) break
+    const selector = selectorFor(element)
+    if (selector.length <= 120) examples.push(selector)
   }
+  return { id, problem, count: elements.length, examples }
+}
+
+/** Resolve an `aria-labelledby` list to the text it actually names, if any. */
+function referencedText(ids: string): string {
+  return ids
+    .split(/\s+/)
+    .map(id => document.getElementById(id)?.textContent ?? '')
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/** Whether an element is reachable by a keyboard user in this document right now. */
+function focusableElements(element: Element): Element[] {
+  const candidates = [
+    ...(element.matches(FOCUSABLE) ? [element] : []),
+    ...Array.from(element.querySelectorAll(FOCUSABLE)),
+  ]
+  return candidates.filter(candidate => !candidate.matches(':disabled') && notDisplayed(candidate) === null)
 }
 
 /**
@@ -688,23 +729,35 @@ function auditFinding(id: string, problem: string, elements: Element[]) {
  * sense, which need a person.
  */
 export function auditAccessibility(): BrowserResult {
-  const images = Array.from(document.querySelectorAll('img:not([alt])'))
+  const images = Array.from(document.querySelectorAll(
+    'img:not([alt]),input[type="image"]:not([alt]),area[href]:not([alt])',
+  ))
   const unnamed = Array.from(document.querySelectorAll(
     'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]),textarea,select',
   )).filter(element => {
     const control = element as HTMLInputElement
-    const label = element.getAttribute('aria-label') || element.getAttribute('aria-labelledby')
+    const labelledby = element.getAttribute('aria-labelledby')
+    // A dangling `aria-labelledby` names nothing, which is exactly the re-render
+    // bug this check should catch.
+    const referenced = labelledby
+      ? referencedText(labelledby)
+      : ''
+    const label = element.getAttribute('aria-label') || referenced
       || element.getAttribute('title') || control.placeholder || control.labels?.[0]?.textContent || ''
     return !label.trim()
   })
   const unlabeledControls = Array.from(document.querySelectorAll('button,a[href]')).filter(element => {
     const text = (element.textContent ?? '').replace(/\s+/g, ' ').trim()
-    const named = element.getAttribute('aria-label') || element.getAttribute('aria-labelledby')
-      || element.getAttribute('title') || element.querySelector('img[alt]:not([alt=""])')
+    const named = element.getAttribute('aria-label') || element.getAttribute('title')
+      || (element.getAttribute('aria-labelledby') ? referencedText(element.getAttribute('aria-labelledby')!) : '')
+      || element.querySelector('img[alt]:not([alt=""]), svg[aria-label], [aria-label]')
+      || (element.querySelector('svg title')?.textContent ?? '').trim()
     return !text && !named
   })
   const hiddenFocusable = Array.from(document.querySelectorAll('[aria-hidden="true"]'))
-    .filter(element => element.matches(FOCUSABLE) || element.querySelector(FOCUSABLE) !== null)
+    // A closed menu is `aria-hidden` *and* unrendered; only a visible subtree
+    // really takes focus away from a keyboard user.
+    .filter(element => notDisplayed(element) === null && focusableElements(element).length > 0)
   const positiveTabindex = Array.from(document.querySelectorAll('[tabindex]'))
     .filter(element => Number(element.getAttribute('tabindex')) > 0)
 
@@ -719,15 +772,14 @@ export function auditAccessibility(): BrowserResult {
 
   const lang = document.documentElement.getAttribute('lang') ?? document.documentElement.getAttribute('xml:lang')
   const checks = [
-    auditFinding('image_without_alt', 'Image has no alt attribute', images),
+    auditFinding('image_without_alt', 'Image, image input, or image map area has no alt text', images),
     auditFinding('control_without_name', 'Form control has no label, name, or placeholder', unnamed),
     auditFinding('control_without_text', 'Button or link has no text and no accessible name', unlabeledControls),
     auditFinding('aria_hidden_focusable', 'aria-hidden hides something a keyboard user can focus', hiddenFocusable),
     auditFinding('positive_tabindex', 'Positive tabindex overrides the natural focus order', positiveTabindex),
     auditFinding('heading_level_skipped', 'Heading level skips a level', skipped),
     ...(lang && lang.trim() ? [] : [{
-      id: 'missing_lang', problem: 'The document has no lang attribute', count: 1,
-      examples: ['html'],
+      id: 'missing_lang', problem: 'The document has no lang attribute', count: 1, examples: ['html'],
     }]),
   ]
   return encodeResult({

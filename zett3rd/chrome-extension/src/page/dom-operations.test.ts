@@ -518,11 +518,28 @@ it('waits for the address to change only when the page navigates', async () => {
   expect(receipt.matched).toBe(true)
 })
 
+it('counts an address change that happened before the wait started', async () => {
+  // The panel tells the wait which address it connected to, so a navigation that
+  // landed before the model asked is still visible to it.
+  const receipt = JSON.parse((await waitFor(waitQuery({ condition: 'url_change' }), 'https://elsewhere.example/')).result!)
+  expect(receipt.matched).toBe(true)
+})
+
+it('does not call a hidden element "appeared"', async () => {
+  document.body.innerHTML = '<div id="toast" style="display:none">Saved</div>'
+  const receipt = JSON.parse((await waitFor(waitQuery({ selector: '#toast' }))).result!)
+  expect(receipt.matched).toBe(false)
+  const gone = JSON.parse((await waitFor(waitQuery({ condition: 'disappear', selector: '#toast' }))).result!)
+  expect(gone.matched).toBe(true)
+})
+
 function attributeCommand(change: Partial<BrowserCommand['attribute']>): BrowserCommand {
   return {
     type: 'command', id: 'f'.repeat(32), operation: 'attribute',
     change: null, query: null, interaction: null, inspect: null, wait: null, probe: null,
-    attribute: { name: 'alt', selector: '#chart', value: 'A chart', description: 'Describe the chart', ...change },
+    attribute: {
+      name: 'alt', selector: '#chart', value: 'A chart', remove: false, description: 'Describe the chart', ...change,
+    },
   } as BrowserCommand
 }
 
@@ -531,9 +548,21 @@ it('sets and removes one allowlisted accessibility attribute', () => {
   expect(JSON.parse(applyDOMCommand(attributeCommand({})).result!)).toMatchObject({ applied: true, value: 'A chart' })
   expect(document.querySelector('#chart')!.getAttribute('alt')).toBe('A chart')
 
-  const removed = JSON.parse(applyDOMCommand(attributeCommand({ value: null })).result!)
+  const removed = JSON.parse(applyDOMCommand(attributeCommand({ value: null, remove: true })).result!)
   expect(removed).toMatchObject({ applied: true, value: null })
   expect(document.querySelector('#chart')!.hasAttribute('alt')).toBe(false)
+})
+
+it('can repair an excluded or non-HTML element, which is what the audit reports', () => {
+  document.body.innerHTML = '<div aria-hidden="true"><button id="hidden-btn">x</button></div>'
+    + '<button id="icon"><svg id="shape"><title>Close</title></svg></button>'
+  expect(JSON.parse(applyDOMCommand(attributeCommand({
+    selector: '#hidden-btn', name: 'aria-hidden', value: 'false',
+  })).result!)).toMatchObject({ applied: true, value: 'false' })
+  expect(JSON.parse(applyDOMCommand(attributeCommand({
+    selector: '#shape', name: 'aria-label', value: 'Close',
+  })).result!)).toMatchObject({ applied: true, value: 'Close' })
+  expect(document.querySelector('#shape')!.getAttribute('aria-label')).toBe('Close')
 })
 
 it('refuses an attribute outside the allowlist even at the content script', () => {
@@ -564,4 +593,28 @@ it('audits the accessibility problems a static pass can name', () => {
   expect(byId.heading_level_skipped.count).toBe(1)
   expect(byId.missing_lang.count).toBe(1)
   expect(report.notice).toContain('contrast')
+})
+
+it('reports a clean, accessible page as clean', () => {
+  document.documentElement.lang = 'en'
+  try {
+    document.body.innerHTML = '<h1>Title</h1><h2>Section</h2>'
+      + '<img src="a.png" alt="A chart">'
+      + '<label for="name">Name</label><input id="name">'
+      + '<button aria-label="Close">✕</button>'
+      // A closed menu is aria-hidden *and* unrendered; nothing in it can take focus.
+      + '<div aria-hidden="true" style="display:none"><button>Menu item</button></div>'
+      // An icon named through the svg's own title is named.
+      + '<button><svg><title>Settings</title></svg></button>'
+      // An aria-labelledby that resolves names the control.
+      + '<span id="field-label">Email</span><input aria-labelledby="field-label">'
+    const report = JSON.parse(applyDOMCommand({
+      type: 'command', id: 'd'.repeat(32), operation: 'audit',
+      change: null, query: null, interaction: null, inspect: null, wait: null, probe: null, attribute: null,
+    } as BrowserCommand).result!)
+    const findings = report.checks.filter((check: { count: number }) => check.count > 0)
+    expect(findings).toEqual([])
+  } finally {
+    document.documentElement.removeAttribute('lang')
+  }
 })

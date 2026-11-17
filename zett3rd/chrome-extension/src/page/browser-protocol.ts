@@ -1,4 +1,9 @@
 /** Data-only browser RPC. Adding an action requires validation on both sides. */
+/** How long one command may run before the panel calls it lost. */
+export const COMMAND_TIMEOUT_MS = 10000
+/** The furthest `expiresAt` a content script accepts; both ends must agree. */
+export const COMMAND_EXPIRY_ALLOWANCE_MS = 11000
+
 export interface BrowserDOMPatch {
   action: 'set_text' | 'fill' | 'select' | 'set_checked'
   selector: string
@@ -34,6 +39,7 @@ export interface BrowserAttributeChange {
   name: BrowserAttributeName
   selector: string
   value: string | null
+  remove: boolean
   description: string
 }
 export interface BrowserCommand {
@@ -81,10 +87,14 @@ export function validateCommand(value: unknown): BrowserCommand {
       || cmd.wait != null || cmd.probe != null) {
       throw new Error('An attribute change cannot include another operation')
     }
-    const attribute = record(cmd.attribute, ['name', 'selector', 'value', 'description'])
+    const attribute = record(cmd.attribute, ['name', 'selector', 'value', 'remove', 'description'])
     if (!ALLOWED_ATTRIBUTES.includes(String(attribute.name) as BrowserAttributeName)) throw new Error('Unsupported attribute name')
     if (!text(attribute.selector, 500) || !text(attribute.description, 300)) throw new Error('Invalid attribute change')
+    if (typeof attribute.remove !== 'boolean') throw new Error('Invalid attribute removal flag')
     if (attribute.value != null && !text(attribute.value, 200, true)) throw new Error('Invalid attribute value')
+    if (attribute.remove ? attribute.value != null : attribute.value == null) {
+      throw new Error('An attribute change sets a value or removes the attribute, never both')
+    }
   } else if (cmd.operation === 'probe') {
     if (cmd.change != null || cmd.query != null || cmd.interaction != null || cmd.inspect != null
       || cmd.wait != null || cmd.attribute != null) {

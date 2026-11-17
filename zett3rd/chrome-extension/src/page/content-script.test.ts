@@ -63,12 +63,16 @@ it('rejects arbitrary source even when a command reaches the content script', ()
   expect(document.querySelector('h1')!.textContent).toBe('Old title')
 })
 
-it('hides the panel for one capture and restores it afterwards', () => {
+it('hides the panel for one capture and restores it afterwards', async () => {
   expect(send({ type: 'toggle-panel', tabId: 7 }, background)).toMatchObject({ open: true })
   expect(send({ type: 'connect' })).toMatchObject({ ok: true })
   const host = document.querySelector<HTMLElement>('#zettelekasten-panel-host')!
-  expect(send({ type: 'hide-panel' })).toEqual({ ok: true })
+  let hidden: unknown
+  const keptOpen = listener({ channel: 'zett-dom', nonce, type: 'hide-panel' }, sender, result => { hidden = result })
+  expect(keptOpen).toBe(true)
   expect(host.style.visibility).toBe('hidden')
+  await new Promise(resolve => setTimeout(resolve, 120))
+  expect(hidden).toEqual({ ok: true })
   expect(send({ type: 'show-panel' })).toEqual({ ok: true })
   expect(host.style.visibility).toBe('')
 })
@@ -80,15 +84,61 @@ it('answers a wait after its deadline instead of closing the reply channel', asy
     change: null, query: null, interaction: null, inspect: null,
     wait: { condition: 'appear', selector: '#title', text: null, timeout_ms: 500 },
   }
-  let response: unknown
+  let response: { ok?: boolean; result?: string } | undefined
   const keptOpen = listener(
     { channel: 'zett-dom', nonce, type: 'command', command: wait, url: location.href, expiresAt: Date.now() + 10000 },
     sender,
-    result => { response = result },
+    result => { response = result as { ok?: boolean; result?: string } },
   )
   expect(keptOpen).toBe(true)
   await new Promise(resolve => setTimeout(resolve, 150))
   expect(response).toMatchObject({ ok: true })
+  expect(JSON.parse(response!.result!)).toMatchObject({ matched: true, condition: 'appear' })
+  expect(typeof JSON.parse(response!.result!).waited_ms).toBe('number')
+})
+
+it('lets an address wait observe a URL change instead of refusing the message', async () => {
+  send({ type: 'connect' })
+  // The measured address is the one the panel connected to, so this wait can
+  // answer at once — while every other command would be refused as navigated.
+  window.history.pushState({}, '', `${location.href}?page=2`)
+  try {
+    const wait = {
+      type: 'command', id: 'd'.repeat(32), operation: 'wait',
+      change: null, query: null, interaction: null, inspect: null,
+      wait: { condition: 'url_change', selector: null, text: null, timeout_ms: 1000 },
+    }
+    let response: { ok?: boolean; result?: string } | undefined
+    expect(listener(
+      { channel: 'zett-dom', nonce, type: 'command', command: wait, url: location.href, expiresAt: Date.now() + 10000 },
+      sender,
+      result => { response = result as { ok?: boolean; result?: string } },
+    )).toBe(true)
+    await new Promise(resolve => setTimeout(resolve, 150))
+    expect(JSON.parse(response!.result!)).toMatchObject({ matched: true, condition: 'url_change' })
+  } finally {
+    window.history.pushState({}, '', location.href.split('?')[0])
+  }
+})
+
+it('accepts a wait frame whose horizon matches the longest wait', async () => {
+  send({ type: 'connect' })
+  const wait = {
+    type: 'command', id: 'e'.repeat(32), operation: 'wait',
+    change: null, query: null, interaction: null, inspect: null,
+    wait: { condition: 'appear', selector: '#title', text: null, timeout_ms: 8000 },
+  }
+  let response: { ok?: boolean; error?: string } | undefined
+  // The panel sends `timeout_ms + 2000` as the frame horizon; the content script
+  // must still accept it, or every long wait dies as "DOM command expired".
+  expect(listener(
+    { channel: 'zett-dom', nonce, type: 'command', command: wait, url: location.href, expiresAt: Date.now() + 10000 },
+    sender,
+    result => { response = result as { ok?: boolean; error?: string } },
+  )).toBe(true)
+  await new Promise(resolve => setTimeout(resolve, 150))
+  expect(response?.error).toBeUndefined()
+  expect(response?.ok).toBe(true)
 })
 
 it('mounts an embedded panel only from the toolbar and closes it only from the matching frame', () => {

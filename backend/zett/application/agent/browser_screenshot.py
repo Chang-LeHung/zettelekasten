@@ -2,18 +2,24 @@
 
 A screenshot is an image, so it cannot travel back through the bounded JSON tool
 result: the model would receive megabytes of base64 it cannot read. The panel
-sends the JPEG once, this service writes it into the session's upload
-directory — the location the session-files system message already names — and
-the tool answers with a path the model can hand to ``read``.
+sends the JPEG once, this service writes it into the session's upload directory —
+the location the session-files system message already names — and the tool
+answers with a path the model can hand to ``read``.
+
+One conversation keeps one capture file: each new screenshot replaces the last,
+so an investigation that captures repeatedly cannot leave hundreds of megabytes
+behind, and the path the model was given stays the file it just asked for.
 """
 
 from dataclasses import dataclass
 
-from zett.application.files.object_store import ObjectKey
+from zett.application.files.object_store import session_upload_key
 from zett.infra.files.object_store import get_object_store
 
-from ..assets.message_files import SessionFileWrite, store_session_files
 from .browser import BrowserResult
+
+#: The one file name a session's capture uses, so a new capture replaces it.
+SCREENSHOT_NAME = "screenshot.jpg"
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,11 +40,10 @@ async def store_browser_screenshot(session_id: str, result: BrowserResult) -> St
     size), so a page can never make this write anything else.
     """
     data = result.screenshot_bytes()
-    [stored] = await store_session_files(
-        session_id,
-        [SessionFileWrite(name="screenshot.jpg", mime_type="image/jpeg", data=data)],
+    store = get_object_store()
+    written = await store.write(session_upload_key(session_id, SCREENSHOT_NAME), data)
+    return StoredScreenshot(
+        path=str(store.resolve(written.key)),
+        key=str(written.key),
+        size_bytes=written.size_bytes,
     )
-    if stored is None:
-        raise ValueError("The capture could not be written to the session directory")
-    path = get_object_store().resolve(ObjectKey(stored.object_key))
-    return StoredScreenshot(path=str(path), key=stored.object_key, size_bytes=stored.size_bytes)

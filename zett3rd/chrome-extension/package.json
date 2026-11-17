@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Embedded per-page Chrome conversation for the local Zett server",
   "scripts": {
-    "build": "vite build && vite build --config vite.content.config.ts && vite build --config vite.probe.config.ts",
+    "build": "vite build && vite build --config vite.content.config.ts",
     "typecheck": "vue-tsc --noEmit",
     "test": "vitest run"
   },

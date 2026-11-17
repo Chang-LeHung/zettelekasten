@@ -145,8 +145,10 @@ class BrowserAttributeChange(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     name: Literal["alt", "title", "aria-label", "aria-labelledby", "aria-hidden", "role"]
     selector: str = Field(min_length=1, max_length=500)
-    #: New value, or None to remove the attribute.
+    #: New value. An empty string is meaningful (`alt=""` marks a decorative image).
     value: str | None = Field(default=None, max_length=200)
+    #: Explicit removal: omitting `value` is an error, never a silent delete.
+    remove: bool = False
     description: str = Field(min_length=1, max_length=300)
 
     @field_validator("selector", "description")
@@ -155,6 +157,14 @@ class BrowserAttributeChange(BaseModel):
         if not value.strip():
             raise ValueError("Must not be blank")
         return value
+
+    @model_validator(mode="after")
+    def value_matches_removal(self) -> Self:
+        if self.remove and self.value is not None:
+            raise ValueError("Set either value or remove, never both")
+        if not self.remove and self.value is None:
+            raise ValueError("Set value, or remove=True to delete the attribute")
+        return self
 
 
 class BrowserInteraction(BaseModel):
@@ -256,9 +266,15 @@ class BrowserResult(BaseModel):
 
     @model_validator(mode="after")
     def valid_result(self) -> Self:
+        # An image is validated even on a failed reply: an unvalidated payload
+        # would otherwise be the one path that skips every bound.
+        if self.image is not None:
+            self.screenshot_bytes()
         if not self.ok:
             if not self.error or not self.error.strip():
                 raise ValueError("Failed execution needs an error")
+            if self.image is not None:
+                raise ValueError("A failed execution cannot carry an image")
             return self
         if self.error is not None:
             raise ValueError("Successful result needs no error")
@@ -268,8 +284,6 @@ class BrowserResult(BaseModel):
             if len(self.result.encode("utf-8")) > MAX_BROWSER_RESULT:
                 raise ValueError("Browser result exceeds 64 KB")
             json.loads(self.result, parse_constant=_reject_json_constant)
-        if self.image is not None:
-            self.screenshot_bytes()
         return self
 
     def screenshot_bytes(self) -> bytes:
@@ -301,11 +315,19 @@ class BrowserReply(BrowserResult):
 
 
 @dataclass(eq=False)
+class _PendingCall:
+    """One in-flight command, remembered with the shape its reply must have."""
+
+    operation: str
+    future: asyncio.Future[BrowserResult]
+
+
+@dataclass(eq=False)
 class BrowserConnection:
     session_id: str
     token: str
     send: Callable[[dict[str, object]], Awaitable[None]]
-    pending: dict[str, asyncio.Future[BrowserResult]] = field(default_factory=dict)
+    pending: dict[str, _PendingCall] = field(default_factory=dict)
     active: bool = True
     # A model may emit several tool calls at once. The panel runs one command at
     # a time and approves each separately, so calls queue here instead of failing.
@@ -365,7 +387,7 @@ class BrowserConnection:
             attribute=attribute,
         )
         future: asyncio.Future[BrowserResult] = asyncio.get_running_loop().create_future()
-        self.pending[command.id] = future
+        self.pending[command.id] = _PendingCall(operation=operation, future=future)
         completed = False
         logger.info(
             "Browser command started; session_id=%s command_id=%s operation=%s", self.session_id, command.id, operation
@@ -398,16 +420,34 @@ class BrowserConnection:
             logger.info("Browser command finished; session_id=%s command_id=%s", self.session_id, command.id)
 
     def resolve(self, reply: BrowserReply) -> None:
-        future = self.pending.get(reply.id)
-        if future is None or future.done():
+        pending = self.pending.get(reply.id)
+        if pending is None or pending.future.done():
             return  # Late/duplicate results cannot complete another call.
-        future.set_result(BrowserResult(ok=reply.ok, result=reply.result, image=reply.image, error=reply.error))
+        # A reply only completes the command whose shape it matches: an image
+        # belongs to a capture, and text belongs to everything else. Otherwise a
+        # panel could hand a read a multi-megabyte image the tool never asked for.
+        if reply.image is not None and pending.operation != "screenshot":
+            pending.future.set_result(
+                BrowserResult(ok=False, error="The browser sent an image for a command that does not accept one.")
+            )
+            return
+        if reply.ok and pending.operation == "screenshot" and reply.image is None:
+            pending.future.set_result(BrowserResult(ok=False, error="The browser answered a capture without an image."))
+            return
+        pending.future.set_result(BrowserResult(ok=reply.ok, result=reply.result, image=reply.image, error=reply.error))
+
+    def fail(self, command_id: str, message: str) -> None:
+        """Answer one command whose reply this client refuses, keeping the socket."""
+        pending = self.pending.get(command_id)
+        if pending is None or pending.future.done():
+            return
+        pending.future.set_result(BrowserResult(ok=False, error=message[:1000]))
 
     def close(self) -> None:
         self.active = False
-        for future in self.pending.values():
-            if not future.done():
-                future.set_exception(BrowserUnavailableError(DISCONNECTED_MID_ACTION))
+        for pending in self.pending.values():
+            if not pending.future.done():
+                pending.future.set_exception(BrowserUnavailableError(DISCONNECTED_MID_ACTION))
         self.pending.clear()
 
 

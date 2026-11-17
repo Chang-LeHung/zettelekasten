@@ -54,8 +54,9 @@ no browser tools, including in normal Web, CLI, scheduled, and channel turns.
   `matched: false` with a notice, so a page that did not change informs the model
   instead of reading as a failed call.
 - `get_browser_console(limit=30)`: the page's recent console errors and warnings
-  with source, line, and a repeat `count`, from a `world: "MAIN"` probe injected
-  when the panel connects.
+  with source, line, and a repeat `count`, from a `world: "MAIN"` probe installed
+  under a per-connection key when the panel connects (`probe_found: false` means
+  the page blocked it, so an empty list is "nothing observed", not "no errors").
 - `get_browser_network(limit=30)`: the newest resource entries (name, type,
   start, duration, transfer/encoded bytes, and a response status when the page
   exposes it). Headers are never available.
@@ -66,9 +67,10 @@ no browser tools, including in normal Web, CLI, scheduled, and channel turns.
   something focusable, positive `tabindex`, skipped heading levels, and a missing
   `lang` — each with a count and up to three example selectors. Contrast, reading
   order, and whether a label makes sense are explicitly out of scope.
-- `set_browser_attribute(change)`: set or remove (`value: null`) exactly one of
-  `alt`, `title`, `aria-label`, `aria-labelledby`, `aria-hidden`, or `role`, after
-  the same review card as any other mutation. Link targets, sources, handlers,
+- `set_browser_attribute(change)`: set one of `alt`, `title`, `aria-label`,
+  `aria-labelledby`, `aria-hidden`, or `role`, or delete it with an explicit
+  `remove: true` (an omitted value is an error, never a silent delete), after the
+  same review card as any other mutation. Link targets, sources, handlers,
   styles, and arbitrary attributes are unreachable on purpose.
 - `inspect_browser_element(selector)`: a read-only diagnosis of one element. It
   reports the box and spacing, the computed layout style, the viewport, why the
