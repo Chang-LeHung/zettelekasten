@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { applyDOMCommand } from './dom-operations'
 import type { BrowserCommand, BrowserDOMPatch } from './browser-protocol'
 
@@ -230,4 +230,260 @@ it('reports where the page is scrolled and each control’s link target', () => 
   const page = JSON.parse(applyDOMCommand(read).result!)
   expect(page.scroll).toMatchObject({ y: 0 })
   expect(page.controls[0]).toMatchObject({ selector: '#link', href: 'https://example.com/next' })
+})
+
+function inspectElement(selector: string): BrowserCommand {
+  return {
+    type: 'command', id: 'd'.repeat(32), operation: 'inspect', query: null, change: null, interaction: null,
+    inspect: { selector },
+  } as BrowserCommand
+}
+
+/** jsdom lays nothing out, so a test that cares about geometry places the box itself. */
+function place(element: Element, rect: Partial<DOMRect>) {
+  element.getBoundingClientRect = () => ({
+    x: 0, y: 0, left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0,
+    toJSON: () => ({}), ...rect,
+  }) as DOMRect
+}
+
+// A hit-test stub must not leak into the tests that run after it.
+afterEach(() => { delete (document as unknown as { elementFromPoint?: unknown }).elementFromPoint })
+
+it('inspects one element without changing the page', () => {
+  document.body.innerHTML = '<button id="buy" class="cta" aria-label="Buy now">Buy</button>'
+  place(document.querySelector('#buy')!, { left: 20, top: 30, width: 120, height: 40, right: 140, bottom: 70 })
+  const before = document.body.innerHTML
+  const receipt = JSON.parse(applyDOMCommand(inspectElement('#buy')).result!)
+  expect(document.body.innerHTML).toBe(before)
+  expect(receipt).toMatchObject({
+    selector: '#buy', tag: 'button', label: 'Buy now', rendered: true, in_viewport: true,
+    url: location.href,
+    spacing: { order: 'top,right,bottom,left' },
+    box: { x: 20, y: 30, width: 120, height: 40 },
+    hit: { point: [80, 50] },
+    states: { interactive: true, disabled: false, focused: false, resolved_selector: '#buy' },
+  })
+  expect(receipt.style).toHaveProperty('display')
+  expect(receipt.viewport).toMatchObject({ width: expect.any(Number), scroll_x: 0 })
+})
+
+it('diagnoses an element an ancestor hides instead of refusing to inspect it', () => {
+  document.body.innerHTML = '<div style="display:none"><button id="gone">Gone</button></div>'
+  const receipt = JSON.parse(applyDOMCommand(inspectElement('#gone')).result!)
+  expect(receipt.rendered).toBe(false)
+  expect(receipt.hidden_reason).toContain('display: none')
+  expect(receipt.findings.join(' ')).toContain('not rendered')
+  expect(receipt.accepts).toMatchObject({ set_text: false, fill: false, click: null })
+})
+
+it('keeps a visibility override visible in every tool, not only in a diagnosis', () => {
+  document.body.innerHTML = '<div style="visibility:hidden"><p id="shown" style="visibility:visible">Shown</p></div>'
+  place(document.querySelector('#shown')!, { left: 10, top: 10, width: 60, height: 20, right: 70, bottom: 30 })
+  const receipt = JSON.parse(applyDOMCommand(inspectElement('#shown')).result!)
+  expect(receipt).toMatchObject({ rendered: true, refused_reason: null })
+  expect(receipt.accepts).toMatchObject({ set_text: true })
+  const page = JSON.parse(applyDOMCommand(read).result!)
+  expect(page.elements.map((item: { selector: string }) => item.selector)).toContain('#shown')
+  expect(JSON.parse(edit({ action: 'set_text', selector: '#shown', value: 'Changed' }).result!))
+    .toMatchObject({ applied: true })
+})
+
+it('separates "not rendered" from "page tools exclude it"', () => {
+  document.body.innerHTML = '<div aria-hidden="true"><button id="icon">Settings</button></div>'
+    + '<input id="pw" type="password" placeholder="Enter SECRET" value="SECRET">'
+  place(document.querySelector('#icon')!, { left: 10, top: 10, width: 40, height: 40, right: 50, bottom: 50 })
+  const icon = JSON.parse(applyDOMCommand(inspectElement('#icon')).result!)
+  expect(icon).toMatchObject({ rendered: true, refused_reason: expect.stringContaining('aria-hidden') })
+  expect(icon.findings.join(' ')).toContain('refuse')
+  expect(icon.accepts).toMatchObject({ set_text: false, fill: false, select: false, set_checked: false, click: null })
+
+  const password = JSON.parse(applyDOMCommand(inspectElement('#pw')).result!)
+  expect(password).toMatchObject({ rendered: true, refused_reason: expect.stringContaining('password') })
+  expect(password.text).toBe('')
+  expect(password.label).toBe('')
+  expect(JSON.stringify(password)).not.toContain('SECRET')
+})
+
+it('keeps script and template source out of a diagnosis', () => {
+  document.body.innerHTML = '<script id="code">var token = "SCRIPT SECRET"</script><template id="tpl">TEMPLATE SECRET</template>'
+  for (const [selector, rule] of [['#code', 'script'], ['#tpl', 'template']]) {
+    const receipt = JSON.parse(applyDOMCommand(inspectElement(selector)).result!)
+    expect(receipt.text).toBe('')
+    expect(receipt.refused_reason).toContain(rule)
+    expect(JSON.stringify(receipt)).not.toContain('SECRET')
+  }
+})
+
+it('refuses an excluded element with the rule that applies and advice that fits', () => {
+  document.body.innerHTML = '<input id="pw" type="password" value="SECRET">'
+    + '<div style="display:none"><button id="gone">Gone</button></div>'
+  expect(() => edit({ selector: '#pw' })).toThrow('it is a password field')
+  expect(() => edit({ selector: '#pw' })).toThrow('Page tools never touch this element')
+  expect(() => edit({ selector: '#gone' })).toThrow('Read the page again for a visible element')
+})
+
+it('treats content-visibility: hidden as not rendered', () => {
+  document.body.innerHTML = '<div style="content-visibility:hidden"><button id="skip">Skip</button></div>'
+  const receipt = JSON.parse(applyDOMCommand(inspectElement('#skip')).result!)
+  expect(receipt.rendered).toBe(false)
+  expect(receipt.hidden_reason).toContain('content-visibility')
+  expect(receipt.accepts).toMatchObject({ click: null })
+})
+
+it('names what covers an element, and says a pointer cannot reach it', () => {
+  document.body.innerHTML = '<button id="buy">Buy</button><div id="banner">Cookies</div>'
+  const button = document.querySelector('#buy')!
+  const banner = document.querySelector('#banner')!
+  place(button, { left: 20, top: 20, width: 120, height: 40, right: 140, bottom: 60 })
+  place(banner, { left: 0, top: 0, width: 400, height: 200, right: 400, bottom: 200 })
+  Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: () => banner })
+  const covered = JSON.parse(applyDOMCommand(inspectElement('#buy')).result!)
+  expect(covered.hit).toMatchObject({ reaches_target: false, covered_by: { selector: '#banner' } })
+  expect(covered.findings.join(' ')).toContain('#banner')
+  // The extension's own click dispatches on the element, so the receipt must not
+  // read as proof that clicking this element is pointless.
+  expect(covered.notice).toContain('dispatches on the element itself')
+
+  Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: () => button })
+  const reachable = JSON.parse(applyDOMCommand(inspectElement('#buy')).result!)
+  expect(reachable.hit).toMatchObject({ reaches_target: true })
+})
+
+it('says a point cannot reach an element that is off screen or has no box', () => {
+  document.body.innerHTML = '<button id="far">Far</button><button id="flat">Flat</button>'
+  place(document.querySelector('#far')!, { left: 0, top: -400, width: 80, height: 20, right: 80, bottom: -380 })
+  const offscreen = JSON.parse(applyDOMCommand(inspectElement('#far')).result!)
+  expect(offscreen).toMatchObject({ in_viewport: false, hit: { point: null } })
+  expect(offscreen.findings.join(' ')).toContain('viewport')
+
+  const flat = JSON.parse(applyDOMCommand(inspectElement('#flat')).result!)
+  expect(flat.findings.join(' ')).toContain('box is 0x0')
+})
+
+it('names the ancestor that clips an element, with its scroll position', () => {
+  document.body.innerHTML = '<div id="scroller" style="overflow-x:hidden;overflow-y:hidden"><button id="inside">Buy</button></div>'
+  place(document.querySelector('#scroller')!, { left: 0, top: 0, width: 200, height: 100, right: 200, bottom: 100 })
+  place(document.querySelector('#inside')!, { left: 40, top: 160, width: 80, height: 20, right: 120, bottom: 180 })
+  const receipt = JSON.parse(applyDOMCommand(inspectElement('#inside')).result!)
+  expect(receipt.clipped_by).toMatchObject({ selector: '#scroller', overflow: 'hidden/hidden', scroll_top: 0 })
+  expect(receipt.findings.join(' ')).toContain('#scroller')
+})
+
+it('does not call an in-flow overflow ancestor a clipper of a fixed element', () => {
+  document.body.innerHTML = '<div id="shell" style="overflow-x:hidden;overflow-y:hidden">'
+    + '<div id="modal" style="position:fixed">Dialog</div></div>'
+  place(document.querySelector('#shell')!, { left: 0, top: 0, width: 100, height: 100, right: 100, bottom: 100 })
+  place(document.querySelector('#modal')!, { left: 300, top: 300, width: 200, height: 100, right: 500, bottom: 400 })
+  const receipt = JSON.parse(applyDOMCommand(inspectElement('#modal')).result!)
+  expect(receipt.clipped_by).toBeNull()
+})
+
+it('clips a fixed element through the ancestor that is its containing block', () => {
+  document.body.innerHTML = '<div id="frame" style="transform:translateZ(0);overflow-x:hidden;overflow-y:hidden">'
+    + '<div id="dialog" style="position:fixed">Dialog</div></div>'
+  place(document.querySelector('#frame')!, { left: 0, top: 0, width: 100, height: 100, right: 100, bottom: 100 })
+  place(document.querySelector('#dialog')!, { left: 300, top: 300, width: 200, height: 100, right: 500, bottom: 400 })
+  const receipt = JSON.parse(applyDOMCommand(inspectElement('#dialog')).result!)
+  expect(receipt.clipped_by).toMatchObject({ selector: '#frame' })
+})
+
+it('does not clip an absolute element through a static overflow ancestor', () => {
+  document.body.innerHTML = '<div id="wrap" style="overflow-x:hidden;overflow-y:hidden">'
+    + '<div id="tip" style="position:absolute">Tip</div></div>'
+  place(document.querySelector('#wrap')!, { left: 0, top: 0, width: 100, height: 100, right: 100, bottom: 100 })
+  place(document.querySelector('#tip')!, { left: 300, top: 20, width: 120, height: 40, right: 420, bottom: 60 })
+  const receipt = JSON.parse(applyDOMCommand(inspectElement('#tip')).result!)
+  expect(receipt.clipped_by).toBeNull()
+})
+
+it('measures clipping at the padding box, not the border box', () => {
+  document.body.innerHTML = '<div id="box" style="overflow-x:hidden;overflow-y:hidden;'
+    + 'border-left-width:10px;border-right-width:10px;border-top-width:10px;border-bottom-width:10px">'
+    + '<button id="edge">Edge</button></div>'
+  place(document.querySelector('#box')!, { left: 0, top: 0, width: 200, height: 100, right: 200, bottom: 100 })
+  place(document.querySelector('#edge')!, { left: 2, top: 15, width: 80, height: 20, right: 82, bottom: 35 })
+  const receipt = JSON.parse(applyDOMCommand(inspectElement('#edge')).result!)
+  expect(receipt.clipped_by).toMatchObject({ selector: '#box' })
+})
+
+it('reports pointer-events: none as a reason a person cannot click it', () => {
+  document.body.innerHTML = '<button id="ghost" style="pointer-events:none">Ghost</button>'
+  place(document.querySelector('#ghost')!, { left: 10, top: 10, width: 80, height: 30, right: 90, bottom: 40 })
+  const receipt = JSON.parse(applyDOMCommand(inspectElement('#ghost')).result!)
+  expect(receipt.style['pointer-events']).toBe('none')
+  expect(receipt.findings.join(' ')).toContain('pointer-events')
+})
+
+it('resolves the control an SVG element sits in instead of calling it plain content', () => {
+  document.body.innerHTML = '<button id="btn"><svg><path id="shape"></path></svg>Button</button>'
+  place(document.querySelector('#btn')!, { left: 10, top: 10, width: 100, height: 40, right: 110, bottom: 50 })
+  const receipt = JSON.parse(applyDOMCommand(inspectElement('#shape')).result!)
+  expect(receipt.states.resolved_selector).toBe('#btn')
+  expect(receipt.findings.join(' ')).toContain('#btn')
+})
+
+it('names the candidates for an ambiguous inspection selector', () => {
+  document.body.innerHTML = '<button class="buy">Add to cart</button><button class="buy">Buy</button>'
+  try {
+    applyDOMCommand(inspectElement('.buy'))
+    expect.unreachable()
+  } catch (error) {
+    expect((error as Error).message).toContain('matches 2 elements')
+  }
+})
+
+it('reports the panel itself as the covering element instead of inventing page content', () => {
+  document.body.innerHTML = '<button id="buy">Buy</button><div id="zettelekasten-panel-host"></div>'
+  const host = document.querySelector('#zettelekasten-panel-host')!
+  place(document.querySelector('#buy')!, { left: 20, top: 20, width: 120, height: 40, right: 140, bottom: 60 })
+  Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: () => host })
+  const receipt = JSON.parse(applyDOMCommand(inspectElement('#buy')).result!)
+  expect(receipt.hit.covered_by).toBeUndefined()
+  expect(receipt.hit.reaches_target).toBeUndefined()
+  expect(receipt.hit.skipped).toContain('Zett panel')
+  expect(receipt.findings.join(' ')).not.toContain('Zett panel')
+})
+
+it('uses the same disabled and read-only rules the mutating tools enforce', () => {
+  document.body.innerHTML = '<fieldset disabled><input id="wrapped"></fieldset>'
+    + '<input id="plain" readonly><input id="aria" aria-readonly="true">'
+  const wrapped = JSON.parse(applyDOMCommand(inspectElement('#wrapped')).result!)
+  expect(wrapped.states.disabled).toBe(true)
+  expect(wrapped.accepts).toMatchObject({ set_text: false, fill: false, click: null })
+  expect(wrapped.findings.join(' ')).toContain('disabled')
+
+  const readonly = JSON.parse(applyDOMCommand(inspectElement('#plain')).result!)
+  expect(readonly.states.readonly).toBe(true)
+  expect(readonly.findings.join(' ')).toContain('every action')
+
+  // `aria-readonly` is not a rule either tool applies, so inspect must not claim it is.
+  const aria = JSON.parse(applyDOMCommand(inspectElement('#aria')).result!)
+  expect(aria.states.readonly).toBe(false)
+  expect(aria.findings.join(' ')).not.toContain('read-only')
+})
+
+it('says which tool would accept the element', () => {
+  document.body.innerHTML = '<p id="prose">Words</p><input id="text"><input id="box" type="checkbox">'
+    + '<select id="many" multiple><option>a</option><option>b</option></select><button id="go">Go</button>'
+  const accepts = (selector: string) => JSON.parse(applyDOMCommand(inspectElement(selector)).result!).accepts
+  expect(accepts('#prose')).toMatchObject({ set_text: true, fill: false, click: null })
+  expect(accepts('#text')).toMatchObject({ fill: true, set_text: false })
+  expect(accepts('#box')).toMatchObject({ set_checked: true, fill: false })
+  expect(accepts('#many')).toMatchObject({ select: false })
+  expect(accepts('#go')).toMatchObject({ click: '#go', set_text: false })
+})
+
+it('flags a nested editable region its editor refuses to fill', () => {
+  document.body.innerHTML = '<div contenteditable="false"><div id="nested" contenteditable="true">Text</div></div>'
+  const receipt = JSON.parse(applyDOMCommand(inspectElement('#nested')).result!)
+  expect(receipt.accepts).toMatchObject({ fill: false, set_text: false })
+  expect(receipt.findings.join(' ')).toContain('outer editor')
+})
+
+it('does not promise a click through a control that is disabled', () => {
+  document.body.innerHTML = '<button id="save" disabled><span id="lib">Save</span></button>'
+  const receipt = JSON.parse(applyDOMCommand(inspectElement('#lib')).result!)
+  expect(receipt.accepts.click).toBeNull()
+  expect(receipt.findings.join(' ')).toContain('disabled')
 })

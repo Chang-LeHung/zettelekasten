@@ -12,6 +12,9 @@ export interface BrowserConsent {
 
 const CONSENT_WINDOW_MS = 90000
 
+/** Reads report what the page already shows, so only a change to it asks the user. */
+const READ_ONLY_OPERATIONS: ReadonlySet<BrowserCommand['operation']> = new Set(['snapshot', 'inspect'])
+
 /** An explicitly connected panel owns its socket, tab, and pending consent.
  * No reconnect/replay: every reconnect requires a new user click and token.
  */
@@ -102,7 +105,7 @@ export class BrowserBridgeClient {
     this.seen.add(command.id)
     this.activeId = command.id
     try {
-      if (command.operation !== 'snapshot' && !this.autoApprove) {
+      if (!READ_ONLY_OPERATIONS.has(command.operation) && !this.autoApprove) {
         const approved = await new Promise<boolean>(resolve => {
           this.consent = resolve
           this.consentTimer = setTimeout(() => resolve(false), CONSENT_WINDOW_MS)

@@ -54,6 +54,42 @@ it('prohibits executable payloads and browser-internal targets', () => {
   expect(() => validateCommand({ ...command, script: { code: 'alert(1)' } })).toThrow()
 })
 
+it('accepts a read-only inspection and refuses one that carries anything else', () => {
+  const inspect = {
+    type: 'command' as const, id: 'b'.repeat(32), operation: 'inspect' as const,
+    change: null, query: null, interaction: null, inspect: { selector: '#pay' },
+  }
+  expect(validateCommand(inspect)).toMatchObject({ operation: 'inspect', inspect: { selector: '#pay' } })
+  expect(() => validateCommand({ ...inspect, change: command.change })).toThrow('inspection cannot include')
+  expect(() => validateCommand({ ...inspect, query: { selector: null, text: 'pay' } })).toThrow()
+  expect(() => validateCommand({ ...inspect, inspect: { selector: '   ' } })).toThrow('Invalid inspect selector')
+  expect(() => validateCommand({ ...inspect, inspect: { selector: '#pay', code: 'alert(1)' } })).toThrow()
+})
+
+it('refuses every command that carries a payload belonging to another operation', () => {
+  const payloads = {
+    query: { selector: null, text: 'pay' },
+    change: command.change,
+    interaction: {
+      action: 'click', selector: '#pay', description: 'Click pay',
+      target_selector: null, key: null, direction: null, distance: null,
+    },
+    inspect: { selector: '#pay' },
+  }
+  const owner: Record<string, string> = { snapshot: 'query', update: 'change', interact: 'interaction', inspect: 'inspect' }
+  for (const [operation, own] of Object.entries(owner)) {
+    for (const field of Object.keys(payloads)) {
+      const carried = Object.fromEntries(Object.entries(payloads).map(([name, item]) => [name, name === field ? item : null]))
+      const candidate = { type: 'command', id: 'c'.repeat(32), operation, ...carried }
+      if (field === own) {
+        expect(() => validateCommand(candidate)).not.toThrow()
+      } else {
+        expect(() => validateCommand(candidate)).toThrow('cannot include')
+      }
+    }
+  }
+})
+
 it('treats a fragment-only change as the same document, but not a different path', async () => {
   const executor = new BrowserExecutor(5)
   await executor.connect()

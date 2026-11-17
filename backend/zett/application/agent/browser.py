@@ -81,6 +81,20 @@ class BrowserPageQuery(BaseModel):
         return value
 
 
+class BrowserInspectQuery(BaseModel):
+    """Read one element's layout, styling, and reachability without touching it."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    selector: str = Field(min_length=1, max_length=500)
+
+    @field_validator("selector")
+    @classmethod
+    def nonblank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("selector must not be blank")
+        return value
+
+
 class BrowserInteraction(BaseModel):
     """A single user-like action with bounded, explicit parameters."""
 
@@ -125,23 +139,30 @@ class BrowserCommand(BaseModel):
 
     type: Literal["command"] = "command"
     id: str
-    operation: Literal["snapshot", "update", "interact"]
+    operation: Literal["snapshot", "update", "interact", "inspect"]
     change: BrowserDOMPatch | None = None
     query: BrowserPageQuery | None = None
     interaction: BrowserInteraction | None = None
+    inspect: BrowserInspectQuery | None = None
 
     @model_validator(mode="after")
     def require_operation_payload(self) -> Self:
-        if self.operation == "update" and (
-            self.change is None or self.query is not None or self.interaction is not None
-        ):
-            raise ValueError("update requires only a DOM change")
-        if self.operation == "interact" and (
-            self.interaction is None or self.change is not None or self.query is not None
-        ):
-            raise ValueError("interact requires only an interaction")
-        if self.operation == "snapshot" and (self.change is not None or self.interaction is not None):
-            raise ValueError("snapshot cannot carry a mutation")
+        """One operation carries exactly its own payload, so a read can never hide a write."""
+        payloads = {
+            "change": self.change,
+            "query": self.query,
+            "interaction": self.interaction,
+            "inspect": self.inspect,
+        }
+        present = [field for field, value in payloads.items() if value is not None]
+        if self.operation == "snapshot":
+            if present not in ([], ["query"]):
+                raise ValueError("snapshot cannot carry a change, interaction, or inspection")
+            return self
+        required = {"update": "change", "interact": "interaction", "inspect": "inspect"}[self.operation]
+        if present != [required]:
+            found = ", ".join(present) if present else "none"
+            raise ValueError(f"{self.operation} carries only its own payload, but this command sent: {found}")
         return self
 
 
@@ -186,27 +207,34 @@ class BrowserConnection:
 
     async def call(
         self,
-        operation: Literal["snapshot", "update", "interact"],
+        operation: Literal["snapshot", "update", "interact", "inspect"],
         change: BrowserDOMPatch | None = None,
         *,
         query: BrowserPageQuery | None = None,
         interaction: BrowserInteraction | None = None,
+        inspect: BrowserInspectQuery | None = None,
     ) -> BrowserResult:
         async with self._turn:
-            return await self._call(operation, change, query=query, interaction=interaction)
+            return await self._call(operation, change, query=query, interaction=interaction, inspect=inspect)
 
     async def _call(
         self,
-        operation: Literal["snapshot", "update", "interact"],
+        operation: Literal["snapshot", "update", "interact", "inspect"],
         change: BrowserDOMPatch | None,
         *,
         query: BrowserPageQuery | None,
         interaction: BrowserInteraction | None,
+        inspect: BrowserInspectQuery | None = None,
     ) -> BrowserResult:
         if not self.active:
             raise BrowserUnavailableError(DISCONNECTED)
         command = BrowserCommand(
-            id=secrets.token_hex(16), operation=operation, change=change, query=query, interaction=interaction
+            id=secrets.token_hex(16),
+            operation=operation,
+            change=change,
+            query=query,
+            interaction=interaction,
+            inspect=inspect,
         )
         future: asyncio.Future[BrowserResult] = asyncio.get_running_loop().create_future()
         self.pending[command.id] = future

@@ -126,7 +126,8 @@ automatically connects to this document over WebSocket. Its bundled content
 script reads and updates the top document; no debugger permission or arbitrary
 JavaScript execution is needed. The Agent gets
 `get_browser_page` (bounded text, control descriptions and CSS selectors, optionally
-limited to one subtree) and `update_browser_dom`. A tool call to fill a field is:
+limited to one subtree), `inspect_browser_element` (read-only layout and
+reachability diagnosis for one element), and `update_browser_dom`. A tool call to fill a field is:
 
 ```json
 {
@@ -207,10 +208,11 @@ All three steps, plus the build, run from the repository's `make check`.
 
 ## What the page tools tell the Agent
 
-The three tools answer every outcome as a result the model can act on, so a miss costs one more call instead of a red error:
+The four tools answer every outcome as a result the model can act on, so a miss costs one more call instead of a red error:
 
 - `get_browser_page` returns the visible text, the controls with exact selectors, links with their addresses, and where the page is scrolled (`scroll.more_below`). Pass `text` to find elements by their visible words instead of the whole page.
-- A selector that matches several elements answers with up to five exact selectors and their labels; one that matches nothing, is invalid, or is hidden says which and what to do next.
+- `inspect_browser_element` reads one element without changing it: box and spacing, computed layout style, viewport, why it is not rendered, why page tools exclude it (`[aria-hidden]`, password, file, iframe), the nearest clipping ancestor with its scroll offsets, what a user's pointer would actually reach, and an `accepts` block that says what each tool would do with it (`set_text`/`fill`/`select`/`set_checked` are booleans, `click` is the selector a click lands on or null). Its `hit` field explains occlusion for a person, not the result of `interact_with_browser`, which dispatches on the element itself, and a point under the panel is reported as skipped rather than as page content. Text and label stay empty for script, template, hidden, and password content. It never asks for approval, because it cannot change the page.
+- A selector that matches several elements answers with up to five exact selectors and their labels; for an edit or click, one that matches nothing, is invalid, or is hidden says which and what to do next. An inspection of an excluded element still answers, naming the exclusion instead of refusing.
 - A click lands on the button or link a child sits in, and on pointer-styled boxes; plain text is refused with guidance.
 - Several tool calls issued at once queue behind each other rather than failing.
 - A tab that navigated or a panel that closed answers once that page tools are gone for this turn, instead of raising an error that invites retries.

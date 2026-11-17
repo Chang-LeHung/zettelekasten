@@ -1,32 +1,103 @@
 import { encodeResult, validateCommand, type BrowserCommand, type BrowserResult } from './browser-protocol'
+import { PANEL_HOST_ID } from './panel-host'
 
 const TEXT_INPUTS = new Set(['text', 'search', 'email', 'tel', 'url', 'number', 'date', 'datetime-local', 'month', 'week', 'time'])
 const TEXT_ELEMENTS = new Set(['P', 'SPAN', 'DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'TD', 'TH', 'PRE', 'CODE', 'LABEL', 'CAPTION'])
-const EXCLUDED = 'script,style,noscript,template,iframe,object,embed,input[type="password"],input[type="hidden"],input[type="file"],[hidden],[aria-hidden="true"]'
 const INTERACTIVE = 'button,a[href],input,textarea,select,[role="button"],[role="link"],[role="checkbox"],[tabindex],[contenteditable="true"]'
 
-function visible(element: Element): boolean {
-  for (let parent: Element | null = element; parent; parent = parent.parentElement) {
-    if (parent.matches(EXCLUDED)) return false
-    const style = getComputedStyle(parent)
-    if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') return false
-  }
-  return true
-}
+/** One list for every rule that keeps tools and page reads away from an element. */
+const EXCLUSION_RULES: Array<[selector: string, label: string]> = [
+  ['script', 'a script element'],
+  ['style', 'a style element'],
+  ['noscript', 'a noscript element'],
+  ['template', 'a template element'],
+  ['iframe', 'an iframe'],
+  ['object', 'an object element'],
+  ['embed', 'an embed element'],
+  ['input[type="password"]', 'a password field'],
+  ['input[type="hidden"]', 'a hidden input'],
+  ['input[type="file"]', 'a file input'],
+  ['[hidden]', 'marked hidden'],
+  ['[aria-hidden="true"]', 'marked aria-hidden="true"'],
+]
+const EXCLUDED = EXCLUSION_RULES.map(([selector]) => selector).join(',')
 
-/** Why an element cannot be acted on, in words a model can act on. */
-function hiddenReason(element: Element): string | null {
+/**
+ * Why nothing is painted for an element.
+ *
+ * The element's own computed `visibility` already carries inheritance, so a
+ * `visibility: visible` child of a hidden parent is correctly painted; only
+ * `display` needs the ancestor walk. Reading it this way keeps `visible`,
+ * `hiddenReason` and an inspection from disagreeing about the same element.
+ */
+function notDisplayed(element: Element): string | null {
+  const own = getComputedStyle(element)
+  if (own.visibility === 'hidden' || own.visibility === 'collapse') return `it has visibility: ${own.visibility}`
   for (let parent: Element | null = element; parent; parent = parent.parentElement) {
     const subject = parent === element ? 'it' : 'an ancestor'
-    if (parent.matches(EXCLUDED)) return `${subject} is hidden or excluded (hidden/aria-hidden/script)`
-    const style = getComputedStyle(parent)
-    if (style.display === 'none') return `${subject} has display: none`
-    if (style.visibility === 'hidden' || style.visibility === 'collapse') return `${subject} has visibility: ${style.visibility}`
+    const computed = getComputedStyle(parent)
+    // Display, not the attribute: author CSS can re-enable a `[hidden]` element.
+    if (computed.display === 'none') return `${subject} has display: none`
+    if (computed.contentVisibility === 'hidden') return `${subject} has content-visibility: hidden`
   }
   return null
 }
 
+function visible(element: Element): boolean {
+  return hiddenReason(element) === null
+}
+
+/** Why an element cannot be acted on, in words a model can act on. */
+function hiddenReason(element: Element): string | null {
+  // One compound match on the common path: `readableText` asks this for every
+  // element node, so the twelve rules are only walked when one of them matches.
+  if (!element.closest(EXCLUDED)) return notDisplayed(element)
+  return exclusionReason(element) ?? notDisplayed(element)
+}
+
+/**
+ * Why nothing is painted for an element, which is not the same question as why a
+ * tool refuses it: `[aria-hidden]`, a password field, or an iframe is excluded
+ * from edits while still rendering on screen.
+ */
+function renderReason(element: Element): string | null {
+  return notDisplayed(element)
+}
+
+/** Why a tool refuses an element even when it renders: `[aria-hidden]`, password, iframe, … */
+function exclusionReason(element: Element): string | null {
+  for (let parent: Element | null = element; parent; parent = parent.parentElement) {
+    const rule = EXCLUSION_RULES.find(([selector]) => parent!.matches(selector))
+    if (!rule) continue
+    return parent === element
+      ? `it is ${rule[1]}`
+      : `an ancestor (${selectorFor(parent).slice(0, 120)}) is ${rule[1]}`
+  }
+  return null
+}
+
+/** Reading surfaces never carry script, template, hidden, or password content. */
+function textReadable(element: Element): boolean {
+  return element.closest(EXCLUDED) === null
+}
+
+/** The element a click would land on: a non-HTML element resolves its own control. */
+function resolveClickable(element: Element): HTMLElement | null {
+  if (element instanceof HTMLElement) return clickable(element)
+  const ancestor = element.closest<HTMLElement>(INTERACTIVE)
+  return ancestor && !hiddenReason(ancestor) ? ancestor : null
+}
+
+/** A computed length in pixels, or 0 when the engine gives a keyword such as `medium`. */
+function pxValue(value: string): number {
+  const parsed = Number.parseFloat(value)
+  return Number.isFinite(parsed) ? round(parsed) : 0
+}
+
 function labelOf(element: Element): string {
+  // Every surface that names an element for a person or a model goes through
+  // here, so the excluded rules are enforced once, not per call site.
+  if (!textReadable(element)) return ''
   const control = element as HTMLInputElement
   const raw = element.getAttribute('aria-label') || control.labels?.[0]?.textContent
     || (element instanceof HTMLInputElement && ['button', 'submit', 'reset'].includes(element.type) ? element.value : '')
@@ -39,7 +110,8 @@ function brief(element: Element): { selector: string; tag: string; label: string
   return { selector: selectorFor(element), tag: element.tagName.toLowerCase(), label: labelOf(element) }
 }
 
-function target(selector: string): HTMLElement {
+/** Exactly one element for a selector, or a message that names what to use instead. */
+function singleMatch(selector: string): Element {
   let matches: NodeListOf<Element>
   try {
     matches = document.querySelectorAll(selector)
@@ -56,10 +128,21 @@ function target(selector: string): HTMLElement {
     })
     throw new Error(`"${selector.slice(0, 120)}" matches ${matches.length} elements. Retry with one exact selector: ${candidates.join(' | ')}`.slice(0, 950))
   }
-  const element = matches[0]
+  return matches[0]
+}
+
+function target(selector: string): HTMLElement {
+  const element = singleMatch(selector)
   if (!(element instanceof HTMLElement)) throw new Error('That element is not an HTML element (for example an SVG shape); target its enclosing button or link instead')
   const reason = hiddenReason(element)
-  if (reason) throw new Error(`Cannot use "${selector.slice(0, 120)}": ${reason}. Read the page again for a visible element.`)
+  if (reason) {
+    // The two refusals need different advice: an excluded element must be
+    // replaced, while an unpainted one may come back after the page changes.
+    const next = exclusionReason(element)
+      ? 'Page tools never touch this element; choose the one the page exposes instead'
+      : 'Read the page again for a visible element'
+    throw new Error(`Cannot use "${selector.slice(0, 120)}": ${reason}. ${next}.`)
+  }
   return element
 }
 
@@ -72,6 +155,14 @@ function editableRoot(element: HTMLElement): boolean {
     && !element.closest('[contenteditable="false"]')
     && !element.closest('input,textarea,button,a')
     && !element.matches('[role="textbox"][aria-readonly="true"]')
+}
+
+/** Which clause of `editableRoot` refused this editor, so a finding says why. */
+function editableRefusal(element: HTMLElement): string {
+  if (element.closest('[contenteditable="false"]')) return 'the surrounding region is contenteditable="false"; target the outer editor'
+  if (element.closest('input,textarea,button,a')) return 'it sits inside an input, textarea, button, or link; target that control'
+  if (element.matches('[role="textbox"][aria-readonly="true"]')) return 'it is a read-only textbox'
+  return 'the editor does not accept inserted text'
 }
 
 /** Attributes authors keep stable, tried before a structural path. */
@@ -208,6 +299,221 @@ function snapshot(selector: string | null | undefined, text?: string | null): Br
   })
 }
 
+/** Layout properties that decide position, size, and reachability. */
+const INSPECT_STYLES = [
+  'display', 'position', 'inset', 'z-index', 'float', 'box-sizing', 'width', 'height', 'min-width', 'max-width',
+  'margin', 'padding', 'overflow', 'opacity', 'visibility', 'pointer-events', 'transform',
+  'flex-direction', 'justify-content', 'align-items', 'gap', 'font-size', 'font-weight', 'line-height',
+  'color', 'background-color', 'white-space', 'text-overflow',
+]
+
+/** Overflow values that make an ancestor clip what leaves its box. */
+const CLIPPING_OVERFLOW = new Set(['hidden', 'clip', 'scroll', 'auto'])
+
+interface HitTest {
+  point: number[] | null
+  reaches_target?: boolean
+  covered_by?: { selector: string; tag: string; label: string }
+  skipped?: string
+}
+
+function round(value: number): number {
+  return Math.round(value * 10) / 10
+}
+
+function measured(rect: DOMRect): Record<string, number> {
+  return { x: round(rect.left), y: round(rect.top), width: round(rect.width), height: round(rect.height) }
+}
+
+function spacingOf(computed: CSSStyleDeclaration) {
+  return {
+    order: 'top,right,bottom,left',
+    padding: [pxValue(computed.paddingTop), pxValue(computed.paddingRight), pxValue(computed.paddingBottom), pxValue(computed.paddingLeft)],
+    border: [pxValue(computed.borderTopWidth), pxValue(computed.borderRightWidth), pxValue(computed.borderBottomWidth), pxValue(computed.borderLeftWidth)],
+    margin: [pxValue(computed.marginTop), pxValue(computed.marginRight), pxValue(computed.marginBottom), pxValue(computed.marginLeft)],
+  }
+}
+
+/** Properties that make an ancestor the containing block of a fixed descendant. */
+function isFixedContainingBlock(computed: CSSStyleDeclaration): boolean {
+  const set = (property: string): boolean => {
+    const value = computed.getPropertyValue(property)
+    return value !== '' && value !== 'none'
+  }
+  if (set('transform') || set('filter') || set('backdrop-filter') || set('perspective')) return true
+  if (set('translate') || set('rotate') || set('scale')) return true
+  if (/paint|layout|content|strict/.test(computed.contain)) return true
+  return ['transform', 'filter', 'perspective'].some(name => computed.willChange.includes(name))
+}
+
+/** The nearest ancestor that would cut the element off, so "it is not there" has a reason. */
+function clippingAncestor(
+  element: Element,
+  rect: DOMRect,
+): { selector: string; overflow: string; scroll_left: number; scroll_top: number } | null {
+  // A positioned box escapes every ancestor outside its containing-block chain,
+  // so an `overflow: hidden` wrapper clips a fixed modal only when it establishes
+  // that block, and clips an absolute one only when it is positioned itself.
+  const position = getComputedStyle(element).position
+  let inChain = !(position === 'fixed' || position === 'absolute')
+  let depth = 0
+  for (let parent = element.parentElement; parent && depth < 20; parent = parent.parentElement, depth++) {
+    const computed = getComputedStyle(parent)
+    if (!inChain) {
+      inChain = position === 'fixed'
+        ? isFixedContainingBlock(computed)
+        : computed.position !== 'static' || isFixedContainingBlock(computed)
+      if (!inChain) continue
+    }
+    if (!CLIPPING_OVERFLOW.has(computed.overflowX) && !CLIPPING_OVERFLOW.has(computed.overflowY)) continue
+    // Overflow clips at the padding box, never at the border box.
+    const box = parent.getBoundingClientRect()
+    const left = box.left + pxValue(computed.borderLeftWidth)
+    const top = box.top + pxValue(computed.borderTopWidth)
+    const right = box.right - pxValue(computed.borderRightWidth)
+    const bottom = box.bottom - pxValue(computed.borderBottomWidth)
+    const inside = rect.left >= left - 0.5 && rect.top >= top - 0.5 && rect.right <= right + 0.5 && rect.bottom <= bottom + 0.5
+    if (inside) continue
+    return {
+      selector: selectorFor(parent).slice(0, 120), overflow: `${computed.overflowX}/${computed.overflowY}`,
+      scroll_left: Math.round(parent.scrollLeft), scroll_top: Math.round(parent.scrollTop),
+    }
+  }
+  return null
+}
+
+/** What a click at the middle of the box would actually reach. */
+function hitTest(element: Element, rect: DOMRect): HitTest {
+  const x = Math.min(Math.max(rect.left + rect.width / 2, 0), Math.max(innerWidth - 1, 0))
+  const y = Math.min(Math.max(rect.top + rect.height / 2, 0), Math.max(innerHeight - 1, 0))
+  const point = [round(x), round(y)]
+  if (typeof document.elementFromPoint !== 'function') return { point, skipped: 'This browser cannot hit-test a point.' }
+  let top: Element | null = null
+  try {
+    top = document.elementFromPoint(x, y)
+  } catch {
+    return { point, skipped: 'The browser refused to hit-test this point.' }
+  }
+  if (!top) return { point, skipped: 'Nothing is painted at that point.' }
+  if (top.closest(`#${PANEL_HOST_ID}`)) {
+    return { point, skipped: 'This Zett panel covers that point, not page content; move or resize the panel to reach it.' }
+  }
+  const reaches = top === element || element.contains(top)
+  return reaches ? { point, reaches_target: true } : { point, reaches_target: false, covered_by: brief(top) }
+}
+
+/** Read-only diagnosis: why an element looks or behaves the way it does, without touching it. */
+function inspect(query: { selector: string }): BrowserResult {
+  const element = singleMatch(query.selector)
+  const rect = element.getBoundingClientRect()
+  const computed = getComputedStyle(element)
+  const notRendered = renderReason(element)
+  const refused = exclusionReason(element)
+  const onScreen = inViewport(element)
+  const clipped = clippingAncestor(element, rect)
+  const interactive = element.matches(INTERACTIVE)
+  const reachable = resolveClickable(element)
+  // The same predicates the mutating tools apply, so a finding explains a refusal.
+  const disabled = element.matches(':disabled') || element.getAttribute('aria-disabled') === 'true'
+  const readonly = element.hasAttribute('readonly')
+  // `target()` refuses an excluded or unpainted element before it reads a value,
+  // so `accepts` applies that gate too instead of promising a refused tool.
+  const available = hiddenReason(element) === null && !disabled && !readonly
+  const clickTarget = element instanceof HTMLElement ? reachable : null
+  const clickBlocked = clickTarget !== null && clickTarget.matches(':disabled,[aria-disabled="true"],[readonly]')
+  const accepts = {
+    set_text: available && element instanceof HTMLElement && plainTextTarget(element),
+    fill: available && (element instanceof HTMLTextAreaElement
+      || element instanceof HTMLInputElement && TEXT_INPUTS.has(element.type)
+      || element instanceof HTMLElement && editableRoot(element)),
+    select: available && element instanceof HTMLSelectElement && !element.multiple,
+    set_checked: available && element instanceof HTMLInputElement && element.type === 'checkbox',
+    click: available && clickTarget !== null && !clickBlocked ? selectorFor(clickTarget).slice(0, 300) : null,
+  }
+  // A hit test describes a user's pointer. The extension's own click dispatches on
+  // the element itself, occlusion and pointer-events included, so this neither
+  // predicts nor explains what interact_with_browser just did.
+  const hit = notRendered
+    ? { point: null, skipped: `Nothing is painted, so no pointer can reach it: ${notRendered}.` }
+    : onScreen
+      ? hitTest(element, rect)
+      : { point: null, skipped: 'Outside the current viewport, so a user\'s pointer cannot reach it until it is scrolled into view.' }
+  const readable = textReadable(element)
+  const findings: string[] = []
+  if (notRendered) findings.push(`It is not rendered: ${notRendered}.`)
+  else if (computed.opacity === '0') findings.push('opacity: 0 keeps it invisible while it still takes clicks.')
+  else if (refused) findings.push(`Edits and clicks are refused: ${refused}, even though it renders.`)
+  if (!notRendered && !onScreen) findings.push('It is outside the current viewport; scrolling brings it into view.')
+  if (rect.width < 1 || rect.height < 1) findings.push(`Its box is ${round(rect.width)}x${round(rect.height)}, so no point lands on it.`)
+  if (computed.pointerEvents === 'none') findings.push('pointer-events: none makes a real pointer pass through it; the extension still dispatches on the element itself.')
+  if (hit.covered_by) findings.push(`"${hit.covered_by.selector}" covers its middle, so a real pointer cannot click it.`)
+  if (clipped) findings.push(`The ancestor "${clipped.selector}" clips it (overflow ${clipped.overflow}).`)
+  if (disabled || readonly) {
+    findings.push(`It is ${disabled ? 'disabled' : 'read-only'}, so interact_with_browser and update_browser_dom refuse every action on it.`)
+  }
+  if (!(element instanceof HTMLElement)) {
+    findings.push(`It is not an HTML element, so no mutation targets it${reachable ? `; pass "${selectorFor(reachable).slice(0, 120)}" instead` : ''}.`)
+  } else if (!interactive) {
+    const resolved = reachable ? selectorFor(reachable).slice(0, 120) : ''
+    findings.push(reachable
+      ? clickBlocked
+        ? `It is not itself a control; a click resolves "${resolved}", which is disabled or read-only.`
+        : `It is not itself a control; a click resolves "${resolved}".`
+      : 'It is plain content: no click target, and set_text applies only to a plain text element without interactive children.')
+  }
+  if (element instanceof HTMLElement && element.matches('[contenteditable="true"]') && !editableRoot(element)) {
+    findings.push(`fill refuses this editable region because ${editableRefusal(element)}.`)
+  }
+  const ancestors: Array<{ selector: string; tag: string }> = []
+  for (let parent = element.parentElement; parent && ancestors.length < 5; parent = parent.parentElement) {
+    ancestors.push({ selector: selectorFor(parent).slice(0, 120), tag: parent.tagName.toLowerCase() })
+  }
+  const style: Record<string, string> = {}
+  for (const property of INSPECT_STYLES) style[property] = computed.getPropertyValue(property).slice(0, 120)
+  return encodeResult({
+    selector: selectorFor(element).slice(0, 300),
+    title: document.title.slice(0, 500),
+    url: location.href.slice(0, 2000),
+    tag: element.tagName.toLowerCase(),
+    role: element.getAttribute('role'),
+    label: labelOf(element),
+    text: readable ? (element.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 200) : '',
+    box: measured(rect),
+    spacing: spacingOf(computed),
+    viewport: {
+      width: innerWidth, height: innerHeight, device_pixel_ratio: round(devicePixelRatio),
+      scroll_x: Math.round(scrollX), scroll_y: Math.round(scrollY),
+    },
+    rendered: notRendered === null,
+    hidden_reason: notRendered,
+    refused_reason: refused,
+    in_viewport: onScreen,
+    overflow: {
+      x: computed.overflowX, y: computed.overflowY,
+      scroll_width: element.scrollWidth, scroll_height: element.scrollHeight,
+      client_width: element.clientWidth, client_height: element.clientHeight,
+    },
+    clipped_by: clipped,
+    hit,
+    accepts,
+    states: {
+      interactive,
+      resolved_selector: reachable ? selectorFor(reachable).slice(0, 300) : null,
+      disabled,
+      readonly,
+      checked: element instanceof HTMLInputElement && ['checkbox', 'radio'].includes(element.type) ? element.checked : null,
+      focused: document.activeElement === element,
+      focusable: interactive && element instanceof HTMLElement && element.tabIndex >= 0 && !disabled,
+      tab_index: element instanceof HTMLElement ? element.tabIndex : null,
+    },
+    style,
+    ancestors,
+    findings,
+    notice: 'Read-only. `hit` is what a user\'s pointer would reach; interact_with_browser dispatches on the element itself, '
+      + 'so reachability neither predicts nor explains its result. The page may change; inspect again after acting.',
+  })
+}
+
 /** What a click on `element` would reach: itself, its button/link ancestor, or a pointer-styled box. */
 function clickable(element: HTMLElement): HTMLElement | null {
   const ancestor = element.closest<HTMLElement>(INTERACTIVE)
@@ -295,7 +601,10 @@ function interact(command: BrowserCommand): BrowserResult {
 export function applyDOMCommand(command: BrowserCommand): BrowserResult {
   validateCommand(command)
   if (command.operation === 'snapshot') return snapshot(command.query?.selector, command.query?.text)
+  if (command.operation === 'inspect') return inspect(command.inspect!)
   if (command.operation === 'interact') return interact(command)
+  // Explicit, not an else: a new operation must never fall through into an edit.
+  if (command.operation !== 'update') throw new Error('Unknown browser operation')
   const patch = command.change!
   const element = target(patch.selector)
   const disabled = element.matches(':disabled') || element.getAttribute('aria-disabled') === 'true'

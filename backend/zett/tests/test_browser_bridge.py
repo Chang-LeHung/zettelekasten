@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from starlette.websockets import WebSocketDisconnect
-from zett_agent.agent import Agent, AgentRunConfig
+from zett_agent.agent import Agent, AgentRunConfig, AgentRunContext, AgentState
 from zett_agent.messages import AssistantMessage, ToolCall, ToolMessage
 from zett_agent.model import ModelEvent, ModelResponse
 
@@ -17,8 +17,10 @@ from zett.agent.extensions.browser import BrowserExtension
 from zett.agent.zettelkasten import ZettelkastenAgent
 from zett.application.agent.browser import (
     BrowserBridge,
+    BrowserCommand,
     BrowserConnection,
     BrowserDOMPatch,
+    BrowserInspectQuery,
     BrowserInteraction,
     BrowserPageQuery,
     BrowserReply,
@@ -145,6 +147,69 @@ def test_browser_interaction_rejects_mismatched_arguments(changes) -> None:
         )
 
 
+def test_an_inspection_is_read_only_and_carries_only_its_selector() -> None:
+    command = BrowserCommand(id="a" * 32, operation="inspect", inspect=BrowserInspectQuery(selector="#buy"))
+    assert command.change is None and command.query is None and command.interaction is None
+    with pytest.raises(ValidationError):
+        BrowserInspectQuery(selector=" ")
+    with pytest.raises(ValidationError):
+        BrowserInspectQuery(selector="#buy", script="alert(1)")
+    with pytest.raises(ValidationError):
+        BrowserCommand(id="a" * 32, operation="inspect")
+    with pytest.raises(ValidationError):
+        BrowserCommand(
+            id="a" * 32,
+            operation="inspect",
+            inspect=BrowserInspectQuery(selector="#buy"),
+            change=BrowserDOMPatch(action="set_text", selector="#buy", value="x", description="Edit"),
+        )
+    with pytest.raises(ValidationError):
+        BrowserCommand(id="a" * 32, operation="snapshot", inspect=BrowserInspectQuery(selector="#buy"))
+    with pytest.raises(ValidationError):
+        BrowserCommand(
+            id="a" * 32,
+            operation="update",
+            change=BrowserDOMPatch(action="set_text", selector="#buy", value="x", description="Edit"),
+            inspect=BrowserInspectQuery(selector="#buy"),
+        )
+    with pytest.raises(ValidationError):
+        BrowserCommand(
+            id="a" * 32,
+            operation="interact",
+            interaction=BrowserInteraction(action="click", selector="#buy", description="Click"),
+            inspect=BrowserInspectQuery(selector="#buy"),
+        )
+
+
+async def test_inspect_sends_only_an_inspect_payload_to_the_panel() -> None:
+    queue = asyncio.Queue()
+    peer = BrowserConnection("session", "token", queue.put)
+    task = asyncio.create_task(peer.call("inspect", inspect=BrowserInspectQuery(selector="#buy")))
+    command = await queue.get()
+    assert command["operation"] == "inspect"
+    assert command["inspect"] == {"selector": "#buy"}
+    assert "change" not in command and "query" not in command and "interaction" not in command
+    peer.resolve(BrowserReply(type="result", id=command["id"], ok=True, result='{"in_viewport":true}'))
+    assert json.loads((await task).result) == {"in_viewport": True}
+
+
+async def test_the_inspect_tool_is_registered_and_reaches_the_panel() -> None:
+    queue = asyncio.Queue()
+    peer = BrowserConnection("session", "token", queue.put)
+    context = AgentRunContext(config=AgentRunConfig(session_id="session"), state=AgentState(), tools={})
+    await BrowserExtension(peer).on_tool(context)
+    assert "inspect_browser_element" in context.tools
+
+    task = asyncio.create_task(context.tools["inspect_browser_element"].handler(selector="#buy"))
+    command = await queue.get()
+    peer.resolve(BrowserReply(type="result", id=command["id"], ok=True, result='{"findings":[]}'))
+    result = await task
+    assert command["operation"] == "inspect"
+    assert command["inspect"] == {"selector": "#buy"}
+    assert "change" not in command and "query" not in command and "interaction" not in command
+    assert result.ok is True
+
+
 def test_browser_interaction_accepts_bounded_actions() -> None:
     assert (
         BrowserInteraction(
@@ -259,6 +324,7 @@ async def test_agent_browser_tool_roundtrip() -> None:
         async def stream(self, request):
             assert {tool.name for tool in request.tools} == {
                 "get_browser_page",
+                "inspect_browser_element",
                 "update_browser_dom",
                 "interact_with_browser",
             }
