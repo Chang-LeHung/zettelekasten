@@ -75,6 +75,19 @@ it('applies page edits without consent once the session always allows them', asy
   expect(socket.sent).toContainEqual({ type: 'result', id: command.id, ok: true, result: '1' })
 })
 
+it('runs a read-only inspection without asking for consent', async () => {
+  const inspect = {
+    type: 'command', id: 'b'.repeat(32), operation: 'inspect',
+    change: null, query: null, interaction: null, inspect: { selector: '#buy' },
+  }
+  socket.emit(inspect)
+  await flush()
+  expect(consent).toBeNull()
+  expect(execute).toHaveBeenCalledTimes(1)
+  expect(execute).toHaveBeenCalledWith(expect.objectContaining({ operation: 'inspect', inspect: { selector: '#buy' } }))
+  expect(socket.sent).toContainEqual({ type: 'result', id: inspect.id, ok: true, result: '1' })
+})
+
 it('a disconnect cancels consent and prevents stale approval execution', async () => {
   socket.emit(command)
   const old = consent!

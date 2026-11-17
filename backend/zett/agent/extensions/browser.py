@@ -7,6 +7,7 @@ from zett_agent.tools.base import tool
 from zett.application.agent.browser import (
     BrowserConnection,
     BrowserDOMPatch,
+    BrowserInspectQuery,
     BrowserInteraction,
     BrowserPageQuery,
     BrowserResult,
@@ -49,6 +50,37 @@ class BrowserExtension(AgentExtension):
                 - `scroll.more_below` says whether the page continues below the current view.
             """
             return await self._call("snapshot", query=BrowserPageQuery(selector=selector, text=text))
+
+        @tool
+        async def inspect_browser_element(selector: str) -> BrowserResult:
+            """Diagnose one element on the connected page: its box, layout, and reachability.
+
+            Args:
+                selector: Exact CSS selector for exactly one element, copied from get_browser_page
+                    or from a tool error.
+
+            Guidelines:
+                - Read-only. It changes nothing and needs no approval, so inspect freely before
+                  editing or clicking instead of guessing.
+                - Use it when an element is missing, invisible, clipped, covered, disabled, or
+                  when update_browser_dom or interact_with_browser refused a selector.
+                - The result reports the box and spacing, the computed layout style, the
+                  viewport, why it is not rendered, why page tools exclude it, the nearest
+                  clipping ancestor, and a short `findings` list naming those causes.
+                - `accepts` says what each mutating tool would do with this element: `set_text`,
+                  `fill`, `select` and `set_checked` are booleans, and `click` is the selector a
+                  click would land on or null. Read it instead of guessing why an edit or click
+                  was refused; null means the tool would refuse that action here.
+                - `hit` is what a user's pointer would reach. `interact_with_browser` dispatches
+                  the event on the element itself, so `hit` neither predicts nor explains its
+                  result; it explains why a person could not reach what is on screen. Never
+                  click a second time because `hit` looked blocked. A point covered by the Zett
+                  panel itself is reported as skipped, not as page content.
+                - `text` and `label` come back empty for script, template, hidden, and password
+                  content, so a diagnosis never widens what the page read exposes.
+                - The page may change between calls; re-inspect rather than trusting an old result.
+            """
+            return await self._call("inspect", inspect=BrowserInspectQuery(selector=selector))
 
         @tool
         async def update_browser_dom(change: BrowserDOMPatch) -> BrowserResult:
@@ -96,5 +128,6 @@ class BrowserExtension(AgentExtension):
             return await self._call("interact", interaction=BrowserInteraction.model_validate(interaction))
 
         context.register_tool(get_browser_page)
+        context.register_tool(inspect_browser_element)
         context.register_tool(update_browser_dom)
         context.register_tool(interact_with_browser)

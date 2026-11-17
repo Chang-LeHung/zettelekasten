@@ -1,5 +1,6 @@
 import { applyDOMCommand, describeSelector } from './dom-operations'
 import { allowedPage, sameDocumentUrl, validateCommand } from './browser-protocol'
+import { PANEL_HOST_ID } from './panel-host'
 
 /** Installed on demand only in the connected top document. No page-world
  * messaging, eval, script tags, HTML insertion, or arbitrary attribute edits.
@@ -39,7 +40,7 @@ if (!scope.__zettDOMBridgeInstalled) {
   function mountPanel(tabId: number): void {
     if (panel) { removePanel(); return }
     const host = document.createElement('div')
-    host.id = 'zettelekasten-panel-host'
+    host.id = PANEL_HOST_ID
     // Shadow DOM isolates the panel's chrome from the page's CSS/selectors.
     host.style.cssText = `position:fixed!important;top:3vh;right:16px;width:min(${DEFAULT_PANEL_WIDTH}px,calc(100vw - 32px));height:min(90vh,920px);min-width:min(${MIN_PANEL_WIDTH}px,100vw);min-height:min(${MIN_PANEL_HEIGHT}px,100dvh);z-index:2147483647!important;`
     const shadow = host.attachShadow({ mode: 'closed' })

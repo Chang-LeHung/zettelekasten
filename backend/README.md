@@ -37,12 +37,21 @@ The application validates the live connection before constructing the Agent;
 missing, stale, or cross-session tokens fail with 409. Without a token there are
 no browser tools, including in normal Web, CLI, scheduled, and channel turns.
 
-`BrowserExtension` exposes two tools:
+`BrowserExtension` exposes four tools:
 
 - `get_browser_page(selector=None)`: the connected document's title, URL, bounded
   visible text and form-control descriptions with usable CSS selectors. An
   optional selector reads exactly one subtree. Hidden, password, file-input,
   and script contents are excluded.
+- `inspect_browser_element(selector)`: a read-only diagnosis of one element. It
+  reports the box and spacing, the computed layout style, the viewport, why the
+  element is not rendered, why page tools exclude it (aria-hidden, password,
+  file, iframe), the nearest clipping ancestor with its scroll offsets, what a
+  user's pointer would actually reach (and what covers it), an `accepts` block
+  saying which action each mutating tool takes (`set_text`, `fill`, `select`,
+  `set_checked` as booleans, `click` as the resolved selector or null), state, and
+  a short `findings` list naming those causes. It changes nothing and needs no
+  approval, so a model reads before it edits or clicks instead of guessing.
 - `update_browser_dom(change)`: one CSS selector, an action, a value and a short
   description. Actions are `set_text` (plain text elements), `fill` (text-like
   inputs/textareas and `contenteditable="true"` editors), `select` (existing enabled options), and `set_checked`
