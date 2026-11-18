@@ -36,13 +36,23 @@ it('draws an outline over the element it was given', () => {
   expect(outlinedElement()).toBe(target)
 })
 
-it('hides itself for an element that is off screen or behind the panel, and stops with clear', () => {
+it('hides itself for an element that is off screen or covered by the panel, and stops with clear', () => {
   const target = document.querySelector('#target')!
   place(target, { left: 1200, top: 300, width: 80, height: 20, right: 1280, bottom: 320 })
   // The panel sits over the right edge of this viewport.
-  showOutline(target, 0, () => ({ left: 900, top: 0, right: 1440, bottom: 700 }) as DOMRect)
+  showOutline(target, 0, () => ({ left: 900, top: 0, right: 1440, bottom: 700, width: 540, height: 700 }) as DOMRect)
   const box = document.getElementById(HOST_ID)!.firstElementChild as HTMLElement
   expect(box.style.display).toBe('none')
+
+  // A panel that covers only part of a wide element is not a reason to hide it.
+  const wide = document.querySelector('#far')!
+  place(wide, { left: 700, top: 300, width: 600, height: 20, right: 1300, bottom: 320 })
+  showOutline(wide, 0, () => ({ left: 900, top: 0, right: 1440, bottom: 700, width: 540, height: 700 }) as DOMRect)
+  expect((document.getElementById(HOST_ID)!.firstElementChild as HTMLElement).style.display).toBe('block')
+
+  // A zero-size panel is an absent panel, not a cover.
+  showOutline(wide, 0, () => ({ left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 }) as DOMRect)
+  expect((document.getElementById(HOST_ID)!.firstElementChild as HTMLElement).style.display).toBe('block')
 
   const onScreen = document.querySelector('#far')!
   place(onScreen, { left: 20, top: 300, width: 80, height: 20, right: 100, bottom: 320 })
@@ -58,6 +68,16 @@ it('removes itself when its time is up', () => {
   showOutline(document.querySelector('#target')!, 500)
   expect(document.getElementById(HOST_ID)).not.toBeNull()
   vi.advanceTimersByTime(600)
+  expect(document.getElementById(HOST_ID)).toBeNull()
+})
+
+it('bounds a card outline even when no clear ever arrives', () => {
+  vi.useFakeTimers()
+  // The consent path's lifetime: a card whose clear is lost still goes away.
+  showOutline(document.querySelector('#target')!, 100_000)
+  vi.advanceTimersByTime(99_000)
+  expect(document.getElementById(HOST_ID)).not.toBeNull()
+  vi.advanceTimersByTime(2_000)
   expect(document.getElementById(HOST_ID)).toBeNull()
 })
 

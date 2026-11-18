@@ -79,9 +79,13 @@ it('clears the outline when the connection ends with the card still open', async
   await flush()
   expect(highlight).toHaveBeenLastCalledWith('#name')
   // `disconnect` nulls the executor before the awaiting continuation runs, so the
-  // clear must go through the executor captured with the consent.
+  // clear must go through the executor captured with the consent, and it must
+  // happen before the page connection is torn down.
   await bridge.disconnect()
   expect(highlight).toHaveBeenLastCalledWith(null)
+  const clearedAt = highlight.mock.invocationCallOrder.at(-1) ?? 0
+  const disconnectedAt = disconnect.mock.invocationCallOrder.at(-1) ?? 0
+  expect(clearedAt).toBeLessThan(disconnectedAt)
 })
 
 it('applies page edits without consent once the session always allows them', async () => {

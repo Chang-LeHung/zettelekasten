@@ -474,8 +474,9 @@ function inspect(query: { selector: string }): BrowserResult {
   }
   const style: Record<string, string> = {}
   for (const property of INSPECT_STYLES) style[property] = computed.getPropertyValue(property).slice(0, 120)
-  // Show the user what the agent is looking at; it fades on its own.
-  showOutline(element, 2500)
+  // Show the user what the agent is looking at; it fades on its own. A target the
+  // panel covers entirely has nothing to show, so the panel's box is passed in.
+  showOutline(element, 2500, () => document.getElementById(PANEL_HOST_ID)?.getBoundingClientRect() ?? null)
   return encodeResult({
     selector: selectorFor(element).slice(0, 300),
     title: document.title.slice(0, 500),

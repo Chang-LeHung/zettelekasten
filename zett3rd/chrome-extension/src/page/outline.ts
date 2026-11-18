@@ -34,20 +34,27 @@ export function clearOutline(): void {
   stopWatching?.()
   stopWatching = undefined
   target = null
-  // Look the node up rather than trusting our handle: a previous extension world
-  // may have left one behind, and that world's timers cannot clean it up.
-  document.getElementById(OUTLINE_HOST_ID)?.remove()
+  // Remove our own node when this world owns one; otherwise look the id up, because
+  // a previous extension world may have left a node this world cannot reach.
+  if (host) host.remove()
+  else document.getElementById(OUTLINE_HOST_ID)?.remove()
   host = undefined
   box = undefined
 }
 
-/** Whether the element's middle sits under the panel, where an outline cannot be seen. */
+/** Whether the panel covers the whole visible box, leaving nothing to outline. */
 function underPanel(rect: DOMRect, avoid: () => DOMRect | null): boolean {
   const panel = avoid()
-  if (!panel || panel.width < 1) return false
-  const x = rect.left + rect.width / 2
-  const y = rect.top + rect.height / 2
-  return x >= panel.left && x <= panel.right && y >= panel.top && y <= panel.bottom
+  // A detached or hidden panel host reports a zero-size rect: there is no panel.
+  if (!panel || panel.width < 1 || panel.height < 1) return false
+  // Coverage, not the centre: a wide element that pokes out from under the panel
+  // is still worth drawing, and an outline whose middle is covered is not.
+  const visibleLeft = Math.max(rect.left, 0)
+  const visibleTop = Math.max(rect.top, 0)
+  const visibleRight = Math.min(rect.right, innerWidth)
+  const visibleBottom = Math.min(rect.bottom, innerHeight)
+  return visibleLeft >= panel.left && visibleRight <= panel.right
+    && visibleTop >= panel.top && visibleBottom <= panel.bottom
 }
 
 function position(avoid: () => DOMRect | null): void {
