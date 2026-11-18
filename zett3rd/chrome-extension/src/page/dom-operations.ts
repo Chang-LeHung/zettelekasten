@@ -515,7 +515,7 @@ function inspect(query: { selector: string }): BrowserResult {
     style,
     ancestors,
     findings,
-    notice: 'Read-only. `hit` is what a user\'s pointer would reach; interact_with_browser dispatches on the element itself, '
+    notice: 'Read-only: no page content changed. `hit` is what a user\'s pointer would reach; interact_with_browser dispatches on the element itself, '
       + 'so reachability neither predicts nor explains its result. The page may change; inspect again after acting.',
   })
 }
@@ -911,6 +911,25 @@ export function applyDOMCommand(command: BrowserCommand): BrowserResult {
     selector: patch.selector, action: patch.action, applied: actual === patch.value,
     value: typeof actual === 'string' ? actual.slice(0, 10000) : actual,
   })
+}
+
+/**
+ * The element a review card may outline, or null when drawing it would point at
+ * something the card's action would refuse or at a field worth leaving alone.
+ *
+ * One element, rendered: an ambiguous selector is reported on the card as a
+ * refusal, an unrendered one has nothing to see, and a password, hidden, or file
+ * input must not be highlighted for a model's benefit.
+ */
+export function highlightElement(selector: string): Element | null {
+  try {
+    const element = singleMatch(selector)
+    if (notDisplayed(element)) return null
+    if (element.matches('input[type="password"],input[type="hidden"],input[type="file"]')) return null
+    return element
+  } catch {
+    return null
+  }
 }
 
 /** What the user is about to act on, in the page's own words, for the consent card. */

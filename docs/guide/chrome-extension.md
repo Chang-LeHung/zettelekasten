@@ -66,8 +66,10 @@ permission click, type, press keys, or drag on it. Every action asks first:
 - **Reject** refuses it, and Zett carries on without it.
 
 The page outlines the element a card is about, so the words in the card and the
-control you can see are the same thing. An inspection outlines its element for a
-moment too; that outline is panel chrome, never a change to the page.
+control you can see are the same thing — when that control is on screen and not
+behind the panel. An inspection outlines its element for a moment too. The
+outline is panel chrome: it adds one temporary element that page scripts can see,
+and it never changes page content or intercepts a click.
 
 Be precise when you ask Zett to fill in or submit something. Some sites ignore
 automated input, so ask Zett to read the page again to confirm what happened.

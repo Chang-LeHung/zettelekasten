@@ -96,8 +96,10 @@ class BrowserExtension(AgentExtension):
                     or from a tool error.
 
             Guidelines:
-                - Read-only. It changes nothing and needs no approval, so inspect freely before
-                  editing or clicking instead of guessing.
+                - Read-only in the sense that matters: it changes no page content and needs no
+                  approval, so inspect freely before editing or clicking instead of guessing.
+                  It does briefly insert one outline element so the user can see what you are
+                  looking at; page scripts can observe that node and the page may hide it.
                 - Use it when an element is missing, invisible, clipped, covered, disabled, or
                   when update_browser_dom or interact_with_browser refused a selector.
                 - The result reports the box and spacing, the computed layout style, the
@@ -114,8 +116,6 @@ class BrowserExtension(AgentExtension):
                   panel itself is reported as skipped, not as page content.
                 - `text` and `label` come back empty for script, template, hidden, and password
                   content, so a diagnosis never widens what the page read exposes.
-                - The page briefly outlines the element you inspect, so the user can see what you
-                  are looking at. That outline is panel chrome, not a change to the page.
                 - The page may change between calls; re-inspect rather than trusting an old result.
             """
             return await self._call("inspect", inspect=BrowserInspectQuery(selector=selector))

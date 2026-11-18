@@ -106,6 +106,10 @@ export class BrowserBridgeClient {
     }
     this.seen.add(command.id)
     this.activeId = command.id
+    // The card may be open when the connection ends, and `disconnect()` nulls
+    // `this.executor` before this continuation runs; keep the executor the card
+    // was created with so its outline can still be cleared through it.
+    const executor = this.executor
     try {
       if (!READ_ONLY_OPERATIONS.has(command.operation) && !this.autoApprove) {
         const approved = await new Promise<boolean>(resolve => {
@@ -122,7 +126,7 @@ export class BrowserBridgeClient {
           if (selector) {
             // Outline the target while the user decides, so the words on the card
             // and the element on the page are the same thing.
-            void this.executor?.highlight?.(selector)
+            void executor?.highlight?.(selector)
             void this.describeFor(selector).then(target => {
               if (target && this.activeId === command.id && this.consent === resolve) this.onConsent({ ...consent, target })
             })
@@ -131,11 +135,11 @@ export class BrowserBridgeClient {
         clearTimeout(this.consentTimer)
         this.consent = undefined
         this.onConsent(null)
-        void this.executor?.highlight?.(null)
+        void executor?.highlight?.(null)
         if (!approved) throw new Error('The user declined this action or did not answer in time. Do not retry it; ask what they want instead.')
       }
-      if (generation !== this.generation || !this.executor) return
-      const result = await this.executor.execute(command)
+      if (generation !== this.generation || !executor) return
+      const result = await executor.execute(command)
       if (generation === this.generation) this.reply(command.id, result)
     } catch (error) {
       if (generation === this.generation) this.reply(command.id, { ok: false, error: (error as Error).message.slice(0, 1000) })
@@ -168,6 +172,9 @@ export class BrowserBridgeClient {
     if (socket) { socket.onclose = null; socket.onmessage = null; socket.onerror = null; socket.close() }
     const executor = this.executor
     this.executor = undefined
+    // The page also clears on `disconnect`, but that message can be refused once
+    // a reconnect has replaced the binding; clear through the executor in hand.
+    await executor?.highlight?.(null).catch(() => {})
     await executor?.disconnect()
   }
 }

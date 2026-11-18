@@ -10,6 +10,7 @@ beforeEach(() => {
 
 afterEach(() => {
   clearOutline()
+  vi.useRealTimers()
   vi.restoreAllMocks()
 })
 
@@ -27,6 +28,7 @@ it('draws an outline over the element it was given', () => {
   const host = document.getElementById(HOST_ID)!
   expect(host).not.toBeNull()
   expect(host.style.getPropertyValue('pointer-events')).toBe('none')
+  expect(host.style.getPropertyValue('display')).toBe('block')
   const box = host.firstElementChild as HTMLElement
   expect(box.style.left).toBe('20px')
   expect(box.style.top).toBe('30px')
@@ -34,12 +36,18 @@ it('draws an outline over the element it was given', () => {
   expect(outlinedElement()).toBe(target)
 })
 
-it('hides itself for an element that is off screen, and stops with clear', () => {
-  const far = document.querySelector('#far')!
-  place(far, { left: 0, top: -400, width: 80, height: 20, right: 80, bottom: -380 })
-  showOutline(far, 0)
+it('hides itself for an element that is off screen or behind the panel, and stops with clear', () => {
+  const target = document.querySelector('#target')!
+  place(target, { left: 1200, top: 300, width: 80, height: 20, right: 1280, bottom: 320 })
+  // The panel sits over the right edge of this viewport.
+  showOutline(target, 0, () => ({ left: 900, top: 0, right: 1440, bottom: 700 }) as DOMRect)
   const box = document.getElementById(HOST_ID)!.firstElementChild as HTMLElement
   expect(box.style.display).toBe('none')
+
+  const onScreen = document.querySelector('#far')!
+  place(onScreen, { left: 20, top: 300, width: 80, height: 20, right: 100, bottom: 320 })
+  showOutline(onScreen, 0)
+  expect((document.getElementById(HOST_ID)!.firstElementChild as HTMLElement).style.display).toBe('block')
   clearOutline()
   expect(document.getElementById(HOST_ID)).toBeNull()
   expect(outlinedElement()).toBeNull()
@@ -47,14 +55,45 @@ it('hides itself for an element that is off screen, and stops with clear', () =>
 
 it('removes itself when its time is up', () => {
   vi.useFakeTimers()
-  try {
-    showOutline(document.querySelector('#target')!, 500)
-    expect(document.getElementById(HOST_ID)).not.toBeNull()
-    vi.advanceTimersByTime(600)
-    expect(document.getElementById(HOST_ID)).toBeNull()
-  } finally {
-    vi.useRealTimers()
-  }
+  showOutline(document.querySelector('#target')!, 500)
+  expect(document.getElementById(HOST_ID)).not.toBeNull()
+  vi.advanceTimersByTime(600)
+  expect(document.getElementById(HOST_ID)).toBeNull()
+})
+
+it('stops refreshing once it is cleared', () => {
+  vi.useFakeTimers()
+  const target = document.querySelector('#target')!
+  const rect = vi.spyOn(target, 'getBoundingClientRect')
+  showOutline(target, 0)
+  const readsWhileOpen = rect.mock.calls.length
+  clearOutline()
+  vi.advanceTimersByTime(2000)
+  expect(rect.mock.calls.length).toBe(readsWhileOpen)
+})
+
+it('heals a stale host instead of stacking a second one', () => {
+  const stale = document.createElement('div')
+  stale.id = HOST_ID
+  document.documentElement.appendChild(stale)
+  showOutline(document.querySelector('#target')!, 0)
+  expect(document.querySelectorAll(`#${HOST_ID}`)).toHaveLength(1)
+  expect(document.getElementById(HOST_ID)).not.toBe(stale)
+})
+
+it('drops the outline when the page removes the target or our own node', () => {
+  const target = document.querySelector('#target')!
+  showOutline(target, 0)
+  target.remove()
+  // Any refresh path notices; a scroll is the cheapest one to trigger.
+  window.dispatchEvent(new Event('scroll'))
+  expect(document.getElementById(HOST_ID)).toBeNull()
+
+  showOutline(document.querySelector('#far')!, 0)
+  document.getElementById(HOST_ID)!.remove()
+  window.dispatchEvent(new Event('scroll'))
+  expect(document.getElementById(HOST_ID)).toBeNull()
+  expect(outlinedElement()).toBeNull()
 })
 
 it('replaces the previous outline instead of stacking a second one', () => {

@@ -65,12 +65,23 @@ it('never changes the DOM before approval and never replays duplicate commands',
   expect(execute).toHaveBeenCalledTimes(1)
 })
 
-it('denial returns an error without touching the page', async () => {
+it('denial returns an error without touching the page, and stops outlining', async () => {
   socket.emit(command)
   consent!.reject()
   await flush()
   expect(execute).not.toHaveBeenCalled()
+  expect(highlight).toHaveBeenLastCalledWith(null)
   expect(socket.sent).toContainEqual(expect.objectContaining({ id: command.id, ok: false }))
+})
+
+it('clears the outline when the connection ends with the card still open', async () => {
+  socket.emit(command)
+  await flush()
+  expect(highlight).toHaveBeenLastCalledWith('#name')
+  // `disconnect` nulls the executor before the awaiting continuation runs, so the
+  // clear must go through the executor captured with the consent.
+  await bridge.disconnect()
+  expect(highlight).toHaveBeenLastCalledWith(null)
 })
 
 it('applies page edits without consent once the session always allows them', async () => {
