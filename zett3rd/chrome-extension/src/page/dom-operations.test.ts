@@ -511,6 +511,25 @@ it('answers a timeout as information, not as a failed call', async () => {
   expect(receipt.waited_ms).toBeGreaterThanOrEqual(400)
 })
 
+it('reacts to a text change as it happens, not on a polling tick', async () => {
+  document.body.innerHTML = '<p id="status">Loading</p>'
+  const pending = waitFor(waitQuery({ text: 'ready', timeout_ms: 1500 }))
+  setTimeout(() => { document.querySelector('#status')!.textContent = 'Ready' }, 60)
+  const receipt = JSON.parse((await pending).result!)
+  expect(receipt.matched).toBe(true)
+  // A 250 ms poll would land near 250 ms; a mutation check lands right after the change.
+  expect(receipt.waited_ms).toBeLessThan(200)
+})
+
+it('sees a text condition become false again', async () => {
+  document.body.innerHTML = '<p id="status">Uploading</p>'
+  const pending = waitFor(waitQuery({ condition: 'disappear', text: 'uploading', timeout_ms: 1500 }))
+  setTimeout(() => { document.querySelector('#status')!.textContent = 'Done' }, 60)
+  const receipt = JSON.parse((await pending).result!)
+  expect(receipt.matched).toBe(true)
+  expect(receipt.waited_ms).toBeLessThan(200)
+})
+
 it('waits for the address to change only when the page navigates', async () => {
   const pending = waitFor(waitQuery({ condition: 'url_change', timeout_ms: 1500 }))
   setTimeout(() => window.history.pushState({}, '', `${location.href}#moved`), 100)

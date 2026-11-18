@@ -21,6 +21,18 @@ Zett 不自带模型。Provider 是与某个模型的一条连接：包括名称
 | **OpenAI**、**Anthropic**、**Google Gemini**、**DeepSeek**、**Ollama** | 直接使用这些服务。Ollama 在你自己的电脑上运行模型。 |
 | **OpenAI compatible**、**Responses compatible** | 任何提供 OpenAI 风格或 Responses 风格 API 的其他服务。 |
 
+### 联网搜索 {#web-search}
+
+在 Provider 中打开**联网搜索**，模型就能自己上网查资料并引用来源。搜索由服务商执行，所以只有支持它的服务才能开启：
+
+- OpenAI 及其兼容服务的 **Responses API**；
+- **Anthropic** 及 Anthropic 兼容服务；
+- **Google Gemini**。
+
+DeepSeek 是例外：只有它的 **flash** 模型能搜索，而且只能通过 **Anthropic compatible** 连接。对其他任何 DeepSeek 配置，Zett 会拒绝保存这个开关，因为那些端点会接受请求、然后凭记忆作答而不去搜索。
+
+**搜索工具名称**留空即使用该服务的默认值，也可以填服务文档里给出的名称，例如 `web_search_20250305`。服务可能限制搜索频率，因此搜索偶尔会在服务端失败；此时模型会说明它没能查到。
+
 你的 API Key 会在这台电脑上加密保存，之后不会再显示。编辑 Provider 时，把密钥留空即可沿用已保存的密钥。
 
 仍被会话、定时任务或渠道使用的 Provider 不能被停用或删除。请先把它们切换到其他 Provider。

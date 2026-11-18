@@ -70,6 +70,45 @@ automated input, so ask Zett to read the page again to confirm what happened.
 **Stop** does not undo an action already performed: a filled form may already
 be saved by the site. Zett never runs its own scripts on the page.
 
+## What Zett can read from the page
+
+While the page is connected, Zett reads what it needs, on demand. Everything it
+reads is page data, not instructions for it, and every read works only on the
+page the panel is connected to. It can ask for:
+
+- **The page and its controls** — visible text, buttons and fields with CSS
+  selectors it can reuse, link targets, and where the page is scrolled. It can
+  also read one element, or find elements by the words they show.
+- **A screenshot** — the current viewport as JPEG, stored in this
+  conversation's upload folder and handed to the model. The panel hides itself
+  for the capture, and a conversation keeps only the newest capture.
+- **A diagnosis of one element** — why it is invisible, what covers it, which
+  ancestor clips it, whether a click would reach it, and what each tool could
+  do with it.
+- **A wait** — for an element or some words to appear or disappear, or for the
+  address to change, for at most eight seconds. A timeout is an answer, not a
+  failure, so Zett does not retry in a loop.
+- **How the page is running** — recent console errors and warnings, resource
+  timings and sizes, and paint, layout-shift, and long-task numbers. Collection
+  starts when the panel connects, and a page can block it, so "nothing
+  recorded" does not mean "nothing wrong".
+- **Accessibility problems** — images without `alt`, form controls without a
+  name, `aria-hidden` over something focusable, a positive `tabindex`, skipped
+  heading levels, and a missing `lang`. It does not judge contrast, reading
+  order, or whether a label makes sense.
+
+Zett can fix those problems too, but only through six attributes — `alt`,
+`title`, `aria-label`, `aria-labelledby`, `aria-hidden`, and `role` — and every
+change goes through the review card above. The card names the intent and the
+new value, and it marks `alt=""` (a decorative image) and a removal explicitly.
+
+A few limits worth knowing: a screenshot covers the viewport, not the whole
+page; an address wait sees a change inside the same document (a client-side
+route or a `#section`), while a real page load disconnects the panel and needs a
+new connection; network data has no headers or status codes; every tool works
+in the top document only, so content inside an iframe is out of reach; and one
+conversation keeps only its newest screenshot.
+
 ## If the panel cannot connect
 
 1. Run `zett status` and check that Zett opens at the address set in the
