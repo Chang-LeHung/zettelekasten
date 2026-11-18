@@ -114,6 +114,8 @@ class BrowserExtension(AgentExtension):
                   panel itself is reported as skipped, not as page content.
                 - `text` and `label` come back empty for script, template, hidden, and password
                   content, so a diagnosis never widens what the page read exposes.
+                - The page briefly outlines the element you inspect, so the user can see what you
+                  are looking at. That outline is panel chrome, not a change to the page.
                 - The page may change between calls; re-inspect rather than trusting an old result.
             """
             return await self._call("inspect", inspect=BrowserInspectQuery(selector=selector))

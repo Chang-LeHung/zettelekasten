@@ -119,13 +119,19 @@ export class BrowserBridgeClient {
           // The card is on screen at once; the page's own name for the element
           // joins it a moment later, and only while this request is still open.
           const selector = command.change?.selector ?? command.interaction?.selector ?? command.attribute?.selector
-          if (selector) void this.describeFor(selector).then(target => {
-            if (target && this.activeId === command.id && this.consent === resolve) this.onConsent({ ...consent, target })
-          })
+          if (selector) {
+            // Outline the target while the user decides, so the words on the card
+            // and the element on the page are the same thing.
+            void this.executor?.highlight?.(selector)
+            void this.describeFor(selector).then(target => {
+              if (target && this.activeId === command.id && this.consent === resolve) this.onConsent({ ...consent, target })
+            })
+          }
         })
         clearTimeout(this.consentTimer)
         this.consent = undefined
         this.onConsent(null)
+        void this.executor?.highlight?.(null)
         if (!approved) throw new Error('The user declined this action or did not answer in time. Do not retry it; ask what they want instead.')
       }
       if (generation !== this.generation || !this.executor) return

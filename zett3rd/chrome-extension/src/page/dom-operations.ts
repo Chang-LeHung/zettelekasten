@@ -3,6 +3,7 @@ import {
   type BrowserAttributeName, type BrowserCommand, type BrowserResult, type BrowserWaitQuery,
 } from './browser-protocol'
 import { PANEL_HOST_ID } from './panel-host'
+import { showOutline } from './outline'
 
 const TEXT_INPUTS = new Set(['text', 'search', 'email', 'tel', 'url', 'number', 'date', 'datetime-local', 'month', 'week', 'time'])
 const TEXT_ELEMENTS = new Set(['P', 'SPAN', 'DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'TD', 'TH', 'PRE', 'CODE', 'LABEL', 'CAPTION'])
@@ -473,6 +474,8 @@ function inspect(query: { selector: string }): BrowserResult {
   }
   const style: Record<string, string> = {}
   for (const property of INSPECT_STYLES) style[property] = computed.getPropertyValue(property).slice(0, 120)
+  // Show the user what the agent is looking at; it fades on its own.
+  showOutline(element, 2500)
   return encodeResult({
     selector: selectorFor(element).slice(0, 300),
     title: document.title.slice(0, 500),

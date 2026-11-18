@@ -118,6 +118,22 @@ export class BrowserExecutor {
     } catch { return null }
   }
 
+  /** Outline the pending target on the page, or clear it. Best effort: never throws. */
+  async highlight(selector: string | null): Promise<void> {
+    const binding = this.binding
+    if (!binding) return
+    try {
+      await chrome.tabs.sendMessage(this.tabId, {
+        channel: 'zett-dom',
+        type: selector ? 'highlight' : 'clear-highlight',
+        nonce: binding.nonce,
+        selector: selector ?? undefined,
+      }, { documentId: binding.documentId })
+    } catch {
+      // The page may have gone away between the card and this call.
+    }
+  }
+
   /** Hide or restore the panel's host element in the page, for one capture. */
   private async setPanelHidden(binding: { documentId: string; nonce: string; url: string }, hidden: boolean): Promise<void> {
     await chrome.tabs.sendMessage(this.tabId, {

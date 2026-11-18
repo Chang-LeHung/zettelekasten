@@ -22,6 +22,7 @@ class Socket {
 }
 const execute = vi.fn()
 const disconnect = vi.fn()
+const highlight = vi.fn()
 let bridge: BrowserBridgeClient
 let consent: BrowserConsent | null
 let socket: Socket
@@ -34,7 +35,10 @@ beforeEach(async () => {
   vi.stubGlobal('WebSocket', Socket)
   execute.mockReset().mockResolvedValue({ ok: true, result: '1' })
   disconnect.mockReset().mockResolvedValue(undefined)
-  vi.mocked(BrowserExecutor).mockImplementation(() => ({ connect: vi.fn().mockResolvedValue(undefined), execute, disconnect }) as unknown as BrowserExecutor)
+  highlight.mockReset().mockResolvedValue(undefined)
+  vi.mocked(BrowserExecutor).mockImplementation(() => (
+    { connect: vi.fn().mockResolvedValue(undefined), execute, disconnect, highlight } as unknown as BrowserExecutor
+  ))
   bridge = new BrowserBridgeClient(value => { consent = value }, vi.fn())
   const connected = bridge.connect('ws://localhost/browser', 5)
   await flush()
@@ -49,9 +53,12 @@ it('never changes the DOM before approval and never replays duplicate commands',
   await flush()
   expect(consent?.command.change?.value).toBe('Ada')
   expect(execute).not.toHaveBeenCalled()
+  // The card names the element in words; the page outlines the same element.
+  expect(highlight).toHaveBeenCalledWith('#name')
   consent!.approve()
   await flush()
   expect(execute).toHaveBeenCalledTimes(1)
+  expect(highlight).toHaveBeenLastCalledWith(null)
   expect(socket.sent).toContainEqual({ type: 'result', id: command.id, ok: true, result: '1' })
   socket.emit(command)
   await flush()

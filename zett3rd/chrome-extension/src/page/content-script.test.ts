@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { clearOutline } from './outline'
 
 let listener: (message: unknown, sender: unknown, respond: (result: unknown) => void) => unknown
 const sender = { id: 'extension', url: 'chrome-extension://extension/sidepanel.html' }
@@ -26,6 +27,7 @@ beforeEach(async () => {
 afterEach(() => {
   // The panel host lives on documentElement, which beforeEach does not reset.
   document.querySelectorAll('#zettelekasten-panel-host').forEach(node => node.remove())
+  clearOutline()
   vi.unstubAllGlobals()
   delete (globalThis as { __zettDOMBridgeInstalled?: boolean }).__zettDOMBridgeInstalled
 })
@@ -61,6 +63,21 @@ it('rejects arbitrary source even when a command reaches the content script', ()
   expect(send({ type: 'command', command: { ...command, script: 'alert(1)' }, url: location.href, expiresAt: Date.now() + 10000 }))
     .toMatchObject({ ok: false })
   expect(document.querySelector('h1')!.textContent).toBe('Old title')
+})
+
+it('outlines the element a review card is about, and clears it again', () => {
+  expect(send({ type: 'toggle-panel', tabId: 7 }, background)).toMatchObject({ open: true })
+  expect(send({ type: 'connect' })).toMatchObject({ ok: true })
+  expect(send({ type: 'highlight', selector: '#title' })).toEqual({ ok: true })
+  const host = document.getElementById('zettelekasten-outline-host')
+  expect(host).not.toBeNull()
+  expect(host!.style.getPropertyValue('pointer-events')).toBe('none')
+  expect(send({ type: 'clear-highlight' })).toEqual({ ok: true })
+  expect(document.getElementById('zettelekasten-outline-host')).toBeNull()
+
+  // An unusable selector must not throw at the panel; it simply outlines nothing.
+  expect(send({ type: 'highlight', selector: '#missing' })).toEqual({ ok: true })
+  expect(document.getElementById('zettelekasten-outline-host')).toBeNull()
 })
 
 it('hides the panel for one capture and restores it afterwards', async () => {

@@ -1,5 +1,6 @@
 import { applyDOMCommand, describeSelector, waitFor } from './dom-operations'
 import { COMMAND_EXPIRY_ALLOWANCE_MS, allowedPage, sameDocumentUrl, validateCommand } from './browser-protocol'
+import { clearOutline, showOutline } from './outline'
 import { PANEL_HOST_ID } from './panel-host'
 
 /** Installed on demand only in the connected top document. No page-world
@@ -28,6 +29,7 @@ if (!scope.__zettDOMBridgeInstalled) {
   function removePanel(): void {
     detachFrameMessages?.()
     detachFrameMessages = undefined
+    clearOutline()
     panel?.remove()
     panel = undefined
     panelNonce = undefined
@@ -215,6 +217,7 @@ if (!scope.__zettDOMBridgeInstalled) {
       if (!binding || message.nonce !== binding.nonce) throw new Error('Page connection expired')
       if (message.type === 'disconnect') {
         binding = undefined
+        clearOutline()
         respond({ ok: true })
         return
       }
@@ -232,6 +235,22 @@ if (!scope.__zettDOMBridgeInstalled) {
       if (message.type === 'describe') {
         // Read-only: names the element a pending action targets for the consent card.
         respond({ ok: true, target: describeSelector(String(message.selector ?? '').slice(0, 500)) })
+        return
+      }
+      if (message.type === 'highlight' || message.type === 'clear-highlight') {
+        // A review card names its target in words; this shows the same element.
+        clearOutline()
+        if (message.type === 'highlight') {
+          const selector = String(message.selector ?? '').slice(0, 500)
+          let element: Element | null = null
+          try {
+            element = selector ? document.querySelector(selector) : null
+          } catch {
+            element = null // An invalid selector is the card's problem, not ours.
+          }
+          if (element) showOutline(element, 0)
+        }
+        respond({ ok: true })
         return
       }
       if (message.type === 'show-panel') {

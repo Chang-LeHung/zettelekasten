@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { applyDOMCommand, waitFor } from './dom-operations'
+import { clearOutline } from './outline'
 import type { BrowserCommand, BrowserDOMPatch, BrowserWaitQuery } from './browser-protocol'
 
 function edit(change: Partial<BrowserDOMPatch> = {}) {
@@ -248,7 +249,11 @@ function place(element: Element, rect: Partial<DOMRect>) {
 }
 
 // A hit-test stub must not leak into the tests that run after it.
-afterEach(() => { delete (document as unknown as { elementFromPoint?: unknown }).elementFromPoint })
+afterEach(() => {
+  delete (document as unknown as { elementFromPoint?: unknown }).elementFromPoint
+  // An inspection outlines its element; the next test must start clean.
+  clearOutline()
+})
 
 it('inspects one element without changing the page', () => {
   document.body.innerHTML = '<button id="buy" class="cta" aria-label="Buy now">Buy</button>'
