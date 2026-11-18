@@ -1,5 +1,5 @@
-import { applyDOMCommand, describeSelector } from './dom-operations'
-import { allowedPage, sameDocumentUrl, validateCommand } from './browser-protocol'
+import { applyDOMCommand, describeSelector, waitFor } from './dom-operations'
+import { COMMAND_EXPIRY_ALLOWANCE_MS, allowedPage, sameDocumentUrl, validateCommand } from './browser-protocol'
 import { PANEL_HOST_ID } from './panel-host'
 
 /** Installed on demand only in the connected top document. No page-world
@@ -35,6 +35,20 @@ if (!scope.__zettDOMBridgeInstalled) {
     binding = undefined
     clearInterval(pageTimer)
     pageTimer = undefined
+  }
+
+  /** Resolve once the compositor has had a chance to paint the current DOM. */
+  function afterNextPaint(): Promise<void> {
+    // A DOM emulator has no compositor; a short timer is the honest stand-in.
+    if (typeof requestAnimationFrame !== 'function') {
+      return new Promise<void>(resolve => setTimeout(resolve, 30))
+    }
+    const painted = new Promise<void>(resolve => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+    })
+    // A background tab never runs rAF, and the caller still needs an answer.
+    const fallback = new Promise<void>(resolve => setTimeout(resolve, 250))
+    return Promise.race([painted, fallback])
   }
 
   function mountPanel(tabId: number): void {
@@ -204,7 +218,15 @@ if (!scope.__zettDOMBridgeInstalled) {
         respond({ ok: true })
         return
       }
-      if (!sameDocumentUrl(location.href, binding.url) || !sameDocumentUrl(String(message.url ?? binding.url), binding.url)) {
+      // A wait on the address is the one read whose purpose is to observe the
+      // address moving, so it is the one message allowed past this check.
+      const observingAddress = message.type === 'command'
+        && message.command?.operation === 'wait'
+        && message.command?.wait?.condition === 'url_change'
+      if (!observingAddress && (
+        !sameDocumentUrl(location.href, binding.url)
+        || !sameDocumentUrl(String(message.url ?? binding.url), binding.url)
+      )) {
         throw new Error('The page navigated to a different address. Read the new page with get_browser_page after the panel reconnects.')
       }
       if (message.type === 'describe') {
@@ -212,13 +234,37 @@ if (!scope.__zettDOMBridgeInstalled) {
         respond({ ok: true, target: describeSelector(String(message.selector ?? '').slice(0, 500)) })
         return
       }
+      if (message.type === 'show-panel') {
+        if (!panel) throw new Error('No panel is mounted on this page')
+        panel.style.visibility = ''
+        respond({ ok: true })
+        return
+      }
+      if (message.type === 'hide-panel') {
+        // A capture must show the page, not the panel that is talking about it,
+        // and a style change alone does not guarantee a painted frame.
+        if (!panel) throw new Error('No panel is mounted on this page')
+        panel.style.visibility = 'hidden'
+        afterNextPaint().then(() => respond({ ok: true }))
+        return true
+      }
       if (message.type !== 'command') throw new Error('Unknown page message')
-      if (!Number.isFinite(message.expiresAt) || Date.now() > message.expiresAt || message.expiresAt > Date.now() + 11000) {
+      if (!Number.isFinite(message.expiresAt) || Date.now() > message.expiresAt
+        || message.expiresAt > Date.now() + COMMAND_EXPIRY_ALLOWANCE_MS) {
         throw new Error('DOM command expired')
       }
       const command = validateCommand(message.command)
       if (binding.seen.has(command.id) || binding.seen.size >= 1000) throw new Error('Duplicate command or connection limit reached')
       binding.seen.add(command.id)
+      if (command.operation === 'wait') {
+        // A wait answers after its own deadline, so the listener must keep the
+        // reply channel open instead of responding synchronously. It measures
+        // against the address the panel connected to, not the one it saw first.
+        waitFor(command.wait!, binding.url)
+          .then(respond)
+          .catch(error => respond({ ok: false, error: (error as Error).message.slice(0, 1000) }))
+        return true
+      }
       respond(applyDOMCommand(command))
     } catch (error) {
       respond({ ok: false, error: (error as Error).message.slice(0, 1000) })

@@ -171,6 +171,13 @@ const consentDetails = computed(() => {
     value: typeof change.value === 'string' ? change.value : String(change.value),
     extra: '',
   }
+  const attribute = browserConsent.value?.command.attribute
+  if (attribute) return {
+    action: `${attribute.name} attribute`,
+    target: attribute.selector,
+    value: attribute.remove ? '(remove)' : (attribute.value || '(empty)'),
+    extra: '',
+  }
   const interaction = browserConsent.value?.command.interaction
   if (!interaction) return null
   return {
@@ -284,6 +291,19 @@ async function togglePageTools(): Promise<void> {
   else await connectBrowser()
 }
 
+/** The one attribute change whose damage the person approving it cannot see. */
+const consentAttributeWarning = computed(() => {
+  const attribute = browserConsent.value?.command.attribute
+  if (!attribute) return ''
+  if (attribute.name === 'aria-hidden' && attribute.value === 'true') {
+    return 'This hides the element and everything inside it from screen readers.'
+  }
+  if (attribute.name === 'role' || attribute.name.startsWith('aria-')) {
+    return 'This changes what assistive technology announces, not how the page looks.'
+  }
+  return ''
+})
+
 /** Seconds left on the consent card, so an unanswered request does not look stuck. */
 const consentSecondsLeft = computed(() => {
   const consent = browserConsent.value
@@ -293,7 +313,7 @@ const consentSecondsLeft = computed(() => {
 /** Reads change nothing and fills only edit a field; the rest can submit, navigate or publish. */
 const consentRisk = computed<'edit' | 'act'>(() => {
   const consent = browserConsent.value
-  if (consent?.command.change) return 'edit'
+  if (consent?.command.change || consent?.command.attribute) return 'edit'
   const action = consent?.command.interaction?.action
   return action && ['hover', 'focus', 'scroll'].includes(action) ? 'edit' : 'act'
 })
@@ -1626,7 +1646,7 @@ watch(conversationId, (sessionId) => { void loadBrowserApproval(sessionId) })
       <span class="consent-mark" aria-hidden="true">{{ consentRisk === 'act' ? '!' : '✎' }}</span>
       <div>
         <strong>{{ consentRisk === 'act' ? 'Allow this action on the page?' : 'Allow this change to the page?' }}</strong>
-        <small>{{ browserConsent.command.change?.description || browserConsent.command.interaction?.description }}</small>
+        <small>{{ browserConsent.command.change?.description || browserConsent.command.attribute?.description || browserConsent.command.interaction?.description }}</small>
       </div>
       <span class="consent-timer" :title="`Declines on its own in ${consentSecondsLeft}s`">{{ consentSecondsLeft }}s</span>
     </header>
@@ -1646,6 +1666,7 @@ watch(conversationId, (sessionId) => { void loadBrowserApproval(sessionId) })
     <p v-if="browserConsent.target && browserConsent.target.matched !== 1" class="consent-warning">
       {{ browserConsent.target.matched ? `This selector matches ${browserConsent.target.matched} elements, so the action will be refused.` : 'This selector matches nothing on the page right now, so the action will be refused.' }}
     </p>
+    <p v-else-if="consentAttributeWarning" class="consent-warning">{{ consentAttributeWarning }}</p>
     <p v-else-if="consentRisk === 'act'" class="consent-warning">Clicks and key presses can submit, publish, or navigate on the website.</p>
     <div class="consent-actions">
       <button type="button" @click="browserConsent.reject">Decline</button>

@@ -13,7 +13,9 @@ export interface BrowserConsent {
 const CONSENT_WINDOW_MS = 90000
 
 /** Reads report what the page already shows, so only a change to it asks the user. */
-const READ_ONLY_OPERATIONS: ReadonlySet<BrowserCommand['operation']> = new Set(['snapshot', 'inspect'])
+const READ_ONLY_OPERATIONS: ReadonlySet<BrowserCommand['operation']> = new Set([
+  'snapshot', 'inspect', 'wait', 'screenshot', 'probe', 'audit',
+])
 
 /** An explicitly connected panel owns its socket, tab, and pending consent.
  * No reconnect/replay: every reconnect requires a new user click and token.
@@ -116,7 +118,7 @@ export class BrowserBridgeClient {
           this.onConsent(consent)
           // The card is on screen at once; the page's own name for the element
           // joins it a moment later, and only while this request is still open.
-          const selector = command.change?.selector ?? command.interaction?.selector
+          const selector = command.change?.selector ?? command.interaction?.selector ?? command.attribute?.selector
           if (selector) void this.describeFor(selector).then(target => {
             if (target && this.activeId === command.id && this.consent === resolve) this.onConsent({ ...consent, target })
           })
@@ -140,7 +142,7 @@ export class BrowserBridgeClient {
     try { return (await this.executor?.describe?.(selector)) ?? null } catch { return null }
   }
 
-  private reply(id: string, result: { ok: boolean; result?: string; error?: string }): void {
+  private reply(id: string, result: { ok: boolean; result?: string; image?: string; error?: string }): void {
     if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify({ type: 'result', id, ...result }))
   }
 

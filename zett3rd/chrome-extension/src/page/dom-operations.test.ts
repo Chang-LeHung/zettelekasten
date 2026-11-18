@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { applyDOMCommand } from './dom-operations'
-import type { BrowserCommand, BrowserDOMPatch } from './browser-protocol'
+import { applyDOMCommand, waitFor } from './dom-operations'
+import type { BrowserCommand, BrowserDOMPatch, BrowserWaitQuery } from './browser-protocol'
 
 function edit(change: Partial<BrowserDOMPatch> = {}) {
   return applyDOMCommand({
@@ -486,4 +486,135 @@ it('does not promise a click through a control that is disabled', () => {
   const receipt = JSON.parse(applyDOMCommand(inspectElement('#lib')).result!)
   expect(receipt.accepts.click).toBeNull()
   expect(receipt.findings.join(' ')).toContain('disabled')
+})
+
+function waitQuery(partial: Partial<BrowserWaitQuery>): BrowserWaitQuery {
+  return { condition: 'appear', selector: null, text: null, timeout_ms: 500, ...partial }
+}
+
+it('waits for a condition that already holds without spending the timeout', async () => {
+  document.body.innerHTML = '<p id="saved">Saved</p>'
+  const bySelector = JSON.parse((await waitFor(waitQuery({ selector: '#saved' }))).result!)
+  expect(bySelector).toMatchObject({ matched: true, condition: 'appear' })
+  expect(bySelector.waited_ms).toBeLessThan(400)
+  const byText = JSON.parse((await waitFor(waitQuery({ text: 'SAVED' }))).result!)
+  expect(byText.matched).toBe(true)
+  const alreadyGone = JSON.parse((await waitFor(waitQuery({ condition: 'disappear', selector: '#missing' }))).result!)
+  expect(alreadyGone.matched).toBe(true)
+})
+
+it('answers a timeout as information, not as a failed call', async () => {
+  document.body.innerHTML = '<p id="saved">Saved</p>'
+  const receipt = JSON.parse((await waitFor(waitQuery({ selector: '#missing' }))).result!)
+  expect(receipt).toMatchObject({ matched: false, condition: 'appear' })
+  expect(receipt.notice).toContain('did not hold')
+  expect(receipt.waited_ms).toBeGreaterThanOrEqual(400)
+})
+
+it('waits for the address to change only when the page navigates', async () => {
+  const pending = waitFor(waitQuery({ condition: 'url_change', timeout_ms: 1500 }))
+  setTimeout(() => window.history.pushState({}, '', `${location.href}#moved`), 100)
+  const receipt = JSON.parse((await pending).result!)
+  expect(receipt.matched).toBe(true)
+})
+
+it('counts an address change that happened before the wait started', async () => {
+  // The panel tells the wait which address it connected to, so a navigation that
+  // landed before the model asked is still visible to it.
+  const receipt = JSON.parse((await waitFor(waitQuery({ condition: 'url_change' }), 'https://elsewhere.example/')).result!)
+  expect(receipt.matched).toBe(true)
+})
+
+it('does not call a hidden element "appeared"', async () => {
+  document.body.innerHTML = '<div id="toast" style="display:none">Saved</div>'
+  const receipt = JSON.parse((await waitFor(waitQuery({ selector: '#toast' }))).result!)
+  expect(receipt.matched).toBe(false)
+  const gone = JSON.parse((await waitFor(waitQuery({ condition: 'disappear', selector: '#toast' }))).result!)
+  expect(gone.matched).toBe(true)
+})
+
+function attributeCommand(change: Partial<BrowserCommand['attribute']>): BrowserCommand {
+  return {
+    type: 'command', id: 'f'.repeat(32), operation: 'attribute',
+    change: null, query: null, interaction: null, inspect: null, wait: null, probe: null,
+    attribute: {
+      name: 'alt', selector: '#chart', value: 'A chart', remove: false, description: 'Describe the chart', ...change,
+    },
+  } as BrowserCommand
+}
+
+it('sets and removes one allowlisted accessibility attribute', () => {
+  document.body.innerHTML = '<img id="chart" src="a.png">'
+  expect(JSON.parse(applyDOMCommand(attributeCommand({})).result!)).toMatchObject({ applied: true, value: 'A chart' })
+  expect(document.querySelector('#chart')!.getAttribute('alt')).toBe('A chart')
+
+  const removed = JSON.parse(applyDOMCommand(attributeCommand({ value: null, remove: true })).result!)
+  expect(removed).toMatchObject({ applied: true, value: null })
+  expect(document.querySelector('#chart')!.hasAttribute('alt')).toBe(false)
+})
+
+it('can repair an excluded or non-HTML element, which is what the audit reports', () => {
+  document.body.innerHTML = '<div aria-hidden="true"><button id="hidden-btn">x</button></div>'
+    + '<button id="icon"><svg id="shape"><title>Close</title></svg></button>'
+  expect(JSON.parse(applyDOMCommand(attributeCommand({
+    selector: '#hidden-btn', name: 'aria-hidden', value: 'false',
+  })).result!)).toMatchObject({ applied: true, value: 'false' })
+  expect(JSON.parse(applyDOMCommand(attributeCommand({
+    selector: '#shape', name: 'aria-label', value: 'Close',
+  })).result!)).toMatchObject({ applied: true, value: 'Close' })
+  expect(document.querySelector('#shape')!.getAttribute('aria-label')).toBe('Close')
+})
+
+it('refuses an attribute outside the allowlist even at the content script', () => {
+  document.body.innerHTML = '<img id="chart" src="a.png">'
+  const forged = {
+    ...attributeCommand({}),
+    attribute: { name: 'href', selector: '#chart', value: 'javascript:alert(1)', description: 'Rewrite the link' },
+  } as unknown as BrowserCommand
+  expect(() => applyDOMCommand(forged)).toThrow()
+  expect(document.querySelector('#chart')!.hasAttribute('href')).toBe(false)
+})
+
+it('audits the accessibility problems a static pass can name', () => {
+  document.body.innerHTML = '<img id="noalt" src="a.png"><img id="ok" src="b.png" alt="B">'
+    + '<input id="bare"><button id="silent"><svg></svg></button>'
+    + '<div aria-hidden="true"><button id="hidden-btn">x</button></div>'
+    + '<span tabindex="3">x</span><h1>Title</h1><h3>Skip</h3>'
+  const report = JSON.parse(applyDOMCommand({
+    type: 'command', id: 'e'.repeat(32), operation: 'audit',
+    change: null, query: null, interaction: null, inspect: null, wait: null, probe: null, attribute: null,
+  } as BrowserCommand).result!)
+  const byId = Object.fromEntries(report.checks.map((check: { id: string }) => [check.id, check]))
+  expect(byId.image_without_alt).toMatchObject({ count: 1, examples: ['#noalt'] })
+  expect(byId.control_without_name.count).toBeGreaterThanOrEqual(1)
+  expect(byId.control_without_text.count).toBeGreaterThanOrEqual(1)
+  expect(byId.aria_hidden_focusable.count).toBe(1)
+  expect(byId.positive_tabindex.count).toBe(1)
+  expect(byId.heading_level_skipped.count).toBe(1)
+  expect(byId.missing_lang.count).toBe(1)
+  expect(report.notice).toContain('contrast')
+})
+
+it('reports a clean, accessible page as clean', () => {
+  document.documentElement.lang = 'en'
+  try {
+    document.body.innerHTML = '<h1>Title</h1><h2>Section</h2>'
+      + '<img src="a.png" alt="A chart">'
+      + '<label for="name">Name</label><input id="name">'
+      + '<button aria-label="Close">✕</button>'
+      // A closed menu is aria-hidden *and* unrendered; nothing in it can take focus.
+      + '<div aria-hidden="true" style="display:none"><button>Menu item</button></div>'
+      // An icon named through the svg's own title is named.
+      + '<button><svg><title>Settings</title></svg></button>'
+      // An aria-labelledby that resolves names the control.
+      + '<span id="field-label">Email</span><input aria-labelledby="field-label">'
+    const report = JSON.parse(applyDOMCommand({
+      type: 'command', id: 'd'.repeat(32), operation: 'audit',
+      change: null, query: null, interaction: null, inspect: null, wait: null, probe: null, attribute: null,
+    } as BrowserCommand).result!)
+    const findings = report.checks.filter((check: { count: number }) => check.count > 0)
+    expect(findings).toEqual([])
+  } finally {
+    document.documentElement.removeAttribute('lang')
+  }
 })

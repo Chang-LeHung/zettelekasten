@@ -14,15 +14,19 @@ export const MAX_PAGE_CHARS = 20000
 /**
  * Tell the model why it has no browser tools in this turn.
  *
- * A turn carries `get_browser_page` / `inspect_browser_element` /
- * `update_browser_dom` / `interact_with_browser` only while the panel is
- * connected to the page. Without this note the model learns that by calling one
- * and reading "Unknown tool", which reads like a broken capability instead of a
- * disconnected panel.
+ * A turn carries the page tools (`get_browser_page`, `get_browser_screenshot`,
+ * `get_browser_console`, `get_browser_network`, `get_browser_metrics`,
+ * `inspect_browser_element`, `audit_browser_accessibility`, `wait_for_browser`,
+ * `update_browser_dom`, `set_browser_attribute`, `interact_with_browser`) only
+ * while the panel is connected to the page. Without this note the model learns
+ * that by calling one and reading "Unknown tool", which reads like a broken
+ * capability instead of a disconnected panel.
  */
 export const PAGE_TOOLS_UNAVAILABLE_NOTE = [
   '[Panel note: this turn has no live browser tools. The Chrome panel is not connected to the page,',
-  'so get_browser_page, inspect_browser_element, update_browser_dom and interact_with_browser do not exist right now.',
+  'so get_browser_page, get_browser_screenshot, get_browser_console, get_browser_network,',
+  'get_browser_metrics, inspect_browser_element, audit_browser_accessibility, wait_for_browser,',
+  'update_browser_dom, set_browser_attribute and interact_with_browser do not exist right now.',
   'Work from the page excerpt below, and tell the user to press "Connect page" in the panel\'s ... menu',
   'before asking for live page reads or edits.]',
 ].join(' ')

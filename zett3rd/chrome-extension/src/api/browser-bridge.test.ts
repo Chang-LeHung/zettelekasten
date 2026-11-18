@@ -88,6 +88,19 @@ it('runs a read-only inspection without asking for consent', async () => {
   expect(socket.sent).toContainEqual({ type: 'result', id: inspect.id, ok: true, result: '1' })
 })
 
+it('forwards a captured image without asking for consent', async () => {
+  const image = 'data:image/jpeg;base64,AAAA'
+  execute.mockResolvedValue({ ok: true, image })
+  const shot = {
+    type: 'command', id: 'e'.repeat(32), operation: 'screenshot',
+    change: null, query: null, interaction: null, inspect: null, wait: null,
+  }
+  socket.emit(shot)
+  await flush()
+  expect(consent).toBeNull()
+  expect(socket.sent).toContainEqual({ type: 'result', id: shot.id, ok: true, image })
+})
+
 it('a disconnect cancels consent and prevents stale approval execution', async () => {
   socket.emit(command)
   const old = consent!
@@ -105,4 +118,29 @@ it('cancellation clears a pending approval', async () => {
   await flush()
   expect(consent).toBeNull()
   expect(execute).not.toHaveBeenCalled()
+})
+
+it('asks before an attribute change, and never for an accessibility audit', async () => {
+  const attribute = {
+    type: 'command', id: 'd'.repeat(32), operation: 'attribute',
+    change: null, query: null, interaction: null, inspect: null, wait: null, probe: null,
+    attribute: { name: 'alt', selector: '#chart', value: 'A chart', remove: false, description: 'Describe the chart' },
+  }
+  socket.emit(attribute)
+  await flush()
+  expect(consent?.command.attribute?.name).toBe('alt')
+  expect(execute).not.toHaveBeenCalled()
+  consent!.approve()
+  await flush()
+  expect(execute).toHaveBeenCalledWith(expect.objectContaining({ operation: 'attribute' }))
+
+  const audit = {
+    type: 'command', id: 'e'.repeat(32), operation: 'audit',
+    change: null, query: null, interaction: null, inspect: null, wait: null, probe: null, attribute: null,
+  }
+  execute.mockClear()
+  socket.emit(audit)
+  await flush()
+  expect(consent).toBeNull()
+  expect(execute).toHaveBeenCalledTimes(1)
 })

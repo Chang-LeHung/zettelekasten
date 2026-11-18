@@ -37,12 +37,41 @@ The application validates the live connection before constructing the Agent;
 missing, stale, or cross-session tokens fail with 409. Without a token there are
 no browser tools, including in normal Web, CLI, scheduled, and channel turns.
 
-`BrowserExtension` exposes four tools:
+`BrowserExtension` exposes eleven tools:
 
 - `get_browser_page(selector=None)`: the connected document's title, URL, bounded
   visible text and form-control descriptions with usable CSS selectors. An
   optional selector reads exactly one subtree. Hidden, password, file-input,
   and script contents are excluded.
+- `get_browser_screenshot()`: one JPEG capture of the visible viewport, with the
+  panel hidden for the shot. It is the only reply that is not JSON text: the
+  transport validates the data URL (prefix, base64, JPEG signature, 4 MB) and the
+  tool writes it below the session's upload directory, answering with a path the
+  model opens through `read`. Capture is viewport-only; a longer page needs a
+  scroll and another capture.
+- `wait_for_browser(query)`: poll one condition (`appear`, `disappear`, or
+  `url_change` by selector or text) for up to eight seconds. A timeout answers
+  `matched: false` with a notice, so a page that did not change informs the model
+  instead of reading as a failed call.
+- `get_browser_console(limit=30)`: the page's recent console errors and warnings
+  with source, line, and a repeat `count`, from a `world: "MAIN"` probe installed
+  under a per-connection key when the panel connects (`probe_found: false` means
+  the page blocked it, so an empty list is "nothing observed", not "no errors").
+- `get_browser_network(limit=30)`: the newest resource entries (name, type,
+  start, duration, transfer/encoded bytes, and a response status when the page
+  exposes it). Headers are never available.
+- `get_browser_metrics()`: largest-contentful-paint, cumulative layout shift,
+  long-task totals, navigation timing, and document size.
+- `audit_browser_accessibility()`: the mechanical checks a static DOM pass can
+  make — image `alt`, named form controls, controls with text, `aria-hidden` over
+  something focusable, positive `tabindex`, skipped heading levels, and a missing
+  `lang` — each with a count and up to three example selectors. Contrast, reading
+  order, and whether a label makes sense are explicitly out of scope.
+- `set_browser_attribute(change)`: set one of `alt`, `title`, `aria-label`,
+  `aria-labelledby`, `aria-hidden`, or `role`, or delete it with an explicit
+  `remove: true` (an omitted value is an error, never a silent delete), after the
+  same review card as any other mutation. Link targets, sources, handlers,
+  styles, and arbitrary attributes are unreachable on purpose.
 - `inspect_browser_element(selector)`: a read-only diagnosis of one element. It
   reports the box and spacing, the computed layout style, the viewport, why the
   element is not rendered, why page tools exclude it (aria-hidden, password,

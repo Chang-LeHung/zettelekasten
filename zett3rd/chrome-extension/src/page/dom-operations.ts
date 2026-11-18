@@ -1,4 +1,7 @@
-import { encodeResult, validateCommand, type BrowserCommand, type BrowserResult } from './browser-protocol'
+import {
+  ALLOWED_ATTRIBUTES, encodeResult, validateCommand,
+  type BrowserAttributeName, type BrowserCommand, type BrowserResult, type BrowserWaitQuery,
+} from './browser-protocol'
 import { PANEL_HOST_ID } from './panel-host'
 
 const TEXT_INPUTS = new Set(['text', 'search', 'email', 'tel', 'url', 'number', 'date', 'datetime-local', 'month', 'week', 'time'])
@@ -597,12 +600,204 @@ function interact(command: BrowserCommand): BrowserResult {
   })
 }
 
+/** How often a wait re-checks the page; short enough to feel immediate, cheap enough to poll. */
+const WAIT_POLL_MS = 100
+/** Text conditions rebuild the page's visible text, so they check less often. */
+const WAIT_TEXT_POLL_MS = 250
+
+function waitConditionMet(query: BrowserWaitQuery, startUrl: string): boolean {
+  if (query.condition === 'url_change') return location.href !== startUrl
+  let present: boolean
+  if (query.selector) {
+    const element = document.querySelector(query.selector)
+    // "Appeared" means painted, not merely parsed: a hidden toast has not appeared.
+    present = element !== null && notDisplayed(element) === null
+  } else {
+    const body = document.body
+    // `innerText` is what the page shows; it is absent only in DOM emulators,
+    // where textContent is the closest available answer.
+    const visible = (body?.innerText ?? body?.textContent ?? '').toLowerCase()
+    present = visible.includes((query.text ?? '').toLowerCase())
+  }
+  return query.condition === 'appear' ? present : !present
+}
+
+/**
+ * Wait until the page reaches one condition, or report the timeout as an answer.
+ *
+ * `startUrl` is the address the panel connected to, so an address change that
+ * happened between the click and this call still counts. A timeout is
+ * `ok: true` with `matched: false`: a page that stays unchanged is information
+ * the model acts on, not a tool failure that invites a blind retry.
+ */
+export async function waitFor(query: BrowserWaitQuery, startUrl: string = location.href): Promise<BrowserResult> {
+  const started = Date.now()
+  const interval = query.text && !query.selector ? WAIT_TEXT_POLL_MS : WAIT_POLL_MS
+  while (Date.now() < started + query.timeout_ms) {
+    if (waitConditionMet(query, startUrl)) {
+      return encodeResult({ matched: true, condition: query.condition, waited_ms: Date.now() - started })
+    }
+    const remaining = query.timeout_ms - (Date.now() - started)
+    await new Promise(resolve => setTimeout(resolve, Math.max(0, Math.min(interval, remaining))))
+  }
+  const matched = waitConditionMet(query, startUrl)
+  return encodeResult({
+    matched,
+    condition: query.condition,
+    waited_ms: Date.now() - started,
+    ...(matched ? {} : {
+      notice: 'The condition did not hold before the timeout. The page may still be loading: read it before retrying.',
+    }),
+  })
+}
+
+/**
+ * Every edit is code owned by the extension; remote values remain plain data.
+ *
+ * `attribute` is here rather than in the update payload because it is a
+ * different promise to the user: one allowlisted accessibility attribute, not a
+ * value a control reads.
+ */
+export function applyAttribute(command: BrowserCommand): BrowserResult {
+  const item = command.attribute!
+  if (!ALLOWED_ATTRIBUTES.includes(item.name)) throw new Error('Unsupported attribute name')
+  // `target()` refuses an excluded element, and the attribute this tool exists to
+  // fix — `aria-hidden` — is exactly such an exclusion, so only rendering is
+  // required here: writing `alt` or an `aria-*` value into an excluded subtree is
+  // the intended repair, and a non-HTML element (an `<svg>` image) has attributes.
+  const element = singleMatch(item.selector)
+  const notRendered = notDisplayed(element)
+  if (notRendered) throw new Error(`Cannot use "${item.selector.slice(0, 120)}": ${notRendered}. Read the page again.`)
+  if (item.remove) element.removeAttribute(item.name)
+  else element.setAttribute(item.name, item.value ?? '')
+  const applied = element.getAttribute(item.name)
+  return encodeResult({
+    selector: item.selector,
+    name: item.name,
+    value: applied,
+    applied: item.remove ? applied === null : applied === item.value,
+    notice: 'The attribute changed. Read the page again to confirm how it now renders.',
+  })
+}
+
+/** Elements a keyboard user can reach, used by the focusability checks. */
+const FOCUSABLE = 'a[href],button,input:not([type="hidden"]),select,textarea,[tabindex]:not([tabindex="-1"]),[contenteditable="true"]'
+const AUDIT_EXAMPLES = 3
+
+/**
+ * One finding with selectors the model can actually use.
+ *
+ * `selectorFor` can outgrow the 500-character limit on deep elements, and a
+ * truncated selector is worse than none: copying it only produces "not a valid
+ * CSS selector". An element whose selector does not fit is counted, not shown.
+ */
+function auditFinding(id: string, problem: string, elements: Element[]) {
+  const examples: string[] = []
+  for (const element of elements) {
+    if (examples.length >= AUDIT_EXAMPLES) break
+    const selector = selectorFor(element)
+    if (selector.length <= 120) examples.push(selector)
+  }
+  return { id, problem, count: elements.length, examples }
+}
+
+/** Resolve an `aria-labelledby` list to the text it actually names, if any. */
+function referencedText(ids: string): string {
+  return ids
+    .split(/\s+/)
+    .map(id => document.getElementById(id)?.textContent ?? '')
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/** Whether an element is reachable by a keyboard user in this document right now. */
+function focusableElements(element: Element): Element[] {
+  const candidates = [
+    ...(element.matches(FOCUSABLE) ? [element] : []),
+    ...Array.from(element.querySelectorAll(FOCUSABLE)),
+  ]
+  return candidates.filter(candidate => !candidate.matches(':disabled') && notDisplayed(candidate) === null)
+}
+
+/**
+ * The accessibility problems a static DOM pass can name.
+ *
+ * It answers what it can see — missing `alt`, unnamed controls, `aria-hidden`
+ * over something focusable, positive tabindex, skipped heading levels, a missing
+ * `lang` — and never claims contrast, reading order, or whether a label makes
+ * sense, which need a person.
+ */
+export function auditAccessibility(): BrowserResult {
+  const images = Array.from(document.querySelectorAll(
+    'img:not([alt]),input[type="image"]:not([alt]),area[href]:not([alt])',
+  ))
+  const unnamed = Array.from(document.querySelectorAll(
+    'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]),textarea,select',
+  )).filter(element => {
+    const control = element as HTMLInputElement
+    const labelledby = element.getAttribute('aria-labelledby')
+    // A dangling `aria-labelledby` names nothing, which is exactly the re-render
+    // bug this check should catch.
+    const referenced = labelledby
+      ? referencedText(labelledby)
+      : ''
+    const label = element.getAttribute('aria-label') || referenced
+      || element.getAttribute('title') || control.placeholder || control.labels?.[0]?.textContent || ''
+    return !label.trim()
+  })
+  const unlabeledControls = Array.from(document.querySelectorAll('button,a[href]')).filter(element => {
+    const text = (element.textContent ?? '').replace(/\s+/g, ' ').trim()
+    const named = element.getAttribute('aria-label') || element.getAttribute('title')
+      || (element.getAttribute('aria-labelledby') ? referencedText(element.getAttribute('aria-labelledby')!) : '')
+      || element.querySelector('img[alt]:not([alt=""]), svg[aria-label], [aria-label]')
+      || (element.querySelector('svg title')?.textContent ?? '').trim()
+    return !text && !named
+  })
+  const hiddenFocusable = Array.from(document.querySelectorAll('[aria-hidden="true"]'))
+    // A closed menu is `aria-hidden` *and* unrendered; only a visible subtree
+    // really takes focus away from a keyboard user.
+    .filter(element => notDisplayed(element) === null && focusableElements(element).length > 0)
+  const positiveTabindex = Array.from(document.querySelectorAll('[tabindex]'))
+    .filter(element => Number(element.getAttribute('tabindex')) > 0)
+
+  const headings = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6'))
+  const skipped: Element[] = []
+  let previous = 0
+  for (const heading of headings) {
+    const level = Number(heading.tagName.slice(1))
+    if (previous > 0 && level > previous + 1) skipped.push(heading)
+    previous = level
+  }
+
+  const lang = document.documentElement.getAttribute('lang') ?? document.documentElement.getAttribute('xml:lang')
+  const checks = [
+    auditFinding('image_without_alt', 'Image, image input, or image map area has no alt text', images),
+    auditFinding('control_without_name', 'Form control has no label, name, or placeholder', unnamed),
+    auditFinding('control_without_text', 'Button or link has no text and no accessible name', unlabeledControls),
+    auditFinding('aria_hidden_focusable', 'aria-hidden hides something a keyboard user can focus', hiddenFocusable),
+    auditFinding('positive_tabindex', 'Positive tabindex overrides the natural focus order', positiveTabindex),
+    auditFinding('heading_level_skipped', 'Heading level skips a level', skipped),
+    ...(lang && lang.trim() ? [] : [{
+      id: 'missing_lang', problem: 'The document has no lang attribute', count: 1, examples: ['html'],
+    }]),
+  ]
+  return encodeResult({
+    url: location.href.slice(0, 2000),
+    title: document.title.slice(0, 300),
+    checks,
+    notice: 'A static DOM check only: contrast, reading order, and whether a label makes sense are not judged.',
+  })
+}
+
 /** Every edit is code owned by the extension; remote values remain plain data. */
 export function applyDOMCommand(command: BrowserCommand): BrowserResult {
   validateCommand(command)
   if (command.operation === 'snapshot') return snapshot(command.query?.selector, command.query?.text)
   if (command.operation === 'inspect') return inspect(command.inspect!)
   if (command.operation === 'interact') return interact(command)
+  if (command.operation === 'audit') return auditAccessibility()
+  if (command.operation === 'attribute') return applyAttribute(command)
   // Explicit, not an else: a new operation must never fall through into an edit.
   if (command.operation !== 'update') throw new Error('Unknown browser operation')
   const patch = command.change!
