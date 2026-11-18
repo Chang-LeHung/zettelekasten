@@ -600,10 +600,8 @@ function interact(command: BrowserCommand): BrowserResult {
   })
 }
 
-/** How often a wait re-checks the page; short enough to feel immediate, cheap enough to poll. */
+/** How often a selector or address condition is re-checked while waiting. */
 const WAIT_POLL_MS = 100
-/** Text conditions rebuild the page's visible text, so they check less often. */
-const WAIT_TEXT_POLL_MS = 250
 
 function waitConditionMet(query: BrowserWaitQuery, startUrl: string): boolean {
   if (query.condition === 'url_change') return location.href !== startUrl
@@ -622,6 +620,57 @@ function waitConditionMet(query: BrowserWaitQuery, startUrl: string): boolean {
   return query.condition === 'appear' ? present : !present
 }
 
+/** Poll a cheap predicate until the deadline; resolves whether it holds at the end. */
+async function pollUntil(matches: () => boolean, deadline: number): Promise<boolean> {
+  while (Date.now() < deadline) {
+    if (matches()) return true
+    const remaining = deadline - Date.now()
+    await new Promise(resolve => setTimeout(resolve, Math.max(0, Math.min(WAIT_POLL_MS, remaining))))
+  }
+  return matches()
+}
+
+/**
+ * Resolve when a text condition holds, driven by DOM mutations.
+ *
+ * A text condition rebuilds the whole visible text, which forces a layout flush.
+ * Repeating that on a timer for eight seconds is thirty-odd full rebuilds on the
+ * page's main thread while the user watches; a mutation observer checks once per
+ * frame and only when the page changed, and the caller's deadline stays the
+ * outer bound.
+ */
+function waitForText(matches: () => boolean, deadline: number): Promise<boolean> {
+  if (matches()) return Promise.resolve(true)
+  return new Promise<boolean>(resolve => {
+    let observer: MutationObserver | undefined
+    let settled = false
+    let scheduled = false
+    const finish = (matched: boolean): void => {
+      if (settled) return
+      settled = true
+      observer?.disconnect()
+      clearTimeout(timer)
+      resolve(matched)
+    }
+    const check = (): void => {
+      scheduled = false
+      if (settled) return
+      if (matches()) finish(true)
+      else if (Date.now() >= deadline) finish(false)
+    }
+    const schedule = (): void => {
+      if (scheduled || settled) return
+      scheduled = true
+      // jsdom has no compositor; a short timer is the honest stand-in.
+      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(check)
+      else setTimeout(check, 16)
+    }
+    observer = new MutationObserver(schedule)
+    observer.observe(document.body!, { childList: true, subtree: true, characterData: true })
+    const timer = setTimeout(() => finish(matches()), Math.max(0, deadline - Date.now()))
+  })
+}
+
 /**
  * Wait until the page reaches one condition, or report the timeout as an answer.
  *
@@ -632,15 +681,11 @@ function waitConditionMet(query: BrowserWaitQuery, startUrl: string): boolean {
  */
 export async function waitFor(query: BrowserWaitQuery, startUrl: string = location.href): Promise<BrowserResult> {
   const started = Date.now()
-  const interval = query.text && !query.selector ? WAIT_TEXT_POLL_MS : WAIT_POLL_MS
-  while (Date.now() < started + query.timeout_ms) {
-    if (waitConditionMet(query, startUrl)) {
-      return encodeResult({ matched: true, condition: query.condition, waited_ms: Date.now() - started })
-    }
-    const remaining = query.timeout_ms - (Date.now() - started)
-    await new Promise(resolve => setTimeout(resolve, Math.max(0, Math.min(interval, remaining))))
-  }
-  const matched = waitConditionMet(query, startUrl)
+  const deadline = started + query.timeout_ms
+  const matches = (): boolean => waitConditionMet(query, startUrl)
+  const byMutation = Boolean(query.text) && !query.selector
+    && typeof MutationObserver === 'function' && document.body !== null
+  const matched = byMutation ? await waitForText(matches, deadline) : await pollUntil(matches, deadline)
   return encodeResult({
     matched,
     condition: query.condition,
