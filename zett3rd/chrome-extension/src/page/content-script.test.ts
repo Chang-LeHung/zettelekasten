@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { clearOutline } from './outline'
 
 let listener: (message: unknown, sender: unknown, respond: (result: unknown) => void) => unknown
 const sender = { id: 'extension', url: 'chrome-extension://extension/sidepanel.html' }
@@ -26,6 +27,7 @@ beforeEach(async () => {
 afterEach(() => {
   // The panel host lives on documentElement, which beforeEach does not reset.
   document.querySelectorAll('#zettelekasten-panel-host').forEach(node => node.remove())
+  clearOutline()
   vi.unstubAllGlobals()
   delete (globalThis as { __zettDOMBridgeInstalled?: boolean }).__zettDOMBridgeInstalled
 })
@@ -61,6 +63,52 @@ it('rejects arbitrary source even when a command reaches the content script', ()
   expect(send({ type: 'command', command: { ...command, script: 'alert(1)' }, url: location.href, expiresAt: Date.now() + 10000 }))
     .toMatchObject({ ok: false })
   expect(document.querySelector('h1')!.textContent).toBe('Old title')
+})
+
+it('outlines the element a review card is about, and clears it again', () => {
+  expect(send({ type: 'toggle-panel', tabId: 7 }, background)).toMatchObject({ open: true })
+  expect(send({ type: 'connect' })).toMatchObject({ ok: true })
+  expect(send({ type: 'highlight', selector: '#title' })).toEqual({ ok: true, outlined: true })
+  const host = document.getElementById('zettelekasten-outline-host')
+  expect(host).not.toBeNull()
+  expect(host!.style.getPropertyValue('pointer-events')).toBe('none')
+  expect(send({ type: 'clear-highlight' })).toEqual({ ok: true, outlined: false })
+  expect(document.getElementById('zettelekasten-outline-host')).toBeNull()
+
+  // Nothing is outlined where the card's action would refuse or should stay away:
+  // a missing element, an ambiguous selector, and a password field.
+  document.body.innerHTML = '<h1 id="title">Title</h1><button class="buy">A</button><button class="buy">B</button>'
+    + '<input id="pw" type="password">'
+  for (const selector of ['#missing', '.buy', '#pw', '###']) {
+    expect(send({ type: 'highlight', selector })).toEqual({ ok: true, outlined: false })
+    expect(document.getElementById('zettelekasten-outline-host')).toBeNull()
+  }
+})
+
+it('clears the outline when the connection ends or a new one replaces it', () => {
+  expect(send({ type: 'toggle-panel', tabId: 7 }, background)).toMatchObject({ open: true })
+  expect(send({ type: 'connect' })).toMatchObject({ ok: true })
+  expect(send({ type: 'highlight', selector: '#title' })).toMatchObject({ outlined: true })
+  expect(send({ type: 'disconnect' })).toMatchObject({ ok: true })
+  expect(document.getElementById('zettelekasten-outline-host')).toBeNull()
+
+  expect(send({ type: 'connect' })).toMatchObject({ ok: true })
+  expect(send({ type: 'highlight', selector: '#title' })).toMatchObject({ outlined: true })
+  // A reconnecting panel replaces the binding; the old client cannot clear, so
+  // the connect itself must.
+  expect(send({ type: 'connect' })).toMatchObject({ ok: true })
+  expect(document.getElementById('zettelekasten-outline-host')).toBeNull()
+})
+
+it('clears the outline before a capture, so the screenshot shows the page', async () => {
+  expect(send({ type: 'toggle-panel', tabId: 7 }, background)).toMatchObject({ open: true })
+  expect(send({ type: 'connect' })).toMatchObject({ ok: true })
+  expect(send({ type: 'highlight', selector: '#title' })).toMatchObject({ outlined: true })
+  let hidden: unknown
+  listener({ channel: 'zett-dom', nonce, type: 'hide-panel' }, sender, result => { hidden = result })
+  expect(document.getElementById('zettelekasten-outline-host')).toBeNull()
+  await new Promise(resolve => setTimeout(resolve, 120))
+  expect(hidden).toEqual({ ok: true })
 })
 
 it('hides the panel for one capture and restores it afterwards', async () => {

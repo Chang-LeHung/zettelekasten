@@ -3,6 +3,7 @@ import {
   type BrowserAttributeName, type BrowserCommand, type BrowserResult, type BrowserWaitQuery,
 } from './browser-protocol'
 import { PANEL_HOST_ID } from './panel-host'
+import { showOutline } from './outline'
 
 const TEXT_INPUTS = new Set(['text', 'search', 'email', 'tel', 'url', 'number', 'date', 'datetime-local', 'month', 'week', 'time'])
 const TEXT_ELEMENTS = new Set(['P', 'SPAN', 'DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'TD', 'TH', 'PRE', 'CODE', 'LABEL', 'CAPTION'])
@@ -473,6 +474,9 @@ function inspect(query: { selector: string }): BrowserResult {
   }
   const style: Record<string, string> = {}
   for (const property of INSPECT_STYLES) style[property] = computed.getPropertyValue(property).slice(0, 120)
+  // Show the user what the agent is looking at; it fades on its own. A target the
+  // panel covers entirely has nothing to show, so the panel's box is passed in.
+  showOutline(element, 2500, () => document.getElementById(PANEL_HOST_ID)?.getBoundingClientRect() ?? null)
   return encodeResult({
     selector: selectorFor(element).slice(0, 300),
     title: document.title.slice(0, 500),
@@ -512,7 +516,7 @@ function inspect(query: { selector: string }): BrowserResult {
     style,
     ancestors,
     findings,
-    notice: 'Read-only. `hit` is what a user\'s pointer would reach; interact_with_browser dispatches on the element itself, '
+    notice: 'Read-only: no page content changed. `hit` is what a user\'s pointer would reach; interact_with_browser dispatches on the element itself, '
       + 'so reachability neither predicts nor explains its result. The page may change; inspect again after acting.',
   })
 }
@@ -908,6 +912,25 @@ export function applyDOMCommand(command: BrowserCommand): BrowserResult {
     selector: patch.selector, action: patch.action, applied: actual === patch.value,
     value: typeof actual === 'string' ? actual.slice(0, 10000) : actual,
   })
+}
+
+/**
+ * The element a review card may outline, or null when drawing it would point at
+ * something the card's action would refuse or at a field worth leaving alone.
+ *
+ * One element, rendered: an ambiguous selector is reported on the card as a
+ * refusal, an unrendered one has nothing to see, and a password, hidden, or file
+ * input must not be highlighted for a model's benefit.
+ */
+export function highlightElement(selector: string): Element | null {
+  try {
+    const element = singleMatch(selector)
+    if (notDisplayed(element)) return null
+    if (element.matches('input[type="password"],input[type="hidden"],input[type="file"]')) return null
+    return element
+  } catch {
+    return null
+  }
 }
 
 /** What the user is about to act on, in the page's own words, for the consent card. */

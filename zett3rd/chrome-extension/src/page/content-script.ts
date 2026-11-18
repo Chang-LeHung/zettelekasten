@@ -1,5 +1,6 @@
-import { applyDOMCommand, describeSelector, waitFor } from './dom-operations'
+import { applyDOMCommand, describeSelector, highlightElement, waitFor } from './dom-operations'
 import { COMMAND_EXPIRY_ALLOWANCE_MS, allowedPage, sameDocumentUrl, validateCommand } from './browser-protocol'
+import { clearOutline, showOutline } from './outline'
 import { PANEL_HOST_ID } from './panel-host'
 
 /** Installed on demand only in the connected top document. No page-world
@@ -17,6 +18,8 @@ if (!scope.__zettDOMBridgeInstalled) {
   let lastUrl = location.href
   let pageTimer: ReturnType<typeof setInterval> | undefined
   const MIN_PANEL_WIDTH = 300
+  /** How long a review card's outline may live if its clear never arrives. */
+  const HIGHLIGHT_TTL_MS = 100_000
   const MIN_PANEL_HEIGHT = 360
   const CORNER_SIZE = 16
   /** Wide enough for the composer's `•••` menu and the context pie beside it. */
@@ -28,6 +31,7 @@ if (!scope.__zettDOMBridgeInstalled) {
   function removePanel(): void {
     detachFrameMessages?.()
     detachFrameMessages = undefined
+    clearOutline()
     panel?.remove()
     panel = undefined
     panelNonce = undefined
@@ -208,6 +212,9 @@ if (!scope.__zettDOMBridgeInstalled) {
     try {
       if (message.type === 'connect') {
         if (!allowedPage(location.href)) throw new Error('Page cannot be connected')
+        // A new connection replaces the old one, whose client may be gone and
+        // whose `disconnect` can no longer be authenticated: clear its chrome here.
+        clearOutline()
         binding = { nonce: message.nonce, url: location.href, seen: new Set() }
         respond({ ok: true, url: location.href })
         return
@@ -215,6 +222,7 @@ if (!scope.__zettDOMBridgeInstalled) {
       if (!binding || message.nonce !== binding.nonce) throw new Error('Page connection expired')
       if (message.type === 'disconnect') {
         binding = undefined
+        clearOutline()
         respond({ ok: true })
         return
       }
@@ -234,6 +242,21 @@ if (!scope.__zettDOMBridgeInstalled) {
         respond({ ok: true, target: describeSelector(String(message.selector ?? '').slice(0, 500)) })
         return
       }
+      if (message.type === 'highlight' || message.type === 'clear-highlight') {
+        // A review card names its target in words; this shows the same element,
+        // resolved with the predicate the card's action will apply.
+        clearOutline()
+        let outlined = false
+        if (message.type === 'highlight') {
+          const element = highlightElement(String(message.selector ?? '').slice(0, 500))
+          if (element) {
+            showOutline(element, HIGHLIGHT_TTL_MS, () => panel?.getBoundingClientRect() ?? null)
+            outlined = true
+          }
+        }
+        respond({ ok: true, outlined })
+        return
+      }
       if (message.type === 'show-panel') {
         if (!panel) throw new Error('No panel is mounted on this page')
         panel.style.visibility = ''
@@ -242,8 +265,10 @@ if (!scope.__zettDOMBridgeInstalled) {
       }
       if (message.type === 'hide-panel') {
         // A capture must show the page, not the panel that is talking about it,
-        // and a style change alone does not guarantee a painted frame.
+        // and not our own outline either; a style change alone does not guarantee
+        // a painted frame.
         if (!panel) throw new Error('No panel is mounted on this page')
+        clearOutline()
         panel.style.visibility = 'hidden'
         afterNextPaint().then(() => respond({ ok: true }))
         return true

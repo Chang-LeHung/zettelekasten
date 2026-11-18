@@ -96,8 +96,10 @@ class BrowserExtension(AgentExtension):
                     or from a tool error.
 
             Guidelines:
-                - Read-only. It changes nothing and needs no approval, so inspect freely before
-                  editing or clicking instead of guessing.
+                - Read-only in the sense that matters: it changes no page content and needs no
+                  approval, so inspect freely before editing or clicking instead of guessing.
+                  It does briefly insert one outline element so the user can see what you are
+                  looking at; page scripts can observe that node and the page may hide it.
                 - Use it when an element is missing, invisible, clipped, covered, disabled, or
                   when update_browser_dom or interact_with_browser refused a selector.
                 - The result reports the box and spacing, the computed layout style, the

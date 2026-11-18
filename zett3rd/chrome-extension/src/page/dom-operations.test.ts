@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { applyDOMCommand, waitFor } from './dom-operations'
+import { applyDOMCommand, highlightElement, waitFor } from './dom-operations'
+import { clearOutline, outlinedElement } from './outline'
 import type { BrowserCommand, BrowserDOMPatch, BrowserWaitQuery } from './browser-protocol'
 
 function edit(change: Partial<BrowserDOMPatch> = {}) {
@@ -248,7 +249,11 @@ function place(element: Element, rect: Partial<DOMRect>) {
 }
 
 // A hit-test stub must not leak into the tests that run after it.
-afterEach(() => { delete (document as unknown as { elementFromPoint?: unknown }).elementFromPoint })
+afterEach(() => {
+  delete (document as unknown as { elementFromPoint?: unknown }).elementFromPoint
+  // An inspection outlines its element; the next test must start clean.
+  clearOutline()
+})
 
 it('inspects one element without changing the page', () => {
   document.body.innerHTML = '<button id="buy" class="cta" aria-label="Buy now">Buy</button>'
@@ -266,6 +271,8 @@ it('inspects one element without changing the page', () => {
   })
   expect(receipt.style).toHaveProperty('display')
   expect(receipt.viewport).toMatchObject({ width: expect.any(Number), scroll_x: 0 })
+  // The page shows the user what was inspected; that outline lives outside the body.
+  expect(outlinedElement()).toBe(document.querySelector('#buy'))
 })
 
 it('diagnoses an element an ancestor hides instead of refusing to inspect it', () => {
@@ -430,6 +437,16 @@ it('names the candidates for an ambiguous inspection selector', () => {
     expect.unreachable()
   } catch (error) {
     expect((error as Error).message).toContain('matches 2 elements')
+  }
+})
+
+it('outlines only an element a card could act on', () => {
+  document.body.innerHTML = '<button id="save">Save</button><button class="buy">A</button><button class="buy">B</button>'
+    + '<input id="pw" type="password"><div id="gone" style="display:none"><button id="inner">x</button></div>'
+  expect(highlightElement('#save')).toBe(document.querySelector('#save'))
+  // Ambiguous, missing, invalid, unrendered, and sensitive targets draw nothing.
+  for (const selector of ['.buy', '#missing', '###', '#gone', '#pw']) {
+    expect(highlightElement(selector)).toBeNull()
   }
 })
 
