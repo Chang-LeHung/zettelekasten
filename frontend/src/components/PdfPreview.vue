@@ -10,7 +10,7 @@ import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { assetClient } from '../api/client'
 import type { SessionAsset } from '../api/types'
 import PdfPage from './PdfPage.vue'
-import PdfCompareDialog from './PdfCompareDialog.vue'
+import PdfTypesetDiff from './PdfTypesetDiff.vue'
 import { t } from '../app/i18n'
 import { pdfDocumentOptions } from '../utils/pdfDocument'
 
@@ -574,7 +574,6 @@ defineExpose({ refit: refitInlinePages })
         <button v-if="artifact" class="compare-toggle" type="button" :disabled="loading" aria-label="Compare with saved version" title="Compare with saved version" @click="compareOpen = true">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16M17 4v16M3 8h8M13 16h8" /></svg>
         </button>
-        <PdfCompareDialog v-if="artifact" :open="compareOpen" :artifact-id="asset.id" :title="t('Compare with saved version')" @close="compareOpen = false" />
         <button class="presentation-toggle" type="button" :disabled="!documentProxy || loading" aria-label="Start PDF presentation" title="Present PDF" @click="startPresentation">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M12 17v4m-4 0h8M10 8l5 2.5-5 2.5Z" /></svg>
         </button>
@@ -629,6 +628,10 @@ defineExpose({ refit: refitInlinePages })
         <button type="button" @click="loadDocument">Try again</button>
       </div>
     </div>
+    <div v-if="compareOpen && artifact" class="pdf-compare-inline">
+      <button class="pdf-compare-back" type="button" @click="compareOpen = false">← {{ t('Preview') }}</button>
+      <PdfTypesetDiff :artifact-id="asset.id" @close="compareOpen = false" />
+    </div>
   </div>
   </div>
   </Teleport>
@@ -647,7 +650,10 @@ defineExpose({ refit: refitInlinePages })
 </template>
 
 <style scoped>
-.pdf-preview { display: grid; grid-template: auto minmax(0, 1fr) / minmax(0, 1fr); width: 100%; height: 100%; min-height: 0; color: #3e4741; }
+.pdf-preview { position: relative; display: grid; grid-template: auto minmax(0, 1fr) / minmax(0, 1fr); width: 100%; height: 100%; min-height: 0; color: #3e4741; }
+.pdf-compare-inline { position: absolute; inset: 0; z-index: 8; display: grid; grid-template-rows: auto minmax(0, 1fr); background: #f4f6f4; animation: pdf-appear 200ms cubic-bezier(.2,.8,.2,1); }
+.pdf-compare-back { justify-self: start; margin: .5rem .75rem 0; padding: .3rem .7rem; border: 0; border-radius: .6rem; color: #3d5145; background: #e8eeea; cursor: pointer; font-size: .72rem; font-weight: 640; }
+.pdf-compare-back:hover { background: #dce6df; }
 .pdf-preview.outline-open { grid-template-columns: min(var(--outline-width), 60%) 6px minmax(0, 1fr); }
 .pdf-outline-resizer { cursor: col-resize; touch-action: none; background: #eef1ef; }
 .pdf-outline-resizer:hover, .pdf-outline-resizer:focus-visible, .resizing-outline .pdf-outline-resizer { background: #9cb3a4; outline: none; }

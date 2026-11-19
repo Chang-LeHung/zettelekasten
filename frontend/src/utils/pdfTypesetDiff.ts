@@ -30,6 +30,8 @@ export interface PageChanges {
   rects: DiffRect[]
   /** Changed words on this page. */
   words: number
+  /** The changed words in reading order, for a text summary next to the page. */
+  text: string
 }
 
 export interface TypesetChanges {
@@ -192,7 +194,12 @@ function pageChanges(words: readonly Word[], indexes: ReadonlySet<number>): Page
   }
   return [...byPage.entries()]
     .sort(([p], [q]) => p - q)
-    .map(([page, changed]) => ({ page, words: changed.length, rects: mergeRects(changed) }))
+    .map(([page, changed]) => ({
+      page,
+      words: changed.length,
+      rects: mergeRects(changed),
+      text: changed.map((word) => word.text).join(' '),
+    }))
 }
 
 /** Compare two documents given their per-page text runs. */

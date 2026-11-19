@@ -161,3 +161,4 @@
 .ai-badge { display: inline-flex; align-items: center; gap: .35rem; padding: .35rem .55rem; border-radius: 2rem; color: var(--accent-dark); background: var(--accent-soft); font-size: .65rem; font-weight: 650; }
 .ai-badge svg { width: .75rem; height: .75rem; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.05rem; margin-top: 1.35rem; }
+.artifact-typeset { height: 70vh; min-height: 26rem; border: 1px solid #e1e5e2; border-radius: .8rem; overflow: hidden; }

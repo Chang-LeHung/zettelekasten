@@ -10,6 +10,15 @@ import AgentExecution from '../../components/AgentExecution.vue'
 import CacheHitRate from '../../components/CacheHitRate.vue'
 
 const MarkdownContent = defineAsyncComponent(() => import('../../components/MarkdownContent.vue'))
+
+/** What Zett produces, each with the sentence that starts it; the user finishes the sentence. */
+const STARTERS = [
+  { kind: 'card', icon: '◇', title: 'Knowledge card', hint: 'Capture one idea, task or reference.', prompt: 'Make a card about: ' },
+  { kind: 'article', icon: '¶', title: 'Article', hint: 'Turn notes or sources into a structured piece.', prompt: 'Write an article about: ' },
+  { kind: 'slides', icon: '▤', title: 'Slides', hint: 'A concise deck you can present.', prompt: 'Make a slide deck about: ' },
+  { kind: 'latex', icon: '∑', title: 'LaTeX paper', hint: 'A typeset PDF you can compare after every edit.', prompt: 'Write a LaTeX paper about: ' },
+  { kind: 'image', icon: '▧', title: 'Image', hint: 'A visual from a short brief.', prompt: 'Create an image of: ' },
+] as const
 </script>
 
 <template>
@@ -20,11 +29,14 @@ const MarkdownContent = defineAsyncComponent(() => import('../../components/Mark
         <strong>{{ workspaceRestoring ? 'Restoring conversation' : 'Switching conversation' }}</strong>
         <small>Loading messages and workspace…</small>
       </div>
-      <div v-else-if="!conversationStarted" key="welcome" class="agent-welcome">
+      <div v-else-if="!conversationStarted" key="welcome" class="agent-welcome starter">
         <span class="feature-icon"><svg><use href="#icon-spark" /></svg></span>
-        <h2>{{ $t('What should we remember?') }}</h2>
-        <p>{{ $t('Share a rough thought, excerpt, or question. You can refine the result through conversation before saving it.') }}</p>
-        <div class="prompt-hints"><button type="button" @click="raw = 'I have an idea: '">{{ $t('Capture an idea') }}</button><button type="button" @click="raw = 'Key point from what I just read: '">{{ $t('Summarize a note') }}</button></div>
+        <h2>{{ $t('What should we make?') }}</h2>
+        <p>{{ $t('Describe what you want. Zett turns it into an artifact you can read, edit and keep.') }}</p>
+        <div class="starter-grid">
+          <button v-for="card in STARTERS" :key="card.kind" type="button" class="starter-card" :class="card.kind" @click="raw = card.prompt"><i aria-hidden="true">{{ card.icon }}</i><strong>{{ $t(card.title) }}</strong><span>{{ $t(card.hint) }}</span></button>
+        </div>
+        <p class="starter-note">{{ $t('Pick a starting point, or just type. You review every change before it is saved.') }}</p>
       </div>
       <div v-else ref="agentTurnStack" :key="conversationId || 'conversation'" class="turn-stack">
       <article
