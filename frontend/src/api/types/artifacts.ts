@@ -90,3 +90,14 @@ export interface AgentArtifact {
   created_at: string
   updated_at: string
 }
+
+/** What `GET /artifacts/{id}/pdf-diff` returns: where each side of a typeset comparison lives. */
+export interface PdfDiffSources {
+  /** The compiled PDF as it was when the user last saved; null before the first save. */
+  base_url: string | null
+  base_saved_at: string | null
+  /** The project's current compiled PDF; null while it is missing. */
+  target_url: string | null
+  /** A source file is newer than the compiled PDF, so the PDF may not show the latest edit. */
+  stale: boolean
+}

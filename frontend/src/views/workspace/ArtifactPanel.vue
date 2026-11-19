@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { defineAsyncComponent } from 'vue'
+import { defineAsyncComponent, ref } from 'vue'
 import { setConversationCardStatus } from '../../app/artifacts/actions'
+import PdfCompareDialog from '../../components/PdfCompareDialog.vue'
 import { artifactContent, artifactDiff, artifactPreview, artifactPreviewAsset, selectedArtifact, selectedArtifactDiff, selectedArtifactDirty, selectedImageUrl, selectedSuggestions } from '../../app/artifacts/state'
 import { t } from '../../app/i18n'
 import { cardStatusUpdatingIds, cardTypes } from '../../app/library/state'
@@ -11,6 +12,7 @@ import { artifactLifecycle, lifecycleClass, lifecycleHint, lifecycleLabel } from
 import { artifactTone } from '../../utils/artifactTone'
 import { cardStatusType } from '../../utils/cardStatus'
 
+const compareOpen = ref(false)
 const MarkdownContent = defineAsyncComponent(() => import('../../components/MarkdownContent.vue'))
 const PdfPreview = defineAsyncComponent(() => import('../../components/PdfPreview.vue'))
 const SlidesPreview = defineAsyncComponent(() => import('../../components/SlidesPreview.vue'))

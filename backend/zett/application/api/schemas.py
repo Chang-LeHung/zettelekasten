@@ -27,6 +27,15 @@ from zett.schemas import (
 from zett.schemas.providers import web_search_error
 
 
+class PdfDiffOut(BaseModel):
+    """Saved and current compiled PDF of one LaTeX artifact, for a before/after view."""
+
+    base_url: str | None
+    base_saved_at: datetime | None
+    target_url: str | None
+    stale: bool
+
+
 class DeleteResponse(BaseModel):
     """Result of an idempotent HTTP deletion."""
 

@@ -205,6 +205,16 @@ def latex_project_key(session_id: str, project_name: str) -> ObjectKey:
     return join_object_key("artifacts", session_id, project_name)
 
 
+def latex_snapshot_key(session_id: str, artifact_id: str) -> ObjectKey:
+    """Return the key of the compiled PDF a LaTeX artifact had when the user last saved.
+
+    It lives below the session's asset directory, never inside the git-checked
+    project, so it cannot make the project dirty, and it is removed with the
+    session. Example: ``assets/sessions/session-1/latex-snapshots/artifact-1.pdf``.
+    """
+    return join_object_key("assets", "sessions", session_id, "latex-snapshots", f"{artifact_id}.pdf")
+
+
 def object_url(key: str | ObjectKey) -> str:
     """Return the unified public URL for one object key.
 

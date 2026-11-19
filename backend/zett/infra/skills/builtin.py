@@ -91,6 +91,7 @@ Both markers:
 - A LaTeX PDF artifact stores only a reference: the server-assigned 'project_path' and the compiled 'pdf_name'.
 - Create it with 'create_artifact(content={"artifact_type": "latex_pdf", "pdf_name": "paper.pdf"})'; the returned 'project_path' is an object key below the storage root and is authoritative.
 - Write the sources into that directory, compile the returned 'pdf_name' there, and keep the project committed, because saving the artifact is refused while the project is not a clean git repository.
+- The user's save keeps a snapshot of the compiled PDF for the before/after view, so always recompile the PDF before finishing an edit.
 - The preview reads the compiled PDF bytes from 'project_path/pdf_name'; a missing or invalid PDF leaves the artifact metadata intact but previews nothing.
 
 ## Saving
