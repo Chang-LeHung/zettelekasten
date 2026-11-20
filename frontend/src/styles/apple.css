@@ -73,3 +73,46 @@ body { background: var(--bg); }
 .prompt-hints button { border: 0; border-radius: 999px; background: var(--fill); }
 .prompt-hints button:hover { background: var(--fill-hover); }
 .message-image-drafts img, .message-image-preview { border-radius: var(--radius-s); }
+
+/* ---- Artifacts ------------------------------------------------------------------------- */
+
+.artifact-collection-header { border-bottom: 1px solid var(--hairline); background: transparent; }
+.artifact-collection-header strong { color: #1d1d1f; font-size: .85rem; font-weight: 650; letter-spacing: -.01em; }
+.artifact-save-all { min-height: 1.9rem; padding: 0 .85rem; border: 0; border-radius: 999px; color: #fff; background: var(--accent); font-weight: 600; box-shadow: var(--elev-1); transition: background .14s ease, transform .1s ease; }
+.artifact-save-all:hover:not(:disabled) { background: var(--accent-dark); }
+.artifact-save-all:disabled { color: #8e8e93; background: var(--fill); box-shadow: none; opacity: 1; }
+.artifact-refresh { width: 1.9rem; height: 1.9rem; border: 0; border-radius: 50%; color: #3c3c43; background: var(--fill); }
+.artifact-refresh:hover:not(:disabled) { color: #111; background: var(--fill-hover); }
+
+/* The list is a sidebar of its own: grey ground, white rows that lift when selected. */
+.artifact-list { background: rgba(120, 120, 128, .05); border-right: 1px solid var(--hairline); }
+.artifact-list-item { border: 0; border-radius: var(--radius-m); background: var(--surface-solid); box-shadow: var(--elev-1), 0 0 0 .5px var(--hairline); }
+.artifact-list-item:hover { transform: none; box-shadow: var(--elev-2), 0 0 0 .5px var(--hairline); }
+.artifact-list-item.active { border: 0; background: var(--surface-solid); box-shadow: var(--elev-2), 0 0 0 1.5px color-mix(in srgb, var(--artifact-accent) 55%, transparent); }
+.artifact-list-item:hover:not(.active) { background: var(--surface-solid); }
+.artifact-list-item.lifecycle-new, .artifact-list-item.lifecycle-changed { border: 0; box-shadow: var(--elev-1), 0 0 0 .5px var(--hairline), inset 2.5px 0 0 var(--life-ink); }
+.artifact-list-item.lifecycle-new.active, .artifact-list-item.lifecycle-changed.active { box-shadow: var(--elev-2), 0 0 0 1.5px color-mix(in srgb, var(--artifact-accent) 55%, transparent), inset 2.5px 0 0 var(--life-ink); }
+.artifact-list-actions { border: 0; border-radius: .7rem; background: rgba(255, 255, 255, .92); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); box-shadow: var(--elev-2), 0 0 0 .5px var(--hairline); }
+.artifact-kind-icon { border-radius: .6rem; }
+.artifact-splitter { background: transparent; border-inline: 0; }
+.artifact-splitter span { background: rgba(60, 60, 67, .22); }
+.artifact-splitter:hover span, .artifact-splitter:focus-visible span { background: var(--accent); }
+
+/* The open artifact: a plain page with a quiet header, not a coloured banner. */
+.artifact-editor-header { border-bottom: 1px solid var(--hairline); }
+.artifact-state strong { font-size: .85rem; font-weight: 650; letter-spacing: -.01em; text-transform: none; }
+.artifact-state strong::first-letter { text-transform: uppercase; }
+.artifact-state > i { box-shadow: 0 0 0 .22rem var(--life-soft, #edf4ef); }
+#app .artifact-editor .artifact-editor-accent { height: 0; opacity: 0; }
+.artifact-compare { border: 0; border-radius: 999px; color: var(--accent-dark); background: var(--accent-soft); box-shadow: none; }
+.artifact-compare:hover { transform: none; box-shadow: none; background: color-mix(in srgb, var(--accent-soft) 70%, var(--accent)); }
+
+/* Editing fields. */
+.card-type-options { padding: .16rem; border: 0; border-radius: var(--radius-s); background: var(--fill); }
+.card-type-options button { border-radius: calc(var(--radius-s) - .12rem); color: #3c3c43; }
+.card-type-options button:hover { color: #111; background: transparent; }
+.card-type-options button.active { color: #111; background: var(--surface-solid); box-shadow: var(--elev-1), 0 0 0 .5px var(--hairline); }
+.card-content-control textarea { border: 0; border-radius: var(--radius-m); background: var(--fill); box-shadow: none; transition: background .14s ease, box-shadow .14s ease; }
+.card-content-control textarea:focus { background: var(--surface-solid); box-shadow: 0 0 0 3px rgba(71, 105, 87, .22), 0 0 0 .5px var(--hairline); }
+.card-title-control textarea { border-bottom-color: var(--hairline); }
+.card-title-control textarea:focus { border-bottom-color: var(--accent); }
