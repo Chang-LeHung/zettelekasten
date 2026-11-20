@@ -6,7 +6,9 @@ import { artifactContent, artifactDiff, artifactPreview, artifactPreviewAsset, a
 import { t } from '../../app/i18n'
 import { cardStatusUpdatingIds, cardTypes } from '../../app/library/state'
 import MarkdownDiff from '../../components/MarkdownDiff.vue'
-import { artifactMarkdown } from '../../utils/markdownDiff'
+import { artifactParts } from '../../utils/markdownDiff'
+import type { AgentArtifact } from '../../api/types'
+import { rewriteArtifactDraft } from '../../app/artifacts/actions'
 import BlockEditor from '../../components/BlockEditor.vue'
 import CardStatusMenu from '../../components/CardStatusMenu.vue'
 import { artifactLifecycle, lifecycleClass, lifecycleHint, lifecycleLabel } from '../../utils/artifactLifecycle'
@@ -14,6 +16,29 @@ import { artifactTone } from '../../utils/artifactTone'
 import { cardStatusType } from '../../utils/cardStatus'
 
 const latexView = ref<'preview' | 'changes'>('preview')
+const rejecting = ref(false)
+
+async function rejectBody(artifact: AgentArtifact, body: string): Promise<void> {
+  const draft = artifact.draft_content
+  if (rejecting.value || !draft || !('content' in draft)) return
+  rejecting.value = true
+  try {
+    await rewriteArtifactDraft(artifact, { ...draft, content: body })
+  } finally {
+    rejecting.value = false
+  }
+}
+
+/** Rejecting everything puts the draft back to what the user last saved. */
+async function rejectAll(artifact: AgentArtifact): Promise<void> {
+  if (rejecting.value || !artifact.content) return
+  rejecting.value = true
+  try {
+    await rewriteArtifactDraft(artifact, artifact.content)
+  } finally {
+    rejecting.value = false
+  }
+}
 const MarkdownContent = defineAsyncComponent(() => import('../../components/MarkdownContent.vue'))
 const PdfPreview = defineAsyncComponent(() => import('../../components/PdfPreview.vue'))
 const SlidesPreview = defineAsyncComponent(() => import('../../components/SlidesPreview.vue'))
@@ -29,7 +54,18 @@ const SlidesPreview = defineAsyncComponent(() => import('../../components/Slides
       <div v-if="selectedArtifactDiff?.changed || !artifactPreview" class="artifact-mode-switch" :aria-label="$t('Artifact display mode')"><button v-if="selectedArtifactDiff?.changed" type="button" :class="{ active: artifactDiff }" @click="artifactDiff = true; artifactPreview = false">{{ $t('Diff') }}</button><button v-if="!artifactPreview || artifactDiff" type="button" @click="artifactPreview = true; artifactDiff = false">{{ $t('Preview') }}</button></div>
     </header>
     <div class="artifact-editor-body">
-      <MarkdownDiff v-if="artifactDiff && selectedArtifactDiff && selectedArtifact" class="artifact-typeset" :before="artifactMarkdown(selectedArtifact.content) ?? ''" :after="artifactMarkdown(selectedArtifact.draft_content) ?? ''" />
+      <MarkdownDiff
+        v-if="artifactDiff && selectedArtifactDiff && selectedArtifact"
+        class="artifact-typeset"
+        :before="artifactParts(selectedArtifact.content)?.body ?? ''"
+        :after="artifactParts(selectedArtifact.draft_content)?.body ?? ''"
+        :header-before="artifactParts(selectedArtifact.content)?.header"
+        :header-after="artifactParts(selectedArtifact.draft_content)?.header"
+        rejectable
+        :busy="rejecting"
+        @reject="rejectBody(selectedArtifact, $event)"
+        @reject-all="rejectAll(selectedArtifact)"
+      />
       <template v-else>
       <div v-if="artifactContent.artifact_type === 'card' && !artifactPreview" class="card-meta-row">
         <div class="card-type-control">
@@ -45,7 +81,7 @@ const SlidesPreview = defineAsyncComponent(() => import('../../components/Slides
           <label class="card-title-control"><span>{{ $t('PDF filename') }}</span><textarea v-model="artifactContent.pdf_name" rows="1" /></label>
           <p>{{ $t('Source files stay in the project directory. Compile the PDF before saving this reference.') }}</p>
         </template>
-        <PdfTypesetDiff v-else-if="latexView === 'changes' && selectedArtifact" class="artifact-typeset" :artifact-id="selectedArtifact.id" :nonce="artifactPreviewNonce" @close="latexView = 'preview'" />
+        <PdfTypesetDiff v-else-if="latexView === 'changes' && selectedArtifact" class="artifact-typeset" :artifact-id="selectedArtifact.id" :nonce="artifactPreviewNonce" />
         <PdfPreview v-else-if="artifactPreviewAsset" ref="pdfPreviewRef" :asset="artifactPreviewAsset" artifact />
       </template>
       <template v-else-if="!artifactPreview">

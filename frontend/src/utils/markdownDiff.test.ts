@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
-import { diffMarkdown, markWords, renderedWords, wordMask } from './markdownDiff'
+import { applyRejections, diffMarkdown, markWords, renderedWords, wordMask } from './markdownDiff'
 
 describe('diffMarkdown', () => {
   it('reports no change for equal documents', () => {
@@ -48,5 +48,36 @@ describe('markWords', () => {
     root.textContent = 'a b c d'
     markWords(root, new Set([1, 2]), 'w')
     expect(root.querySelector('mark')?.textContent).toBe('b c')
+  })
+})
+
+describe('applyRejections', () => {
+  const doc = 'Hard break  \nstays\n\n    indented code\n\n- tight\n- list\n\nold'
+
+  it('keeps every untouched block byte for byte when one hunk is rejected', () => {
+    const draft = `${doc.replace('old', 'new')}\n\nadded`
+    const diff = diffMarkdown(doc, draft)
+    const added = diff.blocks.find((block) => block.kind === 'added' && block.text === 'added')
+    expect(added).toBeDefined()
+    expect(applyRejections(diff.blocks, new Set([added!.key]))).toBe(doc.replace('old', 'new'))
+  })
+
+  it('restores a rejected rewrite to the published block', () => {
+    const diff = diffMarkdown(doc, doc.replace('old', 'new'))
+    const keys = new Set(diff.blocks.filter((block) => block.kind !== 'same').map((block) => block.key))
+    expect(applyRejections(diff.blocks, keys)).toBe(doc)
+  })
+
+  it('rejecting everything round-trips the published text', () => {
+    const published = 'one\n\ntwo\n\nthree'
+    const diff = diffMarkdown(published, 'one\n\nTWO\n\nthree\n\nfour')
+    const keys = new Set(diff.blocks.filter((block) => block.kind !== 'same').map((block) => block.key))
+    expect(applyRejections(diff.blocks, keys)).toBe(published)
+    expect(diffMarkdown(published, applyRejections(diff.blocks, keys)).changed).toBe(false)
+  })
+
+  it('pairs two removed blocks with one added block', () => {
+    const diff = diffMarkdown('a\n\nb\n\nz', 'c\n\nz')
+    expect(diff.blocks.filter((block) => block.pair !== null)).toHaveLength(2)
   })
 })

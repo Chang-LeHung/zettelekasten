@@ -32,7 +32,10 @@ Nothing reaches your library until you say so.
 2. **Save** publishes it to the library.
 3. When Zett changes it later, the change waits as a draft beside the published
    version. The library keeps showing the published one.
-4. **Diff** compares the two field by field and highlights what changed.
+4. **Diff** shows the published and the draft version side by side as a single
+   rendered column: changed blocks are tinted, and the words that changed inside
+   a rewritten paragraph are marked. Switch between **Changes**, **Before** and
+   **After**, and **Reject** a block you do not want (this only edits the draft).
    **Update** publishes the change.
 
 Each artifact in the conversation's list shows how far it is from being saved,
@@ -112,6 +115,21 @@ each change, so every saved PDF matches an exact set of sources.
 If you edit the sources yourself, commit your changes before saving. Zett only
 saves a paper whose sources are fully committed; otherwise it lists the files
 that still have changes so you know what to commit.
+
+### See what changed in the PDF
+
+When you save a paper, Zett keeps a copy of that PDF. **Changes** (in the
+artifact's header, or the compare button in the PDF toolbar) then shows the
+current PDF as one column with new text tinted green and changed figures
+outlined in amber; **Before** shows the saved copy with the removed text tinted,
+and **After** shows the current one clean. Use `j` and `k` to jump between
+changes. Compile the paper again after every edit, or the view warns that the
+PDF is older than the sources.
+
+If you do not like what the assistant did since you saved, **Restore saved
+version** undoes it with a new revert commit. Nothing is deleted: the history
+keeps every earlier commit. Restore is refused while the project has
+uncommitted changes.
 
 ## Images
 

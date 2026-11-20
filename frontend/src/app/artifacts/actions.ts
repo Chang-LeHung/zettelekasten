@@ -1,5 +1,5 @@
 import { aiClient } from '../../api/client'
-import type { AgentArtifact, CardStatus } from '../../api/types'
+import type { AgentArtifact, ArtifactContent, CardStatus } from '../../api/types'
 import { artifactEditableContent } from '../../utils/artifactEditor'
 import { MIN_ARTIFACT_LIST_HEIGHT, clampArtifactListHeight } from '../../utils/artifactSplit'
 import { artifactListsEquivalent, sameArtifactRevision, stabilizeArtifactReferences } from '../../utils/artifactStability'
@@ -12,7 +12,7 @@ import { cardStatusUpdatingIds } from '../library/state'
 import { refreshTags } from '../library/tags'
 import { errorMessage, requestConfirmation, showNotice } from '../notice'
 import { conversationId } from '../sessions'
-import { artifactContent, artifactDiff, artifactHeaderRef, artifactListHeight, artifactPaneRef, artifactPreview, artifactPreviewNonce, artifactRefreshing, artifacts, artifactsNeedingSave, artifactsScratch, saving, savingAllArtifacts, selectedArtifact, selectedArtifactId, selectedSuggestions } from './state'
+import { artifactContent, artifactDiff, artifactHeaderRef, artifactListHeight, artifactPaneRef, artifactPreview, artifactPreviewNonce, artifactRefreshing, artifacts, artifactsNeedingSave, artifactsScratch, saving, savingAllArtifacts, selectedArtifact, selectedArtifactDirty, selectedArtifactId, selectedSuggestions } from './state'
 
 export function setArtifactListHeight(height: number): void {
   const pane = artifactPaneRef.value
@@ -81,6 +81,31 @@ export async function setConversationCardStatus(artifact: AgentArtifact, status:
     showNotice(errorMessage(error), 'error')
   } finally {
     markCardStatusUpdating(artifact.id, false)
+  }
+}
+/**
+ * Replace an artifact's draft, which is how a reviewer rejects a change: the saved content stays as it
+ * was, only the working copy moves back. Nothing is published until the user saves.
+ */
+export async function rewriteArtifactDraft(artifact: AgentArtifact, content: ArtifactContent): Promise<boolean> {
+  const activeConversationId = conversationId.value
+  if (!activeConversationId) return false
+  // Unsaved keystrokes were never part of the diff, so a rejection must not discard them.
+  if (selectedArtifactId.value === artifact.id && selectedArtifactDirty.value) {
+    showNotice('Save or discard your edits before rejecting changes', 'error')
+    return false
+  }
+  try {
+    // The version guard refuses to overwrite a draft the model wrote after this diff was drawn.
+    const updated = await aiClient.updateAgentArtifactDraft(activeConversationId, artifact.id, content, artifact.version)
+    if (conversationId.value !== activeConversationId) return false
+    const index = artifacts.value.findIndex((candidate) => candidate.id === updated.id)
+    if (index >= 0) artifacts.value.splice(index, 1, updated)
+    if (selectedArtifactId.value === updated.id && updated.draft_content) artifactContent.value = jsonSnapshot(updated.draft_content)
+    return true
+  } catch (error) {
+    showNotice(errorMessage(error), 'error')
+    return false
   }
 }
 export function selectArtifact(artifact: AgentArtifact): void {
@@ -188,6 +213,8 @@ export async function saveSelectedArtifact(artifact: AgentArtifact | null = sele
     if (conversationId.value !== activeConversationId) return false
     const index = artifacts.value.findIndex((artifact) => artifact.id === saved.id)
     if (index >= 0) artifacts.value.splice(index, 1, saved)
+    // The server moved the typeset baseline, so a LaTeX comparison must reload.
+    artifactPreviewNonce.value += 1
     if (isSelected && selectedArtifactId.value === artifactId
       && JSON.stringify(artifactContent.value) === editorSnapshot) {
       artifactContent.value = jsonSnapshot(saved.content)
@@ -240,6 +267,7 @@ export async function saveAllArtifacts(): Promise<void> {
         if (conversationId.value !== sessionId) break
         const index = artifacts.value.findIndex(item => item.id === saved.id)
         if (index >= 0) artifacts.value.splice(index, 1, saved)
+        artifactPreviewNonce.value += 1
         // An edit typed during the request must remain in the editor for a later save.
         if (selectedArtifactId.value === saved.id && selectedDraft
           && JSON.stringify(artifactContent.value) === JSON.stringify(selectedDraft)) {

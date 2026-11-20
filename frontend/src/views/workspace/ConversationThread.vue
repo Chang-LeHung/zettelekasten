@@ -34,7 +34,7 @@ const STARTERS = [
         <h2>{{ $t('What should we make?') }}</h2>
         <p>{{ $t('Describe what you want. Zett turns it into an artifact you can read, edit and keep.') }}</p>
         <div class="starter-grid">
-          <button v-for="card in STARTERS" :key="card.kind" type="button" class="starter-card" :class="card.kind" @click="raw = card.prompt"><i aria-hidden="true">{{ card.icon }}</i><strong>{{ $t(card.title) }}</strong><span>{{ $t(card.hint) }}</span></button>
+          <button v-for="card in STARTERS" :key="card.kind" type="button" class="starter-card" :class="card.kind" @click="raw = $t(card.prompt)"><i aria-hidden="true">{{ card.icon }}</i><strong>{{ $t(card.title) }}</strong><span>{{ $t(card.hint) }}</span></button>
         </div>
         <p class="starter-note">{{ $t('Pick a starting point, or just type. You review every change before it is saved.') }}</p>
       </div>

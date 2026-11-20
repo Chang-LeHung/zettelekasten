@@ -18,10 +18,11 @@ export const agentArtifactApi = {
     conversationId: string,
     artifactId: string,
     content: ArtifactContent,
+    expectedVersion?: number,
   ): Promise<AgentArtifact> {
     return request<AgentArtifact>(`/agent/${conversationId}/artifacts/${artifactId}/draft`, {
       method: 'PUT',
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ content, expected_version: expectedVersion }),
     })
   },
 

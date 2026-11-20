@@ -15,6 +15,8 @@ export interface MarkdownDiffBlock {
   key: string
   kind: MarkdownDiffKind
   text: string
+  /** The whitespace that followed the block in its own document, verbatim. */
+  gap: string
   /** Shared by a removed block and the added block that replaces it. */
   pair: number | null
 }
@@ -29,10 +31,12 @@ export interface MarkdownDiff {
 const norm = (text: string): string => text.replace(/\r\n/g, '\n').trim()
 
 export function diffMarkdown(before: string, after: string): MarkdownDiff {
-  const left = splitBlocks(before).map((block) => block.text).filter((text) => norm(text) !== '')
-  const right = splitBlocks(after).map((block) => block.text).filter((text) => norm(text) !== '')
-  const { removed, added } = diffSequences(left.map(norm), right.map(norm))
+  const nonBlank = (source: string) => splitBlocks(source).filter((block) => norm(block.text) !== '')
+  const left = nonBlank(before)
+  const right = nonBlank(after)
+  const { removed, added } = diffSequences(left.map((block) => norm(block.text)), right.map((block) => norm(block.text)))
   const blocks: MarkdownDiffBlock[] = []
+  const make = (key: string, kind: MarkdownDiffKind, block: { text: string; gap: string }, pair: number | null): MarkdownDiffBlock => ({ key, kind, text: block.text, gap: block.gap, pair })
   let pairs = 0
   let i = 0
   let j = 0
@@ -43,14 +47,14 @@ export function diffMarkdown(before: string, after: string): MarkdownDiff {
       while (i < left.length && removed.has(i)) dropped.push(i++)
       while (j < right.length && added.has(j)) inserted.push(j++)
       const paired = Math.min(dropped.length, inserted.length)
-      dropped.forEach((index, offset) => blocks.push({ key: `r${index}`, kind: 'removed', text: left[index], pair: offset < paired ? pairs + offset : null }))
-      inserted.forEach((index, offset) => blocks.push({ key: `a${index}`, kind: 'added', text: right[index], pair: offset < paired ? pairs + offset : null }))
+      dropped.forEach((index, offset) => blocks.push(make(`r${index}`, 'removed', left[index], offset < paired ? pairs + offset : null)))
+      inserted.forEach((index, offset) => blocks.push(make(`a${index}`, 'added', right[index], offset < paired ? pairs + offset : null)))
       pairs += paired
     } else if (j < right.length && added.has(j)) {
-      blocks.push({ key: `a${j}`, kind: 'added', text: right[j], pair: null })
+      blocks.push(make(`a${j}`, 'added', right[j], null))
       j += 1
     } else {
-      blocks.push({ key: `s${j}`, kind: 'same', text: right[j] ?? left[i], pair: null })
+      blocks.push(make(`s${j}`, 'same', right[j] ?? left[i], null))
       i += 1
       j += 1
     }
@@ -98,6 +102,17 @@ export function markWords(root: Node, indexes: ReadonlySet<number>, className: s
     const tokens = node.data.split(/(\s+)/).filter((token) => token !== '')
     const flags = tokens.map((token) => (/^\s+$/.test(token) ? null : indexes.has(position++)))
     if (!flags.some(Boolean)) continue
+    // The nearest word flag on each side, so a gap between two marked words joins them.
+    const previous: Array<boolean | null> = []
+    let seenFlag: boolean | null = null
+    flags.forEach((value, index) => { if (value !== null) seenFlag = value; previous[index] = seenFlag })
+    const following: Array<boolean | null> = []
+    seenFlag = null
+    for (let index = flags.length - 1; index >= 0; index -= 1) {
+      const value = flags[index]
+      if (value !== null) seenFlag = value
+      following[index] = seenFlag
+    }
     const fragment = document.createDocumentFragment()
     let run = ''
     let marked = false
@@ -114,9 +129,7 @@ export function markWords(root: Node, indexes: ReadonlySet<number>, className: s
     tokens.forEach((token, index) => {
       let flag = flags[index]
       if (flag === null) {
-        const before = flags.slice(0, index).reverse().find((value) => value !== null)
-        const after = flags.slice(index + 1).find((value) => value !== null)
-        flag = Boolean(before && after)
+        flag = Boolean(previous[index] && following[index])
       }
       if (flag !== marked) {
         flush()
@@ -129,12 +142,35 @@ export function markWords(root: Node, indexes: ReadonlySet<number>, className: s
   }
 }
 
-/** What a card or article reads as when the whole artifact is rendered: title, summary, body. */
-export function artifactMarkdown(content: ArtifactContent | null): string | null {
+/** What the reader sees above the body: title, subtitle, summary and card type. */
+export interface ArtifactParts {
+  header: string
+  body: string
+}
+
+export function artifactParts(content: ArtifactContent | null): ArtifactParts | null {
   if (!content || (content.artifact_type !== 'card' && content.artifact_type !== 'article')) return null
-  const parts = [`# ${content.title}`]
-  if (content.artifact_type === 'article' && content.subtitle) parts.push(`*${content.subtitle}*`)
-  if (content.summary) parts.push(`> ${content.summary.replace(/\n+/g, ' ')}`)
-  parts.push(content.content)
-  return parts.join('\n\n')
+  const lines = [`# ${content.title}`]
+  if (content.artifact_type === 'article' && content.subtitle) lines.push(`*${content.subtitle}*`)
+  if (content.artifact_type === 'card') lines.push(`Card type: **${content.card_type}**`)
+  if (content.summary) lines.push(`> ${content.summary.replace(/\n+/g, ' ')}`)
+  return { header: lines.join('\n\n'), body: content.content }
+}
+
+/**
+ * The body after the user has rejected some hunks: a rejected removal puts the old block back, a
+ * rejected addition drops the new one, and every other block stays as the draft has it.
+ */
+export function applyRejections(blocks: readonly MarkdownDiffBlock[], rejected: ReadonlySet<string>): string {
+  const kept = blocks.filter((block) => block.kind === 'same'
+    || (block.kind === 'removed' && rejected.has(block.key))
+    || (block.kind === 'added' && !rejected.has(block.key)))
+  // Each block keeps its own text and gap; a gap that cannot separate two blocks becomes a blank line.
+  return kept.map((block, index) => {
+    if (index === kept.length - 1) {
+      // The document ends here, so keep the trailing whitespace only if this block ended its own document.
+      return block.text + (block === blocks[blocks.length - 1] ? block.gap : '')
+    }
+    return block.text + (block.gap.includes('\n') ? block.gap : '\n\n')
+  }).join('')
 }

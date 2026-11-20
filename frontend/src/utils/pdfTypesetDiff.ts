@@ -190,7 +190,9 @@ function pageChanges(words: readonly Word[], indexes: ReadonlySet<number>): Page
   const byPage = new Map<number, Word[]>()
   for (const index of indexes) {
     const word = words[index]
-    byPage.set(word.page, [...(byPage.get(word.page) ?? []), word])
+    const list = byPage.get(word.page)
+    if (list) list.push(word)
+    else byPage.set(word.page, [word])
   }
   return [...byPage.entries()]
     .sort(([p], [q]) => p - q)

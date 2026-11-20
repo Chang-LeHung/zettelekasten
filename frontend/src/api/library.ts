@@ -55,8 +55,13 @@ export const libraryClient = {
   },
 
   /** The two PDFs a LaTeX artifact's typeset before/after compares. */
-  getPdfDiff(artifactId: string): Promise<PdfDiffSources> {
-    return request<PdfDiffSources>(`/artifacts/${encodeURIComponent(artifactId)}/pdf-diff`)
+  getPdfDiff(artifactId: string, signal?: AbortSignal): Promise<PdfDiffSources> {
+    return request<PdfDiffSources>(`/artifacts/${encodeURIComponent(artifactId)}/pdf-diff`, { signal })
+  },
+
+  /** Revert what the Agent changed since the last save; history is kept as a new revert commit. */
+  restorePdfProject(sessionId: string, artifactId: string): Promise<PdfDiffSources & { restored_commits: number }> {
+    return request(`/agent/${encodeURIComponent(sessionId)}/artifacts/${encodeURIComponent(artifactId)}/restore`, { method: 'POST' })
   },
 
   /**

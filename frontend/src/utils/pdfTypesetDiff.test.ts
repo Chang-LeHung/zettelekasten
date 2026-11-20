@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { changedPageNumbers, diffSequences, mergeRects, typesetChanges, type TextBox } from './pdfTypesetDiff'
+import { wordsOf, changedPageNumbers, diffSequences, mergeRects, typesetChanges, type TextBox } from './pdfTypesetDiff'
 
 function line(str: string, y = 10, x = 0): TextBox {
   return { str, x, y, width: str.length * 5, height: 10 }
@@ -81,5 +81,19 @@ describe('typesetChanges', () => {
   it('compares ligatures and plain letters as equal', () => {
     const changes = typesetChanges([[line('\ufb01nal')]], [[line('final')]])
     expect(changes.removedWords + changes.addedWords).toBe(0)
+  })
+})
+
+describe('wordsOf and page grouping', () => {
+  it('splits a run into words positioned along its width', () => {
+    const [first, second] = wordsOf([[{ str: 'ab cd', x: 10, y: 5, width: 50, height: 8 }]])
+    expect(first).toMatchObject({ text: 'ab', page: 1, x: 10 })
+    expect(second.x).toBeCloseTo(40)
+  })
+
+  it('clamps removed pages beyond the new page count', () => {
+    const changes = typesetChanges([[line('a')], [line('b')], [line('gone here')]], [[line('a')], [line('b')]])
+    expect(changedPageNumbers(changes, 2)).toEqual([2])
+    expect(changes.base[0].page).toBe(3)
   })
 })

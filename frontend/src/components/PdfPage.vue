@@ -144,7 +144,7 @@ onBeforeUnmount(() => {
   <article ref="root" class="pdf-page" :data-pdf-page="pageNumber" :style="pageStyle" :aria-label="`Page ${pageNumber}`">
     <canvas v-show="active && !failed" ref="canvas" />
     <div v-show="active && !failed" ref="textLayer" class="text-layer" />
-    <slot />
+    <slot v-if="active && !failed" />
     <span v-if="!active" class="page-placeholder">{{ pageNumber }}</span>
     <span v-else-if="failed" class="page-placeholder error">Page {{ pageNumber }} could not be rendered.</span>
   </article>

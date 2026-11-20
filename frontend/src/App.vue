@@ -4,7 +4,7 @@ import { closeLibraryEditor, saveLibraryEditor } from './app/artifacts/editor'
 import { importedStaticAssetIds, previewAsset, staticAssetImportOpen, staticAssetImportingId, staticAssets, staticAssetsLoading } from './app/assets'
 import { importStaticAsset } from './app/assetsUpload'
 import { deleteTag, filterByTag } from './app/library/actions'
-import { collectionTags, libraryEditorArtifactId, libraryEditorItem, libraryEditorSaving, selectedTag, selectedTagName, tagManagerBusy, tagManagerFeedback, tagManagerFeedbackKind, tagManagerOpen } from './app/library/state'
+import { collectionTags, libraryEditorArtifactId, libraryEditorItem, libraryEditorSaving, selectedLibraryItem, selectedTag, selectedTagName, tagManagerBusy, tagManagerFeedback, tagManagerFeedbackKind, tagManagerOpen } from './app/library/state'
 import { createTag, endStaticAssetDrag, startStaticAssetDrag } from './app/library/tags'
 import { view } from './app/nav'
 import { confirmation, settleConfirmation } from './app/notice'
@@ -14,7 +14,7 @@ import ConfirmDialog from './components/ConfirmDialog.vue'
 import TagManagerDialog from './components/TagManagerDialog.vue'
 import AppSidebar from './views/AppSidebar.vue'
 import AppToast from './views/AppToast.vue'
-import LibraryDetailSheet from './views/LibraryDetailSheet.vue'
+import LibraryArtifactPage from './views/LibraryArtifactPage.vue'
 import LibraryPdfLaunch from './views/LibraryPdfLaunch.vue'
 import LibrarySlidesFullscreen from './views/LibrarySlidesFullscreen.vue'
 import LibraryView from './views/LibraryView.vue'
@@ -85,7 +85,9 @@ useAppLifecycle()
         @save="saveLibraryEditor"
       />
 
-      <LibraryView v-if="view === 'library' || view === 'search'" />
+      <LibraryArtifactPage v-if="(view === 'library' || view === 'search') && selectedLibraryItem" />
+
+      <LibraryView v-else-if="view === 'library' || view === 'search'" />
 
       <WorkspaceView v-else-if="view === 'new'" />
 
@@ -112,7 +114,6 @@ useAppLifecycle()
 
       <LibrarySlidesFullscreen />
       <LibraryPdfLaunch />
-      <LibraryDetailSheet />
     </main>
   </div>
 </template>

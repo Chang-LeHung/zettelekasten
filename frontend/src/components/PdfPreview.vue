@@ -360,6 +360,13 @@ async function disposeDocument(): Promise<void> {
   documentProxy.value = null
 }
 
+/** A restored PDF has the same URL as before, so bypass any cached copy of it. */
+let cacheBust = ''
+function reloadAfterRestore(): void {
+  cacheBust = `${props.asset.content_url?.includes('?') ? '&' : '?'}r=${Date.now()}`
+  void loadDocument()
+}
+
 async function loadDocument(): Promise<void> {
   const version = ++loadVersion
   loading.value = true
@@ -372,7 +379,7 @@ async function loadDocument(): Promise<void> {
     await disposeDocument()
     abortController = new AbortController()
     const bytes = props.asset.content_url
-      ? await assetClient.getUrlContent(props.asset.content_url, abortController.signal)
+      ? await assetClient.getUrlContent(`${props.asset.content_url}${cacheBust}`, abortController.signal)
       : null
     if (version !== loadVersion) return
     if (bytes === null) {
@@ -556,7 +563,7 @@ defineExpose({ refit: refitInlinePages })
   <Teleport to="body" :disabled="!expanded">
   <div :class="expanded ? 'pdf-expanded-backdrop' : 'pdf-inline-host'" @click.self="closeExpanded">
   <div ref="previewRoot" class="pdf-preview" tabindex="-1" :role="expanded ? 'dialog' : undefined" :aria-modal="expanded ? true : undefined" :aria-label="expanded ? 'Expanded PDF preview' : undefined" :class="{ 'outline-open': outlineOpen, 'artifact-pdf': artifact, 'resizing-outline': resizingOutline, 'pdf-expanded': expanded }" :style="{ '--outline-width': `${outlineWidth}px` }" @keydown="handleExpandedKey">
-    <div class="pdf-toolbar" aria-label="PDF controls">
+    <div class="pdf-toolbar" aria-label="PDF controls" :inert="compareOpen">
       <button class="outline-toggle" type="button" :aria-expanded="outlineOpen" aria-label="Toggle document outline" @click="outlineOpen = !outlineOpen">☰</button>
       <div class="pdf-toolbar-center">
         <div class="pdf-page-controls">
@@ -571,7 +578,7 @@ defineExpose({ refit: refitInlinePages })
         </div>
       </div>
       <div class="pdf-toolbar-actions">
-        <button v-if="artifact" class="compare-toggle" type="button" :disabled="loading" aria-label="Compare with saved version" title="Compare with saved version" @click="compareOpen = true">
+        <button v-if="artifact" class="compare-toggle" type="button" :disabled="loading" :aria-label="t('Compare with saved version')" :title="t('Compare with saved version')" @click="compareOpen = true">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16M17 4v16M3 8h8M13 16h8" /></svg>
         </button>
         <button class="presentation-toggle" type="button" :disabled="!documentProxy || loading" aria-label="Start PDF presentation" title="Present PDF" @click="startPresentation">
@@ -600,7 +607,7 @@ defineExpose({ refit: refitInlinePages })
 
     <div v-if="outlineOpen" class="pdf-outline-resizer" role="separator" tabindex="0" aria-label="Resize document outline" aria-orientation="vertical" :aria-valuenow="Math.round(outlineWidth)" @pointerdown="startOutlineResize" @pointermove="resizeOutline" @pointerup="stopOutlineResize" @pointercancel="stopOutlineResize" @lostpointercapture="stopOutlineResize" @keydown="resizeOutlineWithKeyboard" />
 
-    <div ref="stage" class="pdf-pages" @scroll.passive="handleScroll" @wheel="handleWheel">
+    <div ref="stage" class="pdf-pages" :inert="compareOpen" @scroll.passive="handleScroll" @wheel="handleWheel">
       <div
         v-if="documentProxy && !errorMessage"
         class="pdf-page-stack"
@@ -629,8 +636,8 @@ defineExpose({ refit: refitInlinePages })
       </div>
     </div>
     <div v-if="compareOpen && artifact" class="pdf-compare-inline">
-      <button class="pdf-compare-back" type="button" @click="compareOpen = false">← {{ t('Preview') }}</button>
-      <PdfTypesetDiff :artifact-id="asset.id" @close="compareOpen = false" />
+      <button class="pdf-compare-back" type="button" @click="compareOpen = false">← {{ t('Back to preview') }}</button>
+      <PdfTypesetDiff :artifact-id="asset.id" :session-id="asset.session_id" @restored="reloadAfterRestore" />
     </div>
   </div>
   </div>

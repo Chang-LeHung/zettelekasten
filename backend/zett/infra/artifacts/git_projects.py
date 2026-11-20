@@ -12,7 +12,11 @@ import os
 import subprocess
 from pathlib import Path
 
+from zett.infra.log import get_logger
+
 from ..scheduler.process_platform import helper_process_kwargs
+
+logger = get_logger(__name__)
 
 #: Variables that redirect git when Zett itself runs inside another git process.
 _REDIRECTING_ENVIRONMENT_KEYS = (
@@ -29,6 +33,14 @@ COMMAND_TIMEOUT_SECONDS = 30.0
 
 class GitProjectError(RuntimeError):
     """Raised when the git executable is missing or one git command fails."""
+
+
+class GitRevertConflictError(GitProjectError):
+    """Raised when reverting a range conflicts; the revert has been aborted."""
+
+
+#: Author used for the restore commit only when the repository has no identity.
+FALLBACK_IDENTITY = ("-c", "user.name=Zett Restore", "-c", "user.email=restore@zett.local")
 
 
 def repository_root(directory: Path) -> Path | None:
@@ -51,6 +63,99 @@ def project_changes(directory: Path) -> tuple[str, ...]:
         return ()
     output = _git(directory, "status", "--porcelain", "--untracked-files=all", "--", ".").stdout
     return tuple(line[3:].strip().strip('"') for line in output.splitlines() if line.strip())
+
+
+def head_commit(directory: Path) -> str:
+    """Return the full hash of HEAD, raising when there is no commit."""
+    return _git(directory, "rev-parse", "--verify", "HEAD").stdout.strip()
+
+
+def commits_between(directory: Path, base: str, head: str = "HEAD") -> int:
+    """Return how many commits ``base..head`` holds."""
+    return int(_git(directory, "rev-list", "--count", f"{base}..{head}").stdout.strip())
+
+
+def is_ancestor(directory: Path, base: str, head: str = "HEAD") -> bool:
+    """Return whether ``base`` is an ancestor of ``head``; a missing commit is not."""
+    completed = _git(directory, "merge-base", "--is-ancestor", base, head, check=False)
+    if completed.returncode in (0, 1):
+        return completed.returncode == 0
+    return False
+
+
+def has_merge_commits(directory: Path, base: str, head: str = "HEAD") -> bool:
+    """Return whether a merge commit lies in ``base..head``."""
+    return int(_git(directory, "rev-list", "--merges", "--count", f"{base}..{head}").stdout.strip()) > 0
+
+
+def _identity(directory: Path) -> tuple[str, ...]:
+    """Return fallback ``-c`` arguments only when the repository has no usable identity."""
+    for key in ("user.name", "user.email"):
+        if not _git(directory, "config", key, check=False).stdout.strip():
+            return FALLBACK_IDENTITY
+    return ()
+
+
+def _is_clean_at(directory: Path, head: str) -> bool:
+    """Return whether HEAD is ``head``, nothing is pending, and no revert is in progress."""
+    if head_commit(directory) != head:
+        return False
+    if _git(directory, "status", "--porcelain", "--untracked-files=all").stdout.strip():
+        return False
+    return _git(directory, "rev-parse", "-q", "--verify", "REVERT_HEAD", check=False).returncode != 0
+
+
+def _recover(directory: Path, head: str) -> None:
+    """Put the repository back at ``head`` with a clean tree, proving it rather than trusting abort."""
+    _git(directory, "revert", "--abort", check=False)
+    try:
+        if _is_clean_at(directory, head):
+            return
+    except GitProjectError:
+        pass
+    _git(directory, "reset", "--hard", head, check=False)
+
+
+def revert_range(directory: Path, base: str, head: str, message: str) -> str:
+    """Undo exactly ``base..head`` in one new commit that keeps every original commit.
+
+    ``head`` is pinned by the caller, so a commit that lands after the caller
+    counted the range is not reverted. Returns the new commit's hash. A failure
+    restores the repository to the HEAD it had on entry (verified, with a hard
+    reset when ``git revert --abort`` did not suffice) and raises
+    ``GitRevertConflictError``.
+    """
+    identity = _identity(directory)
+    entry = head_commit(directory)
+    completed = _git(directory, "revert", "--no-commit", f"{base}..{head}", check=False)
+    if completed.returncode != 0:
+        _recover(directory, entry)
+        detail = (completed.stderr or completed.stdout).strip()
+        raise GitRevertConflictError(f"git revert failed: {detail}")
+    try:
+        _git(directory, *identity, "commit", "--allow-empty", "-m", message)
+    except GitProjectError:
+        _recover(directory, entry)
+        raise
+    return head_commit(directory)
+
+
+def amend_with_path(directory: Path, path: str, expected_head: str) -> bool:
+    """Fold one tracked file's pending change into ``expected_head``; return whether it amended.
+
+    Nothing is amended when HEAD is no longer the commit the caller created, so
+    a commit someone else made meanwhile is never rewritten.
+    """
+    if head_commit(directory) != expected_head:
+        logger.warning("Skipped the PDF amend; HEAD moved since the revert commit %s", expected_head)
+        return False
+    if not _git(directory, "status", "--porcelain", "--", path).stdout.strip():
+        return False
+    if _git(directory, "ls-files", "--error-unmatch", "--", path, check=False).returncode != 0:
+        return False
+    _git(directory, "add", "--", path)
+    _git(directory, *_identity(directory), "commit", "--amend", "--no-edit")
+    return True
 
 
 def _environment() -> dict[str, str]:
@@ -87,7 +192,15 @@ def _git(directory: Path, *arguments: str, check: bool = True) -> subprocess.Com
 
 
 __all__ = [
+    "FALLBACK_IDENTITY",
     "GitProjectError",
+    "GitRevertConflictError",
+    "amend_with_path",
+    "commits_between",
+    "has_merge_commits",
+    "head_commit",
+    "is_ancestor",
+    "revert_range",
     "is_repository",
     "project_changes",
     "repository_root",

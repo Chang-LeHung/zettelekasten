@@ -451,6 +451,25 @@ async def test_artifact_draft_endpoint_never_rewrites_published_content() -> Non
     assert stored.content is not None and stored.content.title == "Published card"
 
 
+async def test_artifact_draft_endpoint_refuses_a_stale_expected_version() -> None:
+    """A reviewer that rebuilt a draft from a diff must not overwrite a newer draft."""
+    session_id = (await session_storage.create(AgentSessionCreate())).session_id
+    created = await artifact_storage.create(
+        AgentArtifactWrite(session_id=session_id, content=CardArtifactContent(title="Card", content="Body"))
+    )
+    url = f"/api/agent/{session_id}/artifacts/{created.id}/draft"
+
+    with TestClient(app) as client:
+        first = client.put(url, json={"content": _card_content("First"), "expected_version": created.version})
+        stale = client.put(url, json={"content": _card_content("Second"), "expected_version": created.version})
+        fresh = client.put(url, json={"content": _card_content("Third"), "expected_version": first.json()["version"]})
+
+    assert first.status_code == 200
+    assert stale.status_code == 409
+    assert fresh.status_code == 200
+    assert fresh.json()["draft_content"]["title"] == "Third"
+
+
 def test_artifact_api_rejects_ambiguous_slide_boundaries() -> None:
     with TestClient(app) as client:
         session_id = client.post("/api/agent/start").json()["conversation_id"]
