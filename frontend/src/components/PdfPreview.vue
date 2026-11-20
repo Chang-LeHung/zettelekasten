@@ -10,7 +10,6 @@ import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { assetClient } from '../api/client'
 import type { SessionAsset } from '../api/types'
 import PdfPage from './PdfPage.vue'
-import PdfTypesetDiff from './PdfTypesetDiff.vue'
 import { t } from '../app/i18n'
 import { pdfDocumentOptions } from '../utils/pdfDocument'
 
@@ -32,19 +31,15 @@ interface OutlineEntry {
 const props = withDefaults(defineProps<{
   asset: Pick<SessionAsset, 'id' | 'session_id' | 'content_url'> & { version?: number }
   artifact?: boolean
-  /** Restoring the saved version mutates a conversation's project, so only that conversation offers it. */
-  restorable?: boolean
   initialMode?: 'inline' | 'expanded' | 'presentation'
 }>(), {
   artifact: false,
-  restorable: true,
   initialMode: 'inline',
 })
 const emit = defineEmits<{ close: [] }>()
 const stage = ref<HTMLElement | null>(null)
 const documentProxy = shallowRef<PDFDocumentProxy | null>(null)
 const loading = ref(true)
-const compareOpen = ref(false)
 const awaitingCompilation = ref(false)
 const errorMessage = ref('')
 const currentPage = ref(1)
@@ -363,12 +358,6 @@ async function disposeDocument(): Promise<void> {
   documentProxy.value = null
 }
 
-/** A restored PDF has the same URL as before, so bypass any cached copy of it. */
-let cacheBust = ''
-function reloadAfterRestore(): void {
-  cacheBust = `${props.asset.content_url?.includes('?') ? '&' : '?'}r=${Date.now()}`
-  void loadDocument()
-}
 
 async function loadDocument(): Promise<void> {
   const version = ++loadVersion
@@ -382,7 +371,7 @@ async function loadDocument(): Promise<void> {
     await disposeDocument()
     abortController = new AbortController()
     const bytes = props.asset.content_url
-      ? await assetClient.getUrlContent(`${props.asset.content_url}${cacheBust}`, abortController.signal)
+      ? await assetClient.getUrlContent(`${props.asset.content_url}`, abortController.signal)
       : null
     if (version !== loadVersion) return
     if (bytes === null) {
@@ -566,7 +555,7 @@ defineExpose({ refit: refitInlinePages })
   <Teleport to="body" :disabled="!expanded">
   <div :class="expanded ? 'pdf-expanded-backdrop' : 'pdf-inline-host'" @click.self="closeExpanded">
   <div ref="previewRoot" class="pdf-preview" tabindex="-1" :role="expanded ? 'dialog' : undefined" :aria-modal="expanded ? true : undefined" :aria-label="expanded ? 'Expanded PDF preview' : undefined" :class="{ 'outline-open': outlineOpen, 'artifact-pdf': artifact, 'resizing-outline': resizingOutline, 'pdf-expanded': expanded }" :style="{ '--outline-width': `${outlineWidth}px` }" @keydown="handleExpandedKey">
-    <div class="pdf-toolbar" aria-label="PDF controls" :inert="compareOpen">
+    <div class="pdf-toolbar" aria-label="PDF controls">
       <button class="outline-toggle" type="button" :aria-expanded="outlineOpen" aria-label="Toggle document outline" @click="outlineOpen = !outlineOpen">☰</button>
       <div class="pdf-toolbar-center">
         <div class="pdf-page-controls">
@@ -581,9 +570,6 @@ defineExpose({ refit: refitInlinePages })
         </div>
       </div>
       <div class="pdf-toolbar-actions">
-        <button v-if="artifact" class="compare-toggle" type="button" :disabled="loading" :aria-label="t('Compare with saved version')" :title="t('Compare with saved version')" @click="compareOpen = true">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16M17 4v16M3 8h8M13 16h8" /></svg>
-        </button>
         <button class="presentation-toggle" type="button" :disabled="!documentProxy || loading" aria-label="Start PDF presentation" title="Present PDF" @click="startPresentation">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M12 17v4m-4 0h8M10 8l5 2.5-5 2.5Z" /></svg>
         </button>
@@ -610,7 +596,7 @@ defineExpose({ refit: refitInlinePages })
 
     <div v-if="outlineOpen" class="pdf-outline-resizer" role="separator" tabindex="0" aria-label="Resize document outline" aria-orientation="vertical" :aria-valuenow="Math.round(outlineWidth)" @pointerdown="startOutlineResize" @pointermove="resizeOutline" @pointerup="stopOutlineResize" @pointercancel="stopOutlineResize" @lostpointercapture="stopOutlineResize" @keydown="resizeOutlineWithKeyboard" />
 
-    <div ref="stage" class="pdf-pages" :inert="compareOpen" @scroll.passive="handleScroll" @wheel="handleWheel">
+    <div ref="stage" class="pdf-pages" @scroll.passive="handleScroll" @wheel="handleWheel">
       <div
         v-if="documentProxy && !errorMessage"
         class="pdf-page-stack"
@@ -638,10 +624,6 @@ defineExpose({ refit: refitInlinePages })
         <button type="button" @click="loadDocument">Try again</button>
       </div>
     </div>
-    <div v-if="compareOpen && artifact" class="pdf-compare-inline">
-      <button class="pdf-compare-back" type="button" @click="compareOpen = false">← {{ t('Back to preview') }}</button>
-      <PdfTypesetDiff :artifact-id="asset.id" :session-id="restorable ? asset.session_id : undefined" @restored="reloadAfterRestore" />
-    </div>
   </div>
   </div>
   </Teleport>
@@ -661,9 +643,6 @@ defineExpose({ refit: refitInlinePages })
 
 <style scoped>
 .pdf-preview { position: relative; display: grid; grid-template: auto minmax(0, 1fr) / minmax(0, 1fr); width: 100%; height: 100%; min-height: 0; color: #3e4741; }
-.pdf-compare-inline { position: absolute; inset: 0; z-index: 8; display: grid; grid-template-rows: auto minmax(0, 1fr); background: #f4f6f4; animation: pdf-appear 200ms cubic-bezier(.2,.8,.2,1); }
-.pdf-compare-back { justify-self: start; margin: .5rem .75rem 0; padding: .3rem .7rem; border: 0; border-radius: .6rem; color: #3d5145; background: #e8eeea; cursor: pointer; font-size: .72rem; font-weight: 640; }
-.pdf-compare-back:hover { background: #dce6df; }
 .pdf-preview.outline-open { grid-template-columns: min(var(--outline-width), 60%) 6px minmax(0, 1fr); }
 .pdf-outline-resizer { cursor: col-resize; touch-action: none; background: #eef1ef; }
 .pdf-outline-resizer:hover, .pdf-outline-resizer:focus-visible, .resizing-outline .pdf-outline-resizer { background: #9cb3a4; outline: none; }

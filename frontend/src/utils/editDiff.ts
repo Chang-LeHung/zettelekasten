@@ -1,5 +1,5 @@
 import { diffLines } from './artifactDiff'
-import { diffSequences } from './pdfTypesetDiff'
+import { diffSequences } from './sequenceDiff'
 
 /** A stretch of one line; `strong` marks the part that changed inside a modified line. */
 export interface EditSegment {

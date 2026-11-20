@@ -7,7 +7,7 @@
  */
 import type { ArtifactContent } from '../api/types'
 import { splitBlocks } from './markdownBlocks'
-import { diffSequences } from './pdfTypesetDiff'
+import { diffSequences } from './sequenceDiff'
 
 export type MarkdownDiffKind = 'same' | 'added' | 'removed'
 

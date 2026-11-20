@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { defineAsyncComponent, ref } from 'vue'
 import { setConversationCardStatus } from '../../app/artifacts/actions'
-import PdfTypesetDiff from '../../components/PdfTypesetDiff.vue'
 import { artifactContent, artifactDiff, artifactPreview, artifactPreviewAsset, artifactPreviewNonce, selectedArtifact, selectedArtifactDiff, selectedArtifactDirty, selectedImageUrl, selectedSuggestions } from '../../app/artifacts/state'
 import { t } from '../../app/i18n'
 import { cardStatusUpdatingIds, cardTypes } from '../../app/library/state'
@@ -15,7 +14,6 @@ import { artifactLifecycle, lifecycleClass, lifecycleHint, lifecycleLabel } from
 import { artifactTone } from '../../utils/artifactTone'
 import { cardStatusType } from '../../utils/cardStatus'
 
-const latexView = ref<'preview' | 'changes'>('preview')
 const rejecting = ref(false)
 
 async function rejectBody(artifact: AgentArtifact, body: string): Promise<void> {
@@ -50,7 +48,6 @@ const SlidesPreview = defineAsyncComponent(() => import('../../components/Slides
     <header class="artifact-editor-header">
       <div class="artifact-state"><i /><span><strong>{{ selectedArtifact?.card_status ? $t(cardStatusType(selectedArtifact.card_status)) : selectedArtifact?.artifact_type }} artifact</strong><small v-if="selectedArtifact" :title="t(lifecycleHint(artifactLifecycle(selectedArtifact)))"><span class="artifact-life-note">{{ t(lifecycleLabel(artifactLifecycle(selectedArtifact))) }}</span> · version {{ selectedArtifact.version }}<em v-if="selectedArtifactDirty" class="artifact-dirty-badge">{{ t('artifact.editing') }}</em></small></span></div>
       <CardStatusMenu v-if="selectedArtifact?.card_status" :status="selectedArtifact.card_status" :busy="cardStatusUpdatingIds.has(selectedArtifact.id)" @select="setConversationCardStatus(selectedArtifact, $event)" />
-      <div v-if="selectedArtifact && artifactContent.artifact_type === 'latex_pdf' && artifactPreview" class="artifact-mode-switch" :aria-label="$t('Artifact display mode')"><button type="button" :class="{ active: latexView === 'preview' }" @click="latexView = 'preview'">{{ $t('Preview') }}</button><button type="button" :class="{ active: latexView === 'changes' }" @click="latexView = 'changes'">{{ $t('Changes') }}</button></div>
       <div v-if="selectedArtifactDiff?.changed || !artifactPreview" class="artifact-mode-switch" :aria-label="$t('Artifact display mode')"><button v-if="selectedArtifactDiff?.changed" type="button" :class="{ active: artifactDiff }" @click="artifactDiff = true; artifactPreview = false">{{ $t('Diff') }}</button><button v-if="!artifactPreview || artifactDiff" type="button" @click="artifactPreview = true; artifactDiff = false">{{ $t('Preview') }}</button></div>
     </header>
     <div class="artifact-editor-body">
@@ -81,7 +78,6 @@ const SlidesPreview = defineAsyncComponent(() => import('../../components/Slides
           <label class="card-title-control"><span>{{ $t('PDF filename') }}</span><textarea v-model="artifactContent.pdf_name" rows="1" /></label>
           <p>{{ $t('Source files stay in the project directory. Compile the PDF before saving this reference.') }}</p>
         </template>
-        <PdfTypesetDiff v-else-if="latexView === 'changes' && selectedArtifact" class="artifact-typeset" :artifact-id="selectedArtifact.id" :session-id="selectedArtifact.session_id" :nonce="artifactPreviewNonce" @restored="artifactPreviewNonce += 1" />
         <PdfPreview v-else-if="artifactPreviewAsset" ref="pdfPreviewRef" :asset="artifactPreviewAsset" artifact />
       </template>
       <template v-else-if="!artifactPreview">
