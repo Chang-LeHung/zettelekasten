@@ -34,3 +34,42 @@ body { background: var(--bg); }
 
 .starter-card { border: 0; border-radius: var(--radius-m); box-shadow: var(--elev-1), 0 0 0 .5px var(--hairline); }
 .starter-card:hover { border-color: transparent; box-shadow: var(--elev-2), 0 0 0 .5px var(--hairline); }
+
+/* ---- Conversation ---------------------------------------------------------------------- */
+
+/* Your message: a soft grey bubble with generous radius, the way Messages sets a draft. */
+.turn-prompt-content { padding: .7rem 1.05rem; border-radius: 1.25rem 1.25rem .35rem 1.25rem; color: #1d1d1f; background: var(--fill); }
+.turn-steering-status { border-radius: 999px; color: #3c3c43; background: var(--fill); }
+.turn-prompt-image, .turn-prompt-image-button { border-radius: var(--radius-m); }
+
+/* The reply is page text, not a bubble. */
+.agent-response-content .final-response { color: #1d1d1f; }
+.turn-error { border-left: 0; border-radius: var(--radius-m); color: #8d2b27; background: #fdecea; box-shadow: 0 0 0 .5px rgba(217, 83, 75, .25); }
+.turn-task-list { border-bottom: 1px solid var(--hairline); }
+
+/* What the agent did: a quiet capsule header and a tidy list of steps.
+   These elements are styled by a component with scoped CSS, whose selectors carry an attribute
+   and would outrank a plain class here, so each rule is anchored on #app. */
+#app .turn-execution > summary { min-height: 2.6rem; padding: .45rem .75rem; border: 0; border-radius: var(--radius-m); background: var(--fill); transition: background .14s ease; }
+#app .turn-execution > summary:hover { background: var(--fill-hover); }
+#app .turn-execution[open] > summary { border-radius: var(--radius-m) var(--radius-m) 0 0; }
+#app .turn-execution-details { padding: .35rem .5rem .5rem; border-radius: 0 0 var(--radius-m) var(--radius-m); background: rgba(120, 120, 128, .06); }
+#app .turn-state-icon { border-color: var(--hairline); background: var(--surface-solid); }
+#app .tool-activity summary { border-radius: var(--radius-s); transition: background .12s ease; }
+#app .tool-activity summary:hover, #app .reasoning-panel summary:hover { background: var(--fill); }
+#app .tool-target { border-radius: .45rem; background: var(--fill); }
+#app .tool-activity-details, #app .reasoning-content { padding-left: .5rem; }
+/* The target takes the free space; the range and time sit against the right edge together. */
+#app .tool-activity summary small.tool-time, #app .tool-activity summary small.tool-meta { margin-left: 0; }
+#app .tool-activity summary .tool-label + small.tool-time { margin-left: auto; }
+#app .edit-diff { border: 0; border-radius: var(--radius-m); box-shadow: 0 0 0 .5px var(--diff-border), var(--elev-1); }
+
+/* Composer: one floating sheet with a soft focus ring. */
+.agent-input { padding: .3rem; border: 0; border-radius: 1.35rem; background: var(--surface-solid); box-shadow: var(--elev-2), 0 0 0 .5px var(--hairline); transition: box-shadow .18s ease; }
+.agent-input:focus-within { border-color: transparent; box-shadow: var(--elev-2), 0 0 0 .5px var(--hairline), 0 0 0 3px rgba(71, 105, 87, .22); }
+.agent-input textarea, .composer-input-mirror { font-size: .85rem; }
+.agent-input .send-button { border-radius: 50%; }
+.queued-followup-list { border: 0; border-radius: var(--radius-m); background: var(--fill); box-shadow: none; }
+.prompt-hints button { border: 0; border-radius: 999px; background: var(--fill); }
+.prompt-hints button:hover { background: var(--fill-hover); }
+.message-image-drafts img, .message-image-preview { border-radius: var(--radius-s); }
