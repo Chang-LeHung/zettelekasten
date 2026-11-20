@@ -1,0 +1,36 @@
+/*
+ * The application shell, set the way a macOS window is: neutral grey ground, a translucent
+ * sidebar, hairline separators, segmented controls and one soft shadow per elevation.
+ * It loads last and only restyles chrome; it never changes layout, so removing the import
+ * returns the previous look.
+ */
+body { background: var(--bg); }
+
+.sidebar { background: var(--glass); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); border-right: 1px solid var(--hairline); }
+.brand strong { font-weight: 650; letter-spacing: -.02em; }
+.primary-nav button, .sidebar-footer button { border-radius: var(--radius-s); color: #2c2c2e; font-weight: 520; transition: background .14s ease, color .14s ease; }
+.primary-nav button:hover, .sidebar-footer button:hover, .tag-select:hover { background: var(--fill); }
+.primary-nav button.active, .sidebar-footer button.active { background: var(--surface-solid); box-shadow: var(--elev-1), 0 0 0 .5px var(--hairline); }
+.session-history-item { border-radius: var(--radius-s); }
+.session-history-item:hover { background: var(--fill); }
+.session-history-item.active { background: var(--surface-solid); box-shadow: var(--elev-1), 0 0 0 .5px var(--hairline); }
+.sidebar-footer { border-top: 1px solid var(--hairline); }
+
+.topbar { background: var(--glass); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); border-bottom: 1px solid transparent; }
+.topbar::after { display: none; }
+
+/* Segmented control: a recessed track with a raised thumb. */
+.layout-switch, .artifact-mode-switch, .tsd-seg, .mdd-seg { padding: .16rem; border: 0; border-radius: var(--radius-s); background: var(--fill); }
+.layout-switch button, .tsd-seg button, .mdd-seg button { border-radius: calc(var(--radius-s) - .12rem); color: #3c3c43; font-weight: 560; }
+.layout-switch button.active, .tsd-seg button.on, .mdd-seg button.on { color: #111; background: var(--surface-solid); box-shadow: var(--elev-1), 0 0 0 .5px var(--hairline); }
+.layout-assets, .workspace-view-toggle { border: 0; border-radius: var(--radius-s); color: #3c3c43; background: var(--fill); box-shadow: none; }
+.layout-assets:hover, .workspace-view-toggle:hover { background: var(--fill-hover); transform: none; }
+.layout-assets.active { color: #111; background: var(--surface-solid); box-shadow: var(--elev-1), 0 0 0 .5px var(--hairline); }
+
+/* Panes are sheets: one radius, one hairline, one shadow. */
+.agent-chat, .artifact-pane { border: 0; border-radius: var(--radius-l); background: var(--surface-solid); box-shadow: var(--elev-2), 0 0 0 .5px var(--hairline); }
+.workspace-divider span { width: 4px; background: rgba(60, 60, 67, .22); }
+.workspace-divider:hover span, .workspace-divider:focus-visible span, .layout.resizing .workspace-divider span { background: var(--accent); }
+
+.starter-card { border: 0; border-radius: var(--radius-m); box-shadow: var(--elev-1), 0 0 0 .5px var(--hairline); }
+.starter-card:hover { border-color: transparent; box-shadow: var(--elev-2), 0 0 0 .5px var(--hairline); }

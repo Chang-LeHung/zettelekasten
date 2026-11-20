@@ -27,3 +27,20 @@
   --diff-del-mark: rgba(217, 83, 75, .28);
   --diff-fig-mark: rgba(217, 148, 26, .24);
 }
+
+/* Shell language: neutral surfaces, hairlines instead of borders, three elevations. */
+:root {
+  --bg: #f5f5f7;
+  --surface-solid: #ffffff;
+  --hairline: rgba(60, 60, 67, .12);
+  --fill: rgba(120, 120, 128, .12);
+  --fill-hover: rgba(120, 120, 128, .18);
+  --radius-s: .55rem;
+  --radius-m: .8rem;
+  --radius-l: 1.15rem;
+  --elev-1: 0 1px 2px rgba(0, 0, 0, .04), 0 1px 1px rgba(0, 0, 0, .03);
+  --elev-2: 0 2px 8px rgba(0, 0, 0, .06), 0 12px 32px rgba(0, 0, 0, .06);
+  --elev-3: 0 8px 24px rgba(0, 0, 0, .1), 0 24px 64px rgba(0, 0, 0, .12);
+  --glass: rgba(246, 246, 248, .72);
+  --glass-blur: saturate(180%) blur(24px);
+}
