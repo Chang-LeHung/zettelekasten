@@ -76,7 +76,7 @@ function reject(block: Block): void {
     const removal = pairedRemoval.value.get(block.pair)
     if (removal) keys.add(removal)
   }
-  emit('reject', applyRejections(diff.value.blocks, keys))
+  emit('reject', applyRejections(diff.value.blocks, keys, diff.value.endGap))
 }
 
 let timer: number | null = null

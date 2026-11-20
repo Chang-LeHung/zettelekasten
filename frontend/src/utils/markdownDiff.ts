@@ -26,6 +26,8 @@ export interface MarkdownDiff {
   added: number
   removed: number
   changed: boolean
+  /** Whitespace the published body ends with; a rebuilt body ends the same way. */
+  endGap: string
 }
 
 const norm = (text: string): string => text.replace(/\r\n/g, '\n').trim()
@@ -59,7 +61,7 @@ export function diffMarkdown(before: string, after: string): MarkdownDiff {
       j += 1
     }
   }
-  return { blocks, added: added.size, removed: removed.size, changed: added.size + removed.size > 0 }
+  return { blocks, added: added.size, removed: removed.size, changed: added.size + removed.size > 0, endGap: before.match(/\s*$/)?.[0] ?? '' }
 }
 
 /** The words of one rendered block, in reading order, as the DOM walk below will see them. */
@@ -161,13 +163,13 @@ export function artifactParts(content: ArtifactContent | null): ArtifactParts | 
  * The body after the user has rejected some hunks: a rejected removal puts the old block back, a
  * rejected addition drops the new one, and every other block stays as the draft has it.
  */
-export function applyRejections(blocks: readonly MarkdownDiffBlock[], rejected: ReadonlySet<string>): string {
+export function applyRejections(blocks: readonly MarkdownDiffBlock[], rejected: ReadonlySet<string>, endGap = ''): string {
   const kept = blocks.filter((block) => block.kind === 'same'
     || (block.kind === 'removed' && rejected.has(block.key))
     || (block.kind === 'added' && !rejected.has(block.key)))
   // Each block keeps its own text and gap; a gap that cannot separate two blocks becomes a blank line.
   return kept.map((block, index) => {
-    if (index === kept.length - 1) return block.text + block.gap
+    if (index === kept.length - 1) return block.text + endGap
     return block.text + (block.gap.includes('\n') ? block.gap : '\n\n')
   }).join('')
 }

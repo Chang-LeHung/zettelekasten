@@ -59,21 +59,21 @@ describe('applyRejections', () => {
     const diff = diffMarkdown(doc, draft)
     const added = diff.blocks.find((block) => block.kind === 'added' && block.text === 'added')
     expect(added).toBeDefined()
-    expect(applyRejections(diff.blocks, new Set([added!.key]))).toBe(doc.replace('old', 'new'))
+    expect(applyRejections(diff.blocks, new Set([added!.key]), diff.endGap)).toBe(doc.replace('old', 'new'))
   })
 
   it('restores a rejected rewrite to the published block', () => {
     const diff = diffMarkdown(doc, doc.replace('old', 'new'))
     const keys = new Set(diff.blocks.filter((block) => block.kind !== 'same').map((block) => block.key))
-    expect(applyRejections(diff.blocks, keys)).toBe(doc)
+    expect(applyRejections(diff.blocks, keys, diff.endGap)).toBe(doc)
   })
 
   it('rejecting everything round-trips the published text', () => {
     const published = 'one\n\ntwo\n\nthree'
     const diff = diffMarkdown(published, 'one\n\nTWO\n\nthree\n\nfour')
     const keys = new Set(diff.blocks.filter((block) => block.kind !== 'same').map((block) => block.key))
-    expect(applyRejections(diff.blocks, keys)).toBe(published)
-    expect(diffMarkdown(published, applyRejections(diff.blocks, keys)).changed).toBe(false)
+    expect(applyRejections(diff.blocks, keys, diff.endGap)).toBe(published)
+    expect(diffMarkdown(published, applyRejections(diff.blocks, keys, diff.endGap)).changed).toBe(false)
   })
 
   it('pairs two removed blocks with one added block', () => {
