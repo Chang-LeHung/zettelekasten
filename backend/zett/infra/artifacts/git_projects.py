@@ -150,6 +150,17 @@ def path_in_commit(directory: Path, commit: str, path: str) -> bool:
     return _git(directory, "cat-file", "-e", f"{commit}:{path}", check=False).returncode == 0
 
 
+def is_ignored(directory: Path, path: str) -> bool:
+    """Return whether git ignores ``path`` (exit 0 ignored, 1 not, anything else is an error)."""
+    completed = _git(directory, "check-ignore", "-q", "--", path, check=False)
+    if completed.returncode == 0:
+        return True
+    if completed.returncode == 1:
+        return False
+    detail = (completed.stderr or completed.stdout).strip() or f"exit code {completed.returncode}"
+    raise GitProjectError(f"git check-ignore failed: {detail}")
+
+
 def amend_with_path(directory: Path, path: str, expected_head: str) -> str | None:
     """Fold one tracked file's pending change into ``expected_head``; return the new sha or None.
 
@@ -160,7 +171,7 @@ def amend_with_path(directory: Path, path: str, expected_head: str) -> str | Non
         logger.warning("Skipped the PDF amend; HEAD moved since the revert commit %s", expected_head)
         return None
     if not _git(directory, "status", "--porcelain", "--", path).stdout.strip():
-        return False
+        return None
     if _git(directory, "ls-files", "--error-unmatch", "--", path, check=False).returncode != 0:
         return None
     _git(directory, "add", "--", path)

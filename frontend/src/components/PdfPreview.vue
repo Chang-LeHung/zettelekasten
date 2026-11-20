@@ -32,9 +32,12 @@ interface OutlineEntry {
 const props = withDefaults(defineProps<{
   asset: Pick<SessionAsset, 'id' | 'session_id' | 'content_url'> & { version?: number }
   artifact?: boolean
+  /** Restoring the saved version mutates a conversation's project, so only that conversation offers it. */
+  restorable?: boolean
   initialMode?: 'inline' | 'expanded' | 'presentation'
 }>(), {
   artifact: false,
+  restorable: true,
   initialMode: 'inline',
 })
 const emit = defineEmits<{ close: [] }>()
@@ -637,7 +640,7 @@ defineExpose({ refit: refitInlinePages })
     </div>
     <div v-if="compareOpen && artifact" class="pdf-compare-inline">
       <button class="pdf-compare-back" type="button" @click="compareOpen = false">← {{ t('Back to preview') }}</button>
-      <PdfTypesetDiff :artifact-id="asset.id" :session-id="asset.session_id" @restored="reloadAfterRestore" />
+      <PdfTypesetDiff :artifact-id="asset.id" :session-id="restorable ? asset.session_id : undefined" @restored="reloadAfterRestore" />
     </div>
   </div>
   </div>

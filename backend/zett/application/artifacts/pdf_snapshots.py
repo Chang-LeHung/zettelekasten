@@ -205,7 +205,12 @@ class PdfSnapshotService:
         # The saved time stays the user's original save: only the commit moves. If the
         # PDF copy-back failed, the disk PDF may lag the sources until recompiled.
         new_commit = amended or revert_commit
-        if await self.head(artifact) != new_commit:
+        head = await self.head(artifact)
+        if head is None:
+            logger.warning(
+                "Could not read HEAD after the restore; recording the commit it created; artifact_id=%s", artifact.id
+            )
+        elif head != new_commit:
             raise LatexRestoreError("The project changed during the restore; check it before saving again")
         await self._record_commit(artifact, new_commit, saved_at)
         comparison = await self.compare(artifact)
@@ -236,8 +241,8 @@ class PdfSnapshotService:
     ) -> str | None:
         """Put the saved PDF back so the preview matches; return the amended commit or None.
 
-        The copy is skipped when the saved commit does not track the PDF, so no
-        untracked file is left. A failure is only logged.
+        When the saved commit does not track the PDF the copy happens only if git
+        ignores it (so no untracked file is left). A failure is only logged.
         """
         if not snapshot.is_file():
             return None
@@ -246,6 +251,10 @@ class PdfSnapshotService:
             if destination.parent.resolve() != directory.resolve() or destination.is_symlink():
                 raise ValueError("PDF must stay inside the project")
             if not await asyncio.to_thread(git.path_in_commit, directory, saved, content.pdf_name):
+                # Absent because deleted: leave it. Absent because ignored: the copy
+                # cannot dirty the tree, so put the saved PDF back without an amend.
+                if await asyncio.to_thread(git.is_ignored, directory, content.pdf_name):
+                    await asyncio.to_thread(files.copy_atomically, snapshot, destination)
                 return None
             await asyncio.to_thread(files.copy_atomically, snapshot, destination)
             return await asyncio.to_thread(git.amend_with_path, directory, content.pdf_name, revert_commit)

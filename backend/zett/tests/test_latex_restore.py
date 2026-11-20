@@ -3,8 +3,10 @@
 import json
 import subprocess
 
+import pytest
 from fastapi.testclient import TestClient
 from latex_helpers import (
+    LATEX_GITIGNORE,
     PDF_TWO,
     commit,
     git,
@@ -17,6 +19,7 @@ from latex_helpers import (
     subjects,
 )
 
+from zett.application.artifacts import pdf_snapshots
 from zett.infra.artifacts import git_projects
 from zett.infra.persistence.dao import session_storage
 from zett.main import app
@@ -352,3 +355,52 @@ async def test_restore_fails_when_head_is_not_the_commit_it_made(monkeypatch) ->
         response = client.post(restore_url(session_id, artifact))
         assert response.status_code == 409, response.text
         assert json.loads(sidecar.read_text())["commit"] == before["commit"]
+
+
+async def test_restore_copies_back_an_ignored_pdf() -> None:
+    with TestClient(app) as client:
+        session_id, artifact = await prepared_project(client, LATEX_GITIGNORE + "*.pdf\n")
+        directory = project_directory(session_id)
+        assert "paper.pdf" not in git(directory, "ls-files")
+        assert save(client, session_id, artifact["id"]).status_code == 200
+        saved_bytes = snapshot_path(session_id, artifact["id"]).read_bytes()
+        (directory / "paper.pdf").write_bytes(PDF_TWO)
+        agent_edit(directory, "changed")
+        before = len(subjects(directory))
+        assert client.post(restore_url(session_id, artifact)).status_code == 200
+        assert (directory / "main.tex").read_text() != "changed"
+        assert (directory / "paper.pdf").read_bytes() == saved_bytes != PDF_TWO
+        assert status(directory) == ""
+        assert len(subjects(directory)) == before + 1
+
+
+async def test_is_ignored_reports_errors(tmp_path) -> None:
+    git(tmp_path, "init", "-q", ".")
+    (tmp_path / ".gitignore").write_text("*.pdf\n")
+    assert git_projects.is_ignored(tmp_path, "a.pdf") is True
+    assert git_projects.is_ignored(tmp_path, "a.tex") is False
+    with pytest.raises((git_projects.GitProjectError, OSError)):
+        git_projects.is_ignored(tmp_path / "missing", "a.pdf")
+
+
+async def test_amend_reports_nothing_pending_as_none() -> None:
+    with TestClient(app) as client:
+        _session_id, _artifact, directory = await prepared(client)
+        head = git(directory, "rev-parse", "HEAD").strip()
+        assert git_projects.amend_with_path(directory, "paper.pdf", head) is None
+
+
+async def test_restore_succeeds_when_head_cannot_be_read(monkeypatch) -> None:
+    with TestClient(app) as client:
+        session_id, artifact, directory = await prepared(client)
+        assert save(client, session_id, artifact["id"]).status_code == 200
+        agent_edit(directory)
+
+        async def unreadable(self, art):
+            return None
+
+        monkeypatch.setattr(pdf_snapshots.PdfSnapshotService, "head", unreadable)
+        response = client.post(restore_url(session_id, artifact))
+        assert response.status_code == 200, response.text
+        sidecar = snapshot_path(session_id, artifact["id"]).with_suffix(".json")
+        assert json.loads(sidecar.read_text())["commit"] == git(directory, "rev-parse", "HEAD").strip()

@@ -37,10 +37,10 @@ def subjects(directory: Path) -> list[str]:
     return git(directory, "log", "--pretty=%s").splitlines()
 
 
-def initialize(directory: Path, message: str = "chore(paper): start project") -> None:
+def initialize(directory: Path, message: str = "chore(paper): start project", gitignore: str = LATEX_GITIGNORE) -> None:
     """Do what the Agent does with the shell: init, ignore build output, and commit."""
     git(directory, "init", "-q", "-b", "main", ".")
-    (directory / ".gitignore").write_text(LATEX_GITIGNORE, encoding="utf-8")
+    (directory / ".gitignore").write_text(gitignore, encoding="utf-8")
     commit(directory, message)
 
 
@@ -79,11 +79,11 @@ def snapshot_path(session_id: str, artifact_id: object) -> Path:
     return get_object_store().resolve(latex_snapshot_key(session_id, str(artifact_id)))
 
 
-async def prepared_project(client: TestClient) -> tuple[str, dict[str, object]]:
+async def prepared_project(client: TestClient, gitignore: str = LATEX_GITIGNORE) -> tuple[str, dict[str, object]]:
     """Create a session with a LaTeX artifact and a committed project."""
     session_id = (await session_storage.create(AgentSessionCreate())).session_id
     artifact = create_pdf_artifact(client, session_id)
     directory = project_directory(session_id)
     write_sources(directory)
-    initialize(directory)
+    initialize(directory, gitignore=gitignore)
     return session_id, artifact

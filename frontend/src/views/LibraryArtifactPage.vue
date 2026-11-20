@@ -38,7 +38,7 @@ const SlidesPreview = defineAsyncComponent(() => import('../components/SlidesPre
       <div v-if="selectedLibraryItem.tags.length" class="detail-tags"><span v-for="path in selectedLibraryItem.tags" :key="path">{{ path }}</span></div>
 
       <div class="artifact-stage">
-        <PdfPreview v-if="selectedLibraryItem.item_type === 'latex_pdf'" :key="selectedLibraryItem.id" :asset="{ ...libraryClient.documentReference(selectedLibraryItem.id), session_id: '' }" artifact />
+        <PdfPreview v-if="selectedLibraryItem.item_type === 'latex_pdf'" :key="selectedLibraryItem.id" :asset="libraryClient.documentReference(selectedLibraryItem.id)" artifact :restorable="false" />
         <SlidesPreview v-else-if="selectedLibraryItem.item_type === 'slides'" :title="selectedLibraryItem.title" :content="selectedLibraryItem.content" />
         <MarkdownContent v-else class="detail-body" :content="selectedLibraryItem.content" />
       </div>
