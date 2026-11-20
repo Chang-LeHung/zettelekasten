@@ -32,7 +32,7 @@
 .artifact-list-item.lifecycle-changed .artifact-kind-icon { box-shadow: 0 0 0 1.5px var(--life-line); }
 
 /* Editor: header tint, accent bar, and the state dot follow the lifecycle. */
-.artifact-editor .artifact-editor-accent { height: 2px; background: var(--life-ink); opacity: .75; }
+.artifact-editor .artifact-editor-accent { height: 2px; background: var(--life-ink, var(--artifact-accent, #527e63)); opacity: .75; }
 .artifact-editor .artifact-editor-header { background: #fff; }
 .artifact-editor .artifact-state > i { background: var(--life-ink); box-shadow: 0 0 0 .28rem var(--life-soft); }
 .artifact-editor.lifecycle-new .artifact-state > i { background: #fff; box-shadow: inset 0 0 0 2px var(--life-ink), 0 0 0 .28rem var(--life-soft); }

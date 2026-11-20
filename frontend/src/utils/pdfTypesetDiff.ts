@@ -220,8 +220,8 @@ function sideOf(words: readonly Word[]): HunkSide | null {
     page,
     rect: { x: left, y: top, width: right - left, height: bottom - top },
     marks: mergeRects(onPage),
-    words: words.length,
-    text: words.map((word) => word.text).join(' '),
+    words: onPage.length,
+    text: onPage.map((word) => word.text).join(' '),
   }
 }
 
@@ -243,8 +243,17 @@ function joinSides(first: HunkSide | null, second: HunkSide | null): HunkSide | 
 
 /** Two changes this close on one page read as one edit, so they share a card. */
 function near(first: HunkSide | null, second: HunkSide | null, gap: number): boolean {
-  if (!first || !second) return true
+  // A missing side proves nothing: an insertion and a deletion far apart are two edits, not one replacement.
+  if (!first || !second) return false
   return first.page === second.page && second.rect.y - (first.rect.y + first.rect.height) < gap
+}
+
+/** Whether two runs belong to one edit: both touch the same lines, on each side they share. */
+function sameEdit(last: Hunk, run: Hunk, gap: number): boolean {
+  const before = last.before && run.before ? near(last.before, run.before, gap) : null
+  const after = last.after && run.after ? near(last.after, run.after, gap) : null
+  if (before === null && after === null) return false
+  return before !== false && after !== false
 }
 
 /**
@@ -283,7 +292,7 @@ export function hunksOf(
   for (const run of runs) {
     const last = merged[merged.length - 1]
     const lineHeight = Math.max(run.after?.rect.height ?? 0, run.before?.rect.height ?? 0, 8)
-    if (last && near(last.before, run.before, lineHeight * 2) && near(last.after, run.after, lineHeight * 2)) {
+    if (last && sameEdit(last, run, lineHeight * 2)) {
       last.before = joinSides(last.before, run.before)
       last.after = joinSides(last.after, run.after)
       continue

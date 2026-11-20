@@ -12,12 +12,13 @@ export interface ToolSummary {
   meta: string
 }
 
-const FILE_KEYS = ['file_path', 'path', 'filepath', 'filename', 'file']
+const FILE_KEYS = ['path', 'file_path', 'filepath', 'filename', 'file']
 const TEXT_KEYS = ['query', 'pattern', 'name', 'title', 'url', 'description', 'prompt', 'artifact_id']
 const COMMAND_KEYS = ['command', 'cmd']
 
 const LABELS: Readonly<Record<string, string>> = {
   read: 'Read',
+  read_file: 'Read',
   write_file: 'Write',
   write: 'Write',
   edit: 'Edit',
@@ -49,14 +50,27 @@ function firstLine(value: string): string {
   return value.split('\n').find((line) => line.trim())?.trim() ?? ''
 }
 
+function numberOf(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+/** A line range from `start_line`/`line_count`, the arguments of Zett's read tools. */
 function readMeta(args: Record<string, unknown> | undefined): string {
   if (!args) return ''
-  const offset = typeof args.offset === 'number' ? args.offset : null
-  const limit = typeof args.limit === 'number' ? args.limit : null
-  if (offset !== null && limit !== null) return `L${offset}–${offset + limit - 1}`
-  if (offset !== null) return `from L${offset}`
-  if (limit !== null) return `${limit} lines`
+  const start = numberOf(args.start_line)
+  const count = numberOf(args.line_count)
+  if (start !== null && count !== null) return `L${start}–${start + count - 1}`
+  if (start !== null) return `from L${start}`
+  if (count !== null) return `${count} lines`
   return ''
+}
+
+/** How many separate replacements one edit call carries, or that it replaces every match. */
+function editMeta(args: Record<string, unknown> | undefined): string {
+  const edits = Array.isArray(args?.edits) ? args.edits : []
+  if (edits.length > 1) return `${edits.length} edits`
+  const only = edits.length === 1 ? edits[0] : args
+  return only && typeof only === 'object' && (only as Record<string, unknown>).replace_all === true ? 'all matches' : ''
 }
 
 export function toolSummary(name: string, args: Record<string, unknown> | undefined): ToolSummary {
@@ -66,7 +80,7 @@ export function toolSummary(name: string, args: Record<string, unknown> | undefi
   const file = text(args, FILE_KEYS)
   if (file) {
     const { name: fileName, context } = splitPath(file)
-    const meta = name === 'read' ? readMeta(args) : name === 'edit' && args?.replace_all === true ? 'all matches' : ''
+    const meta = name === 'read' || name === 'read_file' ? readMeta(args) : name === 'edit' ? editMeta(args) : ''
     return { label, target: fileName, context, kind: 'file', meta }
   }
   const command = text(args, COMMAND_KEYS)

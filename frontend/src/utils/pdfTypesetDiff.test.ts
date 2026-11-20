@@ -123,6 +123,34 @@ describe('hunks', () => {
     expect(typesetChanges([[line('p a q b r', 10)]], [[line('p x q y r', 10)]]).hunks).toHaveLength(1)
   })
 
+  it('never pairs an insertion with a distant deletion', () => {
+    const base = [[line('top keep', 10), line('keep mid', 100), line('gone words here', 300), line('tail keep', 400)]]
+    const target = [[line('top NEW keep', 10), line('keep mid', 100), line('tail keep', 300)]]
+    const hunks = typesetChanges(base, target).hunks
+    expect(hunks).toHaveLength(2)
+    expect(hunks[0].before).toBeNull()
+    expect(hunks[0].after?.text).toBe('NEW')
+    expect(hunks[1].after).toBeNull()
+    expect(hunks[1].before?.text).toBe('gone words here')
+  })
+
+  it('keeps an insertion and a deletion on different pages apart', () => {
+    const base = [[line('keep a', 10)], [line('keep b', 10), line('gone', 40)]]
+    const target = [[line('keep a NEW', 10)], [line('keep b', 10)]]
+    const hunks = typesetChanges(base, target).hunks
+    expect(hunks).toHaveLength(2)
+    expect(hunks[0]).toMatchObject({ before: null, after: { page: 1 } })
+    expect(hunks[1]).toMatchObject({ before: { page: 2 }, after: null })
+  })
+
+  it('counts only the words of the page it shows', () => {
+    const base = [[line('keep start', 700)], [line('second half keep', 10)]]
+    const target = [[line('keep', 700)], [line('keep', 10)]]
+    const side = typesetChanges(base, target).hunks[0].before
+    expect(side).toMatchObject({ page: 1 })
+    expect(side?.words).toBe(side?.text.split(' ').length)
+  })
+
   it('has none when nothing changed', () => {
     expect(typesetChanges([[line('same')]], [[line('same')]]).hunks).toEqual([])
   })

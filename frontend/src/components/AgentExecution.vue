@@ -1,16 +1,22 @@
 <script setup lang="ts">
-import type { AgentTimelineEntry } from '../api/types'
+import type { AgentTimelineEntry, AgentToolActivity } from '../api/types'
 import { serverToolView } from '../utils/toolPresentation'
 import { toolSummary } from '../utils/toolSummary'
 import { editArguments, editDiffRows, type EditDiffRow } from '../utils/editDiff'
-import type { AgentToolActivity } from '../api/types'
 import ToolResult from './ToolResult.vue'
 
 /** One block of diff rows per before/after pair of an `edit` call; empty for any other tool. */
+const editRows = new WeakMap<object, { source: unknown; rows: EditDiffRow[][] }>()
 function editChanges(activity: AgentToolActivity): EditDiffRow[][] {
   if (activity.name !== 'edit') return []
-  return editArguments(activity.arguments).map((change) => editDiffRows(change.before, change.after))
+  // The diff is an LCS; compute it once per call, not on every streamed render of the thread.
+  const cached = editRows.get(activity)
+  if (cached && cached.source === activity.arguments) return cached.rows
+  const rows = editArguments(activity.arguments).map((change) => editDiffRows(change.before, change.after))
+  editRows.set(activity, { source: activity.arguments, rows })
+  return rows
 }
+const summaryOf = (activity: AgentToolActivity) => toolSummary(activity.name, activity.arguments)
 
 function formatDuration(ms: number): string {
   return ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)} s`
@@ -72,17 +78,15 @@ function formatToolValue(value: unknown): string {
             </div>
           </details>
           <details v-else-if="entry.type === 'tool'" class="tool-activity" :class="entry.activity.state">
-            <summary :title="toolSummary(entry.activity.name, entry.activity.arguments).target || undefined">
-              <template v-for="view in [toolSummary(entry.activity.name, entry.activity.arguments)]" :key="'summary'">
-                <i />
-                <span class="tool-label">{{ view.label }}</span>
-                <span v-if="view.target" class="tool-target" :class="`tool-target-${view.kind}`">
-                  <span class="tool-target-name">{{ view.target }}</span>
-                  <span v-if="view.context" class="tool-target-context">{{ view.context }}</span>
-                </span>
-                <small v-if="view.meta" class="tool-meta">{{ view.meta }}</small>
-                <small class="tool-time">{{ entry.activity.duration_ms ? formatDuration(entry.activity.duration_ms) : '' }}</small>
-              </template>
+            <summary :title="summaryOf(entry.activity).target || undefined">
+              <i />
+              <span class="tool-label">{{ summaryOf(entry.activity).label }}</span>
+              <span v-if="summaryOf(entry.activity).target" class="tool-target" :class="`tool-target-${summaryOf(entry.activity).kind}`">
+                <span class="tool-target-name">{{ summaryOf(entry.activity).target }}</span>
+                <span v-if="summaryOf(entry.activity).context" class="tool-target-context">{{ summaryOf(entry.activity).context }}</span>
+              </span>
+              <small v-if="summaryOf(entry.activity).meta" class="tool-meta">{{ summaryOf(entry.activity).meta }}</small>
+              <small class="tool-time">{{ entry.activity.duration_ms ? formatDuration(entry.activity.duration_ms) : '' }}</small>
             </summary>
             <div class="tool-activity-details">
               <template v-if="editChanges(entry.activity).length">
@@ -172,7 +176,6 @@ function formatToolValue(value: unknown): string {
 .tool-activity summary small.tool-time { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
 .tool-activity summary .tool-target + small.tool-time, .tool-activity summary .tool-label + small.tool-time { margin-left: auto; }
 .tool-activity summary .tool-target { margin-right: auto; }
-.tool-activity summary .tool-target ~ small.tool-time { margin-left: 0; }
 .tool-activity-details { display: grid; gap: .55rem; margin: .08rem 0 .55rem; padding: .2rem 0 .12rem; }
 .tool-activity-details strong { display: block; margin-bottom: .28rem; color: #78827c; font-size: .56rem; letter-spacing: .055em; text-transform: uppercase; }
 .tool-activity-details pre { max-height: 11rem; margin: 0; padding: .32rem 0; overflow: auto; border: 0; color: #465049; background: transparent; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: .62rem; line-height: 1.48; text-transform: none; white-space: pre-wrap; overflow-wrap: anywhere; }

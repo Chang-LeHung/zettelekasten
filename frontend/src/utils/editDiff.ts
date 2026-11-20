@@ -59,6 +59,7 @@ function modified(before: string, after: string): [EditDiffRow, EditDiffRow] {
  */
 export function editDiffRows(before: string, after: string): EditDiffRow[] {
   // An empty side is a pure insertion or deletion, not an edit of one empty line.
+  if (before === '' && after === '') return []
   if (before === '') return after.split('\n').map((text) => plain('added', text))
   if (after === '') return before.split('\n').map((text) => plain('removed', text))
   const lines = diffLines(before, after)
@@ -100,12 +101,12 @@ export interface EditChange {
 function pair(value: unknown): EditChange | null {
   if (!value || typeof value !== 'object') return null
   const item = value as Record<string, unknown>
-  const before = item.old_string ?? item.old_text
-  const after = item.new_string ?? item.new_text
+  const before = item.old_text
+  const after = item.new_text
   return typeof before === 'string' && typeof after === 'string' ? { before, after } : null
 }
 
-/** Every before/after pair of an `edit` call: one pair, or an `edits` list; empty when the arguments are not that shape. */
+/** Every before/after pair of an `edit` call (`edits: [{ old_text, new_text }]`, or one such pair at the top level); empty for any other shape. */
 export function editArguments(args: Record<string, unknown> | undefined): EditChange[] {
   if (!args) return []
   const single = pair(args)

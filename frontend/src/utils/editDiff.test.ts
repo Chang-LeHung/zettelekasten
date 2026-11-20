@@ -40,11 +40,11 @@ it('shows an empty side as pure insertion or deletion', () => {
 })
 
 it('reads one pair or a list of pairs from edit arguments', () => {
-  expect(editArguments({ old_string: 'a', new_string: 'b' })).toEqual([{ before: 'a', after: 'b' }])
+  expect(editArguments({ old_text: 'a', new_text: 'b' })).toEqual([{ before: 'a', after: 'b' }])
   expect(editArguments({ path: 'x', edits: [{ old_text: 'a', new_text: 'b' }, { old_text: 'c', new_text: 'd' }, { old_text: 1 }] })).toEqual([
     { before: 'a', after: 'b' },
     { before: 'c', after: 'd' },
   ])
-  expect(editArguments({ old_string: 'a' })).toEqual([])
+  expect(editArguments({ old_text: 'a' })).toEqual([])
   expect(editArguments(undefined)).toEqual([])
 })

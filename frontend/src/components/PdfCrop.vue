@@ -50,6 +50,7 @@ async function draw(): Promise<void> {
     })
     task = current
     await current.promise
+    task = null
     if (mine !== version || !canvas.value) return
     canvas.value.width = buffer.width
     canvas.value.height = buffer.height
@@ -72,7 +73,10 @@ function markStyle(rect: DiffRect): Record<string, string> {
 
 onMounted(() => {
   observer = new IntersectionObserver((entries) => {
-    visible.value = entries.some((entry) => entry.isIntersecting) || visible.value
+    if (!entries.some((entry) => entry.isIntersecting)) return
+    visible.value = true
+    // Drawn once it is near the viewport; nothing more to observe.
+    observer?.disconnect()
   }, { rootMargin: '700px 0px' })
   if (host.value) observer.observe(host.value)
 })
@@ -81,7 +85,7 @@ onBeforeUnmount(() => {
   task?.cancel()
   observer?.disconnect()
 })
-watch(() => [visible.value, props.page, props.band.y, props.band.height, props.width], () => { void draw() })
+watch(() => [visible.value, props.document, props.page, props.band.y, props.band.height, props.column.x, props.column.width, props.width], () => { void draw() })
 </script>
 
 <template>

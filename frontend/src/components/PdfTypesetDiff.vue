@@ -127,13 +127,21 @@ const cards = computed<CardItem[]>(() => {
   })
   return [...text, ...figures].sort((p, q) => p.page - q.page)
 })
+/** Cards drawn at once; each paints two page bands, so a huge rewrite shows its first changes and says how many remain. */
+const CARD_LIMIT = 60
+const shownLimit = ref(CARD_LIMIT)
+const shownCards = computed(() => cards.value.slice(0, shownLimit.value))
+const hiddenCards = computed(() => Math.max(0, cards.value.length - shownCards.value.length))
 /** Where the text of both documents sits horizontally, so cards crop the margins away. */
 const column = computed(() => {
   const spans = [...(changes.value?.hunks ?? [])].flatMap((hunk) => [hunk.before, hunk.after]).flatMap((side) => (side ? side.marks : []))
   const left = Math.min(...spans.map((rect) => rect.x), pageSize.value.width * 0.12)
   const right = Math.max(...spans.map((rect) => rect.x + rect.width), pageSize.value.width * 0.88)
   const margin = 8
-  return { x: Math.max(0, left - margin), width: Math.min(pageSize.value.width, right + margin) - Math.max(0, left - margin) }
+  const figures = Object.values(visual.value).flat()
+  const x0 = Math.max(0, Math.min(left, ...figures.map((rect) => rect.x)) - margin)
+  const x1 = Math.min(pageSize.value.width, Math.max(right, ...figures.map((rect) => rect.x + rect.width)) + margin)
+  return { x: x0, width: x1 - x0 }
 })
 /** Card width follows the zoom, so the buttons and Fit work the same as on the pages. */
 const cardWidth = computed(() => Math.round(column.value.width * scale.value))
@@ -290,7 +298,7 @@ async function restore(): Promise<void> {
   }
 }
 
-const total = computed(() => (view.value === 'changes' ? cards.value.length : navPages.value.length))
+const total = computed(() => (view.value === 'changes' ? shownCards.value.length : navPages.value.length))
 const VIEWS: Array<{ id: View; label: string }> = [
   { id: 'changes', label: 'Changes' },
   { id: 'before', label: 'Before' },
@@ -373,9 +381,10 @@ onBeforeUnmount(() => {
 
       <div v-else-if="view === 'changes' && baseDoc && targetDoc" class="tsd-scroll tsd-cards">
         <p v-if="!cards.length && !visualBusy" class="tsd-empty">{{ $t('No visible changes') }}</p>
-        <div v-for="(item, index) in cards" :key="item.key" :data-card="index" class="tsd-card-slot" :style="{ width: `${cardWidth}px` }">
+        <div v-for="(item, index) in shownCards" :key="item.key" :data-card="index" class="tsd-card-slot" :style="{ width: `${cardWidth}px` }">
           <PdfChangeCard :index="index + 1" :kind="item.kind" :before="item.before" :after="item.after" :figure="item.figure" :base-doc="baseDoc" :target-doc="targetDoc" :column="column" :width="cardWidth - 3" />
         </div>
+        <button v-if="hiddenCards" type="button" class="tsd-more-btn" @click="shownLimit += CARD_LIMIT">{{ $t('Show next {count} · {hidden} left', { count: Math.min(hiddenCards, CARD_LIMIT), hidden: hiddenCards }) }}</button>
         <p v-if="visualBusy" class="tsd-more">{{ $t('Checking figures…') }}</p>
       </div>
       <div v-else class="tsd-scroll">
@@ -436,6 +445,8 @@ onBeforeUnmount(() => {
 
 .tsd-cards { gap: 1.1rem; }
 .tsd-card-slot { flex: none; scroll-margin-top: .75rem; }
+.tsd-more-btn { padding: .5rem 1.1rem; border: 0; border-radius: .7rem; color: #3b6aa0; background: #e8f1fb; font-size: .76rem; font-weight: 620; cursor: pointer; }
+.tsd-more-btn:hover { background: #dbe9f8; }
 .tsd-empty, .tsd-more { margin: 2rem 0 0; color: #7b867f; font-size: .78rem; }
 @keyframes tsd-in { from { opacity: 0; transform: scaleY(.6); } }
 @media (prefers-reduced-motion: reduce) { .hl { animation: none; } .tsd-spin { animation-duration: 2s; } }

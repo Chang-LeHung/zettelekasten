@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import type { DiffRect, HunkSide } from '../utils/pdfTypesetDiff'
 import PdfCrop from './PdfCrop.vue'
@@ -29,7 +29,8 @@ let copiedTimer: number | null = null
 function bandOf(rect: DiffRect): { y: number; height: number } {
   const line = Math.max(rect.height, 9)
   const top = Math.max(0, rect.y - line * 0.9)
-  return { y: top, height: Math.max(line * 2.8, rect.y + rect.height + line * 0.9 - top) }
+  // A long edit is clipped to a few lines; the full text stays in the Before/After page views.
+  return { y: top, height: Math.min(line * 12, Math.max(line * 2.8, rect.y + rect.height + line * 0.9 - top)) }
 }
 
 const sides = computed(() => {
@@ -51,6 +52,8 @@ const page = computed(() => props.figure?.page ?? props.after?.page ?? props.bef
 const title = computed(() => (props.kind === 'figure' ? 'Figure' : 'Change'))
 const removed = computed(() => props.before?.words ?? 0)
 const added = computed(() => props.after?.words ?? 0)
+
+onBeforeUnmount(() => { if (copiedTimer !== null) window.clearTimeout(copiedTimer) })
 
 async function copy(): Promise<void> {
   const text = props.kind === 'figure'

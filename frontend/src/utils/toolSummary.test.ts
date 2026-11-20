@@ -2,11 +2,13 @@ import { expect, it } from 'vitest'
 import { splitPath, toolSummary } from './toolSummary'
 
 it('names the file a file tool acts on and keeps the folder as context', () => {
-  expect(toolSummary('read', { file_path: 'frontend/src/utils/toolSummary.ts', offset: 10, limit: 5 })).toEqual({
+  expect(toolSummary('read', { path: 'frontend/src/utils/toolSummary.ts', start_line: 10, line_count: 5 })).toEqual({
     label: 'Read', target: 'toolSummary.ts', context: 'src/utils', kind: 'file', meta: 'L10–14',
   })
-  expect(toolSummary('edit', { file_path: '/a/b.ts', replace_all: true }).meta).toBe('all matches')
-  expect(toolSummary('write_file', { file_path: 'notes.md' })).toMatchObject({ label: 'Write', target: 'notes.md', context: '' })
+  expect(toolSummary('read_file', { path: 'a/b.ts', start_line: 3 })).toMatchObject({ label: 'Read', meta: 'from L3' })
+  expect(toolSummary('edit', { path: '/a/b.ts', edits: [{ old_text: 'x', new_text: 'y', replace_all: true }] }).meta).toBe('all matches')
+  expect(toolSummary('edit', { path: '/a/b.ts', edits: [{}, {}, {}] }).meta).toBe('3 edits')
+  expect(toolSummary('write_file', { path: 'notes.md' })).toMatchObject({ label: 'Write', target: 'notes.md', context: '' })
 })
 
 it('shows the first line of a command and the query of a search', () => {
