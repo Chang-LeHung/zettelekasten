@@ -116,3 +116,32 @@ body { background: var(--bg); }
 .card-content-control textarea:focus { background: var(--surface-solid); box-shadow: 0 0 0 3px rgba(71, 105, 87, .22), 0 0 0 .5px var(--hairline); }
 .card-title-control textarea { border-bottom-color: var(--hairline); }
 .card-title-control textarea:focus { border-bottom-color: var(--accent); }
+
+/* ---- Library, tasks, settings and dialogs ---------------------------------------------- */
+
+/* Buttons: one flat primary, one grey secondary, round close. No gradients. */
+.primary-action { border-radius: 999px; background: var(--accent); box-shadow: var(--elev-1); transition: background .14s ease; }
+.primary-action:hover { filter: none; background: var(--accent-dark); }
+.secondary-action { border-radius: 999px; color: #1d1d1f; background: var(--fill); }
+.secondary-action:hover { background: var(--fill-hover); }
+.close-button { color: #3c3c43; background: var(--fill); }
+.close-button:hover { background: var(--fill-hover); }
+.update-callout, .update-callout.restart { background: var(--fill); border-color: transparent; }
+.update-callout:hover:not(:disabled), .update-callout.restart:hover:not(:disabled) { background: var(--fill-hover); transform: none; }
+
+/* Search is a recessed field that lifts when focused. */
+.search-field { border: 0; border-radius: var(--radius-m); background: var(--fill); box-shadow: none; transition: background .14s ease, box-shadow .14s ease; }
+.search-field:focus-within { background: var(--surface-solid); box-shadow: 0 0 0 3px rgba(71, 105, 87, .22), 0 0 0 .5px var(--hairline); }
+.search-field button { background: var(--fill-hover); }
+
+/* Type filters read as one segmented control. */
+.library-type-filters button { border: 0; border-radius: 999px; color: #3c3c43; }
+.library-type-filters button:hover { background: var(--fill); }
+.library-type-filters button.active { color: #fff; background: var(--accent); box-shadow: none; }
+
+/* Surfaces that were bordered cards become sheets. Some are styled by components with scoped
+   CSS, so their rules are anchored on #app to outrank the attribute selector. */
+#app .settings-card, #app .scheduled-list-panel, #app .scheduled-card, #app .channel-card, #app .card { border: 0; border-radius: var(--radius-l); background: var(--surface-solid); box-shadow: var(--elev-1), 0 0 0 .5px var(--hairline); }
+#app .card:hover { transform: none; background: var(--surface-solid); box-shadow: var(--elev-2), 0 0 0 .5px var(--hairline); }
+/* Type labels are sentence case, not shouted. */
+.card-type { flex: 0 0 auto; letter-spacing: 0; text-transform: none; font-size: .66rem; white-space: nowrap; }
