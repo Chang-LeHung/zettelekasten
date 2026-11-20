@@ -16,7 +16,14 @@ function editChanges(activity: AgentToolActivity): EditDiffRow[][] {
   editRows.set(activity, { source: activity.arguments, rows })
   return rows
 }
-const summaryOf = (activity: AgentToolActivity) => toolSummary(activity.name, activity.arguments)
+const summaries = new WeakMap<object, { source: unknown; value: ReturnType<typeof toolSummary> }>()
+function summaryOf(activity: AgentToolActivity): ReturnType<typeof toolSummary> {
+  const cached = summaries.get(activity)
+  if (cached && cached.source === activity.arguments) return cached.value
+  const value = toolSummary(activity.name, activity.arguments)
+  summaries.set(activity, { source: activity.arguments, value })
+  return value
+}
 
 function formatDuration(ms: number): string {
   return ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)} s`

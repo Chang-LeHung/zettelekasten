@@ -25,12 +25,21 @@ const props = defineProps<{
 const copied = ref(false)
 let copiedTimer: number | null = null
 
-/** A line of the page above and below the changed words, so the edit has its surroundings. */
-function bandOf(rect: DiffRect): { y: number; height: number } {
-  const line = Math.max(rect.height, 9)
-  const top = Math.max(0, rect.y - line * 0.9)
-  // A long edit is clipped to a few lines; the full text stays in the Before/After page views.
-  return { y: top, height: Math.min(line * 12, Math.max(line * 2.8, rect.y + rect.height + line * 0.9 - top)) }
+/** Most lines of an edit shown in one band; the page views hold the rest. */
+const MAX_LINES = 7
+
+/** A line of the page above and below the edit, and at most MAX_LINES of the edit itself. */
+function bandOf(side: HunkSide): { y: number; height: number } {
+  const line = side.line
+  const top = Math.max(0, side.rect.y - line * 0.9)
+  return { y: top, height: Math.min(side.rect.y + side.rect.height + line * 0.9 - top, line * (MAX_LINES + 1.8)) }
+}
+
+/** Both bands of a card get the taller height, so Before and After line up. */
+function matchHeights<T extends { band: { y: number; height: number } } | null>(first: T, second: T): void {
+  const height = Math.max(first?.band.height ?? 0, second?.band.height ?? 0)
+  if (first) first.band.height = height
+  if (second) second.band.height = height
 }
 
 const sides = computed(() => {
@@ -43,10 +52,10 @@ const sides = computed(() => {
       after: { page, band, marks, doc: props.targetDoc },
     }
   }
-  return {
-    before: props.before ? { page: props.before.page, band: bandOf(props.before.rect), marks: props.before.marks, doc: props.baseDoc } : null,
-    after: props.after ? { page: props.after.page, band: bandOf(props.after.rect), marks: props.after.marks, doc: props.targetDoc } : null,
-  }
+  const before = props.before ? { page: props.before.page, band: bandOf(props.before), marks: props.before.marks, doc: props.baseDoc } : null
+  const after = props.after ? { page: props.after.page, band: bandOf(props.after), marks: props.after.marks, doc: props.targetDoc } : null
+  if (before && after) matchHeights(before, after)
+  return { before, after }
 })
 const page = computed(() => props.figure?.page ?? props.after?.page ?? props.before?.page ?? 1)
 const title = computed(() => (props.kind === 'figure' ? 'Figure' : 'Change'))

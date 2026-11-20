@@ -45,6 +45,7 @@ it('reads one pair or a list of pairs from edit arguments', () => {
     { before: 'a', after: 'b' },
     { before: 'c', after: 'd' },
   ])
-  expect(editArguments({ old_text: 'a' })).toEqual([])
+  expect(editArguments({ old_text: 'a' })).toEqual([{ before: 'a', after: '' }])
+  expect(editArguments({ new_text: 'a' })).toEqual([])
   expect(editArguments(undefined)).toEqual([])
 })

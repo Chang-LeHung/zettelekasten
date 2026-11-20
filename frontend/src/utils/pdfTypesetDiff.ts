@@ -55,6 +55,8 @@ export interface HunkSide {
   rect: DiffRect
   /** Boxes of the changed words, merged per line. */
   marks: DiffRect[]
+  /** Height of one text line, from the words themselves, not from the whole block. */
+  line: number
   words: number
   text: string
 }
@@ -220,6 +222,7 @@ function sideOf(words: readonly Word[]): HunkSide | null {
     page,
     rect: { x: left, y: top, width: right - left, height: bottom - top },
     marks: mergeRects(onPage),
+    line: Math.max(6, Math.min(...onPage.map((word) => word.height))),
     words: onPage.length,
     text: onPage.map((word) => word.text).join(' '),
   }
@@ -236,6 +239,7 @@ function joinSides(first: HunkSide | null, second: HunkSide | null): HunkSide | 
     page: first.page,
     rect: { x: left, y: top, width: right - left, height: bottom - top },
     marks: [...first.marks, ...second.marks],
+    line: Math.min(first.line, second.line),
     words: first.words + second.words,
     text: `${first.text} ${second.text}`,
   }
@@ -291,7 +295,7 @@ export function hunksOf(
   const merged: Hunk[] = []
   for (const run of runs) {
     const last = merged[merged.length - 1]
-    const lineHeight = Math.max(run.after?.rect.height ?? 0, run.before?.rect.height ?? 0, 8)
+    const lineHeight = Math.max(run.after?.line ?? 0, run.before?.line ?? 0, 8)
     if (last && sameEdit(last, run, lineHeight * 2)) {
       last.before = joinSides(last.before, run.before)
       last.after = joinSides(last.after, run.after)

@@ -220,6 +220,7 @@ async function load(): Promise<void> {
   phase.value = 'loading'
   errorMessage.value = ''
   changes.value = null
+  shownLimit.value = CARD_LIMIT
   visual.value = {}
   visualBusy.value = false
   figuresCapped.value = false

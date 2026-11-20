@@ -103,7 +103,9 @@ function pair(value: unknown): EditChange | null {
   const item = value as Record<string, unknown>
   const before = item.old_text
   const after = item.new_text
-  return typeof before === 'string' && typeof after === 'string' ? { before, after } : null
+  if (typeof before !== 'string') return null
+  // `new_text` defaults to '' in the tool, so a bare old_text is a deletion.
+  return { before, after: typeof after === 'string' ? after : '' }
 }
 
 /** Every before/after pair of an `edit` call (`edits: [{ old_text, new_text }]`, or one such pair at the top level); empty for any other shape. */

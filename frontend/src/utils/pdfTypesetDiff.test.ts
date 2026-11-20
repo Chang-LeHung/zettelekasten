@@ -147,8 +147,15 @@ describe('hunks', () => {
     const base = [[line('keep start', 700)], [line('second half keep', 10)]]
     const target = [[line('keep', 700)], [line('keep', 10)]]
     const side = typesetChanges(base, target).hunks[0].before
-    expect(side).toMatchObject({ page: 1 })
-    expect(side?.words).toBe(side?.text.split(' ').length)
+    expect(side).toMatchObject({ page: 1, words: 1, text: 'start' })
+  })
+
+  it('measures a line from its words, so a tall edit is not one giant line', () => {
+    const base = [[line('a b', 10), line('c d', 22), line('e f', 34), line('g h', 46)]]
+    const target = [[line('a', 10), line('c', 22), line('e', 34), line('g', 46)]]
+    const side = typesetChanges(base, target).hunks[0].before
+    expect(side?.line).toBeLessThan(15)
+    expect(side?.rect.height).toBeGreaterThan(side?.line ?? 0)
   })
 
   it('has none when nothing changed', () => {
