@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { deleteSelectedArtifact, saveSelectedArtifact, selectArtifact, setConversationCardStatus } from '../../app/artifacts/actions'
+import { endPeek, startPeek } from '../../app/artifacts/peek'
 import { editArtifactFromList } from '../../app/artifacts/editor'
-import { artifactListHeight, artifacts, saving, savingAllArtifacts, selectedArtifactId } from '../../app/artifacts/state'
+import { appliedArtifactListWidth, artifacts, saving, savingAllArtifacts, selectedArtifactId } from '../../app/artifacts/state'
 import { artifactTitle } from '../../app/format'
 import { t } from '../../app/i18n'
 import { cardStatusUpdatingIds } from '../../app/library/state'
@@ -14,8 +15,8 @@ import { cardStatusLabel, cardStatusType, isStruck, statusTone } from '../../uti
 </script>
 
 <template>
-  <div class="artifact-list" :style="artifactListHeight === null ? undefined : { height: `${artifactListHeight}px` }" aria-label="Conversation artifacts">
-    <div v-for="artifact in artifacts" :key="artifact.id" class="artifact-list-item" :class="[artifactTone(artifact.artifact_type), lifecycleClass(artifactLifecycle(artifact)), artifact.card_status ? statusTone(artifact.card_status) : '', { active: artifact.id === selectedArtifactId }]" :data-lifecycle="artifactLifecycle(artifact)">
+  <div class="artifact-list" :style="appliedArtifactListWidth === null ? undefined : { width: `${appliedArtifactListWidth}px` }" aria-label="Conversation artifacts">
+    <div v-for="artifact in artifacts" :key="artifact.id" class="artifact-list-item" :class="[artifactTone(artifact.artifact_type), lifecycleClass(artifactLifecycle(artifact)), artifact.card_status ? statusTone(artifact.card_status) : '', { active: artifact.id === selectedArtifactId }]" :data-lifecycle="artifactLifecycle(artifact)" @pointerenter="$event.pointerType === 'mouse' && startPeek(artifact.id)" @pointerleave="endPeek" @focusin="($event.target as Element).matches(':focus-visible') && startPeek(artifact.id)" @focusout="endPeek">
       <CardStatusMark v-if="artifact.card_status" class="artifact-list-check" :status="artifact.card_status" :busy="cardStatusUpdatingIds.has(artifact.id)" @select="setConversationCardStatus(artifact, $event)" />
       <button class="artifact-list-select" type="button" :disabled="saving || savingAllArtifacts" @click="selectArtifact(artifact)">
         <img v-if="artifactListImage(artifact)" class="artifact-list-image" :src="artifactListImage(artifact) || undefined" alt="" />

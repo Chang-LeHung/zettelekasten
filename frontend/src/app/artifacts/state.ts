@@ -3,7 +3,9 @@ import type { AgentArtifact, ArtifactContent } from '../../api/types'
 import { diffArtifactContent } from '../../utils/artifactDiff'
 import { artifactEditableContent } from '../../utils/artifactEditor'
 import { artifactImageUrl, versionedPreviewUrl } from '../../utils/artifactPreview'
+import { clampArtifactListWidth, parseArtifactListWidth } from '../../utils/artifactSplit'
 import { pendingArtifactSaves } from '../../utils/artifactSaveAll'
+import { readStored } from '../../utils/workspaceLayout'
 
 export const artifactContent = ref<ArtifactContent | null>(null)
 export const artifactPreview = ref(true)
@@ -15,12 +17,20 @@ export const artifactDiff = ref(false)
 export const artifacts = ref<AgentArtifact[]>([])
 export const selectedArtifactId = ref<string | null>(null)
 export const artifactPaneRef = ref<HTMLElement | null>(null)
-export const artifactHeaderRef = ref<HTMLElement | null>(null)
-export const artifactListHeight = ref<number | null>(null)
+export const ARTIFACT_LIST_WIDTH_KEY = 'zett.artifact-list-width'
+/** The width the user chose; only a drag or the keyboard writes it, so a narrow pane never erases it. */
+export const artifactListWidth = ref<number | null>(parseArtifactListWidth(readStored(ARTIFACT_LIST_WIDTH_KEY)))
+/** The pane's measured width, 0 while it is hidden. */
+export const artifactPaneWidth = ref(0)
+/** The preference fitted to the current pane; null leaves the stylesheet's default. */
+export const appliedArtifactListWidth = computed(() => {
+  if (artifactListWidth.value === null || artifactPaneWidth.value === 0) return artifactListWidth.value
+  return clampArtifactListWidth(artifactListWidth.value, artifactPaneWidth.value)
+})
 export const artifactsScratch = {
   artifactSplitPointer: null as number | null,
-  artifactSplitStartY: 0,
-  artifactSplitStartHeight: 0,
+  artifactSplitStartX: 0,
+  artifactSplitStartWidth: 0,
   artifactPaneResizeObserver: null as ResizeObserver | null,
 }
 //: True until the persisted conversation, including its artifacts, has loaded.

@@ -1,81 +1,30 @@
 """The Agent owns a LaTeX project's git history; Zett verifies it before publishing."""
 
 import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from latex_helpers import (
+    AGENT_IDENTITY,
+    commit,
+    create_pdf_artifact,
+    git,
+    initialize,
+    project_directory,
+    save,
+    status,
+    subjects,
+    write_sources,
+)
 
 from zett.application.artifacts import versioning as versioning_module
 from zett.config import settings
 from zett.infra.artifacts import git_projects
 from zett.infra.artifacts.git_projects import GitProjectError
-from zett.infra.files.object_store import get_object_store
 from zett.infra.persistence.dao import session_storage
 from zett.main import app
 from zett.schemas import AgentSessionCreate
-
-#: Build output the Agent's own project ``.gitignore`` is expected to cover.
-LATEX_GITIGNORE = "*.aux\n*.log\n*.out\n*.toc\n*.synctex.gz\n"
-AGENT_IDENTITY = ("-c", "user.name=Agent", "-c", "user.email=agent@example.com")
-
-
-def git_result(directory: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(("git", *arguments), cwd=directory, capture_output=True, text=True)
-
-
-def git(directory: Path, *arguments: str) -> str:
-    completed = git_result(directory, *arguments)
-    assert completed.returncode == 0, completed.stderr
-    return completed.stdout
-
-
-def status(directory: Path) -> str:
-    """Return the project subtree's pending changes, ignoring build output."""
-    return git(directory, "status", "--porcelain", "--", ".").strip()
-
-
-def subjects(directory: Path) -> list[str]:
-    return git(directory, "log", "--pretty=%s").splitlines()
-
-
-def initialize(directory: Path, message: str = "chore(paper): start project") -> None:
-    """Do what the Agent does with the shell: init, ignore build output, and commit."""
-    git(directory, "init", "-q", "-b", "main", ".")
-    (directory / ".gitignore").write_text(LATEX_GITIGNORE, encoding="utf-8")
-    commit(directory, message)
-
-
-def commit(directory: Path, message: str = "docs(paper): add introduction") -> None:
-    """Commit pending project changes the way the Agent's shell command does."""
-    git(directory, "add", "-A")
-    git(directory, *AGENT_IDENTITY, "commit", "-q", "-m", message)
-
-
-def project_directory(session_id: str, name: str = "paper") -> Path:
-    return get_object_store().resolve(f"artifacts/{session_id}/{name}")
-
-
-def create_pdf_artifact(client: TestClient, session_id: str, pdf_name: str = "paper.pdf") -> dict[str, object]:
-    response = client.post(
-        f"/api/agent/{session_id}/artifacts",
-        json={"content": {"artifact_type": "latex_pdf", "pdf_name": pdf_name}},
-    )
-    assert response.status_code == 201, response.text
-    return response.json()
-
-
-def write_sources(directory: Path, name: str = "paper") -> None:
-    """Write one source file and the build files a LaTeX run regenerates."""
-    (directory / "main.tex").write_text(r"\documentclass{article}\begin{document}Hello\end{document}")
-    (directory / f"{name}.pdf").write_bytes(b"%PDF-1.4\n%%EOF\n")
-    for build_file in ("paper.aux", "paper.log", "paper.toc"):
-        (directory / build_file).write_text("generated")
-
-
-def save(client: TestClient, session_id: str, artifact_id: object) -> object:
-    return client.post(f"/api/agent/{session_id}/artifacts/{artifact_id}/save")
 
 
 async def test_creating_an_artifact_touches_no_git() -> None:

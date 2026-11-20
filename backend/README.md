@@ -321,6 +321,8 @@ Everything is mounted under `/api`.
 | `/api/agent/{id}/artifacts*`, `GET /api/artifacts` | Artifact CRUD, per-session listing, and library-wide search; optional `published_only=true` searches only published content, not draft or raw-source text |
 | `POST /api/artifacts` | Create an artifact that belongs to no conversation, owned by the hidden library session; requires a non-blank `metadata.source` naming who creates it |
 | `GET /api/artifacts/{artifact_id}` | Read one artifact by id, whichever session owns it |
+| `GET /api/artifacts/{artifact_id}/pdf-diff` | LaTeX only (409 otherwise): the PDF snapshot taken at the last save, the current PDF, `stale`, `commits_since`, and `can_restore`; reads files and two git queries, nothing else |
+| `POST /api/agent/{session_id}/artifacts/{artifact_id}/restore` | LaTeX only, session-scoped (404 unless the session owns it): undo every commit since the last save with one revert commit and put the saved PDF back; history is kept, refusals answer 409 with the reason |
 | `DELETE /api/artifacts/{artifact_id}` | Delete one artifact, and only while the library session owns it: a conversation's artifact answers 403 and stays |
 | `/api/agent/{id}/artifacts/{artifact_id}/draft` | Stage edited content as the draft without touching published content |
 | `/api/agent/{id}/artifacts/{artifact_id}/save` | Publish the pending draft as the artifact's content (user action) |

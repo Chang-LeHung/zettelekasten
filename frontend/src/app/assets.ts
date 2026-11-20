@@ -2,7 +2,7 @@ import { computed, nextTick, ref } from 'vue'
 import { aiClient, assetClient } from '../api/client'
 import type { MessageImagePart, SessionAsset, StaticAsset } from '../api/types'
 import { assetOpenAction } from '../utils/assetOpen'
-import { readPaneHidden, writePaneHidden } from '../utils/paneVisibility'
+import { readStored, writeStored } from '../utils/workspaceLayout'
 import { classifyAsset } from './format'
 import { errorMessage, requestConfirmation, showNotice } from './notice'
 import { conversationId } from './sessions'
@@ -17,8 +17,9 @@ export const assetUploading = ref(false)
 export const assetQuery = ref('')
 export const assetFilter = ref<AssetFilter>('all')
 export const assetDragging = ref(false)
-const assetsPaneKey = 'zett.assets-pane-hidden'
-export const assetsPaneHidden = ref(readPaneHidden(assetsPaneKey))
+const assetsPaneKey = 'zett.assets-pane-shown'
+//: Assets are reference material, not the product, so the pane starts hidden until the user asks for it.
+export const assetsPaneHidden = ref(readStored(assetsPaneKey) !== 'shown')
 //: The artifact pane's preview, which refits its pages when this pane changes width.
 export const pdfPreviewRef = ref<{ refit: () => void } | null>(null)
 export const staticAssetImportOpen = ref(false)
@@ -56,7 +57,7 @@ export function showAssetEditor(mode: Exclude<AssetEditorMode, 'closed'>): void 
 }
 export function toggleAssetsPane(hidden: boolean): void {
   assetsPaneHidden.value = hidden
-  writePaneHidden(assetsPaneKey, hidden)
+  writeStored(assetsPaneKey, hidden ? 'hidden' : 'shown')
   // The preview must refit before this frame paints: a resize observer reports the new
   // stage width only after the wrong-scale frame is already on screen.
   void nextTick().then(() => pdfPreviewRef.value?.refit())

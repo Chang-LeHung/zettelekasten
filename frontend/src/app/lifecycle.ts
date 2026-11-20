@@ -1,7 +1,6 @@
 import { onBeforeUnmount, onMounted, watch } from 'vue'
 import { pruned } from '../utils/multiSelect'
-import { setArtifactListHeight } from './artifacts/actions'
-import { artifactListHeight, artifactPaneRef, artifactsScratch } from './artifacts/state'
+import { artifactPaneRef, artifactPaneWidth, artifactsScratch } from './artifacts/state'
 import { activeStreamController, activeTodos, agentTurnStack, conversation, conversationScratch, loading, pendingQuestion, streamingMessage, streamingReasoning, streamingTimeline } from './conversation/state'
 import { scrollAgentThread } from './conversation/stream'
 import { clearLibrarySelection, handleSlidesFullscreenChange, loadLibrary } from './library/actions'
@@ -17,10 +16,9 @@ export function useAppLifecycle(): void {
   watch(artifactPaneRef, (pane) => {
     artifactsScratch.artifactPaneResizeObserver?.disconnect()
     artifactsScratch.artifactPaneResizeObserver = null
-    if (!pane) return
-    artifactsScratch.artifactPaneResizeObserver = new ResizeObserver(() => {
-      if (artifactListHeight.value !== null) setArtifactListHeight(artifactListHeight.value)
-    })
+    if (!pane) { artifactPaneWidth.value = 0; return }
+    artifactsScratch.artifactPaneResizeObserver = new ResizeObserver(() => { artifactPaneWidth.value = pane.clientWidth })
+    artifactPaneWidth.value = pane.clientWidth
     artifactsScratch.artifactPaneResizeObserver.observe(pane)
   })
   watch(

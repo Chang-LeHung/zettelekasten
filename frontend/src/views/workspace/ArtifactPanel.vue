@@ -1,16 +1,42 @@
 <script setup lang="ts">
-import { defineAsyncComponent } from 'vue'
+import { defineAsyncComponent, ref } from 'vue'
 import { setConversationCardStatus } from '../../app/artifacts/actions'
-import { artifactContent, artifactDiff, artifactPreview, artifactPreviewAsset, selectedArtifact, selectedArtifactDiff, selectedArtifactDirty, selectedImageUrl, selectedSuggestions } from '../../app/artifacts/state'
+import { artifactContent, artifactDiff, artifactPreview, artifactPreviewAsset, artifactPreviewNonce, selectedArtifact, selectedArtifactDiff, selectedArtifactDirty, selectedImageUrl, selectedSuggestions } from '../../app/artifacts/state'
 import { t } from '../../app/i18n'
 import { cardStatusUpdatingIds, cardTypes } from '../../app/library/state'
-import ArtifactDiffView from '../../components/ArtifactDiffView.vue'
+import MarkdownDiff from '../../components/MarkdownDiff.vue'
+import { artifactParts } from '../../utils/markdownDiff'
+import type { AgentArtifact } from '../../api/types'
+import { rewriteArtifactDraft } from '../../app/artifacts/actions'
 import BlockEditor from '../../components/BlockEditor.vue'
 import CardStatusMenu from '../../components/CardStatusMenu.vue'
 import { artifactLifecycle, lifecycleClass, lifecycleHint, lifecycleLabel } from '../../utils/artifactLifecycle'
 import { artifactTone } from '../../utils/artifactTone'
 import { cardStatusType } from '../../utils/cardStatus'
 
+const rejecting = ref(false)
+
+async function rejectBody(artifact: AgentArtifact, body: string): Promise<void> {
+  const draft = artifact.draft_content
+  if (rejecting.value || !draft || !('content' in draft)) return
+  rejecting.value = true
+  try {
+    await rewriteArtifactDraft(artifact, { ...draft, content: body })
+  } finally {
+    rejecting.value = false
+  }
+}
+
+/** Rejecting everything puts the draft back to what the user last saved. */
+async function rejectAll(artifact: AgentArtifact): Promise<void> {
+  if (rejecting.value || !artifact.content) return
+  rejecting.value = true
+  try {
+    await rewriteArtifactDraft(artifact, artifact.content)
+  } finally {
+    rejecting.value = false
+  }
+}
 const MarkdownContent = defineAsyncComponent(() => import('../../components/MarkdownContent.vue'))
 const PdfPreview = defineAsyncComponent(() => import('../../components/PdfPreview.vue'))
 const SlidesPreview = defineAsyncComponent(() => import('../../components/SlidesPreview.vue'))
@@ -25,7 +51,18 @@ const SlidesPreview = defineAsyncComponent(() => import('../../components/Slides
       <div v-if="selectedArtifactDiff?.changed || !artifactPreview" class="artifact-mode-switch" :aria-label="$t('Artifact display mode')"><button v-if="selectedArtifactDiff?.changed" type="button" :class="{ active: artifactDiff }" @click="artifactDiff = true; artifactPreview = false">{{ $t('Diff') }}</button><button v-if="!artifactPreview || artifactDiff" type="button" @click="artifactPreview = true; artifactDiff = false">{{ $t('Preview') }}</button></div>
     </header>
     <div class="artifact-editor-body">
-      <ArtifactDiffView v-if="artifactDiff && selectedArtifactDiff" :diff="selectedArtifactDiff" />
+      <MarkdownDiff
+        v-if="artifactDiff && selectedArtifactDiff && selectedArtifact"
+        class="artifact-typeset"
+        :before="artifactParts(selectedArtifact.content)?.body ?? ''"
+        :after="artifactParts(selectedArtifact.draft_content)?.body ?? ''"
+        :header-before="artifactParts(selectedArtifact.content)?.header"
+        :header-after="artifactParts(selectedArtifact.draft_content)?.header"
+        rejectable
+        :busy="rejecting"
+        @reject="rejectBody(selectedArtifact, $event)"
+        @reject-all="rejectAll(selectedArtifact)"
+      />
       <template v-else>
       <div v-if="artifactContent.artifact_type === 'card' && !artifactPreview" class="card-meta-row">
         <div class="card-type-control">

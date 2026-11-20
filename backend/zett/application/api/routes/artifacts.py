@@ -3,6 +3,12 @@
 from fastapi import APIRouter, HTTPException, Query, status
 
 from zett.application.artifacts.library import library_session_service
+from zett.application.artifacts.pdf_snapshots import (
+    LatexRestoreError,
+    PdfComparison,
+    PdfRestoration,
+    pdf_snapshot_service,
+)
 from zett.application.artifacts.versioning import UncommittedLatexProjectError, artifact_versioning
 from zett.application.tags.tagging import tag_service
 from zett.infra.persistence.dao import artifact_storage, session_storage
@@ -16,7 +22,13 @@ from zett.schemas import (
     CardStatus,
 )
 
-from ..schemas import ArtifactCountOut, ArtifactCreateIn, ArtifactUpdateIn, CardStatusIn, DeleteResponse
+from ..schemas import (
+    ArtifactCountOut,
+    ArtifactCreateIn,
+    ArtifactUpdateIn,
+    CardStatusIn,
+    DeleteResponse,
+)
 
 router = APIRouter(tags=["artifacts"])
 
@@ -61,6 +73,14 @@ async def _require_committed_project(artifact: AgentArtifactEntity) -> None:
         await artifact_versioning.verify(artifact)
     except UncommittedLatexProjectError as error:
         raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
+
+
+async def _snapshot(before: AgentArtifactEntity, after: AgentArtifactEntity, commit: str | None = None) -> None:
+    """Snapshot a saved LaTeX artifact, or drop the snapshot of one that stopped being LaTeX."""
+    if before.artifact_type == ArtifactType.LATEX_PDF and after.artifact_type != ArtifactType.LATEX_PDF:
+        await pdf_snapshot_service.discard(before)
+        return
+    await pdf_snapshot_service.capture(after, commit)
 
 
 @router.get("/artifacts", response_model=list[AgentArtifactEntity])
@@ -183,6 +203,19 @@ async def get_library_artifact(artifact_id: str) -> AgentArtifactEntity:
     return artifact
 
 
+@router.get("/artifacts/{artifact_id}/pdf-diff", response_model=PdfComparison)
+async def get_pdf_diff(artifact_id: str) -> PdfComparison:
+    """Return the PDF saved last and the current compiled PDF of a LaTeX artifact."""
+    artifact = await artifact_storage.get(artifact_id)
+    if artifact is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Artifact not found")
+    try:
+        comparison = await pdf_snapshot_service.compare(artifact)
+    except ValueError as error:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
+    return comparison
+
+
 @router.delete("/artifacts/{artifact_id}", response_model=DeleteResponse)
 async def delete_library_artifact(artifact_id: str) -> DeleteResponse:
     """Delete one artifact from the library, and nothing outside it.
@@ -204,7 +237,10 @@ async def delete_library_artifact(artifact_id: str) -> DeleteResponse:
             status.HTTP_403_FORBIDDEN,
             "Artifact belongs to a conversation; delete it through that conversation",
         )
-    return DeleteResponse(ok=await artifact_storage.delete(artifact_id))
+    deleted = await artifact_storage.delete(artifact_id)
+    if deleted:
+        await pdf_snapshot_service.discard(artifact)
+    return DeleteResponse(ok=deleted)
 
 
 @router.get("/agent/{session_id}/artifacts/{artifact_id}", response_model=AgentArtifactEntity)
@@ -241,11 +277,13 @@ async def update_artifact(session_id: str, artifact_id: str, payload: ArtifactUp
             expected_version=payload.expected_version,
             require_clean_draft=payload.expected_version is not None,
         )
-        return await tag_service.sync_confirmed_suggestions(updated, superseded_content=current.content)
+        result = await tag_service.sync_confirmed_suggestions(updated, superseded_content=current.content)
     except ArtifactVersionConflictError as error:
         raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
     except (ValueError, FileNotFoundError) as error:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
+    await _snapshot(current, updated)
+    return result
 
 
 @router.put("/agent/{session_id}/artifacts/{artifact_id}/draft", response_model=AgentArtifactEntity)
@@ -262,6 +300,9 @@ async def update_artifact_draft(
     current = await artifact_storage.get_for_session(session_id, artifact_id)
     if current is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Artifact not found")
+    if payload.expected_version is not None and current.version != payload.expected_version:
+        # A reviewer rebuilt this draft from a diff; the draft moved since, so writing would lose that edit.
+        raise HTTPException(status.HTTP_409_CONFLICT, "The draft changed since it was loaded")
     entity = AgentArtifactWrite(
         session_id=session_id,
         content=current.content,
@@ -336,6 +377,8 @@ async def save_artifact(session_id: str, artifact_id: str) -> AgentArtifactEntit
     if published is None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Artifact has no content to save")
     await _require_committed_project(current)
+    # HEAD as the clean-tree check just saw it; the sidecar records this commit.
+    verified_head = await pdf_snapshot_service.head(current)
     entity = AgentArtifactWrite(
         session_id=session_id,
         content=published,
@@ -346,9 +389,26 @@ async def save_artifact(session_id: str, artifact_id: str) -> AgentArtifactEntit
     )
     try:
         saved = await artifact_storage.update(artifact_id, entity)
-        return await tag_service.sync_confirmed_suggestions(saved, superseded_content=current.content)
+        result = await tag_service.sync_confirmed_suggestions(saved, superseded_content=current.content)
     except (ValueError, FileNotFoundError) as error:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
+    await _snapshot(current, saved, verified_head)
+    return result
+
+
+@router.post("/agent/{session_id}/artifacts/{artifact_id}/restore", response_model=PdfRestoration)
+async def restore_saved_version(session_id: str, artifact_id: str) -> PdfRestoration:
+    """Undo every commit since the last save with one new revert commit; history is kept.
+
+    Session-scoped because a conversation owns its LaTeX project.
+    """
+    artifact = await artifact_storage.get_for_session(session_id, artifact_id)
+    if artifact is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Artifact not found")
+    try:
+        return await pdf_snapshot_service.restore(artifact)
+    except LatexRestoreError as error:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
 
 
 @router.delete("/agent/{session_id}/artifacts/{artifact_id}", response_model=DeleteResponse)
@@ -357,4 +417,7 @@ async def delete_artifact(session_id: str, artifact_id: str) -> DeleteResponse:
     current = await artifact_storage.get_for_session(session_id, artifact_id)
     if current is None:
         return DeleteResponse(ok=False)
-    return DeleteResponse(ok=await artifact_storage.delete(artifact_id))
+    deleted = await artifact_storage.delete(artifact_id)
+    if deleted:
+        await pdf_snapshot_service.discard(current)
+    return DeleteResponse(ok=deleted)

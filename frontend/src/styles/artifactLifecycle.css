@@ -5,8 +5,8 @@
  * user kept, and the two must not look alike. The state is derived from the
  * artifact itself (utils/artifactLifecycle.ts), never stored:
  *
- *   new      never saved: a dashed outline and an amber mark, "still a proposal"
- *   changed  saved, but the draft differs: a blue bar, "newer than what you kept"
+ *   new      never saved: a thin amber edge and an amber badge, "still a proposal"
+ *   changed  saved, but the draft differs: a thin blue edge, "newer than what you kept"
  *   saved    saved and current: green and quiet, nothing left to decide
  *
  * `--life-ink`, `--life-soft` and `--life-line` are the only colours. A state
@@ -23,9 +23,8 @@
 .lifecycle-new .artifact-life-badge::before { background: transparent; box-shadow: inset 0 0 0 1.5px var(--life-ink); }
 
 /* List row. The row keeps its own selection tint; the lifecycle owns the edge. */
-.artifact-list-item.lifecycle-new { border-style: dashed; border-color: var(--life-line); background: repeating-linear-gradient(135deg, #fff, #fff 7px, #fffaf0 7px, #fffaf0 14px); }
-.artifact-list-item.lifecycle-new.active, .artifact-list-item.lifecycle-new:hover:not(.active) { background: var(--life-soft); border-color: var(--life-line); }
-.artifact-list-item.lifecycle-changed { box-shadow: inset 3px 0 0 var(--life-ink); }
+.artifact-list-item.lifecycle-new, .artifact-list-item.lifecycle-changed { border-color: rgba(29, 29, 31, .08); box-shadow: inset 2px 0 0 var(--life-ink); }
+.artifact-list-item.lifecycle-new.active { border-color: var(--life-line); }
 .artifact-list-item.lifecycle-changed.active { border-color: var(--life-line); }
 .artifact-list-item.lifecycle-saved { border-color: rgba(29, 29, 31, .06); }
 .artifact-list-item.lifecycle-saved .artifact-kind-icon { box-shadow: 0 0 0 1.5px var(--life-line); }
@@ -33,11 +32,8 @@
 .artifact-list-item.lifecycle-changed .artifact-kind-icon { box-shadow: 0 0 0 1.5px var(--life-line); }
 
 /* Editor: header tint, accent bar, and the state dot follow the lifecycle. */
-.artifact-editor.lifecycle-new .artifact-editor-accent { background: repeating-linear-gradient(90deg, var(--life-ink) 0 10px, transparent 10px 16px); }
-.artifact-editor.lifecycle-changed .artifact-editor-accent { background: linear-gradient(90deg, var(--life-ink) 0 38%, var(--artifact-accent, #527e63) 38%); }
-.artifact-editor.lifecycle-saved .artifact-editor-accent { background: var(--life-ink); }
-.artifact-editor.lifecycle-new .artifact-editor-header { background: linear-gradient(180deg, var(--life-soft), #fff); }
-.artifact-editor.lifecycle-changed .artifact-editor-header { background: linear-gradient(180deg, var(--life-soft), #fff); }
+.artifact-editor .artifact-editor-accent { height: 2px; background: var(--life-ink, var(--artifact-accent, #527e63)); opacity: .75; }
+.artifact-editor .artifact-editor-header { background: #fff; }
 .artifact-editor .artifact-state > i { background: var(--life-ink); box-shadow: 0 0 0 .28rem var(--life-soft); }
 .artifact-editor.lifecycle-new .artifact-state > i { background: #fff; box-shadow: inset 0 0 0 2px var(--life-ink), 0 0 0 .28rem var(--life-soft); }
 .artifact-editor.lifecycle-changed .artifact-state > i { animation: lifecycle-breathe 2.4s ease-in-out infinite; }

@@ -1,6 +1,6 @@
 import { artifactEditableContent } from '../utils/artifactEditor'
 import { request } from './http'
-import type { AgentArtifact, ArtifactContent, ArtifactCreateContent, ArtifactStatus, CardListOptions, CardStatus, LibraryItem, LibraryItemType, LibraryItemUpdate } from './types'
+import type { AgentArtifact, PdfDiffSources, ArtifactContent, ArtifactCreateContent, ArtifactStatus, CardListOptions, CardStatus, LibraryItem, LibraryItemType, LibraryItemUpdate } from './types'
 
 const artifactIndex = new Map<string, AgentArtifact>()
 
@@ -52,6 +52,16 @@ export const libraryClient = {
 
   getArtifact(artifactId: string): Promise<AgentArtifact> {
     return request<AgentArtifact>(`/artifacts/${encodeURIComponent(artifactId)}`)
+  },
+
+  /** The two PDFs a LaTeX artifact's typeset before/after compares. */
+  getPdfDiff(artifactId: string, signal?: AbortSignal): Promise<PdfDiffSources> {
+    return request<PdfDiffSources>(`/artifacts/${encodeURIComponent(artifactId)}/pdf-diff`, { signal })
+  },
+
+  /** Revert what the Agent changed since the last save; history is kept as a new revert commit. */
+  restorePdfProject(sessionId: string, artifactId: string): Promise<PdfDiffSources & { restored_commits: number }> {
+    return request(`/agent/${encodeURIComponent(sessionId)}/artifacts/${encodeURIComponent(artifactId)}/restore`, { method: 'POST' })
   },
 
   /**

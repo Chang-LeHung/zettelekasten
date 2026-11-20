@@ -10,6 +10,7 @@ import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { assetClient } from '../api/client'
 import type { SessionAsset } from '../api/types'
 import PdfPage from './PdfPage.vue'
+import { t } from '../app/i18n'
 import { pdfDocumentOptions } from '../utils/pdfDocument'
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl
@@ -357,6 +358,7 @@ async function disposeDocument(): Promise<void> {
   documentProxy.value = null
 }
 
+
 async function loadDocument(): Promise<void> {
   const version = ++loadVersion
   loading.value = true
@@ -369,7 +371,7 @@ async function loadDocument(): Promise<void> {
     await disposeDocument()
     abortController = new AbortController()
     const bytes = props.asset.content_url
-      ? await assetClient.getUrlContent(props.asset.content_url, abortController.signal)
+      ? await assetClient.getUrlContent(`${props.asset.content_url}`, abortController.signal)
       : null
     if (version !== loadVersion) return
     if (bytes === null) {
@@ -640,7 +642,7 @@ defineExpose({ refit: refitInlinePages })
 </template>
 
 <style scoped>
-.pdf-preview { display: grid; grid-template: auto minmax(0, 1fr) / minmax(0, 1fr); width: 100%; height: 100%; min-height: 0; color: #3e4741; }
+.pdf-preview { position: relative; display: grid; grid-template: auto minmax(0, 1fr) / minmax(0, 1fr); width: 100%; height: 100%; min-height: 0; color: #3e4741; }
 .pdf-preview.outline-open { grid-template-columns: min(var(--outline-width), 60%) 6px minmax(0, 1fr); }
 .pdf-outline-resizer { cursor: col-resize; touch-action: none; background: #eef1ef; }
 .pdf-outline-resizer:hover, .pdf-outline-resizer:focus-visible, .resizing-outline .pdf-outline-resizer { background: #9cb3a4; outline: none; }

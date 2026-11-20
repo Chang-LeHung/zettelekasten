@@ -1,0 +1,56 @@
+/* Artifact-first workspace: the conversation and the artifact share one adjustable row. */
+
+.layout-controls { display: flex; align-items: center; gap: .55rem; margin-left: auto; }
+.layout-controls + .workspace-view-toggle { margin-left: .6rem; }
+.layout-switch { display: inline-flex; padding: .17rem; border: 1px solid #e1e5e2; border-radius: .72rem; background: #f2f4f2; }
+.layout-switch button { min-height: 1.75rem; padding: 0 .85rem; border: 0; border-radius: .55rem; color: #6d7570; background: transparent; cursor: pointer; font-size: .7rem; font-weight: 640; white-space: nowrap; transition: background .16s, color .16s, box-shadow .16s; }
+.layout-switch button:hover:not(.active) { color: #37483e; }
+.layout-switch button.active { color: #25402f; background: #fff; box-shadow: 0 1px 4px rgba(24, 38, 30, .12); }
+.layout-assets { display: inline-flex; align-items: center; gap: .4rem; min-height: 2.15rem; padding: 0 .8rem; border: 1px solid rgba(60, 78, 67, .12); border-radius: .65rem; color: #5f7366; background: #fff; cursor: pointer; font-size: .7rem; font-weight: 620; transition: background .16s, color .16s; }
+.layout-assets svg { width: 1rem; height: 1rem; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.layout-assets.active { color: #25402f; background: #e8f1ec; border-color: #c7dccf; }
+
+.chat-column { display: contents; }
+.workspace-divider { display: none; }
+
+@media (min-width: 1181px) {
+  .agent-workspace.layout { gap: 0; grid-template-columns: minmax(0, var(--chat-fr)) 12px minmax(0, var(--art-fr)); }
+  .agent-workspace.layout:not(.assets-hidden) { grid-template-columns: minmax(13rem, 16rem) minmax(0, var(--chat-fr)) 12px minmax(0, var(--art-fr)); }
+  .agent-workspace.layout .assets-pane { margin-right: .65rem; }
+  .agent-workspace.layout.resizing { cursor: col-resize; user-select: none; }
+
+  .chat-column { display: grid; min-width: 0; min-height: 0; }
+  .chat-column > .agent-chat { min-height: 0; }
+
+  .workspace-divider { position: relative; display: block; cursor: col-resize; touch-action: none; outline: none; }
+  .workspace-divider span { position: absolute; top: 50%; left: 50%; width: 4px; height: 2.6rem; border-radius: 999px; background: #d3dbd5; transform: translate(-50%, -50%); transition: height .18s, background .18s; }
+  .workspace-divider:hover span, .workspace-divider:focus-visible span, .layout.resizing .workspace-divider span { height: 5.5rem; background: #3f7a58; }
+  .workspace-divider:focus-visible span { box-shadow: 0 0 0 3px rgba(63, 122, 88, .22); }
+
+  .agent-workspace.layout-artifact .chat-column, .agent-workspace.layout-artifact .workspace-divider,
+  .agent-workspace.layout-chat .artifact-pane, .agent-workspace.layout-chat .workspace-divider { display: none; }
+  .agent-workspace.layout-artifact, .agent-workspace.layout-chat { grid-template-columns: minmax(0, 1fr); }
+  .agent-workspace.layout-artifact:not(.assets-hidden), .agent-workspace.layout-chat:not(.assets-hidden) { grid-template-columns: minmax(13rem, 16rem) minmax(0, 1fr); }
+  /* One pane on a wide screen reads best as a centred page, not a stretched strip. */
+  .agent-workspace.layout-chat .chat-column { width: min(100%, 60rem); justify-self: center; }
+  .agent-workspace.layout-artifact .artifact-pane { width: min(100%, 78rem); justify-self: center; }
+}
+
+@media (max-width: 1180px) {
+  .layout-switch { display: none; }
+}
+
+/* Starter page: what Zett can produce, as cards rather than coding hints. */
+.agent-welcome.starter { max-width: 40rem; width: 100%; padding: 0 .5rem; }
+.starter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(11.5rem, 1fr)); gap: .6rem; margin-top: 1.3rem; text-align: left; }
+.starter-card { display: grid; gap: .3rem; padding: .85rem .9rem; border: 1px solid rgba(29, 29, 31, .09); border-radius: .9rem; color: inherit; background: #fff; cursor: pointer; text-align: left; transition: transform .16s, box-shadow .16s, border-color .16s; }
+.starter-card:hover { transform: translateY(-2px); border-color: #bdd5c6; box-shadow: 0 8px 22px rgba(36, 70, 50, .1); }
+.starter-card:focus-visible { outline: 2px solid #3f7a58; outline-offset: 2px; }
+.starter-card i { display: grid; place-items: center; width: 1.9rem; height: 1.9rem; border-radius: .6rem; color: #2f6a47; background: #e6f2ea; font-style: normal; font-size: .95rem; }
+.starter-card.latex i { color: #7a4a1d; background: #f6ead9; }
+.starter-card.slides i { color: #3b4f87; background: #e5ebf8; }
+.starter-card.image i { color: #82365c; background: #f6e4ee; }
+.starter-card.article i { color: #4a4a8a; background: #e8e8f6; }
+.starter-card strong { margin-top: .2rem; font-size: .78rem; letter-spacing: -.01em; }
+.starter-card span { color: #747c77; font-size: .68rem; line-height: 1.45; }
+.starter-note { margin: 1rem 0 0; color: #8a938d; font-size: .66rem; }

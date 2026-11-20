@@ -1,14 +1,25 @@
 import { expect, it } from 'vitest'
-import { clampArtifactListHeight } from './artifactSplit'
+import { clampArtifactListWidth, maxArtifactListWidth, parseArtifactListWidth } from './artifactSplit'
 
-it('keeps the list and preview readable when the divider moves', () => {
-  expect(clampArtifactListHeight(300, 800, 64)).toBe(300)
-  expect(clampArtifactListHeight(999, 800, 64)).toBe(382)
-  expect(clampArtifactListHeight(-20, 800, 64)).toBe(96)
+it('reports the widest list a pane allows', () => {
+  expect(maxArtifactListWidth(900)).toBe(568)
+  expect(maxArtifactListWidth(100)).toBe(0)
 })
 
-it('bounds the list when the workspace becomes short', () => {
-  expect(clampArtifactListHeight(200, 270, 64)).toBe(0)
-  expect(clampArtifactListHeight(200, 380, 64)).toBe(0)
-  expect(clampArtifactListHeight(200, 520, 64)).toBe(102)
+it('keeps the list and preview readable when the divider moves', () => {
+  expect(clampArtifactListWidth(300, 900)).toBe(300)
+  expect(clampArtifactListWidth(9999, 900)).toBe(568)
+  expect(clampArtifactListWidth(-20, 900)).toBe(176)
+})
+
+it('bounds the list when the workspace becomes narrow', () => {
+  expect(clampArtifactListWidth(200, 300)).toBe(0)
+  expect(clampArtifactListWidth(200, 400)).toBe(68)
+})
+
+it('ignores a stored width that is not a positive number', () => {
+  expect(parseArtifactListWidth(null)).toBeNull()
+  expect(parseArtifactListWidth('abc')).toBeNull()
+  expect(parseArtifactListWidth('-5')).toBeNull()
+  expect(parseArtifactListWidth('260')).toBe(260)
 })
