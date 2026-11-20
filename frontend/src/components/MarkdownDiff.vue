@@ -182,8 +182,8 @@ onBeforeUnmount(() => { if (timer !== null) window.clearTimeout(timer) })
 .mdd-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem .8rem; padding: .5rem .8rem; border-bottom: 1px solid #e4e9e5; background: rgba(255,255,255,.86); backdrop-filter: saturate(1.4) blur(12px); }
 .mdd-summary, .mdd-tools { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; }
 .mdd-chip { display: inline-flex; align-items: center; height: 1.5rem; padding: 0 .6rem; border-radius: 999px; font-size: .7rem; font-weight: 650; font-variant-numeric: tabular-nums; }
-.mdd-chip.add { color: #1c6a41; background: #e1f4e8; }
-.mdd-chip.del { color: #a23232; background: #fbe6e4; }
+.mdd-chip.add { color: var(--diff-add-ink); background: var(--diff-add-tint); }
+.mdd-chip.del { color: var(--diff-del-ink); background: var(--diff-del-tint); }
 .mdd-chip.same { color: #3d6650; background: #e6f1ea; }
 .mdd-seg { display: inline-flex; padding: .15rem; border-radius: .7rem; background: #e9eeea; }
 .mdd-seg button { border: 0; padding: .28rem .75rem; border-radius: .55rem; color: #5b675f; background: transparent; font-size: .7rem; font-weight: 600; cursor: pointer; transition: background .16s, color .16s, box-shadow .16s; }
@@ -207,6 +207,6 @@ onBeforeUnmount(() => { if (timer !== null) window.clearTimeout(timer) })
 .mdd-reject:hover { color: #a23232; }
 .mdd-gap { margin: .6rem 0; padding: .3rem 0; color: #8a938d; font-size: .68rem; text-align: center; border-block: 1px dashed #dde4df; }
 .mdd-block :deep(mark) { color: inherit; text-decoration: none; border-radius: .2rem; }
-.mdd-block :deep(mark.w-add) { background: rgba(52, 181, 106, .3); }
-.mdd-block :deep(mark.w-del) { background: rgba(232, 84, 76, .26); }
+.mdd-block :deep(mark.w-add) { background: var(--diff-add-mark); }
+.mdd-block :deep(mark.w-del) { background: var(--diff-del-mark); }
 </style>

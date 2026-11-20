@@ -100,9 +100,9 @@ watch(() => [visible.value, props.document, props.page, props.band.y, props.band
 .crop { position: relative; overflow: hidden; background: #fff; }
 .crop canvas { display: block; }
 .crop-mark { position: absolute; border-radius: .2rem; pointer-events: none; mix-blend-mode: multiply; }
-.crop.del .crop-mark { background: rgba(232, 84, 76, .26); }
+.crop.del .crop-mark { background: var(--diff-del-mark); }
 .crop.del .crop-mark::after { content: ''; position: absolute; left: 0; right: 0; top: 52%; height: 1.5px; background: rgba(196, 52, 44, .85); }
-.crop.add .crop-mark { background: rgba(52, 181, 106, .3); }
-.crop.fig .crop-mark { background: rgba(242, 171, 40, .22); box-shadow: inset 0 0 0 1.5px rgba(214, 140, 20, .75); border-radius: .35rem; }
+.crop.add .crop-mark { background: var(--diff-add-mark); }
+.crop.fig .crop-mark { background: var(--diff-fig-mark); box-shadow: inset 0 0 0 1.5px var(--diff-fig-line); border-radius: .35rem; }
 .crop-failed { position: absolute; right: .4rem; top: .3rem; color: #a23232; font-weight: 700; }
 </style>

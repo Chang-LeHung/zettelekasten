@@ -1,0 +1,29 @@
+/*
+ * One visual language for every "what changed" surface: the typeset PDF cards, the rendered
+ * Markdown diff and the expanded edit tool call. A surface names a role here (added text,
+ * removed text, a changed word) and never picks its own green or red, so the three cannot
+ * drift apart. Each role has a quiet tint for a whole line or band and a deeper tone for
+ * the words that differ inside it.
+ */
+:root {
+  --diff-add-tint: #eaf6ee;
+  --diff-add-strong: #a9dcb9;
+  --diff-add-line: #3aa465;
+  --diff-add-ink: #1f5a39;
+  --diff-del-tint: #fceeed;
+  --diff-del-strong: #f1b4b0;
+  --diff-del-line: #d9534b;
+  --diff-del-ink: #8d2b27;
+  --diff-fig-tint: #fdf4de;
+  --diff-fig-line: #d9941a;
+  --diff-fig-ink: #7a5413;
+  --diff-head: #eef3fb;
+  --diff-head-ink: #1f2c3d;
+  --diff-border: rgba(29, 41, 61, .1);
+  --diff-radius: 1rem;
+  --diff-shadow: 0 1px 2px rgba(20, 32, 52, .05), 0 10px 30px rgba(20, 32, 52, .07);
+  /* Translucent twins for marks drawn over rendered pages, where the page must stay readable. */
+  --diff-add-mark: rgba(58, 164, 101, .3);
+  --diff-del-mark: rgba(217, 83, 75, .28);
+  --diff-fig-mark: rgba(217, 148, 26, .24);
+}

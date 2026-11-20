@@ -404,9 +404,9 @@ onBeforeUnmount(() => {
 .tsd-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem .8rem; padding: .5rem .8rem; border-bottom: 1px solid #e4e9e5; background: rgba(255,255,255,.86); backdrop-filter: saturate(1.4) blur(12px); }
 .tsd-summary, .tsd-tools { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; min-width: 0; }
 .tsd-chip { display: inline-flex; align-items: center; height: 1.5rem; padding: 0 .6rem; border-radius: 999px; font-size: .7rem; font-weight: 650; font-variant-numeric: tabular-nums; }
-.tsd-chip.add { color: #1c6a41; background: #e1f4e8; }
-.tsd-chip.del { color: #a23232; background: #fbe6e4; }
-.tsd-chip.vis { color: #7a5413; background: #fbefd2; }
+.tsd-chip.add { color: var(--diff-add-ink); background: var(--diff-add-tint); }
+.tsd-chip.del { color: var(--diff-del-ink); background: var(--diff-del-tint); }
+.tsd-chip.vis { color: var(--diff-fig-ink); background: var(--diff-fig-tint); }
 .tsd-chip.busy { color: #6d7570; background: #eaefeb; font-weight: 500; }
 .tsd-chip.same { color: #3d6650; background: #e6f1ea; }
 .tsd-when { color: #8a938d; font-size: .66rem; }
@@ -440,9 +440,9 @@ onBeforeUnmount(() => {
 .tsd-scroll { display: flex; flex: 1 1 auto; flex-direction: column; align-items: safe center; gap: 1.3rem; min-height: 0; padding: 1.1rem 1rem 2.5rem; overflow: auto; scrollbar-gutter: stable; }
 .tsd-row { flex: none; scroll-margin-top: .75rem; }
 .hl { position: absolute; z-index: 2; border-radius: .25rem; pointer-events: none; mix-blend-mode: multiply; animation: tsd-in .32s ease-out both; }
-.hl.add { background: rgba(52, 181, 106, .26); }
-.hl.del { background: rgba(232, 84, 76, .24); }
-.hl.vis { background: rgba(242, 171, 40, .26); }
+.hl.add { background: var(--diff-add-mark); }
+.hl.del { background: var(--diff-del-mark); }
+.hl.vis { background: var(--diff-fig-mark); }
 
 .tsd-cards { gap: 1.1rem; }
 .tsd-card-slot { flex: none; scroll-margin-top: .75rem; }

@@ -186,17 +186,17 @@ function formatToolValue(value: unknown): string {
 .tool-activity-details { display: grid; gap: .55rem; margin: .08rem 0 .55rem; padding: .2rem 0 .12rem; }
 .tool-activity-details strong { display: block; margin-bottom: .28rem; color: #78827c; font-size: .56rem; letter-spacing: .055em; text-transform: uppercase; }
 .tool-activity-details pre { max-height: 11rem; margin: 0; padding: .32rem 0; overflow: auto; border: 0; color: #465049; background: transparent; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: .62rem; line-height: 1.48; text-transform: none; white-space: pre-wrap; overflow-wrap: anywhere; }
-.edit-diff { max-height: 18rem; overflow: auto; border: 1px solid #e3e8e5; border-radius: .5rem; background: #fff; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: .62rem; line-height: 1.5; text-transform: none; }
+.edit-diff { max-height: 18rem; overflow: auto; border: 1px solid var(--diff-border); border-radius: .7rem; background: #fff; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: .62rem; line-height: 1.5; text-transform: none; }
 .edit-diff-row { display: grid; grid-template-columns: 1.3rem minmax(0, 1fr); min-width: max-content; width: 100%; color: #5b665f; }
 .edit-diff-row code { padding: 0 .5rem 0 0; font: inherit; white-space: pre; }
 .edit-diff-mark { text-align: center; color: #98a19b; user-select: none; }
-.edit-diff-row.added { background: #eef8f0; color: #24452f; }
-.edit-diff-row.removed { background: #fbefef; color: #5b2b2b; }
-.edit-diff-row.added .edit-diff-mark { color: #3d8a59; }
-.edit-diff-row.removed .edit-diff-mark { color: #b05050; }
+.edit-diff-row.added { background: var(--diff-add-tint); color: var(--diff-add-ink); }
+.edit-diff-row.removed { background: var(--diff-del-tint); color: var(--diff-del-ink); }
+.edit-diff-row.added .edit-diff-mark { color: var(--diff-add-line); }
+.edit-diff-row.removed .edit-diff-mark { color: var(--diff-del-line); }
 .edit-diff-row mark { padding: 0 .08rem; border-radius: .18rem; color: inherit; }
-.edit-diff-row.added mark { background: #a8dcb7; }
-.edit-diff-row.removed mark { background: #efb3b3; }
+.edit-diff-row.added mark { background: var(--diff-add-strong); }
+.edit-diff-row.removed mark { background: var(--diff-del-strong); }
 .edit-diff-block + .edit-diff-block { margin-top: .1rem; }
 .edit-raw { margin-top: .1rem; }
 .edit-raw > summary { min-height: 0; padding: .1rem 0; color: #78827c; font-size: .56rem; letter-spacing: .055em; text-transform: uppercase; }

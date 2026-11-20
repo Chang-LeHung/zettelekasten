@@ -104,22 +104,22 @@ async function copy(): Promise<void> {
 </template>
 
 <style scoped>
-.change-card { overflow: hidden; border: 1px solid #cfe0f5; border-radius: .9rem; background: #fff; box-shadow: 0 1px 2px rgba(20, 40, 70, .05), 0 8px 26px rgba(20, 40, 70, .07); }
-.card-head { white-space: nowrap; display: flex; align-items: center; gap: .6rem; padding: .55rem .8rem; background: #eaf3fd; }
-.card-head strong { color: #1d2b3a; font-size: .8rem; font-weight: 650; }
-.card-page { color: #6b7c8e; font-size: .68rem; font-variant-numeric: tabular-nums; }
+.change-card { overflow: hidden; border: 1px solid var(--diff-border); border-radius: var(--diff-radius); background: #fff; box-shadow: var(--diff-shadow); }
+.card-head { display: flex; align-items: center; gap: .6rem; padding: .6rem .9rem; white-space: nowrap; background: var(--diff-head); }
+.card-head strong { color: var(--diff-head-ink); font-size: .8rem; font-weight: 650; letter-spacing: -.005em; }
+.card-page { color: #6b7a8c; font-size: .68rem; font-variant-numeric: tabular-nums; }
 .card-delta { display: inline-flex; gap: .3rem; font-size: .66rem; font-weight: 650; }
-.card-delta em { padding: .05rem .4rem; border-radius: 999px; font-style: normal; font-variant-numeric: tabular-nums; }
-.card-delta .add { color: #1c6a41; background: #dcf1e4; }
-.card-delta .del { color: #a23232; background: #fbe3e1; }
-.card-copy { margin-left: auto; padding: .22rem .65rem; border: 0; border-radius: .55rem; color: #3b6aa0; background: rgba(255, 255, 255, .75); font-size: .68rem; font-weight: 620; cursor: pointer; transition: background .15s; }
+.card-delta em { padding: .05rem .45rem; border-radius: 999px; font-style: normal; font-variant-numeric: tabular-nums; }
+.card-delta .add { color: var(--diff-add-ink); background: var(--diff-add-tint); }
+.card-delta .del { color: var(--diff-del-ink); background: var(--diff-del-tint); }
+.card-copy { margin-left: auto; padding: .24rem .7rem; border: 0; border-radius: .6rem; color: #3b5f8f; background: rgba(255, 255, 255, .8); font-size: .68rem; font-weight: 620; cursor: pointer; transition: background .15s; }
 .card-copy:hover { background: #fff; }
 .band { position: relative; border-left: 3px solid; }
-.band.before { border-color: #e0564e; background: #fdeeed; }
-.band.after { border-color: #34a868; background: #eaf7ee; }
-.band-label { position: absolute; z-index: 2; top: .35rem; right: .6rem; font-size: .66rem; font-weight: 650; letter-spacing: .02em; }
-.band.before .band-label { color: #d2453d; }
-.band.after .band-label { color: #2b9a5c; }
+.band.before { border-color: var(--diff-del-line); background: var(--diff-del-tint); }
+.band.after { border-color: var(--diff-add-line); background: var(--diff-add-tint); }
+.band-label { position: absolute; z-index: 2; top: .4rem; right: .7rem; padding: .05rem .4rem; border-radius: .4rem; font-size: .62rem; font-weight: 650; letter-spacing: .02em; background: rgba(255, 255, 255, .7); }
+.band.before .band-label { color: var(--diff-del-ink); }
+.band.after .band-label { color: var(--diff-add-ink); }
 .band-empty { margin: 0; padding: 1.1rem 1rem; color: #8a96a3; font-size: .74rem; font-style: italic; }
 .band :deep(.crop) { background: transparent; }
 .band :deep(.crop canvas) { mix-blend-mode: multiply; }
