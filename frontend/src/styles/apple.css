@@ -145,3 +145,20 @@ body { background: var(--bg); }
 #app .card:hover { transform: none; background: var(--surface-solid); box-shadow: var(--elev-2), 0 0 0 .5px var(--hairline); }
 /* Type labels are sentence case, not shouted. */
 .card-type { flex: 0 0 auto; letter-spacing: 0; text-transform: none; font-size: .66rem; white-space: nowrap; }
+
+/* Remaining chrome from components with scoped CSS (anchored on #app): the asset search is a
+   grey field, the empty drop area is a solid hairline, and small labels are sentence case. */
+#app .asset-search { border: 0; border-radius: var(--radius-m); background: var(--fill); }
+#app .asset-search:focus-within { background: var(--surface-solid); box-shadow: 0 0 0 3px rgba(71, 105, 87, .22), 0 0 0 .5px var(--hairline); }
+#app .static-asset-empty { border: 0; border-radius: var(--radius-l); background: rgba(120, 120, 128, .06); }
+#app .wechat-connect > div:nth-child(2) > span, #app .channel-type, #app .channel-card dt, #app .channel-modal header span { letter-spacing: 0; text-transform: none; }
+
+/* Full-page editor (scoped CSS, so anchored on #app). */
+#app .pane-heading, #app .metadata-fields label { letter-spacing: 0; text-transform: none; }
+#app .metadata-fields label { font-size: .7rem; font-weight: 600; color: #3c3c43; }
+#app .metadata-fields input, #app .metadata-fields textarea { border: 0; border-radius: var(--radius-s); background: var(--fill); transition: background .14s ease, box-shadow .14s ease; }
+#app .metadata-fields input:focus, #app .metadata-fields textarea:focus { background: var(--surface-solid); box-shadow: 0 0 0 3px rgba(71, 105, 87, .22), 0 0 0 .5px var(--hairline); }
+#app .save-button { border-radius: 999px; background: var(--accent); box-shadow: var(--elev-1); }
+#app .save-button:hover:not(:disabled) { background: var(--accent-dark); }
+#app .save-button:disabled { color: #8e8e93; background: var(--fill); box-shadow: none; opacity: 1; }
+#app .resource-type, #app .preview-type, #app .page-type { letter-spacing: 0; text-transform: none; }
