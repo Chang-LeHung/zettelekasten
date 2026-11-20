@@ -39,10 +39,32 @@ export interface TypesetChanges {
   base: PageChanges[]
   /** Pages of the newer PDF that gained text. */
   target: PageChanges[]
+  /** The edits, in reading order of the newer document. */
+  hunks: Hunk[]
   removedWords: number
   addedWords: number
   /** True when the edit script was too large to compute exactly. */
   coarse: boolean
+}
+
+/** One side of a change: where its words sit on one page, and the words themselves. */
+export interface HunkSide {
+  /** One-based page. When the words span pages, the first page. */
+  page: number
+  /** Box around the changed words of that page, in page units. */
+  rect: DiffRect
+  /** Boxes of the changed words, merged per line. */
+  marks: DiffRect[]
+  words: number
+  text: string
+}
+
+/** A run of changed words between two unchanged ones: what it said, and what it says now. */
+export interface Hunk {
+  /** Null for a pure insertion. */
+  before: HunkSide | null
+  /** Null for a pure deletion. */
+  after: HunkSide | null
 }
 
 interface Word extends DiffRect {
@@ -186,6 +208,91 @@ export function mergeRects(words: readonly DiffRect[]): DiffRect[] {
   return merged
 }
 
+function sideOf(words: readonly Word[]): HunkSide | null {
+  if (!words.length) return null
+  const page = words[0].page
+  const onPage = words.filter((word) => word.page === page)
+  const left = Math.min(...onPage.map((word) => word.x))
+  const top = Math.min(...onPage.map((word) => word.y))
+  const right = Math.max(...onPage.map((word) => word.x + word.width))
+  const bottom = Math.max(...onPage.map((word) => word.y + word.height))
+  return {
+    page,
+    rect: { x: left, y: top, width: right - left, height: bottom - top },
+    marks: mergeRects(onPage),
+    words: words.length,
+    text: words.map((word) => word.text).join(' '),
+  }
+}
+
+function joinSides(first: HunkSide | null, second: HunkSide | null): HunkSide | null {
+  if (!first || !second) return first ?? second
+  if (first.page !== second.page) return first
+  const left = Math.min(first.rect.x, second.rect.x)
+  const top = Math.min(first.rect.y, second.rect.y)
+  const right = Math.max(first.rect.x + first.rect.width, second.rect.x + second.rect.width)
+  const bottom = Math.max(first.rect.y + first.rect.height, second.rect.y + second.rect.height)
+  return {
+    page: first.page,
+    rect: { x: left, y: top, width: right - left, height: bottom - top },
+    marks: [...first.marks, ...second.marks],
+    words: first.words + second.words,
+    text: `${first.text} ${second.text}`,
+  }
+}
+
+/** Two changes this close on one page read as one edit, so they share a card. */
+function near(first: HunkSide | null, second: HunkSide | null, gap: number): boolean {
+  if (!first || !second) return true
+  return first.page === second.page && second.rect.y - (first.rect.y + first.rect.height) < gap
+}
+
+/**
+ * Group the changed words into changes.
+ *
+ * Walking both documents together, every uninterrupted run of removed and added words is one
+ * change. Changes that sit within about two lines of each other are merged, so a reworded
+ * paragraph is one card and not one per word.
+ */
+export function hunksOf(
+  base: readonly Word[],
+  target: readonly Word[],
+  removed: ReadonlySet<number>,
+  added: ReadonlySet<number>,
+): Hunk[] {
+  const runs: Hunk[] = []
+  let i = 0
+  let j = 0
+  let before: Word[] = []
+  let after: Word[] = []
+  const flush = (): void => {
+    if (before.length || after.length) runs.push({ before: sideOf(before), after: sideOf(after) })
+    before = []
+    after = []
+  }
+  while (i < base.length || j < target.length) {
+    if (i < base.length && removed.has(i)) { before.push(base[i]); i += 1; continue }
+    if (j < target.length && added.has(j)) { after.push(target[j]); j += 1; continue }
+    flush()
+    i += 1
+    j += 1
+  }
+  flush()
+
+  const merged: Hunk[] = []
+  for (const run of runs) {
+    const last = merged[merged.length - 1]
+    const lineHeight = Math.max(run.after?.rect.height ?? 0, run.before?.rect.height ?? 0, 8)
+    if (last && near(last.before, run.before, lineHeight * 2) && near(last.after, run.after, lineHeight * 2)) {
+      last.before = joinSides(last.before, run.before)
+      last.after = joinSides(last.after, run.after)
+      continue
+    }
+    merged.push({ before: run.before, after: run.after })
+  }
+  return merged
+}
+
 function pageChanges(words: readonly Word[], indexes: ReadonlySet<number>): PageChanges[] {
   const byPage = new Map<number, Word[]>()
   for (const index of indexes) {
@@ -215,6 +322,7 @@ export function typesetChanges(
   return {
     base: pageChanges(base, diff.removed),
     target: pageChanges(target, diff.added),
+    hunks: hunksOf(base, target, diff.removed, diff.added),
     removedWords: diff.removed.size,
     addedWords: diff.added.size,
     coarse: diff.coarse,

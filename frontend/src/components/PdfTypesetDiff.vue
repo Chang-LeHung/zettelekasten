@@ -5,8 +5,9 @@ import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { assetClient, libraryClient } from '../api/client'
 import type { PdfDiffSources } from '../api/types'
 import { pdfDocumentOptions } from '../utils/pdfDocument'
-import { changedPageNumbers, typesetChanges, type DiffRect, type PageChanges, type TextBox, type TypesetChanges } from '../utils/pdfTypesetDiff'
+import { changedPageNumbers, typesetChanges, type DiffRect, type HunkSide, type PageChanges, type TextBox, type TypesetChanges } from '../utils/pdfTypesetDiff'
 import { visualChanges } from '../utils/pdfVisualDiff'
+import PdfChangeCard from './PdfChangeCard.vue'
 import PdfPage from './PdfPage.vue'
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl
@@ -68,7 +69,6 @@ const savedAt = computed(() => {
   const value = sources.value?.base_saved_at
   return value ? new Date(value).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''
 })
-const removedPages = computed(() => changes.value?.base ?? [])
 
 function entry(list: PageChanges[] | undefined, page: number): PageChanges | undefined {
   return list?.find((item) => item.page === page)
@@ -85,13 +85,58 @@ function rectStyle(rect: DiffRect): Record<string, string> {
 }
 
 /** The marks drawn on one page of the current view. After is shown clean. */
-function marks(page: number): Array<{ rect: DiffRect; kind: 'add' | 'del' | 'vis' }> {
+function marks(page: number): Array<{ rect: DiffRect; kind: 'add' | 'del' | 'vis' | 'cut' }> {
   if (view.value === 'after') return []
   const text = view.value === 'before'
     ? (entry(changes.value?.base, page)?.rects ?? []).map((rect) => ({ rect, kind: 'del' as const }))
     : (entry(changes.value?.target, page)?.rects ?? []).map((rect) => ({ rect, kind: 'add' as const }))
   return [...text, ...(visual.value[page] ?? []).map((rect) => ({ rect, kind: 'vis' as const }))]
 }
+
+/** The cards of the Changes view: every text edit in reading order, then one per page of changed figures. */
+interface CardItem {
+  key: string
+  kind: 'text' | 'figure'
+  before: HunkSide | null
+  after: HunkSide | null
+  figure: { page: number; rect: DiffRect; marks: DiffRect[] } | null
+  page: number
+}
+const cards = computed<CardItem[]>(() => {
+  const text: CardItem[] = (changes.value?.hunks ?? []).map((hunk, index) => ({
+    key: `t${index}`,
+    kind: 'text' as const,
+    before: hunk.before,
+    after: hunk.after,
+    figure: null,
+    page: hunk.after?.page ?? hunk.before?.page ?? 1,
+  }))
+  const figures: CardItem[] = Object.entries(visual.value).map(([page, rects]) => {
+    const left = Math.min(...rects.map((rect) => rect.x))
+    const top = Math.min(...rects.map((rect) => rect.y))
+    const right = Math.max(...rects.map((rect) => rect.x + rect.width))
+    const bottom = Math.max(...rects.map((rect) => rect.y + rect.height))
+    return {
+      key: `f${page}`,
+      kind: 'figure' as const,
+      before: null,
+      after: null,
+      figure: { page: Number(page), rect: { x: left, y: top, width: right - left, height: bottom - top }, marks: [...rects] },
+      page: Number(page),
+    }
+  })
+  return [...text, ...figures].sort((p, q) => p.page - q.page)
+})
+/** Where the text of both documents sits horizontally, so cards crop the margins away. */
+const column = computed(() => {
+  const spans = [...(changes.value?.hunks ?? [])].flatMap((hunk) => [hunk.before, hunk.after]).flatMap((side) => (side ? side.marks : []))
+  const left = Math.min(...spans.map((rect) => rect.x), pageSize.value.width * 0.12)
+  const right = Math.max(...spans.map((rect) => rect.x + rect.width), pageSize.value.width * 0.88)
+  const margin = 8
+  return { x: Math.max(0, left - margin), width: Math.min(pageSize.value.width, right + margin) - Math.max(0, left - margin) }
+})
+/** Card width follows the zoom, so the buttons and Fit work the same as on the pages. */
+const cardWidth = computed(() => Math.round(column.value.width * scale.value))
 
 async function textBoxes(doc: PDFDocumentProxy): Promise<TextBox[][]> {
   const result: TextBox[][] = []
@@ -204,7 +249,7 @@ async function load(): Promise<void> {
 function fit(): void {
   const width = stage.value?.clientWidth ?? 0
   if (!width) return
-  scale.value = Math.max(MIN_SCALE, Math.min(MAX_SCALE, (width - 64) / pageSize.value.width))
+  scale.value = Math.max(MIN_SCALE, Math.min(MAX_SCALE, (width - 64) / (view.value === 'changes' ? column.value.width : pageSize.value.width)))
 }
 
 function zoom(delta: number): void {
@@ -212,11 +257,12 @@ function zoom(delta: number): void {
 }
 
 function goTo(index: number): void {
-  const list = navPages.value
-  if (!list.length) return
-  const wrapped = (index + list.length) % list.length
+  const size = total.value
+  if (!size) return
+  const wrapped = (index + size) % size
   current.value = wrapped
-  stage.value?.querySelector<HTMLElement>(`[data-row="${list[wrapped]}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  const selector = view.value === 'changes' ? `[data-card="${wrapped}"]` : `[data-row="${navPages.value[wrapped]}"]`
+  stage.value?.querySelector<HTMLElement>(selector)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
 }
 
 function onKey(event: KeyboardEvent): void {
@@ -244,7 +290,7 @@ async function restore(): Promise<void> {
   }
 }
 
-const total = computed(() => navPages.value.length)
+const total = computed(() => (view.value === 'changes' ? cards.value.length : navPages.value.length))
 const VIEWS: Array<{ id: View; label: string }> = [
   { id: 'changes', label: 'Changes' },
   { id: 'before', label: 'Before' },
@@ -252,7 +298,7 @@ const VIEWS: Array<{ id: View; label: string }> = [
 ]
 
 watch(() => [props.artifactId, props.nonce], () => void load())
-watch(view, () => { current.value = 0 })
+watch(view, () => { current.value = 0; void nextTick(fit) })
 onMounted(() => {
   void load()
   if (stage.value) {
@@ -275,9 +321,9 @@ onBeforeUnmount(() => {
         <template v-if="phase === 'ready' && changes">
           <span v-if="identical" class="tsd-chip same">{{ $t('No visible changes') }}</span>
           <template v-else>
-            <span class="tsd-chip add">+{{ changes.addedWords }}</span>
-            <span class="tsd-chip del">−{{ changes.removedWords }}</span>
-            <span v-if="figureCount" class="tsd-chip vis" :title="$t('Figures or graphics changed')">▣ {{ figureCount }}</span>
+            <span class="tsd-chip add" :title="$t('Words added in the new version, tinted green')">+{{ changes.addedWords }} {{ $t('words added') }}</span>
+            <span class="tsd-chip del" :title="$t('Words removed from the saved version, shown in red on the page')">−{{ changes.removedWords }} {{ $t('words removed') }}</span>
+            <span v-if="figureCount" class="tsd-chip vis" :title="$t('Figures, plots or graphics whose pixels changed, tinted yellow')">▣ {{ figureCount }} {{ $t('figures changed') }}</span>
             <span v-else-if="visualBusy" class="tsd-chip busy">{{ $t('Checking figures…') }}</span>
             <span v-if="figuresCapped" class="tsd-chip busy" :title="$t('Figures were checked on the first pages only')">{{ $t('Figures: first {count} pages', { count: MAX_VISUAL_PAGES }) }}</span>
           </template>
@@ -318,10 +364,6 @@ onBeforeUnmount(() => {
       <p v-if="restoreError" class="tsd-restore-error" role="alert">{{ restoreError }}</p>
     </div>
 
-    <details v-if="phase === 'ready' && view === 'changes' && removedPages.length" class="tsd-removed-list">
-      <summary>{{ $t('Removed text') }} · {{ changes?.removedWords }}</summary>
-      <p v-for="item in removedPages" :key="item.page"><b>{{ $t('Saved page {page}', { page: item.page }) }}</b> {{ item.text }}</p>
-    </details>
 
     <div ref="stage" class="tsd-stage" :class="{ ready: phase === 'ready' }">
       <div v-if="phase === 'loading'" class="tsd-state"><i class="tsd-spin" /><strong>{{ $t('Comparing typeset pages…') }}</strong></div>
@@ -329,6 +371,13 @@ onBeforeUnmount(() => {
       <div v-else-if="phase === 'no-base'" class="tsd-state"><strong>{{ $t('No saved version to compare with') }}</strong><span>{{ $t('Save this artifact once. Later edits will show here as typeset before-and-after.') }}</span></div>
       <div v-else-if="phase === 'error'" class="tsd-state err" role="alert"><strong>{{ $t('Comparison unavailable') }}</strong><span>{{ errorMessage }}</span><button type="button" @click="load">{{ $t('Retry') }}</button></div>
 
+      <div v-else-if="view === 'changes' && baseDoc && targetDoc" class="tsd-scroll tsd-cards">
+        <p v-if="!cards.length && !visualBusy" class="tsd-empty">{{ $t('No visible changes') }}</p>
+        <div v-for="(item, index) in cards" :key="item.key" :data-card="index" class="tsd-card-slot" :style="{ width: `${cardWidth}px` }">
+          <PdfChangeCard :index="index + 1" :kind="item.kind" :before="item.before" :after="item.after" :figure="item.figure" :base-doc="baseDoc" :target-doc="targetDoc" :column="column" :width="cardWidth - 3" />
+        </div>
+        <p v-if="visualBusy" class="tsd-more">{{ $t('Checking figures…') }}</p>
+      </div>
       <div v-else class="tsd-scroll">
         <div v-for="page in pages" :key="`${view}-${page}`" class="tsd-row" :data-row="page">
           <PdfPage v-if="activeDoc" :document="activeDoc" :page-number="page" :scale="scale" :base-width="pageSize.width" :base-height="pageSize.height">
@@ -370,10 +419,6 @@ onBeforeUnmount(() => {
 .tsd-restore button.quiet { color: #5b675f; border-color: transparent; background: transparent; }
 .tsd-restore button:disabled { opacity: .55; cursor: default; }
 .tsd-restore-error { flex-basis: 100%; margin: 0; color: #a23232; }
-.tsd-removed-list { padding: .35rem .9rem; border-bottom: 1px solid #e4e9e5; background: #fdf5f4; color: #8c2f2f; font-size: .7rem; }
-.tsd-removed-list summary { cursor: pointer; font-weight: 640; }
-.tsd-removed-list p { margin: .3rem 0 0; line-height: 1.5; }
-.tsd-removed-list b { margin-right: .35rem; font-size: .64rem; }
 .tsd-stage { position: relative; display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; overflow: hidden; }
 .tsd-stage:not(.ready) { align-items: center; justify-content: center; }
 .tsd-state { display: grid; justify-items: center; gap: .5rem; max-width: 26rem; padding: 2rem; text-align: center; color: #66706a; font-size: .8rem; }
@@ -382,12 +427,16 @@ onBeforeUnmount(() => {
 .tsd-state.err strong { color: #9a3b3b; }
 .tsd-spin { width: 1.4rem; height: 1.4rem; border: 2px solid #d6dfd9; border-top-color: #3f7a58; border-radius: 50%; animation: tsd-rot .8s linear infinite; }
 @keyframes tsd-rot { to { transform: rotate(360deg); } }
-.tsd-scroll { display: flex; flex: 1 1 auto; flex-direction: column; align-items: center; gap: 1.3rem; min-height: 0; padding: 1.1rem 1rem 2.5rem; overflow: auto; scrollbar-gutter: stable; }
+.tsd-scroll { display: flex; flex: 1 1 auto; flex-direction: column; align-items: safe center; gap: 1.3rem; min-height: 0; padding: 1.1rem 1rem 2.5rem; overflow: auto; scrollbar-gutter: stable; }
 .tsd-row { flex: none; scroll-margin-top: .75rem; }
 .hl { position: absolute; z-index: 2; border-radius: .25rem; pointer-events: none; mix-blend-mode: multiply; animation: tsd-in .32s ease-out both; }
 .hl.add { background: rgba(52, 181, 106, .26); }
 .hl.del { background: rgba(232, 84, 76, .24); }
 .hl.vis { background: rgba(242, 171, 40, .26); }
+
+.tsd-cards { gap: 1.1rem; }
+.tsd-card-slot { flex: none; scroll-margin-top: .75rem; }
+.tsd-empty, .tsd-more { margin: 2rem 0 0; color: #7b867f; font-size: .78rem; }
 @keyframes tsd-in { from { opacity: 0; transform: scaleY(.6); } }
 @media (prefers-reduced-motion: reduce) { .hl { animation: none; } .tsd-spin { animation-duration: 2s; } }
 </style>

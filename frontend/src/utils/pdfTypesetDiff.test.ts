@@ -97,3 +97,33 @@ describe('wordsOf and page grouping', () => {
     expect(changes.base[0].page).toBe(3)
   })
 })
+
+describe('hunks', () => {
+  it('groups a replaced phrase into one change with both sides', () => {
+    const changes = typesetChanges([[line('alpha old text omega', 10)]], [[line('alpha new omega', 10)]])
+    expect(changes.hunks).toHaveLength(1)
+    expect(changes.hunks[0].before).toMatchObject({ page: 1, words: 2, text: 'old text' })
+    expect(changes.hunks[0].after).toMatchObject({ page: 1, words: 1, text: 'new' })
+  })
+
+  it('has only a before side for a pure deletion and only an after side for an insertion', () => {
+    const deleted = typesetChanges([[line('keep one', 10), line('gone words', 30), line('keep two', 50)]], [[line('keep one', 10), line('keep two', 30)]])
+    expect(deleted.hunks).toHaveLength(1)
+    expect(deleted.hunks[0].after).toBeNull()
+    expect(deleted.hunks[0].before?.text).toBe('gone words')
+    const inserted = typesetChanges([[line('a')]], [[line('a b')]])
+    expect(inserted.hunks[0].before).toBeNull()
+    expect(inserted.hunks[0].after?.text).toBe('b')
+  })
+
+  it('keeps distant edits apart and merges neighbouring ones', () => {
+    const base = [[line('one a', 10), line('keep', 200), line('two b', 400)]]
+    const target = [[line('one x', 10), line('keep', 200), line('two y', 400)]]
+    expect(typesetChanges(base, target).hunks).toHaveLength(2)
+    expect(typesetChanges([[line('p a q b r', 10)]], [[line('p x q y r', 10)]]).hunks).toHaveLength(1)
+  })
+
+  it('has none when nothing changed', () => {
+    expect(typesetChanges([[line('same')]], [[line('same')]]).hunks).toEqual([])
+  })
+})

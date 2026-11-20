@@ -1,7 +1,20 @@
 <script setup lang="ts">
 import type { AgentTimelineEntry } from '../api/types'
 import { serverToolView } from '../utils/toolPresentation'
+import { toolSummary } from '../utils/toolSummary'
+import { editArguments, editDiffRows, type EditDiffRow } from '../utils/editDiff'
+import type { AgentToolActivity } from '../api/types'
 import ToolResult from './ToolResult.vue'
+
+/** One block of diff rows per before/after pair of an `edit` call; empty for any other tool. */
+function editChanges(activity: AgentToolActivity): EditDiffRow[][] {
+  if (activity.name !== 'edit') return []
+  return editArguments(activity.arguments).map((change) => editDiffRows(change.before, change.after))
+}
+
+function formatDuration(ms: number): string {
+  return ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)} s`
+}
 
 defineProps<{
   timeline: readonly AgentTimelineEntry[]
@@ -59,9 +72,32 @@ function formatToolValue(value: unknown): string {
             </div>
           </details>
           <details v-else-if="entry.type === 'tool'" class="tool-activity" :class="entry.activity.state">
-            <summary><i /><span>{{ entry.activity.name.replaceAll('_', ' ') }}</span><small v-if="entry.activity.duration_ms">{{ Math.round(entry.activity.duration_ms) }} ms</small></summary>
+            <summary :title="toolSummary(entry.activity.name, entry.activity.arguments).target || undefined">
+              <template v-for="view in [toolSummary(entry.activity.name, entry.activity.arguments)]" :key="'summary'">
+                <i />
+                <span class="tool-label">{{ view.label }}</span>
+                <span v-if="view.target" class="tool-target" :class="`tool-target-${view.kind}`">
+                  <span class="tool-target-name">{{ view.target }}</span>
+                  <span v-if="view.context" class="tool-target-context">{{ view.context }}</span>
+                </span>
+                <small v-if="view.meta" class="tool-meta">{{ view.meta }}</small>
+                <small class="tool-time">{{ entry.activity.duration_ms ? formatDuration(entry.activity.duration_ms) : '' }}</small>
+              </template>
+            </summary>
             <div class="tool-activity-details">
-              <div><strong>Arguments</strong><pre>{{ formatToolValue(entry.activity.arguments || {}) }}</pre></div>
+              <template v-if="editChanges(entry.activity).length">
+                <div v-for="(rows, blockIndex) in editChanges(entry.activity)" :key="blockIndex" class="edit-diff-block">
+                  <strong>{{ editChanges(entry.activity).length > 1 ? `Change ${blockIndex + 1} of ${editChanges(entry.activity).length}` : 'Changes' }}</strong>
+                  <div class="edit-diff" role="group" aria-label="Edit diff">
+                    <div v-for="(row, rowIndex) in rows" :key="rowIndex" class="edit-diff-row" :class="row.kind">
+                      <span class="edit-diff-mark" aria-hidden="true">{{ row.kind === 'added' ? '+' : row.kind === 'removed' ? '−' : '' }}</span>
+                      <code><template v-for="(segment, segmentIndex) in row.segments" :key="segmentIndex"><mark v-if="segment.strong">{{ segment.text }}</mark><template v-else>{{ segment.text }}</template></template></code>
+                    </div>
+                  </div>
+                </div>
+                <details class="edit-raw"><summary>Arguments</summary><pre>{{ formatToolValue(entry.activity.arguments || {}) }}</pre></details>
+              </template>
+              <div v-else><strong>Arguments</strong><pre>{{ formatToolValue(entry.activity.arguments || {}) }}</pre></div>
               <div><strong>{{ entry.activity.error_message ? 'Error' : 'Result' }}</strong><ToolResult :output="entry.activity.output" :error="entry.activity.error_message" @preview-image="emit('previewImage', $event)" /></div>
             </div>
           </details>
@@ -126,9 +162,34 @@ function formatToolValue(value: unknown): string {
 .tool-activity.failed summary i { background: #bd5656; animation: none; }
 .tool-activity.cancelled summary i { background: #929995; animation: none; }
 .tool-activity summary small { margin-left: auto; color: var(--tertiary); font-size: .58rem; text-transform: none; }
+.tool-activity summary .tool-label { flex: 0 0 auto; color: #3f4a43; font-weight: 630; }
+.tool-activity.failed summary .tool-label { color: #914d4d; }
+.tool-target { min-width: 0; display: inline-flex; align-items: baseline; gap: .38rem; padding: .1rem .42rem; border-radius: .38rem; background: #f1f4f2; text-transform: none; }
+.tool-target-name { min-width: 0; overflow: hidden; color: #36413a; text-overflow: ellipsis; white-space: nowrap; }
+.tool-target-file .tool-target-name, .tool-target-command .tool-target-name { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: .6rem; }
+.tool-target-context { flex: 0 1 auto; min-width: 0; overflow: hidden; color: #98a19b; font-size: .54rem; text-overflow: ellipsis; white-space: nowrap; }
+.tool-activity summary small.tool-meta { margin-left: 0; flex: 0 0 auto; color: #7c8780; font-variant-numeric: tabular-nums; }
+.tool-activity summary small.tool-time { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+.tool-activity summary .tool-target + small.tool-time, .tool-activity summary .tool-label + small.tool-time { margin-left: auto; }
+.tool-activity summary .tool-target { margin-right: auto; }
+.tool-activity summary .tool-target ~ small.tool-time { margin-left: 0; }
 .tool-activity-details { display: grid; gap: .55rem; margin: .08rem 0 .55rem; padding: .2rem 0 .12rem; }
 .tool-activity-details strong { display: block; margin-bottom: .28rem; color: #78827c; font-size: .56rem; letter-spacing: .055em; text-transform: uppercase; }
 .tool-activity-details pre { max-height: 11rem; margin: 0; padding: .32rem 0; overflow: auto; border: 0; color: #465049; background: transparent; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: .62rem; line-height: 1.48; text-transform: none; white-space: pre-wrap; overflow-wrap: anywhere; }
+.edit-diff { max-height: 18rem; overflow: auto; border: 1px solid #e3e8e5; border-radius: .5rem; background: #fff; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: .62rem; line-height: 1.5; text-transform: none; }
+.edit-diff-row { display: grid; grid-template-columns: 1.3rem minmax(0, 1fr); min-width: max-content; width: 100%; color: #5b665f; }
+.edit-diff-row code { padding: 0 .5rem 0 0; font: inherit; white-space: pre; }
+.edit-diff-mark { text-align: center; color: #98a19b; user-select: none; }
+.edit-diff-row.added { background: #eef8f0; color: #24452f; }
+.edit-diff-row.removed { background: #fbefef; color: #5b2b2b; }
+.edit-diff-row.added .edit-diff-mark { color: #3d8a59; }
+.edit-diff-row.removed .edit-diff-mark { color: #b05050; }
+.edit-diff-row mark { padding: 0 .08rem; border-radius: .18rem; color: inherit; }
+.edit-diff-row.added mark { background: #a8dcb7; }
+.edit-diff-row.removed mark { background: #efb3b3; }
+.edit-diff-block + .edit-diff-block { margin-top: .1rem; }
+.edit-raw { margin-top: .1rem; }
+.edit-raw > summary { min-height: 0; padding: .1rem 0; color: #78827c; font-size: .56rem; letter-spacing: .055em; text-transform: uppercase; }
 .tool-activity-details pre.error { color: #8d4040; }
 .tool-activity summary small.server-tool-summary { max-width: 60%; margin-left: auto; overflow: hidden; color: #6f7a73; text-overflow: ellipsis; white-space: nowrap; text-transform: none; }
 .server-tool-pages { display: grid; gap: .28rem; margin: 0; padding: 0; list-style: none; }

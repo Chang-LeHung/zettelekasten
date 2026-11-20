@@ -34,9 +34,8 @@
 .artifact-list-item.active { border-color: color-mix(in srgb, var(--artifact-accent) 28%, white); background: var(--artifact-selected); }
 .artifact-list-item:hover:not(.active) { background: var(--artifact-selected); }
 .artifact-list-item .artifact-kind-icon { color: var(--artifact-accent); background: var(--artifact-soft); }
-.artifact-list-item:is(:hover, :focus-within, .active) .artifact-list-copy :is(small, strong) { padding-right: 6.25rem; }
-.artifact-list-actions { position: absolute; top: .35rem; right: .35rem; display: flex; align-items: center; gap: .1rem; padding: .16rem; border: 1px solid color-mix(in srgb, var(--artifact-accent) 12%, white); border-radius: .55rem; background: rgba(255,255,255,.96); box-shadow: 0 2px 8px rgba(25,36,29,.08); opacity: 0; pointer-events: none; transform: translateY(-.2rem); transition: opacity 150ms ease, transform 150ms ease; }
-.artifact-list-item:hover .artifact-list-actions, .artifact-list-item:focus-within .artifact-list-actions, .artifact-list-item.active .artifact-list-actions { opacity: 1; pointer-events: auto; transform: none; }
+.artifact-list-actions { position: absolute; bottom: .4rem; right: .4rem; display: flex; align-items: center; gap: .1rem; padding: .16rem; border: 1px solid color-mix(in srgb, var(--artifact-accent) 12%, white); border-radius: .55rem; background: rgba(255,255,255,.96); box-shadow: 0 2px 8px rgba(25,36,29,.08); opacity: 0; pointer-events: none; transform: translateY(-.2rem); transition: opacity 150ms ease, transform 150ms ease; }
+.artifact-list-item:hover .artifact-list-actions, .artifact-list-item:focus-within .artifact-list-actions { opacity: 1; pointer-events: auto; transform: none; }
 .artifact-list-action { display: grid; place-items: center; width: 1.8rem; height: 1.8rem; padding: 0; border: 0; border-radius: .4rem; color: #66736a; background: transparent; cursor: pointer; }
 .artifact-list-action:hover:not(:disabled) { color: var(--artifact-accent); background: var(--artifact-soft); }
 .artifact-list-action.danger:hover:not(:disabled) { color: #a24747; background: #f9eded; }
