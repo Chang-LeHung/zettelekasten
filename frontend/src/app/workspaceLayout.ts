@@ -29,9 +29,9 @@ export function setWorkspaceMode(mode: WorkspaceMode): void {
   writeStored(MODE_KEY, mode)
 }
 
-function setShare(value: number): void {
+function setShare(value: number, persist = true): void {
   chatShare.value = clampShare(value)
-  writeStored(SHARE_KEY, String(chatShare.value))
+  if (persist) writeStored(SHARE_KEY, String(chatShare.value))
 }
 
 export function resetChatShare(): void {
@@ -52,10 +52,11 @@ export function startWorkspaceResize(event: PointerEvent, workspace: HTMLElement
 
 export function moveWorkspaceResize(event: PointerEvent): void {
   if (!resizingWorkspace.value || !region) return
-  setShare(shareFromPointer(event.clientX, region.left, region.width))
+  setShare(shareFromPointer(event.clientX, region.left, region.width), false)
 }
 
 export function endWorkspaceResize(): void {
+  if (resizingWorkspace.value) writeStored(SHARE_KEY, String(chatShare.value))
   resizingWorkspace.value = false
   region = null
 }

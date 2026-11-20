@@ -81,17 +81,27 @@ class PdfSnapshotService:
         content = self._content(artifact)
         if content is None:
             return
+        copied = False
         try:
             source = latex_pdf_path(artifact.session_id, content)
             destination = get_object_store().resolve(latex_snapshot_key(artifact.session_id, artifact.id))
             copied = await asyncio.to_thread(files.copy_atomically, source, destination)
-            if not copied:
-                await asyncio.to_thread(destination.unlink, missing_ok=True)
         except Exception as error:  # noqa: BLE001 - a snapshot must never fail a save
             logger.warning("Skipped LaTeX PDF snapshot; artifact_id=%s error=%s", artifact.id, error)
+        if not copied:
+            # The (PDF, commit) pair is atomic: no copy means no older PDF beside the new commit.
+            await self._remove_snapshot(artifact)
         if commit is None:
             commit = await self.head(artifact)
         await self._record_commit(artifact, commit)
+
+    @staticmethod
+    async def _remove_snapshot(artifact: AgentArtifactEntity) -> None:
+        try:
+            destination = get_object_store().resolve(latex_snapshot_key(artifact.session_id, artifact.id))
+            await asyncio.to_thread(destination.unlink, missing_ok=True)
+        except Exception as error:  # noqa: BLE001
+            logger.warning("Could not remove the stale LaTeX PDF snapshot; artifact_id=%s error=%s", artifact.id, error)
 
     async def _record_commit(
         self, artifact: AgentArtifactEntity, commit: str | None, saved_at: datetime | None = None
@@ -190,11 +200,14 @@ class PdfSnapshotService:
         except _GIT_FAILURES as error:
             logger.warning("LaTeX restore failed; artifact_id=%s error=%s", artifact.id, error)
             raise LatexRestoreError(f"Could not restore the saved version: {error}") from error
-        await self._restore_pdf(content, snapshot, directory, revert_commit)
-        # The project now matches what was saved, so the new HEAD is the saved commit.
+        amended = await self._restore_pdf(content, snapshot, directory, revert_commit, saved)
+        # The project now matches what was saved: the amended commit, else the revert commit.
         # The saved time stays the user's original save: only the commit moves. If the
         # PDF copy-back failed, the disk PDF may lag the sources until recompiled.
-        await self._record_commit(artifact, await self.head(artifact), saved_at)
+        new_commit = amended or revert_commit
+        if await self.head(artifact) != new_commit:
+            raise LatexRestoreError("The project changed during the restore; check it before saving again")
+        await self._record_commit(artifact, new_commit, saved_at)
         comparison = await self.compare(artifact)
         return PdfRestoration(**comparison.model_dump(), restored_commits=restored)
 
@@ -219,19 +232,26 @@ class PdfSnapshotService:
 
     @staticmethod
     async def _restore_pdf(
-        content: LatexPdfArtifactContent, snapshot: Path, directory: Path, revert_commit: str
-    ) -> None:
-        """Put the saved PDF back so the preview matches; a failure is only logged."""
+        content: LatexPdfArtifactContent, snapshot: Path, directory: Path, revert_commit: str, saved: str
+    ) -> str | None:
+        """Put the saved PDF back so the preview matches; return the amended commit or None.
+
+        The copy is skipped when the saved commit does not track the PDF, so no
+        untracked file is left. A failure is only logged.
+        """
         if not snapshot.is_file():
-            return
+            return None
         try:
             destination = directory / content.pdf_name
             if destination.parent.resolve() != directory.resolve() or destination.is_symlink():
                 raise ValueError("PDF must stay inside the project")
+            if not await asyncio.to_thread(git.path_in_commit, directory, saved, content.pdf_name):
+                return None
             await asyncio.to_thread(files.copy_atomically, snapshot, destination)
-            await asyncio.to_thread(git.amend_with_path, directory, content.pdf_name, revert_commit)
+            return await asyncio.to_thread(git.amend_with_path, directory, content.pdf_name, revert_commit)
         except _GIT_FAILURES as error:
             logger.warning("Could not restore the saved PDF; project_path=%s error=%s", content.project_path, error)
+            return None
 
 
 pdf_snapshot_service = PdfSnapshotService()

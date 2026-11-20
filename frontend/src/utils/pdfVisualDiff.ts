@@ -122,7 +122,9 @@ export function visualChanges(
     const byRow = new Map<number, number[]>()
     for (const at of cells) {
       const row = Math.floor(at / columns)
-      byRow.set(row, [...(byRow.get(row) ?? []), at % columns])
+      const columnsInRow = byRow.get(row)
+      if (columnsInRow) columnsInRow.push(at % columns)
+      else byRow.set(row, [at % columns])
     }
     for (const [row, list] of byRow) {
       list.sort((p, q) => p - q)

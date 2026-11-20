@@ -167,10 +167,7 @@ export function applyRejections(blocks: readonly MarkdownDiffBlock[], rejected: 
     || (block.kind === 'added' && !rejected.has(block.key)))
   // Each block keeps its own text and gap; a gap that cannot separate two blocks becomes a blank line.
   return kept.map((block, index) => {
-    if (index === kept.length - 1) {
-      // The document ends here, so keep the trailing whitespace only if this block ended its own document.
-      return block.text + (block === blocks[blocks.length - 1] ? block.gap : '')
-    }
+    if (index === kept.length - 1) return block.text + block.gap
     return block.text + (block.gap.includes('\n') ? block.gap : '\n\n')
   }).join('')
 }

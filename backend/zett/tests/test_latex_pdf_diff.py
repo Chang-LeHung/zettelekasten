@@ -42,7 +42,7 @@ async def test_save_snapshots_and_second_save_replaces_it() -> None:
         assert not list(path.parent.glob(".snapshot-*"))
 
 
-async def test_save_succeeds_without_a_pdf_and_keeps_the_older_snapshot() -> None:
+async def test_save_without_a_usable_pdf_drops_the_older_snapshot() -> None:
     with TestClient(app) as client:
         session_id, artifact = await prepared(client)
         directory = project_directory(session_id)
@@ -50,11 +50,15 @@ async def test_save_succeeds_without_a_pdf_and_keeps_the_older_snapshot() -> Non
         (directory / "paper.pdf").unlink()
         commit(directory)
         assert save(client, session_id, artifact["id"]).status_code == 200
-        assert snapshot_path(session_id, artifact["id"]).read_bytes() == b"%PDF-1.4\n%%EOF\n"
+        assert not snapshot_path(session_id, artifact["id"]).exists()
+        (directory / "paper.pdf").write_bytes(PDF_TWO)
+        commit(directory)
+        assert save(client, session_id, artifact["id"]).status_code == 200
+        assert snapshot_path(session_id, artifact["id"]).is_file()
         (directory / "paper.pdf").write_bytes(b"not a pdf")
         commit(directory)
         assert save(client, session_id, artifact["id"]).status_code == 200
-        assert snapshot_path(session_id, artifact["id"]).read_bytes() == b"%PDF-1.4\n%%EOF\n"
+        assert not snapshot_path(session_id, artifact["id"]).exists()
 
 
 async def test_pdf_diff_before_and_after_save_and_stale() -> None:

@@ -108,6 +108,11 @@ def _is_clean_at(directory: Path, head: str) -> bool:
 def _recover(directory: Path, head: str) -> None:
     """Put the repository back at ``head`` with a clean tree, proving it rather than trusting abort."""
     _git(directory, "revert", "--abort", check=False)
+    current = head_commit(directory)
+    if current != head:
+        # HEAD moved forward since entry; a hard reset would discard someone's commit.
+        logger.error("Revert recovery refused; HEAD moved from %s to %s", head, current)
+        raise GitRevertConflictError("The project changed during the restore and needs a manual look")
     try:
         if _is_clean_at(directory, head):
             return
@@ -140,22 +145,27 @@ def revert_range(directory: Path, base: str, head: str, message: str) -> str:
     return head_commit(directory)
 
 
-def amend_with_path(directory: Path, path: str, expected_head: str) -> bool:
-    """Fold one tracked file's pending change into ``expected_head``; return whether it amended.
+def path_in_commit(directory: Path, commit: str, path: str) -> bool:
+    """Return whether ``commit`` tracks ``path``."""
+    return _git(directory, "cat-file", "-e", f"{commit}:{path}", check=False).returncode == 0
+
+
+def amend_with_path(directory: Path, path: str, expected_head: str) -> str | None:
+    """Fold one tracked file's pending change into ``expected_head``; return the new sha or None.
 
     Nothing is amended when HEAD is no longer the commit the caller created, so
     a commit someone else made meanwhile is never rewritten.
     """
     if head_commit(directory) != expected_head:
         logger.warning("Skipped the PDF amend; HEAD moved since the revert commit %s", expected_head)
-        return False
+        return None
     if not _git(directory, "status", "--porcelain", "--", path).stdout.strip():
         return False
     if _git(directory, "ls-files", "--error-unmatch", "--", path, check=False).returncode != 0:
-        return False
+        return None
     _git(directory, "add", "--", path)
     _git(directory, *_identity(directory), "commit", "--amend", "--no-edit")
-    return True
+    return head_commit(directory)
 
 
 def _environment() -> dict[str, str]:
@@ -198,6 +208,7 @@ __all__ = [
     "amend_with_path",
     "commits_between",
     "has_merge_commits",
+    "path_in_commit",
     "head_commit",
     "is_ancestor",
     "revert_range",

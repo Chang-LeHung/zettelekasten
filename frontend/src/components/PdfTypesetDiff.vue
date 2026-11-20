@@ -229,10 +229,11 @@ function onKey(event: KeyboardEvent): void {
 
 async function restore(): Promise<void> {
   if (restoring.value) return
+  if (!props.sessionId) { restoreError.value = 'Restore is only available inside the conversation that owns this paper'; return }
   restoring.value = true
   restoreError.value = ''
   try {
-    await libraryClient.restorePdfProject(props.sessionId ?? '', props.artifactId)
+    await libraryClient.restorePdfProject(props.sessionId, props.artifactId)
     confirmRestore.value = false
     await load()
     emit('restored')

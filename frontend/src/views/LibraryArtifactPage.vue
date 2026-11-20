@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { defineAsyncComponent } from 'vue'
+import { defineAsyncComponent, nextTick, onMounted, ref } from 'vue'
 import { libraryClient } from '../api/client'
 import { openLibraryEditor } from '../app/artifacts/editor'
 import { formatDateTime } from '../app/format'
@@ -9,6 +9,9 @@ import { openArtifactSession } from '../app/workspace'
 import CardStatusMenu from '../components/CardStatusMenu.vue'
 import { isStruck, statusTone } from '../utils/cardStatus'
 
+const back = ref<HTMLButtonElement | null>(null)
+onMounted(() => { void nextTick(() => back.value?.focus()) })
+
 const MarkdownContent = defineAsyncComponent(() => import('../components/MarkdownContent.vue'))
 const PdfPreview = defineAsyncComponent(() => import('../components/PdfPreview.vue'))
 const SlidesPreview = defineAsyncComponent(() => import('../components/SlidesPreview.vue'))
@@ -17,7 +20,7 @@ const SlidesPreview = defineAsyncComponent(() => import('../components/SlidesPre
 <template>
   <section v-if="selectedLibraryItem" class="artifact-page" :class="`is-${selectedLibraryItem.item_type}`" :aria-label="selectedLibraryItem.title">
     <header class="artifact-page-bar">
-      <button class="artifact-page-back" type="button" @click="selectedLibraryItem = null">← {{ $t('Artifacts') }}</button>
+      <button ref="back" class="artifact-page-back" type="button" @keydown.esc="selectedLibraryItem = null" @click="selectedLibraryItem = null">← {{ $t('Artifacts') }}</button>
       <span class="card-type">{{ selectedLibraryItem.item_type === 'card' ? selectedLibraryItem.card_type : selectedLibraryItem.item_type }}</span>
       <CardStatusMenu v-if="selectedLibraryItem.card_status" :status="selectedLibraryItem.card_status" :busy="cardStatusUpdatingIds.has(selectedLibraryItem.id)" @select="setLibraryCardStatus(selectedLibraryItem, $event)" />
       <div class="artifact-page-actions">
@@ -35,7 +38,7 @@ const SlidesPreview = defineAsyncComponent(() => import('../components/SlidesPre
       <div v-if="selectedLibraryItem.tags.length" class="detail-tags"><span v-for="path in selectedLibraryItem.tags" :key="path">{{ path }}</span></div>
 
       <div class="artifact-stage">
-        <PdfPreview v-if="selectedLibraryItem.item_type === 'latex_pdf'" :key="selectedLibraryItem.id" :asset="libraryClient.documentReference(selectedLibraryItem.id)" artifact />
+        <PdfPreview v-if="selectedLibraryItem.item_type === 'latex_pdf'" :key="selectedLibraryItem.id" :asset="{ ...libraryClient.documentReference(selectedLibraryItem.id), session_id: '' }" artifact />
         <SlidesPreview v-else-if="selectedLibraryItem.item_type === 'slides'" :title="selectedLibraryItem.title" :content="selectedLibraryItem.content" />
         <MarkdownContent v-else class="detail-body" :content="selectedLibraryItem.content" />
       </div>

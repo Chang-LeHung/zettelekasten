@@ -275,7 +275,7 @@ async def test_amend_is_skipped_when_head_moved() -> None:
         commit(directory, "docs: late")
         (directory / "paper.pdf").write_bytes(PDF_TWO)
         before = subjects(directory)
-        assert git_projects.amend_with_path(directory, "paper.pdf", stale) is False
+        assert git_projects.amend_with_path(directory, "paper.pdf", stale) is None
         assert subjects(directory) == before
         assert git_projects.amend_with_path(directory, "paper.pdf", git(directory, "rev-parse", "HEAD").strip())
 
@@ -293,3 +293,62 @@ async def test_restore_falls_back_to_an_identity_when_none_is_configured(monkeyp
         response = client.post(restore_url(session_id, artifact))
         assert response.status_code == 200, response.text
         assert git(directory, "log", "-1", "--pretty=%an <%ae>").strip() == "Zett Restore <restore@zett.local>"
+
+
+async def test_restore_to_a_commit_without_the_pdf_leaves_no_untracked_pdf() -> None:
+    with TestClient(app) as client:
+        session_id, artifact, directory = await prepared(client)
+        assert save(client, session_id, artifact["id"]).status_code == 200
+        (directory / "paper.pdf").unlink()
+        commit(directory, "docs: drop pdf")
+        assert save(client, session_id, artifact["id"]).status_code == 200
+        assert not snapshot_path(session_id, artifact["id"]).exists()
+        agent_edit(directory)
+        response = client.post(restore_url(session_id, artifact))
+        assert response.status_code == 200, response.text
+        assert status(directory) == ""
+        assert not (directory / "paper.pdf").exists()
+
+
+async def test_recovery_never_resets_a_head_that_moved(monkeypatch) -> None:
+    with TestClient(app) as client:
+        session_id, artifact, directory = await prepared(client)
+        assert save(client, session_id, artifact["id"]).status_code == 200
+        agent_edit(directory, "a", "docs: a")
+        real = git_projects._git
+
+        def stub(path, *arguments, check=True):
+            if arguments[:2] == ("revert", "--no-commit"):
+                real(path, *arguments, check=check)
+                real(path, "revert", "--abort")
+                (directory / "late.tex").write_text("late")
+                commit(directory, "docs: late")
+                return subprocess.CompletedProcess(arguments, 1, "", "CONFLICT")
+            return real(path, *arguments, check=check)
+
+        monkeypatch.setattr(git_projects, "_git", stub)
+        response = client.post(restore_url(session_id, artifact))
+        assert response.status_code == 409, response.text
+        assert (directory / "late.tex").read_text() == "late"
+        assert subjects(directory)[0] == "docs: late"
+        assert status(directory) == ""
+
+
+async def test_restore_fails_when_head_is_not_the_commit_it_made(monkeypatch) -> None:
+    with TestClient(app) as client:
+        session_id, artifact, directory = await prepared(client)
+        assert save(client, session_id, artifact["id"]).status_code == 200
+        sidecar = snapshot_path(session_id, artifact["id"]).with_suffix(".json")
+        before = json.loads(sidecar.read_text())
+        agent_edit(directory, "a", "docs: a")
+        real = git_projects.amend_with_path
+
+        def moving(directory_, path, expected):
+            (directory_ / "late.tex").write_text("late")
+            commit(directory_, "docs: late")
+            return real(directory_, path, expected)
+
+        monkeypatch.setattr(git_projects, "amend_with_path", moving)
+        response = client.post(restore_url(session_id, artifact))
+        assert response.status_code == 409, response.text
+        assert json.loads(sidecar.read_text())["commit"] == before["commit"]

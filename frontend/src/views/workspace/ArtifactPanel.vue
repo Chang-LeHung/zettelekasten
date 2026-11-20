@@ -81,7 +81,7 @@ const SlidesPreview = defineAsyncComponent(() => import('../../components/Slides
           <label class="card-title-control"><span>{{ $t('PDF filename') }}</span><textarea v-model="artifactContent.pdf_name" rows="1" /></label>
           <p>{{ $t('Source files stay in the project directory. Compile the PDF before saving this reference.') }}</p>
         </template>
-        <PdfTypesetDiff v-else-if="latexView === 'changes' && selectedArtifact" class="artifact-typeset" :artifact-id="selectedArtifact.id" :nonce="artifactPreviewNonce" />
+        <PdfTypesetDiff v-else-if="latexView === 'changes' && selectedArtifact" class="artifact-typeset" :artifact-id="selectedArtifact.id" :session-id="selectedArtifact.session_id" :nonce="artifactPreviewNonce" @restored="artifactPreviewNonce += 1" />
         <PdfPreview v-else-if="artifactPreviewAsset" ref="pdfPreviewRef" :asset="artifactPreviewAsset" artifact />
       </template>
       <template v-else-if="!artifactPreview">
