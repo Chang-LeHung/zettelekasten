@@ -16,12 +16,10 @@
 @keyframes artifact-refresh-spin { to { transform: rotate(360deg); } }
 .artifact-syncing { display: inline-flex; align-items: center; gap: .35rem; color: #758179; font-size: .58rem; }
 .artifact-syncing i { width: .36rem; height: .36rem; border-radius: 50%; background: #619071; animation: activity-pulse 1s ease-in-out infinite; }
-.artifact-list { flex: 0 1 auto; min-height: 0; max-height: none; display: flex; flex-direction: column; gap: .38rem; padding: .65rem; overflow-x: hidden; overflow-y: auto; background: #fff; scrollbar-width: thin; }
-.artifact-list:not([style]) { max-height: min(38%, 20rem); }
-.artifact-list[style] { flex: 0 0 auto; }
-.artifact-splitter { position: relative; z-index: 2; flex: 0 0 14px; display: grid; place-items: center; width: 100%; cursor: row-resize; touch-action: none; background: #fff; border-top: 1px solid #edf0ed; border-bottom: 1px solid #edf0ed; }
-.artifact-splitter span { width: 2.1rem; height: 3px; border-radius: 3px; background: #b4c3b8; transition: width 140ms ease, background 140ms ease; }
-.artifact-splitter:hover span, .artifact-splitter:focus-visible span { width: 3rem; background: #527d62; }
+.artifact-list { flex: 0 0 auto; width: clamp(11rem, 36%, 19rem); min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: .38rem; padding: .65rem; overflow-x: hidden; overflow-y: auto; background: #fff; scrollbar-width: thin; }
+.artifact-splitter { position: relative; z-index: 2; flex: 0 0 12px; display: grid; place-items: center; height: 100%; cursor: col-resize; touch-action: none; background: #fff; border-inline: 1px solid #edf0ed; }
+.artifact-splitter span { width: 3px; height: 2.1rem; border-radius: 3px; background: #b4c3b8; transition: height 140ms ease, background 140ms ease; }
+.artifact-splitter:hover span, .artifact-splitter:focus-visible span { height: 3.4rem; background: #527d62; }
 .artifact-splitter:focus-visible { outline: 2px solid #739a80; outline-offset: -2px; }
 .artifact-list-item { position: relative; width: 100%; flex: 0 0 auto; border: 1px solid transparent; border-radius: .72rem; background: #fff; transition: background 150ms ease, border-color 150ms ease, transform 150ms ease; }
 .artifact-list-item:hover { transform: translateY(-1px); }
@@ -56,7 +54,7 @@
 .artifact-placeholder > span { display: grid; place-items: center; width: 3rem; height: 3rem; border-radius: 1rem; color: var(--accent); background: var(--accent-soft); }
 .artifact-placeholder h2 { margin: 1rem 0 .35rem; font-size: 1rem; }
 .artifact-placeholder p { max-width: 18rem; margin: 0; color: var(--tertiary); font-size: .7rem; line-height: 1.55; }
-.artifact-pane .artifact-panel { min-height: 0; flex: 1 1 auto; border: 0; border-radius: 0; box-shadow: none; animation: artifact-preview-appear 220ms ease-out both; }
+.artifact-pane .artifact-panel { min-height: 0; height: 100%; flex: 1 1 auto; border: 0; border-radius: 0; box-shadow: none; animation: artifact-preview-appear 220ms ease-out both; }
 @keyframes artifact-preview-appear { from { opacity: .65; transform: translateY(5px); } to { opacity: 1; transform: none; } }
 .editor-intro { display: flex; gap: 1rem; align-items: center; margin: .5rem 0 1.5rem; }
 .editor-intro h2, .settings-intro h2 { margin: 0 0 .28rem; font-size: 1.05rem; letter-spacing: -.015em; }
@@ -162,3 +160,16 @@
 .ai-badge svg { width: .75rem; height: .75rem; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.05rem; margin-top: 1.35rem; }
 .artifact-typeset { height: 70vh; min-height: 26rem; border: 1px solid #e1e5e2; border-radius: .8rem; overflow: hidden; }
+/* In the workspace the PDF and the compare view take the whole pane instead of a fixed viewport fraction. */
+.artifact-pane .artifact-editor-body:has(> .pdf-inline-host > .pdf-preview.artifact-pdf, > .artifact-typeset) { display: flex; flex-direction: column; overflow: hidden; }
+.artifact-pane .artifact-editor-body > .pdf-inline-host > .pdf-preview.artifact-pdf, .artifact-pane .artifact-editor-body > .artifact-typeset { flex: 1 1 0; height: auto; min-height: 0; }
+
+/* Beside each other: the list on the left, the open artifact (and the hover preview over it) on the right. */
+.artifact-split { display: flex; flex: 1 1 auto; min-height: 0; }
+.artifact-main { position: relative; display: flex; flex: 1 1 0; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+.artifact-main > .artifact-placeholder { flex: 1 1 auto; }
+@container artifact-pane (max-width: 520px) {
+  .artifact-split { flex-direction: column; }
+  .artifact-list { width: 100% !important; max-height: 34%; }
+  .artifact-splitter { display: none; }
+}

@@ -405,6 +405,7 @@ export const zh: Record<string, string> = {
   'Original input': '原始输入',
   'Details': '详情',
   'Copy ID': '复制 ID',
+  'Resize artifact list and preview': '调整产物列表与预览的宽度',
   'Restore is only available inside the conversation that owns this paper': '只能在拥有这篇论文的会话里恢复',
   'Status': '状态',
   'Created': '创建时间',

@@ -1,10 +1,11 @@
 import { aiClient } from '../../api/client'
 import type { AgentArtifact, ArtifactContent, CardStatus } from '../../api/types'
 import { artifactEditableContent } from '../../utils/artifactEditor'
-import { MIN_ARTIFACT_LIST_HEIGHT, clampArtifactListHeight } from '../../utils/artifactSplit'
+import { ARTIFACT_SPLIT_STEP, MIN_ARTIFACT_LIST_WIDTH, clampArtifactListWidth } from '../../utils/artifactSplit'
 import { artifactListsEquivalent, sameArtifactRevision, stabilizeArtifactReferences } from '../../utils/artifactStability'
 import { createAsyncRefreshScheduler } from '../../utils/asyncRefresh'
 import { jsonSnapshot } from '../../utils/jsonSnapshot'
+import { writeStored } from '../../utils/workspaceLayout'
 import { assets } from '../assets'
 import { artifactTitle, artifactTypeLabel } from '../format'
 import { announceCardStatus, loadLibrary, markCardStatusUpdating } from '../library/actions'
@@ -12,14 +13,14 @@ import { cardStatusUpdatingIds } from '../library/state'
 import { refreshTags } from '../library/tags'
 import { errorMessage, requestConfirmation, showNotice } from '../notice'
 import { conversationId } from '../sessions'
-import { artifactContent, artifactDiff, artifactHeaderRef, artifactListHeight, artifactPaneRef, artifactPreview, artifactPreviewNonce, artifactRefreshing, artifacts, artifactsNeedingSave, artifactsScratch, saving, savingAllArtifacts, selectedArtifact, selectedArtifactDirty, selectedArtifactId, selectedSuggestions } from './state'
+import { ARTIFACT_LIST_WIDTH_KEY, artifactContent, artifactDiff, artifactListWidth, artifactPaneRef, artifactPaneWidth, artifactPreview, artifactPreviewNonce, artifactRefreshing, artifacts, artifactsNeedingSave, artifactsScratch, saving, savingAllArtifacts, selectedArtifact, selectedArtifactDirty, selectedArtifactId, selectedSuggestions } from './state'
 
-export function setArtifactListHeight(height: number): void {
-  const pane = artifactPaneRef.value
-  const header = artifactHeaderRef.value
-  if (!pane || !header) return
-  const bounded = clampArtifactListHeight(height, pane.clientHeight, header.offsetHeight)
-  if (artifactListHeight.value !== bounded) artifactListHeight.value = bounded
+export function setArtifactListWidth(width: number, persist = false): void {
+  // A hidden pane (Conversation mode) measures 0; clamping then would erase the saved width.
+  if (artifactPaneWidth.value === 0) return
+  const bounded = clampArtifactListWidth(width, artifactPaneWidth.value)
+  if (artifactListWidth.value !== bounded) artifactListWidth.value = bounded
+  if (persist) writeStored(ARTIFACT_LIST_WIDTH_KEY, String(bounded))
 }
 export function startArtifactSplit(event: PointerEvent): void {
   if (event.button !== 0) return
@@ -27,26 +28,29 @@ export function startArtifactSplit(event: PointerEvent): void {
   if (!pane) return
   event.preventDefault()
   artifactsScratch.artifactSplitPointer = event.pointerId
-  artifactsScratch.artifactSplitStartY = event.clientY
-  artifactsScratch.artifactSplitStartHeight = pane.querySelector('.artifact-list')?.getBoundingClientRect().height ?? MIN_ARTIFACT_LIST_HEIGHT
+  artifactsScratch.artifactSplitStartX = event.clientX
+  artifactsScratch.artifactSplitStartWidth = pane.querySelector('.artifact-list')?.getBoundingClientRect().width ?? MIN_ARTIFACT_LIST_WIDTH
   ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
 }
 export function moveArtifactSplit(event: PointerEvent): void {
   if (artifactsScratch.artifactSplitPointer !== event.pointerId) return
-  setArtifactListHeight(artifactsScratch.artifactSplitStartHeight + event.clientY - artifactsScratch.artifactSplitStartY)
+  // A drag whose pointer-up never reached us (the divider unmounted) must not resize on plain hover.
+  if (event.buttons === 0) { artifactsScratch.artifactSplitPointer = null; return }
+  setArtifactListWidth(artifactsScratch.artifactSplitStartWidth + event.clientX - artifactsScratch.artifactSplitStartX)
 }
 export function endArtifactSplit(event: PointerEvent): void {
   if (artifactsScratch.artifactSplitPointer !== event.pointerId) return
   artifactsScratch.artifactSplitPointer = null
+  if (artifactListWidth.value !== null) writeStored(ARTIFACT_LIST_WIDTH_KEY, String(artifactListWidth.value))
 }
 export function keyArtifactSplit(event: KeyboardEvent): void {
   const list = artifactPaneRef.value?.querySelector('.artifact-list')
-  if (!list || !['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return
+  if (!list || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
   event.preventDefault()
-  const current = list.getBoundingClientRect().height
+  const current = list.getBoundingClientRect().width
   const desired = event.key === 'Home' ? 0 : event.key === 'End' ? Number.MAX_SAFE_INTEGER
-    : current + (event.key === 'ArrowDown' ? 32 : -32)
-  setArtifactListHeight(desired)
+    : current + (event.key === 'ArrowRight' ? ARTIFACT_SPLIT_STEP : -ARTIFACT_SPLIT_STEP)
+  setArtifactListWidth(desired, true)
 }
 export const agentResourceRefresh = createAsyncRefreshScheduler(
   async (sessionId: string) => {
