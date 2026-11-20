@@ -4,9 +4,10 @@ import json
 import os
 import shutil
 import tempfile
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
+from zett._compat import UTC
 from zett.infra.log import get_logger
 
 logger = get_logger(__name__)

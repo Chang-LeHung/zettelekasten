@@ -2,7 +2,7 @@
 
 import json
 import os
-from datetime import UTC, datetime
+from datetime import datetime
 
 import pytest
 from fastapi.testclient import TestClient
@@ -17,6 +17,7 @@ from latex_helpers import (
     status,
 )
 
+from zett._compat import UTC
 from zett.application.artifacts import pdf_snapshots as service_module
 from zett.application.files.object_store import latex_snapshot_key
 from zett.infra.persistence.dao import session_storage
@@ -24,6 +25,11 @@ from zett.main import app
 from zett.schemas import AgentSessionCreate
 
 prepared = prepared_project
+
+
+def _parse_time(value: str) -> datetime:
+    """Parse an ISO time; Python 3.10's ``fromisoformat`` rejects a trailing ``Z``."""
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
 async def test_save_snapshots_and_second_save_replaces_it() -> None:
@@ -247,14 +253,14 @@ async def test_saved_at_is_recorded_and_independent_of_mtime() -> None:
         before = datetime.now(UTC)
         assert save(client, session_id, artifact["id"]).status_code == 200
         path = snapshot_path(session_id, artifact["id"])
-        recorded = datetime.fromisoformat(json.loads(path.with_suffix(".json").read_text())["saved_at"])
+        recorded = _parse_time(json.loads(path.with_suffix(".json").read_text())["saved_at"])
         assert recorded >= before
         os.utime(path, (1_000_000, 1_000_000))
-        shown = datetime.fromisoformat(client.get(f"/api/artifacts/{artifact['id']}/pdf-diff").json()["base_saved_at"])
+        shown = _parse_time(client.get(f"/api/artifacts/{artifact['id']}/pdf-diff").json()["base_saved_at"])
         assert shown == recorded
         # An older snapshot without a sidecar falls back to the file's mtime.
         path.with_suffix(".json").unlink()
-        shown = datetime.fromisoformat(client.get(f"/api/artifacts/{artifact['id']}/pdf-diff").json()["base_saved_at"])
+        shown = _parse_time(client.get(f"/api/artifacts/{artifact['id']}/pdf-diff").json()["base_saved_at"])
         assert shown == datetime.fromtimestamp(1_000_000, tz=UTC)
 
 
